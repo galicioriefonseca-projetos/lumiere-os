@@ -65,9 +65,9 @@ service cloud.firestore {
       // Owner cannot change sensitive fields.
       allow update: if isPlatformAdmin() || 
                     (isSalonOwner(salonId) && 
-                     !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+                     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(
                        ['plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'deletedAt']
-                     ));
+                     )));
                      
       allow delete: if isPlatformAdmin();
     }

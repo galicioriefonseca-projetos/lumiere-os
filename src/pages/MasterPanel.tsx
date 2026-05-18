@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2, Search, ShieldAlert, CheckCircle, Ban, RefreshCcw, LogOut } from 'lucide-react';
+import { Loader2, Search, ShieldAlert, CheckCircle, Ban, RefreshCcw, LogOut, Home } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Link } from 'react-router-dom';
 
 export default function MasterPanel() {
   const { logout } = useAuth();
@@ -97,9 +98,9 @@ export default function MasterPanel() {
       toast.success('Ação realizada com sucesso!');
       setIsDialogOpen(false);
       setSelectedSalon(null);
-    } catch (error) {
-      console.error(error);
-      toast.error('Erro ao realizar ação. Verifique suas permissões.');
+    } catch (error: any) {
+      console.error("Firestore Update Error:", error);
+      toast.error(`Erro: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -142,9 +143,16 @@ export default function MasterPanel() {
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">Controle absoluto de todas as instâncias da plataforma.</p>
           </div>
-          <Button variant="ghost" className="text-muted-foreground hover:text-white" onClick={logout}>
-            <LogOut className="w-4 h-4 mr-2" /> Sair
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" className="border-border hover:bg-white/5" asChild>
+              <Link to="/dashboard">
+                <Home className="w-4 h-4 mr-2" /> Dashboard
+              </Link>
+            </Button>
+            <Button variant="ghost" className="text-muted-foreground hover:text-white" onClick={logout}>
+              <LogOut className="w-4 h-4 mr-2" /> Sair
+            </Button>
+          </div>
         </div>
 
         <Card className="border-border bg-black/40">

@@ -12,7 +12,8 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Edit2, Power, PowerOff, UserMinus } from 'lucide-react';
 
 export default function ProfessionalsPage() {
-  const { salonData } = useAuth();
+  const { salonData, userData } = useAuth();
+  const isAdmin = userData?.role === 'platform_admin';
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -49,7 +50,7 @@ export default function ProfessionalsPage() {
     e.preventDefault();
     if (!salonData) return;
 
-    if (!editingProf && professionals.length >= salonData.professionalsLimit) {
+    if (!editingProf && !isAdmin && professionals.length >= salonData.professionalsLimit) {
       toast.error(`Você atingiu o limite de ${salonData.professionalsLimit} profissionais do seu plano.`);
       return;
     }
@@ -126,8 +127,8 @@ export default function ProfessionalsPage() {
           <DialogTrigger asChild>
             <Button 
                className="bg-primary hover:bg-primary/90 text-primary-foreground"
-               disabled={!salonData || professionals.length >= salonData.professionalsLimit}
-               title={professionals.length >= (salonData?.professionalsLimit || 0) ? "Limite do plano atingido" : ""}
+               disabled={!salonData || (!isAdmin && professionals.length >= salonData.professionalsLimit)}
+               title={!isAdmin && professionals.length >= (salonData?.professionalsLimit || 0) ? "Limite do plano atingido" : ""}
             >
               <Plus className="w-4 h-4 mr-2" /> Novo Profissional
             </Button>

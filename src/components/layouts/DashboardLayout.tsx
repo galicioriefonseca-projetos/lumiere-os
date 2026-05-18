@@ -120,14 +120,14 @@ export default function DashboardLayout() {
           <div className="flex items-center gap-4">
              {/* Plan badge */}
              <div className="hidden sm:flex items-center px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs text-muted-foreground">
-               <span className="uppercase tracking-wider mr-2 font-bold text-primary">{salonData?.plan}</span> 
-               | Status: {salonData?.subscriptionStatus}
+               <span className="uppercase tracking-wider mr-2 font-bold text-primary">{userData?.role === 'platform_admin' ? 'MASTER' : salonData?.plan}</span> 
+               | Status: {userData?.role === 'platform_admin' ? 'ativo' : salonData?.subscriptionStatus}
              </div>
           </div>
         </header>
 
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          {salonData?.subscriptionStatus === 'trial' && (
+          {salonData?.subscriptionStatus === 'trial' && userData?.role !== 'platform_admin' && (
              <div className="mb-6 bg-primary/10 border border-primary/20 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                    <h4 className="font-medium text-primary flex items-center gap-2"><Sparkles className="w-4 h-4"/> Você está no período de teste</h4>

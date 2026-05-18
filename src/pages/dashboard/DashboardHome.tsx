@@ -84,11 +84,15 @@ export default function DashboardHome() {
         <div>
           <h1 className="text-3xl font-heading flex items-center gap-3">
              {salonData.name}
-             {salonData.plan !== 'start' && (
+             {userData?.role === 'platform_admin' ? (
+                <span className="text-[10px] uppercase tracking-wider bg-primary text-black font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                   <Star className="w-3 h-3" /> MASTER
+                </span>
+             ) : salonData.plan !== 'start' ? (
                 <span className="text-[10px] uppercase tracking-wider bg-primary text-black font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                    <Star className="w-3 h-3" /> {salonData.plan}
                 </span>
-             )}
+             ) : null}
           </h1>
           <p className="text-muted-foreground mt-1">
             Olá, <span className="text-foreground font-medium">{userData?.fullName}</span>. 
