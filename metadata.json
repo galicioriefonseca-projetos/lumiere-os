@@ -1,0 +1,8 @@
+{
+  "name": "Lumiere",
+  "description": "SaaS premium para gestão de salões de beleza, clínicas de estética, barbearias e studios com Firebase Auth, Firestore e PWA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

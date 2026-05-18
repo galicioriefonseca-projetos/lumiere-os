@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Safety Net - Deny Everything By Default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isPlatformAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+    }
+    
+    function isSalonMember(salonId) {
+       // Since the user profile has the salonId
+       return isSignedIn() && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.salonId == salonId;
+    }
+
+    function isSalonOwner(salonId) {
+       let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+       return isSignedIn() && user.salonId == salonId && user.role == "owner";
+    }
+
+    function isOwnerOfUser(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // platformAdmins collection
+    match /platformAdmins/{userId} {
+      allow read: if isPlatformAdmin();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // User can read their own data, or admins can read any
+      allow get: if isOwnerOfUser(userId) || isPlatformAdmin();
+      
+      // Members of same salon could theoretically read each other if needed, but for MVP:
+      allow list: if isPlatformAdmin() || 
+                  (isSignedIn() && resource.data.salonId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.salonId);
+      
+      // Only creation from client side logic using Auth UID
+      // In a real app this should have a tight schema validator
+      allow create: if isOwnerOfUser(userId);
+      allow update: if (isOwnerOfUser(userId) || isPlatformAdmin()) && 
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId']) || isPlatformAdmin());
+    }
+
+    // Salons collection
+    match /salons/{salonId} {
+      // Create is open to any authenticated user just signing up
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      
+      // Read is allowed for members or platform admins
+      allow get: if isSalonMember(salonId) || isPlatformAdmin();
+      allow list: if isPlatformAdmin(); // Only master panel can list salons
+      
+      // Update is restricted. Only owner or platformAdmin.
+      // Owner cannot change sensitive fields.
+      allow update: if isPlatformAdmin() || 
+                    (isSalonOwner(salonId) && 
+                     !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+                       ['plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'deletedAt']
+                     ));
+                     
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Helper for subcollections
+    // Salons Subcollections Template
+    match /salons/{salonId}/{collectionName}/{docId} {
+      allow read: if isSalonMember(salonId) || isPlatformAdmin();
+      allow create, update, delete: if isSalonMember(salonId) || isPlatformAdmin();
+    }
+  }
+}
