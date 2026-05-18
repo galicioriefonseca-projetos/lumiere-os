@@ -8,6 +8,7 @@ interface AuthContextType {
   currentUser: AuthUser | null;
   userData: User | null;
   salonData: Salon | null;
+  isPlatformAdmin: boolean;
   loading: boolean;
   logout: () => Promise<void>;
   refreshUserData: () => Promise<void>;
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   userData: null,
   salonData: null,
+  isPlatformAdmin: false,
   loading: true,
   logout: async () => {},
   refreshUserData: async () => {},
@@ -26,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
   const [salonData, setSalonData] = useState<Salon | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   if (!auth || !db) {
@@ -48,11 +51,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserData = async (uid: string) => {
     try {
+      // Check platform admin status
+      const adminRef = doc(db, 'platformAdmins', uid);
+      const adminSnap = await getDoc(adminRef);
+      let isExplicitAdmin = adminSnap.exists();
+
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
       if (userSnap.exists()) {
         const uData = { id: userSnap.id, ...userSnap.data() } as User;
         setUserData(uData);
+        setIsPlatformAdmin(isExplicitAdmin || uData.role === 'platform_admin');
 
         if (uData.salonId) {
           const salonRef = doc(db, 'salons', uData.salonId);
@@ -61,6 +70,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
           }
         }
+      } else {
+        setIsPlatformAdmin(isExplicitAdmin);
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -81,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUserData(null);
         setSalonData(null);
+        setIsPlatformAdmin(false);
       }
       setLoading(false);
     });
@@ -93,11 +105,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signOut(auth);
     setUserData(null);
     setSalonData(null);
+    setIsPlatformAdmin(false);
     setLoading(false);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, userData, salonData, loading, logout, refreshUserData }}>
+    <AuthContext.Provider value={{ currentUser, userData, salonData, isPlatformAdmin, loading, logout, refreshUserData }}>
       {!loading && children}
     </AuthContext.Provider>
   );

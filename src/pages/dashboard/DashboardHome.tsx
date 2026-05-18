@@ -10,7 +10,7 @@ import { formatBRL } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 
 export default function DashboardHome() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, isPlatformAdmin } = useAuth();
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(true);
@@ -84,7 +84,7 @@ export default function DashboardHome() {
         <div>
           <h1 className="text-3xl font-heading flex items-center gap-3">
              {salonData.name}
-             {userData?.role === 'platform_admin' ? (
+             {isPlatformAdmin ? (
                 <span className="text-[10px] uppercase tracking-wider bg-primary text-black font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                    <Star className="w-3 h-3" /> MASTER
                 </span>

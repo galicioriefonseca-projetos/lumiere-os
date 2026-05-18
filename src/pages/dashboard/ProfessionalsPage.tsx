@@ -12,8 +12,8 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Edit2, Power, PowerOff, UserMinus } from 'lucide-react';
 
 export default function ProfessionalsPage() {
-  const { salonData, userData } = useAuth();
-  const isAdmin = userData?.role === 'platform_admin';
+  const { salonData, isPlatformAdmin } = useAuth();
+  const isAdmin = isPlatformAdmin;
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);

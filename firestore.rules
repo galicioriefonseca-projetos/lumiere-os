@@ -13,7 +13,10 @@ service cloud.firestore {
     }
     
     function isPlatformAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+      let isExplicitAdmin = exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+      let userDoc = /databases/$(database)/documents/users/$(request.auth.uid);
+      let isUserAdmin = exists(userDoc) && get(userDoc).data.role == "platform_admin";
+      return isSignedIn() && (isExplicitAdmin || isUserAdmin);
     }
     
     function isSalonMember(salonId) {
@@ -46,8 +49,8 @@ service cloud.firestore {
                   (isSignedIn() && resource.data.salonId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.salonId);
       
       // Only creation from client side logic using Auth UID
-      // In a real app this should have a tight schema validator
-      allow create: if isOwnerOfUser(userId);
+      // Normal user cannot create platform_admin role
+      allow create: if isOwnerOfUser(userId) && request.resource.data.role != 'platform_admin';
       allow update: if (isOwnerOfUser(userId) || isPlatformAdmin()) && 
                     (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId']) || isPlatformAdmin());
     }

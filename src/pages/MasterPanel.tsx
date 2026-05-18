@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
 
 export default function MasterPanel() {
-  const { logout } = useAuth();
+  const { logout, isPlatformAdmin } = useAuth();
   const [salons, setSalons] = useState<Salon[]>([]);
   const [filteredSalons, setFilteredSalons] = useState<Salon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +25,11 @@ export default function MasterPanel() {
   const [selectedPlan, setSelectedPlan] = useState<PlanType>('start');
 
   useEffect(() => {
+    if (!isPlatformAdmin) {
+      setLoading(false);
+      return;
+    }
+
     const q = query(collection(db, 'salons'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const arr: Salon[] = [];
@@ -35,14 +40,14 @@ export default function MasterPanel() {
       setSalons(sorted);
       setFilteredSalons(sorted);
       setLoading(false);
-    }, (error) => {
+    }, (error: any) => {
       console.error(error);
-      toast.error('Erro ao carregar salões.');
+      toast.error(`Erro ao carregar salões: ${error.message}`);
       setLoading(false);
     });
     
     return () => unsubscribe();
-  }, []);
+  }, [isPlatformAdmin]);
 
   useEffect(() => {
     const s = search.toLowerCase();
@@ -128,6 +133,19 @@ export default function MasterPanel() {
     return (
       <div className="min-h-screen bg-background flex flex-col">
          <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+      </div>
+    );
+  }
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="min-h-screen bg-background/95 flex flex-col items-center justify-center p-4">
+         <ShieldAlert className="w-16 h-16 text-destructive mb-4" />
+         <h1 className="text-2xl font-bold mb-2 text-foreground">Acesso Negado</h1>
+         <p className="text-muted-foreground mb-6">Você não tem permissão de Platform Admin.</p>
+         <Button variant="outline" asChild>
+            <Link to="/dashboard"><Home className="w-4 h-4 mr-2" />Voltar ao Dashboard</Link>
+         </Button>
       </div>
     );
   }
@@ -241,9 +259,8 @@ export default function MasterPanel() {
           <p>Para conceder direitos de Master a outro usuário, vá no Console do Firestore:</p>
           <ol className="list-decimal ml-5 mt-1 space-y-1 opacity-90 text-xs text-muted-foreground">
             <li>Encontre o UID do usuário na aba <b>Authentication</b>.</li>
-            <li>No <b>Firestore</b>, vá na coleção <code className="text-primary">users</code> e edite o documento com o UID do usuário.</li>
-            <li>Altere o campo <code className="text-primary">role</code> para <code className="text-primary">"platform_admin"</code>.</li>
-            <li>Crie um documento na coleção <code className="text-primary">platformAdmins</code> com o ID igual ao UID do usuário (não precisa ter campos internos, o documento apenas precisa existir).</li>
+            <li>No <b>Firestore</b>, crie um documento na coleção <code className="text-primary">platformAdmins</code> com o ID igual ao UID do usuário (não precisa ter campos internos).</li>
+            <li>Opicionalmente, você pode alterar o campo <code className="text-primary">role</code> do documento do usuário em <code className="text-primary">users</code> para <code className="text-primary">"platform_admin"</code>, mas a coleção do passo anterior agora garante prioridade nas regras.</li>
           </ol>
         </div>
 

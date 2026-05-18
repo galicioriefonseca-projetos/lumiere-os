@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { PWAInstallButton } from '../PWAInstallButton';
 
 export default function DashboardLayout() {
-  const { userData, salonData, logout } = useAuth();
+  const { userData, salonData, isPlatformAdmin, logout } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -69,7 +69,7 @@ export default function DashboardLayout() {
             )
           })}
           
-          {userData?.role === 'platform_admin' && (
+          {isPlatformAdmin && (
             <Link
               to="/master"
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mt-8 text-primary shadow-[0_0_15px_rgba(212,175,55,0.1)] hover:bg-primary/10 border border-primary/20"
@@ -120,14 +120,14 @@ export default function DashboardLayout() {
           <div className="flex items-center gap-4">
              {/* Plan badge */}
              <div className="hidden sm:flex items-center px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs text-muted-foreground">
-               <span className="uppercase tracking-wider mr-2 font-bold text-primary">{userData?.role === 'platform_admin' ? 'MASTER' : salonData?.plan}</span> 
-               | Status: {userData?.role === 'platform_admin' ? 'ativo' : salonData?.subscriptionStatus}
+               <span className="uppercase tracking-wider mr-2 font-bold text-primary">{isPlatformAdmin ? 'MASTER' : salonData?.plan}</span> 
+               | Status: {isPlatformAdmin ? 'ativo' : salonData?.subscriptionStatus}
              </div>
           </div>
         </header>
 
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          {salonData?.subscriptionStatus === 'trial' && userData?.role !== 'platform_admin' && (
+          {salonData?.subscriptionStatus === 'trial' && !isPlatformAdmin && (
              <div className="mb-6 bg-primary/10 border border-primary/20 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                    <h4 className="font-medium text-primary flex items-center gap-2"><Sparkles className="w-4 h-4"/> Você está no período de teste</h4>

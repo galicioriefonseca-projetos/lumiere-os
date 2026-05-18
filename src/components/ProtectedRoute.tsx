@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 export function ProtectedRoute({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) {
-  const { currentUser, userData, loading } = useAuth();
+  const { currentUser, isPlatformAdmin, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -19,7 +19,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requireAdmin && userData?.role !== 'platform_admin') {
+  if (requireAdmin && !isPlatformAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 
