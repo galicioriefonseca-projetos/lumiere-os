@@ -17,6 +17,13 @@ export default function MasterPanel() {
   const { logout, isPlatformAdmin, userData } = useAuth();
   const [salons, setSalons] = useState<Salon[]>([]);
   const [bugReports, setBugReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filteredSalons, setFilteredSalons] = useState<Salon[]>([]);
+  const [selectedSalon, setSelectedSalon] = useState<Salon | null>(null);
+  const [dialogAction, setDialogAction] = useState<string>('');
+  const [selectedPlan, setSelectedPlan] = useState<any>('start');
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!isPlatformAdmin) {
@@ -24,10 +31,15 @@ export default function MasterPanel() {
        return;
     }
     
-    // ...salons query...
     const q = query(collection(db, 'salons'));
     const unsubSalons = onSnapshot(q, (snapshot) => {
-        // ... (existing salon loader)
+      const arr: Salon[] = [];
+      snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Salon));
+      setSalons(arr.sort((a, b) => b.createdAt - a.createdAt));
+      setLoading(false);
+    }, (err) => {
+      console.error("Salons load error:", err);
+      setLoading(false);
     });
 
     const qB = query(collection(db, 'bugReports'));

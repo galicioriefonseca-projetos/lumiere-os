@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User as AuthUser, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { User, Salon } from '../types';
+import { User, Salon, Role } from '../types';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -12,6 +12,8 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   refreshUserData: () => Promise<void>;
+  demoRole: Role | null;
+  setDemoRole: (role: Role | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -22,6 +24,8 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: async () => {},
   refreshUserData: async () => {},
+  demoRole: null,
+  setDemoRole: () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -30,6 +34,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [salonData, setSalonData] = useState<Salon | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [demoRole, setDemoRoleState] = useState<Role | null>(() => {
+    return sessionStorage.getItem('demo_role') as Role | null;
+  });
+
+  const setDemoRole = (role: Role | null) => {
+    setDemoRoleState(role);
+    if (role) {
+      sessionStorage.setItem('demo_role', role);
+    } else {
+      sessionStorage.removeItem('demo_role');
+    }
+  };
+
+  const effectiveUserData = userData && demoRole 
+    ? { ...userData, role: demoRole, fullName: demoRole === 'professional' ? "Profissional de Teste" : userData.fullName } 
+    : userData;
 
   if (!auth || !db) {
     return (
@@ -110,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, userData, salonData, isPlatformAdmin, loading, logout, refreshUserData }}>
+    <AuthContext.Provider value={{ currentUser, userData: effectiveUserData, salonData, isPlatformAdmin, loading, logout, refreshUserData, demoRole, setDemoRole }}>
       {!loading && children}
     </AuthContext.Provider>
   );

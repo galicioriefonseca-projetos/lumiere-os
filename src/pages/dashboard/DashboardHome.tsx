@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, ArrowRight, Users, Scissors, UserPlus, CalendarPlus, Target, ListTodo, Star } from 'lucide-react';
 import { formatBRL } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
+import ProfessionalDashboard from './ProfessionalDashboard';
 
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
@@ -57,12 +58,12 @@ export default function DashboardHome() {
        } else {
          setStats(p => ({...p, goalTarget: 0, goalCurrent: 0}));
        }
-    }));
+     }));
 
     // Checklist Today
     const qk = query(collection(db, `salons/${salonData.id}/checklistRuns`), where('date', '==', todayStr));
     unsubs.push(onSnapshot(qk, snap => {
-       const runs = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+       const runs = snap.docs.map(doc => ({id: doc.id, ...doc.data()}) as any);
        setChecklistRuns(runs);
        
        let isProfessionalEval = false;
@@ -83,6 +84,10 @@ export default function DashboardHome() {
 
   if (loading || !salonData) {
     return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  }
+
+  if (userData?.role === 'professional') {
+    return <ProfessionalDashboard />;
   }
 
   const goalPct = stats.goalTarget > 0 ? Math.min(Math.round((stats.goalCurrent / stats.goalTarget) * 100), 100) : 0;
@@ -118,24 +123,35 @@ export default function DashboardHome() {
         </div>
       </div>
 
-      {professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id)).length > 0 && (
-         <Card className="border-orange-500/50 bg-orange-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                  <div className="bg-orange-500 p-2 rounded-full">
-                     <ListTodo className="w-5 h-5 text-black" />
-                  </div>
-                  <div>
-                     <p className="font-bold text-orange-200">Avaliações Pendentes</p>
-                     <p className="text-sm text-orange-100">Existem profissionais que ainda não foram avaliados hoje.</p>
-                  </div>
-               </div>
-               <Button onClick={() => navigate('/dashboard/checklist')} variant="outline" className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black">
-                  Avaliar Agora
-               </Button>
-            </CardContent>
-         </Card>
-      )}
+      {professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id)).length > 0 && (() => {
+        const pendingOnes = professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id));
+        const names = pendingOnes.map(p => p.name).join(", ");
+        return (
+          <Card className="border border-amber-500/20 bg-amber-500/5 rounded-2xl shadow-xl overflow-hidden">
+             <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                   <div className="bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 mt-0.5">
+                      <ListTodo className="w-5 h-5 text-amber-500 animate-pulse" />
+                   </div>
+                   <div>
+                      <p className="font-heading font-semibold text-amber-400 text-sm flex items-center gap-2">
+                        Avaliação Diária Essenza: {pendingOnes.length} {pendingOnes.length === 1 ? 'Pendente' : 'Pendentes'}
+                      </p>
+                      <p className="text-xs text-muted-foreground font-light leading-relaxed mt-1">
+                        Profissionais pendentes hoje: <span className="text-foreground font-medium">{names}</span>. Registre a presença ou falta deles para manter os relatórios diários em dia.
+                      </p>
+                   </div>
+                </div>
+                <Button 
+                  onClick={() => navigate('/dashboard/checklist')} 
+                  className="w-full md:w-auto shrink-0 bg-primary hover:bg-gold-400 text-black font-semibold text-xs h-9 rounded-xl px-4"
+                >
+                   Avaliar Equipe
+                </Button>
+             </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Grid Menu Acesso Rápido */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -210,7 +226,7 @@ export default function DashboardHome() {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-light"><span className="text-primary font-bold">{stats.clients}</span> Clientes</div>
-            <div className="text-sm text-muted-foreground"><span className="text-foreground">{stats.professionals}</span> Profissionais</div>
+            <div className="text-sm text-muted-foreground"><span className="text-foreground">{professionals.length}</span> Profissionais</div>
           </CardContent>
         </Card>
 

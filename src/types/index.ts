@@ -104,6 +104,16 @@ export interface Goal {
   updatedAt: number;
 }
 
+export interface ProfessionalGoal {
+  id: string; // professionalId_month
+  professionalId: string;
+  professionalName: string;
+  month: string; // YYYY-MM
+  targetAmount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ChecklistItemTemplate {
   id: string;
   label: string;

@@ -129,5 +129,18 @@ export const predefinedTemplates: PredefinedTemplate[] = [
       { label: 'Repor materiais', required: true },
       { label: 'Conferir descarte correto', required: true }
     ]
+  },
+  {
+    title: 'Checklist de Manutenção de Equipamentos',
+    description: 'Conservação de equipamentos e controle de validade de produtos.',
+    type: 'standard',
+    checklistGroup: 'operational',
+    scoringMode: 'checkbox',
+    items: [
+      { label: 'Verificar validade de produtos', required: true },
+      { label: 'Limpar equipamentos', required: true },
+      { label: 'Organizar área de trabalho', required: true },
+      { label: 'Conferir funcionamento de autoclaves e secadores', required: true }
+    ]
   }
 ];

@@ -14,18 +14,22 @@ import {
   Sparkles,
   Menu,
   X,
-  CreditCard
+  CreditCard,
+  HelpCircle,
+  FileText
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
 import { PWAInstallButton } from '../PWAInstallButton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function DashboardLayout() {
-  const { userData, salonData, isPlatformAdmin, logout } = useAuth();
+  const { userData, salonData, isPlatformAdmin, logout, setDemoRole } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
-  const navigation = [
+  const baseNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
     { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
     { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
@@ -35,6 +39,13 @@ export default function DashboardLayout() {
     { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
     { name: 'Metas', href: '/dashboard/metas', icon: Target },
   ];
+
+  const navigation = userData?.role === 'professional'
+    ? [
+        { name: 'Painel Profissional', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        { name: 'Minha Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+      ]
+    : baseNavigation;
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -119,7 +130,29 @@ export default function DashboardLayout() {
             </h1>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+             {/* Guia do Sistema Button */}
+             <Button
+               size="sm"
+               variant="outline"
+               onClick={() => setIsGuideOpen(true)}
+               className="text-xs h-8 border-primary/20 hover:border-primary/50 text-primary hover:bg-primary/10 transition-all font-semibold rounded-xl bg-white/5 flex items-center gap-1.5 shrink-0"
+             >
+               <HelpCircle className="w-4 h-4 text-primary" />
+               <span className="hidden sm:inline">Guia do Sistema</span>
+               <span className="sm:hidden">Ajuda</span>
+             </Button>
+
+             {/* Demo Role Switcher */}
+             <Button 
+               size="sm" 
+               variant="outline" 
+               onClick={() => setDemoRole(userData?.role === 'professional' ? null : 'professional')}
+               className="text-[10px] h-8 border-primary/20 hover:border-primary/50 text-primary hover:bg-primary/10 transition-all uppercase font-mono tracking-wider font-bold shrink-0"
+             >
+               {userData?.role === 'professional' ? 'Ver Proprietário' : 'Ver Profissional'}
+             </Button>
+
              {/* Plan badge */}
              <div className="hidden sm:flex items-center px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs text-muted-foreground">
                <span className="uppercase tracking-wider mr-2 font-bold text-primary">{isPlatformAdmin ? 'MASTER' : salonData?.plan}</span> 
@@ -158,6 +191,15 @@ export default function DashboardLayout() {
            </div>
            {/* Re-use navigation logic here, keeping short for brevity */}
            <div className="p-4 space-y-2 flex-1">
+             <div className="mb-4">
+               <Button 
+                 onClick={() => { setIsMobileMenuOpen(false); setIsGuideOpen(true); }}
+                 variant="outline"
+                 className="w-full text-primary border-primary/20 hover:bg-primary/5 h-10 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 bg-white/5"
+               >
+                 <HelpCircle className="w-4 h-4" /> Guia do Sistema
+               </Button>
+             </div>
              {navigation.map(item => (
                 <Link key={item.name} to={item.href} onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 p-3 text-lg">
                   <item.icon className="w-5 h-5 text-primary" /> {item.name}
@@ -172,6 +214,150 @@ export default function DashboardLayout() {
            </div>
         </div>
       )}
+
+      {/* Guia do Sistema Modal */}
+      <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
+        <DialogContent className="max-w-4xl bg-[#0a0a0c]/98 border border-white/10 text-white rounded-2xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto w-[94vw] sm:w-[90vw]">
+          <DialogHeader className="border-b border-white/5 pb-4">
+            <DialogTitle className="text-xl md:text-2xl font-heading font-light tracking-tight text-white flex items-center gap-2">
+              <Sparkles className="w-5 md:w-6 h-5 md:h-6 text-primary animate-pulse" /> Guia do Sistema LumiereOS
+            </DialogTitle>
+            <p className="text-[#a1a1aa] text-xs font-light mt-1">
+              Descubra como aproveitar ao máximo cada módulo do seu sistema operacional de salão de beleza premium.
+            </p>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 font-sans max-h-[50vh] overflow-y-auto pr-2">
+            {/* Dashboard */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <LayoutDashboard className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Dashboard</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Visão geral do salão, metas, agenda, checklist do dia e indicadores principais. Monitore as métricas vitais da sua operação em tempo real.
+                </p>
+              </div>
+            </div>
+
+            {/* Agenda */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <CalendarDays className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Agenda</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Controle dos atendimentos, horários, clientes, serviços e profissionais. Permite agendar rapidamente e visualizar os compromissos diários ou semanais.
+                </p>
+              </div>
+            </div>
+
+            {/* Clientes */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <Users className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Clientes</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Cadastro e histórico básico dos clientes. Acompanhe quem são seus clientes mais fiéis, suas preferências e histórico completo de visitas.
+                </p>
+              </div>
+            </div>
+
+            {/* Profissionais */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <Users className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Profissionais</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Cadastro da equipe, funções, status e informações operacionais. Gerencie o time e acompanhe a disponibilidade de cada parceiro do salão.
+                </p>
+              </div>
+            </div>
+
+            {/* Serviços */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <Scissors className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Serviços e Categorias</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Cadastro dos serviços, preços, duração e categorias. Organize seu catálogo de atendimentos com precisão para facilitar os agendamentos.
+                </p>
+              </div>
+            </div>
+
+            {/* Checklist */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <CheckSquare className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Checklist</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Rotinas operacionais e Avaliação Diária da Equipe (Módulo Essenza). Garanta a conformidade da abertura/fechamento e avalie diariamente sua equipe.
+                </p>
+              </div>
+            </div>
+
+            {/* Metas */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <Target className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Metas</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Acompanhamento da meta mensal e progresso financeiro. Defina objetivos claros de faturamento e veja o progresso de vendas do estabelecimento.
+                </p>
+              </div>
+            </div>
+
+            {/* Relatórios */}
+            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
+              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                <FileText className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Relatórios</h4>
+                <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                  Consulta de histórico de avaliações, notas consolidadas da equipe e exportação de rotinas diárias e avaliações Essenza em formato PDF de alta qualidade.
+                </p>
+              </div>
+            </div>
+
+            {/* Painel Master */}
+            {isPlatformAdmin && (
+              <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl flex gap-3 hover:border-primary/35 transition-all md:col-span-2">
+                <div className="p-2 h-max rounded-lg bg-primary/20 border border-primary/30 shrink-0">
+                  <Settings className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Painel Master</h4>
+                    <span className="text-[8px] bg-primary text-black font-bold px-1.5 py-0.5 rounded uppercase font-mono tracking-widest">Apenas Admin</span>
+                  </div>
+                  <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
+                    Área administrativa exclusiva de nível de plataforma. Permite gerenciar salões afiliados, planos, visualizações financeiras e o suporte geral do ecossistema LumiereOS.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end pt-4 border-t border-white/5 mt-4">
+            <Button onClick={() => setIsGuideOpen(false)} className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-9">
+              Entendido
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
