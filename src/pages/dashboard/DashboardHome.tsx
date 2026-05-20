@@ -14,8 +14,10 @@ export default function DashboardHome() {
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(true);
+  const [professionals, setProfessionals] = useState<any[]>([]);
+  const [checklistRuns, setChecklistRuns] = useState<any[]>([]);                
   const [stats, setStats] = useState({
-    professionals: 0,
+    goals: 0,
     clients: 0,
     todayAppointments: 0,
     goalTarget: 0,
@@ -29,13 +31,14 @@ export default function DashboardHome() {
   useEffect(() => {
     if (!salonData) return;
     
-    // Using simple gets for dashboard stats to avoid too many listeners, 
-    // but onSnapshot is also fine. Let's use onSnapshot for reactiveness.
     const unsubs: (() => void)[] = [];
 
     // Professionals
     const qp = query(collection(db, `salons/${salonData.id}/professionals`), where('isActive', '==', true));
-    unsubs.push(onSnapshot(qp, snap => setStats(p => ({...p, professionals: snap.docs.length}))));
+    unsubs.push(onSnapshot(qp, snap => {
+        const pros = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+        setProfessionals(pros);
+    }));
 
     // Clients
     const qc = query(collection(db, `salons/${salonData.id}/clients`));
@@ -59,16 +62,24 @@ export default function DashboardHome() {
     // Checklist Today
     const qk = query(collection(db, `salons/${salonData.id}/checklistRuns`), where('date', '==', todayStr));
     unsubs.push(onSnapshot(qk, snap => {
-       if (!snap.empty) {
-         setStats(p => ({...p, checklistPct: snap.docs[0].data().completionPercentage}));
+       const runs = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+       setChecklistRuns(runs);
+       
+       let isProfessionalEval = false;
+       runs.forEach(r => { if (r.evaluatedProfessionalId) isProfessionalEval = true; });
+       
+       if (isProfessionalEval) {
+         const evaluatedPros = runs.filter(r => r.evaluatedProfessionalId).length;
+         const pct = professionals.length > 0 ? Math.round((evaluatedPros / professionals.length) * 100) : 0;
+         setStats(p => ({...p, checklistPct: pct}));
        } else {
-         setStats(p => ({...p, checklistPct: 0}));
+         setStats(p => ({...p, checklistPct: runs.length > 0 ? runs[0].completionPercentage || 0 : 0}));
        }
        setLoading(false);
     }));
 
     return () => unsubs.forEach(u => u());
-  }, [salonData]);
+  }, [salonData, professionals.length]);
 
   if (loading || !salonData) {
     return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -106,6 +117,25 @@ export default function DashboardHome() {
            </Button>
         </div>
       </div>
+
+      {professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id)).length > 0 && (
+         <Card className="border-orange-500/50 bg-orange-500/10">
+            <CardContent className="p-4 flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                  <div className="bg-orange-500 p-2 rounded-full">
+                     <ListTodo className="w-5 h-5 text-black" />
+                  </div>
+                  <div>
+                     <p className="font-bold text-orange-200">Avaliações Pendentes</p>
+                     <p className="text-sm text-orange-100">Existem profissionais que ainda não foram avaliados hoje.</p>
+                  </div>
+               </div>
+               <Button onClick={() => navigate('/dashboard/checklist')} variant="outline" className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-black">
+                  Avaliar Agora
+               </Button>
+            </CardContent>
+         </Card>
+      )}
 
       {/* Grid Menu Acesso Rápido */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

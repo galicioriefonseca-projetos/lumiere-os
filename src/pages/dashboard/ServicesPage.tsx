@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { Service, Category } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2, Plus, Edit2, Power, PowerOff, Scissors } from 'lucide-react';
+import { Loader2, Plus, Edit2, Power, PowerOff, Scissors, Trash2 } from 'lucide-react';
 import { formatBRL } from '@/lib/utils';
 
 export default function ServicesPage() {
@@ -20,6 +20,7 @@ export default function ServicesPage() {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -107,6 +108,19 @@ export default function ServicesPage() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!salonData) return;
+    try {
+      const ref = doc(db, `salons/${salonData.id}/services`, id);
+      await deleteDoc(ref);
+      toast.success('Serviço excluído com sucesso.');
+      setDeleteConfirmId(null);
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao excluir serviço.');
+    }
+  };
+
   const openEdit = (item: Service) => {
     setEditingService(item);
     setFormData({ 
@@ -176,6 +190,27 @@ export default function ServicesPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+          <DialogContent className="sm:max-w-[400px] bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="font-heading text-lg text-red-500">Confirmar Exclusão</DialogTitle>
+            </DialogHeader>
+            <div className="py-2">
+              <p className="text-sm text-muted-foreground">
+                Tem certeza que deseja excluir este serviço? Esta ação não pode ser desfeita e removerá o serviço permanentemente.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}>
+                Excluir
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {services.length === 0 ? (
@@ -212,6 +247,9 @@ export default function ServicesPage() {
                     <div className="flex justify-between items-center mt-2">
                        <span className="text-xl font-bold">{formatBRL(item.price)}</span>
                        <span className="text-sm text-muted-foreground">{item.durationMinutes} min</span>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteConfirmId(item.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                  </CardContent>
                </Card>

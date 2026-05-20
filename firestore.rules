@@ -36,7 +36,7 @@ service cloud.firestore {
 
     // platformAdmins collection
     match /platformAdmins/{userId} {
-      allow read: if isPlatformAdmin();
+      allow read: if isOwnerOfUser(userId) || isPlatformAdmin();
     }
 
     // Users collection
@@ -57,8 +57,8 @@ service cloud.firestore {
 
     // Salons collection
     match /salons/{salonId} {
-      // Create is open to any authenticated user just signing up
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      // Create is open to any authenticated user just signing up, or platform admin
+      allow create: if (isSignedIn() && request.resource.data.ownerId == request.auth.uid) || isPlatformAdmin();
       
       // Read is allowed for members or platform admins
       allow get: if isSalonMember(salonId) || isPlatformAdmin();
@@ -73,6 +73,14 @@ service cloud.firestore {
                      )));
                      
       allow delete: if isPlatformAdmin();
+    }
+
+    // Bug Reports
+    match /bugReports/{bugReportId} {
+      allow create: if isSignedIn();
+      allow read: if (isSignedIn() && request.auth.uid == resource.data.userId) || isPlatformAdmin();
+      allow update: if isPlatformAdmin();
+      allow list: if isPlatformAdmin();
     }
 
     // Helper for subcollections

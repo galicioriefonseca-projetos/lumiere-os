@@ -27,7 +27,7 @@ export default function OnboardingLayout() {
         <div className="max-w-4xl mx-auto px-6 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-primary" />
-            <span className="text-xl font-heading font-medium tracking-wide">Lumiere</span>
+            <span className="text-xl font-heading font-medium tracking-wide">Lumière</span>
           </div>
           <div className="text-sm text-muted-foreground uppercase tracking-widest font-heading">
             Onboarding

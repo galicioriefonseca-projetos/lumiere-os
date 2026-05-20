@@ -31,6 +31,7 @@ export interface Salon {
   trialEndsAt: number;
   isActive: boolean;
   professionalsLimit: number;
+  isDemo?: boolean;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -107,23 +108,76 @@ export interface ChecklistItemTemplate {
   id: string;
   label: string;
   required: boolean;
+  category?: string;
+  points?: number; // max points (e.g. 5)
+}
+
+export interface ClassificationRule {
+  min: number;
+  max: number;
+  label: string;
 }
 
 export interface Checklist {
   id: string;
   title: string;
+  description?: string;
+  type?: 'standard' | 'professional_daily_evaluation';
+  checklistGroup?: 'operational' | 'professional_evaluation';
+  scoringMode?: 'checkbox' | 'rating_1_5';
+  scoreBy?: 'item' | 'category';
+  maxScore?: number;
+  categories?: string[];
   items: ChecklistItemTemplate[];
+  classificationRules?: ClassificationRule[];
+  scale?: Record<number, string>;
   isActive: boolean;
-  createdAt: number;
-  updatedAt: number;
+  createdAt: any;
+  updatedAt: any;
 }
 
 export interface ChecklistRun {
   id: string;
   checklistId: string;
+  checklistTitle?: string;
+  checklistType?: string;
+  scoringMode?: 'checkbox' | 'rating_1_5';
   date: string; // YYYY-MM-DD
+  evaluationDate?: string; // YYYY-MM-DD
   completedItems: string[]; // array of item ids
   completionPercentage: number;
-  createdAt: number;
-  updatedAt: number;
+  
+  // Professional Evaluation Specifics
+  evaluatedProfessionalId?: string;
+  evaluatedProfessionalName?: string;
+  evaluatorName?: string;
+  attendanceStatus?: 'present' | 'absent';
+  categoryScores?: Record<string, number>; // Maps category name or item id to a score (1-5)
+  totalScore?: number;
+  maxScore?: number;
+  percentage?: number;
+  classification?: string;
+  observations?: string;
+  absenceReason?: string;
+  status?: string;
+
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface BugReport {
+  id: string;
+  type: 'bug' | 'feature' | 'question';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  description: string;
+  pagePath: string;
+  salonId: string;
+  salonName: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  status: 'open' | 'reviewing' | 'resolved' | 'dismissed';
+  createdAt: any;
+  updatedAt: any;
 }

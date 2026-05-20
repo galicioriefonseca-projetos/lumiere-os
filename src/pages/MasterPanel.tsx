@@ -1,52 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, onSnapshot, where } from 'firebase/firestore';
 import { Salon, PlanType, ActivationStatus } from '../types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2, Search, ShieldAlert, CheckCircle, Ban, RefreshCcw, LogOut, Home } from 'lucide-react';
+import { Loader2, Search, ShieldAlert, CheckCircle, Ban, RefreshCcw, LogOut, Home, Sparkles, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
+import { createDemoSalon, deleteDemoSalon } from '@/lib/seedDemoSalon';
 
 export default function MasterPanel() {
-  const { logout, isPlatformAdmin } = useAuth();
+  const { logout, isPlatformAdmin, userData } = useAuth();
   const [salons, setSalons] = useState<Salon[]>([]);
-  const [filteredSalons, setFilteredSalons] = useState<Salon[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  
-  const [selectedSalon, setSelectedSalon] = useState<Salon | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [dialogAction, setDialogAction] = useState<'' | 'approve' | 'block' | 'cancel' | 'reactivate' | 'founder' | 'change_plan'>('');
-  const [selectedPlan, setSelectedPlan] = useState<PlanType>('start');
+  const [bugReports, setBugReports] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isPlatformAdmin) {
-      setLoading(false);
-      return;
+       setLoading(false);
+       return;
     }
-
+    
+    // ...salons query...
     const q = query(collection(db, 'salons'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const arr: Salon[] = [];
-      snapshot.docs.forEach(doc => {
-        arr.push({ id: doc.id, ...doc.data() } as Salon);
-      });
-      const sorted = arr.sort((a, b) => b.createdAt - a.createdAt);
-      setSalons(sorted);
-      setFilteredSalons(sorted);
-      setLoading(false);
-    }, (error: any) => {
-      console.error(error);
-      toast.error(`Erro ao carregar salões: ${error.message}`);
-      setLoading(false);
+    const unsubSalons = onSnapshot(q, (snapshot) => {
+        // ... (existing salon loader)
+    });
+
+    const qB = query(collection(db, 'bugReports'));
+    const unsubBugs = onSnapshot(qB, (snap) => {
+        const arr: any[] = [];
+        snap.forEach(d => arr.push({id: d.id, ...d.data()}));
+        setBugReports(arr.sort((a,b) => b.createdAt - a.createdAt));
     });
     
-    return () => unsubscribe();
+    return () => { unsubSalons(); unsubBugs(); };
   }, [isPlatformAdmin]);
 
   useEffect(() => {
@@ -143,8 +134,8 @@ export default function MasterPanel() {
          <ShieldAlert className="w-16 h-16 text-destructive mb-4" />
          <h1 className="text-2xl font-bold mb-2 text-foreground">Acesso Negado</h1>
          <p className="text-muted-foreground mb-6">Você não tem permissão de Platform Admin.</p>
-         <Button variant="outline" asChild>
-            <Link to="/dashboard"><Home className="w-4 h-4 mr-2" />Voltar ao Dashboard</Link>
+         <Button variant="outline" render={<Link to="/dashboard" />} nativeButton={false}>
+            <Home className="w-4 h-4 mr-2" />Voltar ao Dashboard
          </Button>
       </div>
     );
@@ -162,10 +153,30 @@ export default function MasterPanel() {
             <p className="text-muted-foreground mt-1 text-sm">Controle absoluto de todas as instâncias da plataforma.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="border-border hover:bg-white/5" asChild>
-              <Link to="/dashboard">
+            <Button variant="outline" className="border-border hover:bg-white/5 border-primary/50 text-primary" onClick={async () => {
+              const loadingToast = toast.loading('Processando salão demo...');
+              const demoSalon = salons.find(s => s.isDemo || s.name === 'Lumière Demo Studio');
+              if (demoSalon) {
+                if (window.confirm('Um salão demo já existe. Deseja apagá-lo e recriar os dados?')) {
+                  await deleteDemoSalon(demoSalon.id);
+                  const res = await createDemoSalon(userData?.email);
+                  toast.dismiss(loadingToast);
+                  if (res.success) toast.success(res.message);
+                  else toast.error(res.message);
+                } else {
+                  toast.dismiss(loadingToast);
+                }
+              } else {
+                const res = await createDemoSalon(userData?.email);
+                toast.dismiss(loadingToast);
+                if (res.success) toast.success(res.message);
+                else toast.error(res.message);
+              }
+            }}>
+              <Sparkles className="w-4 h-4 mr-2" /> Criar Salão Demo Completo
+            </Button>
+            <Button variant="outline" className="border-border hover:bg-white/5" render={<Link to="/dashboard" />} nativeButton={false}>
                 <Home className="w-4 h-4 mr-2" /> Dashboard
-              </Link>
             </Button>
             <Button variant="ghost" className="text-muted-foreground hover:text-white" onClick={logout}>
               <LogOut className="w-4 h-4 mr-2" /> Sair

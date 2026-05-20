@@ -27,8 +27,12 @@ export default function LoginPage() {
       toast.success('Login efetuado com sucesso.');
       navigate(from, { replace: true });
     } catch (error: any) {
-      console.error(error);
-      toast.error('Erro ao acessar. Verifique suas credenciais.');
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        toast.error('E-mail ou senha incorretos. Verifique suas credenciais.');
+      } else {
+        console.error('Login error:', error);
+        toast.error('Erro ao acessar: ' + (error.message || 'Verifique suas credenciais.'));
+      }
     } finally {
       setLoading(false);
     }
@@ -42,7 +46,7 @@ export default function LoginPage() {
         <div className="flex justify-center mb-8">
           <Link to="/" className="flex items-center gap-2 group">
             <Sparkles className="w-10 h-10 text-primary transition-transform group-hover:scale-110" />
-            <span className="text-3xl font-heading font-medium tracking-wide">Lumiere</span>
+            <span className="text-3xl font-heading font-medium tracking-wide">Lumière</span>
           </Link>
         </div>
         <h2 className="mt-6 text-center text-3xl font-light font-heading tracking-tight text-foreground">

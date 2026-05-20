@@ -43,7 +43,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-8 h-8 text-primary" />
-            <span className="text-2xl font-heading font-medium tracking-wide">Lumiere</span>
+            <span className="text-2xl font-heading font-medium tracking-wide">Lumière</span>
           </div>
           <div className="flex space-x-4 items-center">
             <Link to="/login" className="text-sm font-medium hover:text-primary transition-colors">
@@ -83,7 +83,7 @@ export default function LandingPage() {
               transition={{ duration: 0.8, delay: 0.2 }}
               className="text-lg md:text-xl text-muted-foreground font-light max-w-2xl mx-auto leading-relaxed"
             >
-              Lumiere é o ecossistema definitivo para donos de salões, clínicas e barbearias que exigem controle absoluto, design impecável e experiência premium.
+              Lumière é o ecossistema definitivo para donos de salões, clínicas e barbearias que exigem controle absoluto, design impecável e experiência premium.
             </motion.p>
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
@@ -113,7 +113,7 @@ export default function LandingPage() {
              <div className="relative z-10 flex-1 space-y-4">
                  <h3 className="text-3xl font-heading text-foreground">Sempre com você</h3>
                  <p className="text-muted-foreground font-light text-lg">
-                   O Lumiere foi projetado para funcionar perfeitamente no seu celular. Instale nosso aplicativo diretamente do navegador (PWA) e acesse seu sistema com um toque, sem ocupar espaço no seu aparelho.
+                   O Lumière foi projetado para funcionar perfeitamente no seu celular. Instale nosso aplicativo diretamente do navegador (PWA) e acesse seu sistema com um toque, sem ocupar espaço no seu aparelho.
                  </p>
              </div>
              <div className="relative z-10">
@@ -205,10 +205,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-primary" />
-            <span className="text-xl font-heading tracking-wide">Lumiere</span>
+            <span className="text-xl font-heading tracking-wide">Lumière</span>
           </div>
           <p className="text-sm text-muted-foreground font-light">
-            © {new Date().getFullYear()} Lumiere. O Padrão Ouro em Gestão.
+            © {new Date().getFullYear()} Lumière. O Padrão Ouro em Gestão.
           </p>
         </div>
       </footer>

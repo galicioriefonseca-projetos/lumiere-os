@@ -16,8 +16,8 @@ export default defineConfig(({mode}) => {
           enabled: true
         },
         manifest: {
-          name: 'Lumiere',
-          short_name: 'Lumiere',
+          name: 'Lumière',
+          short_name: 'Lumière',
           description: 'Gestão premium para salões e clínicas',
           theme_color: '#0A0A0A',
           background_color: '#0A0A0A',

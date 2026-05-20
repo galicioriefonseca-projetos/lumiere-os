@@ -16,6 +16,7 @@ import {
   X,
   CreditCard
 } from 'lucide-react';
+import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
 import { PWAInstallButton } from '../PWAInstallButton';
 
@@ -42,7 +43,7 @@ export default function DashboardLayout() {
         <div className="h-20 flex items-center px-6 border-b border-white/5">
           <Link to="/dashboard" className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-primary" />
-            <span className="text-xl font-heading font-medium tracking-wide">Lumiere</span>
+            <span className="text-xl font-heading font-medium tracking-wide">Lumière</span>
           </Link>
         </div>
         
@@ -94,6 +95,7 @@ export default function DashboardLayout() {
               <p className="text-xs text-muted-foreground truncate">{salonData?.name}</p>
             </div>
           </div>
+          <BugReportDialog />
           <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={logout}>
             <LogOut className="w-4 h-4 mr-2" />
             Sair
@@ -108,7 +110,7 @@ export default function DashboardLayout() {
             <button onClick={() => setIsMobileMenuOpen(true)}>
               <Menu className="w-6 h-6 text-foreground" />
             </button>
-            <span className="font-heading font-medium tracking-wide">Lumiere</span>
+            <span className="font-heading font-medium tracking-wide">Lumière</span>
           </div>
           
           <div className="hidden md:flex items-center">

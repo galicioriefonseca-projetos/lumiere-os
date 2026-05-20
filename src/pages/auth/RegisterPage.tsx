@@ -15,6 +15,14 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const planParam = searchParams.get('plan') || 'start';
+  const codeParam = searchParams.get('code');
+
+  useEffect(() => {
+    if (planParam === 'founder' && codeParam !== 'ESSENZAFOUNDER') {
+        toast.error("Código de Plano Founder Inválido, redirecionando...");
+        navigate('/');
+    }
+  }, [planParam, codeParam, navigate]);
   
   const [formData, setFormData] = useState({
     ownerName: '',
@@ -97,12 +105,16 @@ export default function RegisterPage() {
 
       await setDoc(doc(db, 'users', user.uid), userData);
 
-      toast.success('Conta criada com sucesso! Bem-vindo ao Lumiere.');
+      toast.success('Conta criada com sucesso! Bem-vindo ao Lumière.');
       navigate('/onboarding/equipe', { replace: true });
       
     } catch (error: any) {
       console.error(error);
-      toast.error('Erro ao criar conta: ' + (error.message || 'Erro desconhecido'));
+      if (error.code === 'auth/email-already-in-use') {
+        toast.error('Este e-mail já está cadastrado. Por favor, faça login ou use outro e-mail.');
+      } else {
+        toast.error('Erro ao criar conta: ' + (error.message || 'Erro desconhecido'));
+      }
     } finally {
       setLoading(false);
     }
@@ -116,7 +128,7 @@ export default function RegisterPage() {
         <div className="flex justify-center mb-6">
           <Link to="/" className="flex items-center gap-2 group">
             <Sparkles className="w-10 h-10 text-primary transition-transform group-hover:scale-110" />
-            <span className="text-3xl font-heading font-medium tracking-wide">Lumiere</span>
+            <span className="text-3xl font-heading font-medium tracking-wide">Lumière</span>
           </Link>
         </div>
         <h2 className="text-center text-3xl font-light font-heading tracking-tight text-foreground">
