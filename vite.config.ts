@@ -12,6 +12,7 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       VitePWA({ 
         registerType: 'autoUpdate',
+        injectRegister: 'inline',
         devOptions: {
           enabled: true
         },
@@ -19,18 +20,33 @@ export default defineConfig(({mode}) => {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         },
         manifest: {
-          name: 'Lumière',
-          short_name: 'Lumière',
-          description: 'Gestão premium para salões e clínicas',
-          theme_color: '#0A0A0A',
-          background_color: '#0A0A0A',
+          name: 'LumiereOS',
+          short_name: 'Lumiere',
+          description: 'Sistema premium de gestão para salões, clínicas e barbearias',
+          theme_color: '#000000',
+          background_color: '#000000',
           display: 'standalone',
+          orientation: 'portrait',
+          start_url: '/',
+          scope: '/',
           icons: [
             {
-              src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="0" y="0" width="100" height="100" fill="%23D4AF37"/></svg>',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
-              type: 'image/svg+xml',
-              purpose: 'any maskable'
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: '/pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: '/maskable-icon-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
             }
           ]
         }

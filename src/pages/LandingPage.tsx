@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Scissors, CalendarCheck2, ArrowRight, ShieldCheck, CheckCircle2, RefreshCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
+import PWAInstallButton from '../components/PWAInstallButton';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -116,10 +117,8 @@ export default function LandingPage() {
                    O Lumière foi projetado para funcionar perfeitamente no seu celular. Instale nosso aplicativo diretamente do navegador (PWA) e acesse seu sistema com um toque, sem ocupar espaço no seu aparelho.
                  </p>
              </div>
-             <div className="relative z-10">
-                 <div className="inline-flex items-center justify-center p-1 rounded-full bg-primary/10 border border-primary/30">
-                    <span className="px-6 py-3 text-primary font-medium">Disponível via Navegador</span>
-                 </div>
+             <div className="relative z-10 shrink-0">
+                 <PWAInstallButton variant="button" />
              </div>
            </div>
         </section>

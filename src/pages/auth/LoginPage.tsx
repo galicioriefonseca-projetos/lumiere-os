@@ -9,6 +9,7 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { toast } from 'sonner';
 import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
+import PWAInstallButton from '../../components/PWAInstallButton';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
@@ -194,6 +195,10 @@ export default function LoginPage() {
               </Link>
             </p>
           </div>
+        </div>
+
+        <div className="mt-6 flex justify-center px-4 sm:px-0">
+          <PWAInstallButton variant="banner" />
         </div>
       </div>
     </div>

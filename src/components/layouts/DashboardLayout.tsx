@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
-import { PWAInstallButton } from '../PWAInstallButton';
+import PWAInstallButton from '../PWAInstallButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function DashboardLayout() {
