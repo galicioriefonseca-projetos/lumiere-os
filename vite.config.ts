@@ -21,7 +21,7 @@ export default defineConfig(({mode}) => {
         },
         manifest: {
           name: 'LumiereOS',
-          short_name: 'Lumiere',
+          short_name: 'LumiereOS',
           description: 'Sistema premium de gestão para salões, clínicas e barbearias',
           theme_color: '#000000',
           background_color: '#000000',
@@ -31,22 +31,22 @@ export default defineConfig(({mode}) => {
           scope: '/',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: '/icons/icon-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/pwa-512x512.png',
+              src: '/icons/icon-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any'
             },
             {
-              src: '/maskable-icon-512x512.png',
+              src: '/icons/icon-512x512.png',
               sizes: '512x512',
               type: 'image/png',
-              purpose: 'maskable'
+              purpose: 'any maskable'
             }
           ]
         }
