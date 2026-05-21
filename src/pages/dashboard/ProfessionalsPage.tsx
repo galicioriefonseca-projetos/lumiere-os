@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { collection, query, onSnapshot, doc, setDoc, updateDoc, where } from 'firebase/firestore';
 import { Professional } from '../../types';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { toast } from 'sonner';
 import { Loader2, Plus, Edit2, Power, PowerOff, UserMinus, Link2, Copy, Trash2, Check } from 'lucide-react';
 
+const roleTranslations: Record<string, string> = {
+  manager: 'Gerente',
+  receptionist: 'Recepcionista',
+  attendant: 'Atendente',
+  professional: 'Profissional',
+};
+
 interface Invite {
   id: string;
   salonId: string;
@@ -20,8 +27,8 @@ interface Invite {
   invitedByEmail: string;
   inviteType: 'manager' | 'receptionist' | 'attendant' | 'professional';
   role: string;
-  category: string;
-  email?: string;
+  category: string | null;
+  email: string | null;
   status: 'pending' | 'accepted' | 'expired' | 'canceled';
   expiresAt: number;
   createdAt: number;
@@ -29,7 +36,7 @@ interface Invite {
 }
 
 export default function ProfessionalsPage() {
-  const { salonData, userData, isPlatformAdmin } = useAuth();
+  const { salonData, userData, isPlatformAdmin, currentUser } = useAuth();
   const isAdmin = isPlatformAdmin;
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -127,28 +134,49 @@ export default function ProfessionalsPage() {
 
   const handleGenerateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData || !userData) return;
+    if (!salonData || !userData) {
+      toast.error('Erro de autenticação ou salão inválido. Tente fazer login novamente.');
+      return;
+    }
 
     try {
+      const salonId = userData.salonId || salonData.id;
+      if (!salonId) {
+        throw new Error('Identificador do salão não encontrado (undefined salonId).');
+      }
+
+      const invitedByUserId = userData.id || currentUser?.uid || auth.currentUser?.uid;
+      if (!invitedByUserId) {
+        throw new Error('Identificador do usuário convidante não encontrado (undefined invitedByUserId).');
+      }
+
+      const invitedByName = userData.fullName || currentUser?.displayName || 'Administrador';
+      const invitedByEmail = userData.email || currentUser?.email || '';
+
       const inviteId = doc(collection(db, 'invites')).id;
       const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7; // 7 days
 
-      let displayRole = 'Profissional';
-      if (inviteFormData.inviteType === 'manager') displayRole = 'Gerente';
-      if (inviteFormData.inviteType === 'receptionist') displayRole = 'Recepcionista';
-      if (inviteFormData.inviteType === 'attendant') displayRole = 'Atendente';
+      // Normalize role - must be exactly one of: manager, receptionist, attendant, professional
+      const selectedRole = inviteFormData.inviteType; 
+      if (!['manager', 'receptionist', 'attendant', 'professional'].includes(selectedRole)) {
+        throw new Error('Função selecionada inválida.');
+      }
+
+      // Handle optional fields - convert empty to null, never send undefined
+      const categoryValue = inviteFormData.category?.trim() || null;
+      const emailValue = inviteFormData.email?.trim() || null;
 
       const inviteDoc: Invite = {
         id: inviteId,
-        salonId: salonData.id,
+        salonId,
         salonName: salonData.name,
-        invitedByUserId: userData.id,
-        invitedByName: userData.fullName,
-        invitedByEmail: userData.email || '',
-        inviteType: inviteFormData.inviteType,
-        role: displayRole,
-        category: inviteFormData.category || displayRole,
-        email: inviteFormData.email || '',
+        invitedByUserId,
+        invitedByName,
+        invitedByEmail,
+        inviteType: selectedRole,
+        role: selectedRole, // MUST be technical role identifier for security rules
+        category: categoryValue,
+        email: emailValue,
         status: 'pending',
         expiresAt,
         createdAt: Date.now(),
@@ -160,9 +188,16 @@ export default function ProfessionalsPage() {
       const link = `${window.location.origin}/cadastro-profissional?invite=${inviteId}`;
       setGeneratedLink(link);
       toast.success('Link de convite gerado!');
-    } catch (err) {
-      console.error(err);
-      toast.error('Erro ao gerar convite.');
+    } catch (err: any) {
+      console.error("Erro ao gerar convite:", err);
+      const errMsg = err?.message || '';
+      if (err?.code === 'permission-denied' || errMsg.includes('permission-denied') || errMsg.includes('Permission denied')) {
+        toast.error('Você não tem permissão para gerar convites. Apenas proprietário ou gerente podem convidar.');
+      } else if (errMsg.includes('undefined') || JSON.stringify(err).includes('undefined')) {
+        toast.error('Erro interno: dados obrigatórios do convite não foram preenchidos.');
+      } else {
+        toast.error('Erro ao gerar convite. Tente novamente.');
+      }
     }
   };
 
@@ -373,9 +408,11 @@ export default function ProfessionalsPage() {
               return (
                 <div key={invite.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl gap-3">
                   <div className="space-y-0.5 min-w-0">
-                    <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      {invite.category} 
-                      <span className="text-[10px] uppercase bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold font-mono">{invite.inviteType}</span>
+                    <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
+                      {invite.category || roleTranslations[invite.role] || invite.role} 
+                      <span className="text-[10px] uppercase bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold font-mono">
+                        {roleTranslations[invite.inviteType] || invite.inviteType}
+                      </span>
                     </p>
                     <p className="text-[10px] text-muted-foreground truncate">{invite.email ? `Exclusivo para: ${invite.email}` : 'Qualquer e-mail'}</p>
                   </div>

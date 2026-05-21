@@ -25,6 +25,17 @@ interface Invite {
   createdAt: number;
 }
 
+const roleTranslations: Record<string, string> = {
+  manager: 'Gerente',
+  receptionist: 'Recepcionista',
+  attendant: 'Atendente',
+  professional: 'Profissional',
+  'Gerente': 'Gerente',
+  'Recepcionista': 'Recepcionista',
+  'Atendente': 'Atendente',
+  'Profissional': 'Profissional',
+};
+
 export default function InviteRegisterPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -289,7 +300,10 @@ export default function InviteRegisterPage() {
         </h2>
         <p className="mt-2 text-center text-sm text-muted-foreground font-light">
           Você foi convidado para fazer parte do <span className="text-primary font-bold">{inviteData?.salonName}</span> como{' '}
-          <span className="text-primary font-bold lowercase">{inviteData?.role} ({inviteData?.category})</span>.
+          <span className="text-primary font-bold lowercase">
+            {inviteData ? (roleTranslations[inviteData.role] || inviteData.role) : ''}
+            {inviteData?.category ? ` (${inviteData.category})` : ''}
+          </span>.
         </p>
       </div>
 
