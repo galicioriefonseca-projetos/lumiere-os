@@ -15,6 +15,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Checklist, ChecklistRun, ChecklistItemTemplate } from "../../types";
+import { canEvaluateTeam } from "../../lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,7 +74,7 @@ function removeUndefinedDeep(obj: any): any {
 }
 
 export default function ChecklistPage() {
-  const { salonData } = useAuth();
+  const { salonData, userData } = useAuth();
   const [activeOperationalChecklists, setActiveOperationalChecklists] =
     useState<Checklist[]>([]);
   const [operationalRuns, setOperationalRuns] = useState<ChecklistRun[]>([]);
@@ -464,7 +465,7 @@ export default function ChecklistPage() {
       evaluatedProfessionalName:
         professionals.find((p) => p.id === evalProfessionalId)?.name ||
         "Unknown",
-      evaluatorName: "Admin", // Temporary hardcoded
+      evaluatorName: userData?.fullName || "Administrador",
       attendanceStatus: attendanceStatus,
       observations: observations,
       categoryScores: attendanceStatus === "present" ? categoryScores : {},
@@ -688,7 +689,8 @@ export default function ChecklistPage() {
 
       <div className="space-y-8">
         {/* A) Avaliação de Hoje */}
-        <section className="space-y-4">
+        {canEvaluateTeam(userData?.role) && (
+          <section className="space-y-4">
           <h3 className="text-xl font-heading">Avaliação de Hoje</h3>
           {!activeProfessionalEvaluationChecklist ? (
             <Card>
@@ -1370,9 +1372,11 @@ export default function ChecklistPage() {
             </Card>
           )}
         </section>
+        )}
 
         {/* B) Relatórios */}
-        <section className="space-y-4">
+        {canEvaluateTeam(userData?.role) && (
+          <section className="space-y-4">
           <h3 className="text-xl font-heading">Relatórios de Avaliação</h3>
           <Card>
             <CardContent className="py-6 space-y-4">
@@ -1396,6 +1400,7 @@ export default function ChecklistPage() {
             </CardContent>
           </Card>
         </section>
+        )}
 
         {/* C) Operational */}
         <section className="space-y-4 pt-4 border-t border-white/5">

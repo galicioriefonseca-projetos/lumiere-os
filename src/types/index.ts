@@ -1,4 +1,4 @@
-export type Role = 'owner' | 'admin' | 'manager' | 'professional' | 'platform_admin';
+export type Role = 'owner' | 'admin' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
 export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'other';
 export type PlanType = 'start' | 'studio' | 'performance' | 'network' | 'founder';
 export type SubscriptionStatus = 'trial' | 'active' | 'overdue' | 'canceled';

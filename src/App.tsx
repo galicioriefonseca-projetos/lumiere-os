@@ -7,6 +7,7 @@ import { Toaster } from '@/components/ui/sonner';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import InviteRegisterPage from './pages/auth/InviteRegisterPage';
 import DashboardLayout from './components/layouts/DashboardLayout';
 import DashboardHome from './pages/dashboard/DashboardHome';
 import ProfessionalsPage from './pages/dashboard/ProfessionalsPage';
@@ -31,6 +32,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/cadastro" element={<RegisterPage />} />
+          <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
           
           <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
             <Route path="equipe" element={<OnboardingTeam />} />
@@ -42,6 +44,8 @@ function App() {
 
           <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route index element={<DashboardHome />} />
+            <Route path="profissional" element={<DashboardHome />} />
+            <Route path="meu-painel" element={<DashboardHome />} />
             <Route path="equipe" element={<ProfessionalsPage />} />
             <Route path="servicos" element={<ServicesPage />} />
             <Route path="categorias" element={<CategoriesPage />} />

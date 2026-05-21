@@ -11,23 +11,39 @@ import { toast } from 'sonner';
 import { AlertCircle } from 'lucide-react';
 
 export function BugReportDialog() {
-  const { user, salonData } = useAuth();
+  const { userData, salonData } = useAuth();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({ type: 'bug', priority: 'medium', title: '', description: '' });
 
   const handleSubmit = async () => {
-    if (!user || !salonData) return;
+    if (!userData) {
+      toast.error("Para reportar um problema você precisa estar autenticado.");
+      return;
+    }
+
+    if (!formData.title.trim()) {
+      toast.error("Por favor, insira o título do problema.");
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      toast.error("Por favor, insira a descrição do problema.");
+      return;
+    }
+
     try {
         const bugRef = doc(collection(db, 'bugReports'));
         await setDoc(bugRef, {
             ...formData,
+            title: formData.title.trim(),
+            description: formData.description.trim(),
             id: bugRef.id,
             pagePath: window.location.pathname,
-            salonId: salonData.id,
-            salonName: salonData.name,
-            userId: user.id,
-            userEmail: user.email,
-            userName: user.fullName,
+            salonId: salonData?.id || 'GLOBAL_PLATFORM',
+            salonName: salonData?.name || 'Administração Global',
+            userId: userData.id,
+            userEmail: userData.email,
+            userName: userData.fullName,
             status: 'open',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -36,7 +52,7 @@ export function BugReportDialog() {
         setOpen(false);
         setFormData({ type: 'bug', priority: 'medium', title: '', description: '' });
     } catch (e) {
-        toast.error("Erro ao reportar");
+        toast.error("Erro ao reportar o problema.");
         console.error(e);
     }
   };

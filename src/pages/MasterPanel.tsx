@@ -132,6 +132,54 @@ export default function MasterPanel() {
     }
   };
 
+  const handleUpdateBugStatus = async (bugId: string, newStatus: string) => {
+    try {
+      const ref = doc(db, 'bugReports', bugId);
+      await updateDoc(ref, {
+        status: newStatus,
+        updatedAt: Date.now()
+      });
+      toast.success('Status do problema atualizado com sucesso!');
+    } catch (error: any) {
+      console.error("Bug update status error:", error);
+      toast.error('Erro ao atualizar status do problema.');
+    }
+  };
+
+  const getBugTypeLabel = (type: string) => {
+    switch (type) {
+      case 'bug': return 'Bug';
+      case 'feature': return 'Melhoria';
+      case 'question': return 'Dúvida';
+      default: return type;
+    }
+  };
+
+  const getBugPriorityClass = (priority: string) => {
+    switch (priority) {
+      case 'critical': return 'text-red-400 bg-red-500/10 border-red-500/20';
+      case 'high': return 'text-orange-400 bg-orange-500/10 border-orange-500/20';
+      case 'medium': return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
+      default: return 'text-sky-400 bg-sky-500/10 border-sky-500/20';
+    }
+  };
+
+  const getBugPriorityLabel = (priority: string) => {
+    switch (priority) {
+      case 'critical': return 'Crítico';
+      case 'high': return 'Alto';
+      case 'medium': return 'Médio';
+      default: return 'Baixo';
+    }
+  };
+
+  const formatBugDate = (ts: any) => {
+    if (!ts) return '-';
+    if (ts.toDate) return ts.toDate().toLocaleString('pt-BR');
+    if (ts.seconds) return new Date(ts.seconds * 1000).toLocaleString('pt-BR');
+    return new Date(ts).toLocaleString('pt-BR');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -273,6 +321,85 @@ export default function MasterPanel() {
                   </tbody>
                 </table>
               </div>
+           </CardContent>
+        </Card>
+
+        <Card className="border-border bg-black/40">
+           <CardHeader>
+             <CardTitle className="text-xl">Relatórios de Problemas e Feedback ({bugReports.length})</CardTitle>
+           </CardHeader>
+           <CardContent className="space-y-4">
+              {bugReports.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground font-light text-sm">
+                   Nenhum problema reportado até o momento.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs uppercase bg-black/50 text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Data / Página</th>
+                        <th className="px-4 py-3 font-medium">Título & Descrição</th>
+                        <th className="px-4 py-3 font-medium">Empresa / Usuário</th>
+                        <th className="px-4 py-3 font-medium">Prioridade / Tipo</th>
+                        <th className="px-4 py-3 font-medium text-right">Status / Atualizar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bugReports.map((bug) => (
+                        <tr key={bug.id} className="border-b border-border hover:bg-white/[0.02]">
+                          <td className="px-4 py-3 text-xs text-muted-foreground text-left">
+                            <div className="flex flex-col gap-1">
+                               <span className="font-medium text-foreground">{formatBugDate(bug.createdAt)}</span>
+                               <span className="opacity-80 font-mono text-[10px] truncate max-w-[140px]" title={bug.pagePath}>{bug.pagePath}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 max-w-sm text-left">
+                            <div className="flex flex-col gap-1">
+                               <span className="font-semibold text-foreground text-sm">{bug.title}</span>
+                               <span className="text-xs text-muted-foreground opacity-90 line-clamp-2" title={bug.description}>{bug.description}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground text-left">
+                            <div className="flex flex-col gap-1">
+                               <span className="font-semibold text-foreground">{bug.salonName}</span>
+                               <span>{bug.userName} ({bug.userEmail})</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-left">
+                             <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getBugPriorityClass(bug.priority)}`}>
+                                   {getBugPriorityLabel(bug.priority)}
+                                </span>
+                                <span className="bg-white/5 border border-white/10 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                                   {getBugTypeLabel(bug.type)}
+                                </span>
+                             </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                             <div className="flex justify-end items-center gap-2">
+                                <Select 
+                                  value={bug.status || 'open'} 
+                                  onValueChange={(val) => handleUpdateBugStatus(bug.id, val)}
+                                >
+                                  <SelectTrigger className="h-8 w-32 bg-black/20 border-border text-xs focus:ring-1 focus:ring-primary text-white">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-card border-border">
+                                    <SelectItem value="open">Aberto</SelectItem>
+                                    <SelectItem value="reviewing">Em Análise</SelectItem>
+                                    <SelectItem value="resolved">Resolvido</SelectItem>
+                                    <SelectItem value="dismissed">Desconsiderado</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                             </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
            </CardContent>
         </Card>
 

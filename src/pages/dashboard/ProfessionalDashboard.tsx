@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, query, onSnapshot, where, doc, updateDoc, getDocs } from "firebase/firestore";
-import { Appointment, ChecklistRun, Professional } from "../../types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { collection, query, onSnapshot, where, doc, updateDoc } from "firebase/firestore";
+import { Appointment, ChecklistRun, Professional, ProfessionalGoal, Service } from "../../types";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useSearchParams } from "react-router-dom";
 import { 
   Calendar, 
   Clock, 
@@ -22,77 +23,185 @@ import {
   ShieldAlert,
   CalendarCheck2,
   Loader2,
+  DollarSign,
+  Target,
+  Filter,
 } from "lucide-react";
-import { formatBRL } from "@/lib/utils";
+import { formatBRL, cn } from "@/lib/utils";
 
 export default function ProfessionalDashboard() {
   const { userData, salonData } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") || "painel";
+
   const [loading, setLoading] = useState(true);
   const [myProfile, setMyProfile] = useState<Professional | null>(null);
   const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
   const [myEvaluations, setMyEvaluations] = useState<ChecklistRun[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [myGoals, setMyGoals] = useState<ProfessionalGoal[]>([]);
   const [selectedEval, setSelectedEval] = useState<ChecklistRun | null>(null);
   const [agendaTab, setAgendaTab] = useState<"today" | "all">("today");
 
   const todayStr = new Date().toISOString().substring(0, 10);
+  const currentMonthStr = new Date().toISOString().substring(0, 7);
 
   useEffect(() => {
     if (!salonData || !userData) return;
 
-    // 1. Load active professionals to find the corresponding team profile
-    const qp = query(collection(db, `salons/${salonData.id}/professionals`));
-    const unsubscribeProfs = onSnapshot(qp, (snap) => {
-      const pros: Professional[] = [];
-      snap.forEach(d => {
-        pros.push({ id: d.id, ...d.data() } as Professional);
-      });
+    let unsubscribeAppts: (() => void) | null = null;
+    let unsubscribeEvals: (() => void) | null = null;
+    let unsubscribeServices: (() => void) | null = null;
+    let unsubscribeGoals: (() => void) | null = null;
 
-      // Match by email or matched exactly by full name
-      const matched = pros.find(
-        p => p.email?.toLowerCase().trim() === userData.email?.toLowerCase().trim() ||
-             p.name.toLowerCase().trim() === userData.fullName?.toLowerCase().trim()
-      );
+    const cleanupInner = () => {
+      if (unsubscribeAppts) unsubscribeAppts();
+      if (unsubscribeEvals) unsubscribeEvals();
+      if (unsubscribeServices) unsubscribeServices();
+      if (unsubscribeGoals) unsubscribeGoals();
+    };
 
-      if (matched) {
-        setMyProfile(matched);
+    let unsubscribeProfs: () => void;
 
-        // 2. Load Appointments for this specific matched professional
-        const qa = query(
-          collection(db, `salons/${salonData.id}/appointments`),
-          where("professionalId", "==", matched.id)
-        );
-        const unsubscribeAppts = onSnapshot(qa, (snapAppt) => {
-          const arr: Appointment[] = [];
-          snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
-          setMyAppointments(
-            arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+    if (userData.role === 'professional') {
+      const docRef = doc(db, `salons/${salonData.id}/professionals`, userData.id);
+      unsubscribeProfs = onSnapshot(docRef, (docSnap) => {
+        cleanupInner();
+
+        if (docSnap.exists()) {
+          const matched = { id: docSnap.id, ...docSnap.data() } as Professional;
+          setMyProfile(matched);
+
+          // 1. Load Appointments
+          const qa = query(
+            collection(db, `salons/${salonData.id}/appointments`),
+            where("professionalId", "==", matched.id)
           );
-        });
+          unsubscribeAppts = onSnapshot(qa, (snapAppt) => {
+            const arr: Appointment[] = [];
+            snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
+            setMyAppointments(
+              arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+            );
+          });
 
-        // 3. Load Evaluations (ChecklistRuns of type daily evaluation) for this professional
-        const qe = query(
-          collection(db, `salons/${salonData.id}/checklistRuns`),
-          where("checklistType", "==", "professional_daily_evaluation"),
-          where("evaluatedProfessionalId", "==", matched.id)
-        );
-        const unsubscribeEvals = onSnapshot(qe, (snapEval) => {
-          const arr: ChecklistRun[] = [];
-          snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
-          // Sort by date descending
-          setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
+          // 2. Load Evaluations
+          const qe = query(
+            collection(db, `salons/${salonData.id}/checklistRuns`),
+            where("checklistType", "==", "professional_daily_evaluation"),
+            where("evaluatedProfessionalId", "==", matched.id)
+          );
+          unsubscribeEvals = onSnapshot(qe, (snapEval) => {
+            const arr: ChecklistRun[] = [];
+            snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
+            setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
+            
+            if (arr.length > 0 && !selectedEval) {
+              setSelectedEval(arr[0]);
+            }
+          });
+
+          // 3. Load Services to map pricing
+          const qs = query(collection(db, `salons/${salonData.id}/services`));
+          unsubscribeServices = onSnapshot(qs, (snapServ) => {
+            const arr: Service[] = [];
+            snapServ.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
+            setServices(arr);
+          });
+
+          // 4. Load Goals
+          const qg = query(
+            collection(db, `salons/${salonData.id}/professionalGoals`),
+            where("professionalId", "==", matched.id)
+          );
+          unsubscribeGoals = onSnapshot(qg, (snapGoal) => {
+            const arr: ProfessionalGoal[] = [];
+            snapGoal.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+            setMyGoals(arr);
+            setLoading(false);
+          });
+        } else {
           setLoading(false);
+        }
+      });
+    } else {
+      // For owners, managers or platform_admin using Dashboard demo view
+      const qp = query(collection(db, `salons/${salonData.id}/professionals`));
+      unsubscribeProfs = onSnapshot(qp, (snap) => {
+        cleanupInner();
+
+        const pros: Professional[] = [];
+        snap.forEach(d => {
+          pros.push({ id: d.id, ...d.data() } as Professional);
         });
 
-        return () => {
-          unsubscribeAppts();
-          unsubscribeEvals();
-        };
-      } else {
-        setLoading(false);
-      }
-    });
+        // Match profile
+        const matched = pros.find(
+          p => p.email?.toLowerCase().trim() === userData.email?.toLowerCase().trim() ||
+               p.name.toLowerCase().trim() === userData.fullName?.toLowerCase().trim()
+        );
 
-    return () => unsubscribeProfs();
+        if (matched) {
+          setMyProfile(matched);
+
+          // 1. Load Appointments
+          const qa = query(
+            collection(db, `salons/${salonData.id}/appointments`),
+            where("professionalId", "==", matched.id)
+          );
+          unsubscribeAppts = onSnapshot(qa, (snapAppt) => {
+            const arr: Appointment[] = [];
+            snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
+            setMyAppointments(
+              arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+            );
+          });
+
+          // 2. Load Evaluations
+          const qe = query(
+            collection(db, `salons/${salonData.id}/checklistRuns`),
+            where("checklistType", "==", "professional_daily_evaluation"),
+            where("evaluatedProfessionalId", "==", matched.id)
+          );
+          unsubscribeEvals = onSnapshot(qe, (snapEval) => {
+            const arr: ChecklistRun[] = [];
+            snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
+            setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
+            
+            if (arr.length > 0 && !selectedEval) {
+              setSelectedEval(arr[0]);
+            }
+          });
+
+          // 3. Load Services to map pricing
+          const qs = query(collection(db, `salons/${salonData.id}/services`));
+          unsubscribeServices = onSnapshot(qs, (snapServ) => {
+            const arr: Service[] = [];
+            snapServ.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
+            setServices(arr);
+          });
+
+          // 4. Load Goals
+          const qg = query(
+            collection(db, `salons/${salonData.id}/professionalGoals`),
+            where("professionalId", "==", matched.id)
+          );
+          unsubscribeGoals = onSnapshot(qg, (snapGoal) => {
+            const arr: ProfessionalGoal[] = [];
+            snapGoal.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+            setMyGoals(arr);
+            setLoading(false);
+          });
+        } else {
+          setLoading(false);
+        }
+      });
+    }
+
+    return () => {
+      unsubscribeProfs();
+      cleanupInner();
+    };
   }, [salonData, userData]);
 
   const changeApptStatus = async (apptId: string, status: Appointment["status"]) => {
@@ -113,7 +222,6 @@ export default function ProfessionalDashboard() {
     );
   }
 
-  // Handle case where logged in user role is 'professional' but owner hasn't linked them inside 'Equipe'
   if (!myProfile) {
     return (
       <Card className="border-border bg-card/50 max-w-xl mx-auto mt-6">
@@ -123,11 +231,11 @@ export default function ProfessionalDashboard() {
           </div>
           <h2 className="text-xl font-heading mb-2">Perfil Pendente de Vinculação</h2>
           <p className="text-muted-foreground text-sm font-light leading-relaxed mb-6">
-            Sua conta de acesso de sistema foi criada, mas seu perfil profissional ainda não foi localizado na equipe ativa do salão.
+            Sua conta de acesso do sistema foi criada, mas seu perfil profissional ainda não foi localizado na equipe ativa do salão.
             <br /><br />
             Solicite ao seu administrador que cadastre seu e-mail ou nome idêntico na aba <b>Equipe</b>.
           </p>
-          <div className="bg-muted p-4 rounded-xl w-full text-left space-y-2 border border-white/5">
+          <div className="bg-muted p-4 rounded-xl w-full text-left space-y-2 border border-white/5 font-mono">
             <p className="text-xs text-muted-foreground">E-mail: <b className="text-foreground">{userData?.email}</b></p>
             <p className="text-xs text-muted-foreground">Nome: <b className="text-foreground">{userData?.fullName}</b></p>
           </div>
@@ -136,15 +244,26 @@ export default function ProfessionalDashboard() {
     );
   }
 
-  // Stats calculations
+  // Earnings calculations
+  const myCompletedAppts = myAppointments.filter(a => a.status === 'completed');
+  const totalEarnings = myCompletedAppts.reduce((sum, appt) => {
+    const service = services.find(s => s.id === appt.serviceId);
+    return sum + (service?.price || 0);
+  }, 0);
+
+  const currentMonthEarnings = myCompletedAppts
+    .filter(a => a.date.startsWith(currentMonthStr))
+    .reduce((sum, appt) => {
+      const service = services.find(s => s.id === appt.serviceId);
+      return sum + (service?.price || 0);
+    }, 0);
+
+  // Stats Calculations
   const totalAppointments = myAppointments.filter(a => a.status === 'completed' || a.status === 'scheduled').length;
-  const completedAppointments = myAppointments.filter(a => a.status === 'completed').length;
+  const completedAppointments = myCompletedAppts.length;
   const presenceCount = myEvaluations.filter(e => e.attendanceStatus === 'present').length;
   const absenceCount = myEvaluations.filter(e => e.attendanceStatus === 'absent').length;
-  
-  // Calculate average rating from daily evaluations
-  // Essenza total score is out of 40. Scale it to 1-5 average
-  // we can average the individual scores: (total / maxScore) * 5
+
   const presentEvaluations = myEvaluations.filter(e => e.attendanceStatus === 'present' && e.totalScore !== undefined);
   const overallAvg = presentEvaluations.length > 0 
     ? presentEvaluations.reduce((sum, current) => sum + ((current.totalScore || 0) / (current.maxScore || 40)) * 5, 0) / presentEvaluations.length
@@ -153,105 +272,184 @@ export default function ProfessionalDashboard() {
   const todayAppointments = myAppointments.filter(a => a.date === todayStr);
   const displayAppointments = agendaTab === "today" ? todayAppointments : myAppointments;
 
-  // Next appointment
-  const nextAppt = todayAppointments.find(a => a.status === "scheduled");
+  // Active Goal for current month
+  const currentGoal = myGoals.find(g => g.month === currentMonthStr);
+  const goalProgressPct = currentGoal && currentGoal.targetAmount > 0 
+    ? Math.min(Math.round((currentMonthEarnings / currentGoal.targetAmount) * 100), 100)
+    : 0;
+
+  // Function to switch tab
+  const setTab = (tab: string) => {
+    setSearchParams({ tab });
+  };
 
   return (
     <div className="space-y-6">
-      {/* Profiler Header card */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-card/80 to-card/20 rounded-3xl border border-white/10 p-6 md:p-8 shadow-[0_4px_30px_rgba(0,0,0,0.2)]">
+      
+      {/* Header Profile card */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-card/85 to-card/20 rounded-3xl border border-white/10 p-6 shadow-xl">
         <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-          <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-primary/20 flex items-center justify-center border-2 border-primary/20 shrink-0 text-primary text-2xl font-bold font-heading">
-            {myProfile.name.charAt(0).toUpperCase()}
+        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+          <div className="flex gap-4 items-center">
+            <div className="w-14 h-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-xl font-bold font-heading">
+              {myProfile.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <span className="text-[10px] uppercase tracking-widest font-bold text-primary">COLABORADOR PARCEIRO</span>
+              <h1 className="text-xl md:text-2xl font-heading font-light text-foreground leading-tight">
+                <b className="font-medium text-primary">{myProfile.name}</b>
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Função: {myProfile.category || myProfile.role || "Profissional"} | {salonData?.name}
+              </p>
+            </div>
           </div>
-          <div className="space-y-1">
-            <span className="text-xs uppercase tracking-widest font-bold text-primary">ÁREA DO PROFISSIONAL</span>
-            <h1 className="text-2xl md:text-3xl font-heading font-light text-foreground">
-              Olá, <b className="font-medium text-primary">{myProfile.name}</b>
-            </h1>
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <Smile className="w-4 h-4 text-primary" /> {myProfile.role} | {salonData?.name}
-            </p>
+          
+          {/* Quick tab switcher within the page */}
+          <div className="flex flex-wrap gap-1.5 bg-black/40 p-1.5 rounded-2xl border border-white/5">
+            <Button size="xs" variant={activeTab === 'painel' ? 'default' : 'ghost'} onClick={() => setTab('painel')} className="text-xs">Resumo</Button>
+            <Button size="xs" variant={activeTab === 'agenda' ? 'default' : 'ghost'} onClick={() => setTab('agenda')} className="text-xs">Minha Agenda</Button>
+            <Button size="xs" variant={activeTab === 'desempenho' ? 'default' : 'ghost'} onClick={() => setTab('desempenho')} className="text-xs">Desempenho</Button>
+            <Button size="xs" variant={activeTab === 'avaliacoes' ? 'default' : 'ghost'} onClick={() => setTab('avaliacoes')} className="text-xs">Avaliações</Button>
+            <Button size="xs" variant={activeTab === 'metas' ? 'default' : 'ghost'} onClick={() => setTab('metas')} className="text-xs">Metas {currentGoal && "🎯"}</Button>
           </div>
         </div>
       </div>
 
-      {/* KPI Stats Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Star average card */}
-        <Card className="border-border">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Minha Média Essenza</CardTitle>
-            <Star className="w-5 h-5 text-primary fill-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-light">{overallAvg > 0 ? overallAvg.toFixed(1) : "-"}</span>
-              <span className="text-xs text-muted-foreground">de 5.0 estrelas</span>
-            </div>
-            {presentEvaluations.length > 0 ? (
-              <p className="text-xs text-muted-foreground mt-3">
-                Calculado com base em <b className="text-foreground">{presentEvaluations.length}</b> avaliações este mês.
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-3">Ainda não há avaliações de feedback.</p>
-            )}
-          </CardContent>
-        </Card>
+      {/* ==================== SCREEN: OVERVIEW (PAINEL) ==================== */}
+      {activeTab === 'painel' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            
+            {/* Rating card */}
+            <Card className="border-border bg-card/60">
+              <CardContent className="p-4 flex flex-col justify-between h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Média Essenza</span>
+                  <Star className="w-4 h-4 text-primary fill-primary" />
+                </div>
+                <div className="text-3xl font-light">{overallAvg > 0 ? overallAvg.toFixed(1) : "-"} <span className="text-[10px] text-muted-foreground font-sans">/ 5.0</span></div>
+                <p className="text-[10px] text-muted-foreground/80 mt-2">Baseado em {presentEvaluations.length} feedback(s)</p>
+              </CardContent>
+            </Card>
 
-        {/* Presence and attendance card */}
-        <Card className="border-border">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Frequência</CardTitle>
-            <CalendarCheck2 className="w-5 h-5 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
-              <div>
-                <span className="text-3xl font-light text-green-400">{presenceCount}</span>
-                <p className="text-[10px] text-muted-foreground uppercase">Presenças</p>
-              </div>
-              <div className="w-px bg-border h-12" />
-              <div>
-                <span className="text-3xl font-light text-destructive">{absenceCount}</span>
-                <p className="text-[10px] text-muted-foreground uppercase">Faltas</p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-3">
-              Total de dias acompanhados pela gerência.
-            </p>
-          </CardContent>
-        </Card>
+            {/* Attendance card */}
+            <Card className="border-border bg-card/60">
+              <CardContent className="p-4 flex flex-col justify-between h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Assiduidade</span>
+                  <CalendarCheck2 className="w-4 h-4 text-primary" />
+                </div>
+                <div className="text-3xl font-light text-green-400">{presenceCount} <span className="text-xs text-muted-foreground">presenças</span></div>
+                <p className="text-[10px] mt-2 text-destructive">{absenceCount} falta(s) registrada(s)</p>
+              </CardContent>
+            </Card>
 
-        {/* Appointments stats card */}
-        <Card className="border-border">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Agendamentos</CardTitle>
-            <Award className="w-5 h-5 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-light">{completedAppointments}</span>
-              <span className="text-sm text-muted-foreground"> / {totalAppointments} concluídos</span>
-            </div>
-            {totalAppointments > 0 && (
-              <div className="mt-3 space-y-1">
-                <Progress value={(completedAppointments / totalAppointments) * 100} className="h-1.5 bg-background" />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            {/* Appointments card */}
+            <Card className="border-border bg-card/60">
+              <CardContent className="p-4 flex flex-col justify-between h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Atendimentos</span>
+                  <CheckCircle className="w-4 h-4 text-primary" />
+                </div>
+                <div className="text-3xl font-light">{completedAppointments} <span className="text-xs text-muted-foreground">/ {totalAppointments}</span></div>
+                <p className="text-[10px] text-muted-foreground mt-2">Conclusão de agendamentos</p>
+              </CardContent>
+            </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Agenda Section */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-heading font-medium flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-primary" /> Minha Agenda
-            </h3>
-            <div className="flex gap-1 bg-muted p-0.5 rounded-lg border border-white/5">
+            {/* Billing card */}
+            <Card className="border-border bg-card/60">
+              <CardContent className="p-4 flex flex-col justify-between h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Produção (Mês)</span>
+                  <DollarSign className="w-4 h-4 text-primary" />
+                </div>
+                <div className="text-3xl font-light text-[#d4af37]">{formatBRL(currentMonthEarnings)}</div>
+                <p className="text-[10px] text-muted-foreground mt-2">Total faturado neste mês</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Agenda Preview */}
+            <Card className="border-border bg-card/50">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-heading font-medium">Próximos Atendimentos</CardTitle>
+                  <CardDescription className="text-xs">Agenda operacional de hoje</CardDescription>
+                </div>
+                <Button size="xs" onClick={() => setTab("agenda")} className="border-primary/20 text-primary border rounded-xl hover:bg-primary/5 bg-transparent">Ver Todos</Button>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                {todayAppointments.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-muted-foreground">Nenhum atendimento para hoje.</div>
+                ) : (
+                  todayAppointments.slice(0, 3).map(app => (
+                    <div key={app.id} className="flex justify-between items-center p-3 bg-black/20 rounded-xl border border-white/5">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-semibold text-primary">{app.time}</span>
+                          <span className="text-[11px] text-foreground">{app.clientName}</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">{app.serviceName}</p>
+                      </div>
+                      <span className={cn(
+                        "text-[9px] uppercase font-bold px-2 py-0.5 rounded-full",
+                        app.status === 'completed' ? "bg-green-500/10 text-green-400" : "bg-primary/10 text-primary"
+                      )}>{app.status}</span>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Last Evaluation Preview */}
+            <Card className="border-border bg-card/50">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-heading font-medium">Última Avaliação Essenza</CardTitle>
+                  <CardDescription className="text-xs">Acompanhamento diário</CardDescription>
+                </div>
+                <Button size="xs" onClick={() => setTab("avaliacoes")} className="border-primary/20 text-primary border rounded-xl hover:bg-primary/5 bg-transparent">Histórico</Button>
+              </CardHeader>
+              <CardContent className="p-4">
+                {myEvaluations.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-muted-foreground">Nenhuma avaliação cadastrada ainda.</div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-muted-foreground">{myEvaluations[0].date.split("-").reverse().join("/")}</span>
+                      <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
+                        {myEvaluations[0].attendanceStatus === 'absent' ? 'Falta' : `Nota ${myEvaluations[0].totalScore}/${myEvaluations[0].maxScore}`}
+                      </span>
+                    </div>
+                    {myEvaluations[0].observations ? (
+                      <p className="text-xs italic bg-white/5 p-3 rounded-lg text-muted-foreground mt-3">
+                        "{myEvaluations[0].observations}"
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-2">Dedicado e consistente na presença operacional.</p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+          </div>
+        </div>
+      )}
+
+      {/* ==================== SCREEN: MINHA AGENDA ==================== */}
+      {activeTab === 'agenda' && (
+        <Card className="border-border bg-card/50">
+          <CardHeader className="border-b border-white/5 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <div>
+              <CardTitle className="text-lg font-heading font-normal">Sua Agenda de Atendimentos</CardTitle>
+              <CardDescription className="text-xs">Monitore seus clientes, horários e confirme a realização dos serviços.</CardDescription>
+            </div>
+            
+            <div className="flex gap-1 bg-muted p-0.5 rounded-lg border border-white/5 self-end">
               <Button 
                 size="xs" 
                 variant={agendaTab === "today" ? "default" : "ghost"}
@@ -266,227 +464,338 @@ export default function ProfessionalDashboard() {
                 onClick={() => setAgendaTab("all")}
                 className="text-xs rounded-md"
               >
-                Todos ({myAppointments.length})
+                Todos os Períodos ({myAppointments.length})
               </Button>
             </div>
-          </div>
-
-          {displayAppointments.length === 0 ? (
-            <Card className="border-border bg-card/40">
-              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-                <Smile className="w-10 h-10 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium">Nenhum atendimento listado</p>
-                <p className="text-xs text-muted-foreground mt-1">Sua agenda está vazia para este período.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-              {displayAppointments.map(app => {
-                const isToday = app.date === todayStr;
-                return (
-                  <Card key={app.id} className="border-border bg-card/80 hover:bg-card hover:transition-colors relative overflow-hidden">
-                    {app.status === 'completed' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500" />}
-                    {app.status === 'canceled' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-destructive" />}
-                    {app.status === 'scheduled' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />}
-                    
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-start gap-2">
+          </CardHeader>
+          <CardContent className="p-4 md:p-6">
+            {displayAppointments.length === 0 ? (
+              <div className="py-12 text-center text-muted-foreground">
+                <Calendar className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p className="font-heading font-medium text-sm">Nenhum agendamento encontrado</p>
+                <p className="text-xs font-light mt-1 text-muted-foreground">Não há compromissos para a seleção atual.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {displayAppointments.map(app => {
+                  const isToday = app.date === todayStr;
+                  return (
+                    <Card key={app.id} className="border border-white/5 bg-black/20 hover:border-white/10 transition-colors relative overflow-hidden">
+                      {app.status === 'completed' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
+                      {app.status === 'canceled' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-destructive" />}
+                      {app.status === 'scheduled' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary" />}
+                      
+                      <CardContent className="p-4 flex flex-col justify-between h-full">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Clock className="w-3.5 h-3.5 text-primary" />
-                            <span className="font-mono text-xs font-semibold">{app.time}</span>
-                            {!isToday && (
-                              <span className="text-[10px] bg-white/5 border border-white/10 px-2 py-0.5 rounded-full text-muted-foreground">
-                                {app.date.split("-").reverse().slice(0, 2).join("/")}
-                              </span>
-                            )}
-                            {app.status === 'completed' ? (
-                              <span className="text-[10px] text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded-full uppercase">Concluído</span>
-                            ) : app.status === 'canceled' ? (
-                              <span className="text-[10px] text-destructive font-bold bg-destructive/10 px-2 py-0.5 rounded-full uppercase">Cancelado</span>
-                            ) : (
-                              <span className="text-[10px] text-primary font-bold bg-primary/10 px-2 py-0.5 rounded-full uppercase">Agendado</span>
-                            )}
+                          <div className="flex justify-between items-center mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-sm font-semibold text-primary">{app.time}</span>
+                              <span className="text-[10px] text-muted-foreground bg-white/5 px-2 py-0.5 rounded border border-white/5">{app.date.split("-").reverse().join("/")}</span>
+                            </div>
+                            
+                            <span className={cn(
+                              "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full font-mono",
+                              app.status === 'completed' ? "bg-green-500/10 text-green-400" :
+                              app.status === 'canceled' ? "bg-destructive/10 text-destructive" :
+                              "bg-primary/10 text-primary"
+                            )}>{app.status}</span>
                           </div>
+
                           <h4 className="font-medium text-sm text-foreground">{app.clientName}</h4>
-                          <p className="text-xs text-muted-foreground mt-1">{app.serviceName}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">Serviço: <b className="text-[#eee]">{app.serviceName}</b></p>
                           {app.notes && (
-                            <p className="text-[11px] text-muted-foreground/80 italic mt-1.5 p-1 px-2 border-l border-primary/20 bg-primary/5 rounded">
-                              Obs: {app.notes}
+                            <p className="text-xs text-muted-foreground bg-white/5 border border-white/5 p-2 rounded mt-3 italic">
+                              "{app.notes}"
                             </p>
                           )}
                         </div>
 
                         {app.status === "scheduled" && isToday && (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex gap-2 justify-end mt-4 pt-4 border-t border-white/5">
                             <Button 
-                              size="sm" 
+                              size="xs" 
                               onClick={() => changeApptStatus(app.id, 'completed')}
-                              className="bg-green-500 hover:bg-green-600 text-black text-xs font-semibold px-2 py-1 h-7 rounded-lg"
+                              className="bg-green-500 hover:bg-green-600 text-black text-xs font-semibold rounded-lg px-3"
                             >
-                              Concluir
+                              Finalizar Serviço
                             </Button>
                             <Button 
-                              size="sm" 
+                              size="xs" 
                               variant="ghost" 
                               onClick={() => changeApptStatus(app.id, 'canceled')}
-                              className="text-destructive hover:bg-destructive/10 text-xs px-2 py-1 h-7 rounded-lg"
+                              className="text-destructive hover:bg-destructive/10 text-xs rounded-lg px-3"
                             >
                               Cancelar
                             </Button>
                           </div>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Avaliacoes Section */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-heading font-medium flex items-center gap-2">
-            <Award className="w-5 h-5 text-primary" /> Avaliações Essenza de Desempenho
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Evaluations List */}
-            <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
-              {myEvaluations.length === 0 ? (
-                <Card className="border-border bg-card/40">
-                  <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-                    <FileText className="w-10 h-10 text-muted-foreground mb-3" />
-                    <p className="text-sm font-medium">Nenhuma avaliação hoje</p>
-                    <p className="text-xs text-muted-foreground mt-1">A gerência registrará suas avaliações diárias de consistência aqui.</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                myEvaluations.map(evalRun => {
-                  const isSelected = selectedEval?.id === evalRun.id;
-                  const dateFormatted = evalRun.date.split("-").reverse().join("/");
-                  
-                  return (
-                    <Card 
-                      key={evalRun.id} 
-                      onClick={() => setSelectedEval(evalRun)}
-                      className={`border-border hover:bg-card/70 cursor-pointer transition-all duration-200 relative overflow-hidden ${
-                        isSelected ? 'border-primary bg-primary/5 shadow-[0_0_15px_rgba(212,175,55,0.08)]' : 'bg-card/50'
-                      }`}
-                    >
-                      <CardContent className="p-4 flex justify-between items-center">
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">{dateFormatted}</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {evalRun.attendanceStatus === 'absent' 
-                              ? <span className="text-destructive font-semibold">Falta Registrada</span>
-                              : `Nota ${evalRun.totalScore}/${evalRun.maxScore || 40}`
-                            }
-                          </p>
-                          {evalRun.attendanceStatus !== 'absent' && (
-                            <p className="text-xs text-primary">{evalRun.classification}</p>
-                          )}
-                        </div>
-                        <ChevronRight className={`w-5 h-5 transition-transform ${isSelected ? 'translate-x-1 text-primary' : 'text-muted-foreground'}`} />
                       </CardContent>
                     </Card>
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-            {/* Evaluation Detail View */}
-            <div className="space-y-3">
-              {selectedEval ? (
-                <Card className="border-border bg-card/85 relative overflow-hidden h-full">
-                  <CardHeader className="pb-3 border-b border-white/5 flex flex-row justify-between items-center space-y-0">
-                    <div>
-                      <CardTitle className="text-sm font-heading font-medium text-primary">Avaliação de {selectedEval.date.split("-").reverse().join("/")}</CardTitle>
-                      <span className="text-[10px] text-muted-foreground">Avaliado por: {selectedEval.evaluatorName || "Administrador"}</span>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4 space-y-4 text-xs md:text-sm">
-                    {selectedEval.attendanceStatus === 'absent' ? (
-                      <div className="text-center py-6 space-y-2">
-                        <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
-                        <h4 className="font-semibold text-destructive">FALTA REGISTRADA</h4>
-                        <p className="text-xs text-muted-foreground p-3 bg-destructive/5 rounded-lg border border-destructive/10">
-                          Motivo: <br />
-                          <b className="text-foreground">{selectedEval.absenceReason || "Sem justificativa"}</b>
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-1">
-                            <span className="text-muted-foreground">Pontuação Total:</span>
-                            <b className="text-foreground text-sm font-mono">{selectedEval.totalScore} de {selectedEval.maxScore || 40} ({selectedEval.percentage ? Math.round(selectedEval.percentage) : 0}%)</b>
-                          </div>
-                          
-                          <div className="flex justify-between items-center py-1 border-b border-white/5">
-                            <span className="text-muted-foreground">Classificação:</span>
-                            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold">{selectedEval.classification}</span>
-                          </div>
-                        </div>
-
-                        {/* Individual Item Stars */}
-                        <div className="space-y-2.5 pt-2">
-                          <h4 className="font-medium text-xs text-primary uppercase tracking-widest">Notas por Categoria</h4>
-                          {selectedEval.categoryScores && Object.keys(selectedEval.categoryScores).length > 0 ? (
-                            Object.entries(selectedEval.categoryScores).map(([cat, score]) => {
-                              const valScore = Number(score) || 0;
-                              return (
-                                <div key={cat} className="space-y-1">
-                                  <div className="flex justify-between text-xs">
-                                    <span>{cat}</span>
-                                    <span className="font-bold flex items-center gap-1">
-                                      {valScore} <Star className="w-3 h-3 text-primary fill-primary shrink-0" />
-                                    </span>
-                                  </div>
-                                  <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                                    <div 
-                                      className={`h-full ${
-                                        valScore >= 4 ? "bg-primary" : valScore >= 3 ? "bg-amber-500" : "bg-yellow-500"
-                                      }`}
-                                      style={{ width: `${(valScore / 5) * 100}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <p className="text-xs text-muted-foreground">Não há notas de categorias registradas.</p>
-                          )}
-                        </div>
-
-                        {/* Observations / Comments */}
-                        {selectedEval.observations && (
-                          <div className="space-y-1 pt-2">
-                            <h4 className="font-medium text-xs text-primary uppercase tracking-widest flex items-center gap-1 leading-none">
-                              <MessageSquare className="w-3.5 h-3.5" /> Feedback & Observações
-                            </h4>
-                            <p className="text-xs text-foreground bg-white/5 p-2 rounded-lg border border-white/5 italic">
-                              "{selectedEval.observations}"
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="border-border border-dashed bg-card/10 h-full flex items-center justify-center">
-                  <div className="p-6 text-center text-muted-foreground max-w-[200px]">
-                    <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-                    <p className="text-xs font-light">Selecione uma avaliação na lista para ver o feedback detalhado por categoria.</p>
+      {/* ==================== SCREEN: MEU DESEMPENHO ==================== */}
+      {activeTab === 'desempenho' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Financial Performance */}
+            <Card className="border-border">
+              <CardHeader>
+                <CardTitle className="text-base font-medium">Evolução Faturamento do Profissional</CardTitle>
+                <CardDescription className="text-xs">Mapeia faturamento acumulado e realização de atendimentos cadastrados.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Completo</span>
+                    <p className="text-2xl font-light text-[#eeef] leading-tight mt-1">{completedAppointments}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">trabalhos</p>
                   </div>
-                </Card>
-              )}
-            </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Produção Mês</span>
+                    <p className="text-2xl font-light text-primary leading-tight mt-1">{formatBRL(currentMonthEarnings)}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{currentMonthStr}</p>
+                  </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Histórico</span>
+                    <p className="text-2xl font-light text-[#eeef] leading-tight mt-1">{formatBRL(totalEarnings)}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">acumulado</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="font-heading font-medium text-sm text-primary">Classificação do Mix de Serviços</h4>
+                  {services.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Carregando lista...</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {services.map(s => {
+                        const count = myCompletedAppts.filter(a => a.serviceId === s.id).length;
+                        if (count === 0) return null;
+                        return (
+                          <div key={s.id} className="flex justify-between items-center text-xs p-2 bg-black/10 rounded-xl">
+                            <span>{s.name}</span>
+                            <span className="font-mono text-muted-foreground">{count}x ({formatBRL(s.price * count)})</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+          </div>
+
+          <div>
+            <Card className="border-border">
+              <CardHeader>
+                <CardTitle className="text-base font-medium">Métricas Essenza</CardTitle>
+                <CardDescription className="text-xs">Classificações e aderência semanal.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-xs md:text-sm">
+                <div className="space-y-2 pb-4 border-b border-white/5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Nota Média:</span>
+                    <span className="font-bold text-primary">{overallAvg > 0 ? `${overallAvg.toFixed(2)} / 5.00` : "-"}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Presenças:</span>
+                    <span className="text-green-400 font-semibold">{presenceCount} dias</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Faltas:</span>
+                    <span className="text-destructive font-semibold">{absenceCount} dias</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <h4 className="font-heading font-medium text-xs text-primary uppercase tracking-wider">Checklist Resumo</h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed font-light">
+                    As classificações de consistência ajudam você e a gerência a acompanhar a pontualidade, atendimento premium e organização da sua bancada de trabalho diariamente.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ==================== SCREEN: HISTÓRICO DE AVALIAÇÕES ==================== */}
+      {activeTab === 'avaliacoes' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border-border bg-card/50">
+            <CardHeader>
+              <CardTitle className="text-base font-medium">Histórico de Feedbacks</CardTitle>
+              <CardDescription className="text-xs font-light">Suas avaliações diárias registradas pelo gerente ou administrador.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3">
+              {myEvaluations.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground text-xs">Nenhuma avaliação listada.</div>
+              ) : (
+                myEvaluations.map(evalRun => {
+                  const isSelected = selectedEval?.id === evalRun.id;
+                  return (
+                    <div 
+                      key={evalRun.id}
+                      onClick={() => setSelectedEval(evalRun)}
+                      className={cn(
+                        "p-4 rounded-2xl border transition-all duration-150 cursor-pointer flex justify-between items-center",
+                        isSelected ? "border-primary bg-primary/5" : "border-white/5 bg-black/10 hover:border-white/10"
+                      )}
+                    >
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">{evalRun.date.split("-").reverse().join("/")}</p>
+                        <h4 className="text-sm font-medium mt-1">
+                          {evalRun.attendanceStatus === 'absent' ? (
+                            <span className="text-destructive font-semibold">Falta Registrada</span>
+                          ) : (
+                            `Avaliação Diária: Nota ${evalRun.totalScore}/${evalRun.maxScore || 40}`
+                          )}
+                        </h4>
+                        {evalRun.classification && evalRun.attendanceStatus !== 'absent' && (
+                          <p className="text-xs text-primary mt-1 font-light">{evalRun.classification}</p>
+                        )}
+                      </div>
+                      <ChevronRight className={cn("w-5 h-5", isSelected ? "text-primary translate-x-1" : "text-muted-foreground")} />
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-card/50">
+            {selectedEval ? (
+              <CardContent className="p-6 space-y-4">
+                <div className="border-b border-white/5 pb-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-base font-semibold text-primary">Avaliação de {selectedEval.date.split("-").reverse().join("/")}</h3>
+                    <span className={cn(
+                      "text-xs px-2.5 py-0.5 rounded-full font-bold",
+                      selectedEval.attendanceStatus === 'absent' ? "bg-destructive/15 text-destructive" : "bg-primary/15 text-primary"
+                    )}>
+                      {selectedEval.attendanceStatus === 'absent' ? 'Falta' : `${selectedEval.percentage ? Math.round(selectedEval.percentage) : 0}%`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Avaliador: {selectedEval.evaluatorName || "Administrador"}</p>
+                </div>
+
+                {selectedEval.attendanceStatus === 'absent' ? (
+                  <div className="text-center py-6">
+                    <AlertCircle className="w-8 h-8 text-destructive mx-auto mb-2" />
+                    <h4 className="font-semibold text-destructive">FALTA CONFIRMADA</h4>
+                    <p className="text-xs text-muted-foreground p-3 border border-destructive/10 bg-destructive/5 rounded-xl italic mt-3">
+                      Justificativa: "{selectedEval.absenceReason || "Nenhuma observação prestada"}"
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span>Pontuação</span>
+                        <span>{selectedEval.totalScore} de {selectedEval.maxScore || 40}</span>
+                      </div>
+                      <Progress value={selectedEval.percentage || 0} className="h-1.5" />
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      <h4 className="font-heading font-medium text-xs text-primary uppercase tracking-wider">Notas por Item</h4>
+                      {selectedEval.categoryScores && Object.keys(selectedEval.categoryScores).length > 0 ? (
+                        Object.entries(selectedEval.categoryScores).map(([cat, score]) => {
+                          const valScore = Number(score) || 0;
+                          return (
+                            <div key={cat} className="space-y-1 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">{cat}</span>
+                                <span className="font-bold text-white leading-none flex items-center gap-1">{valScore} <Star className="w-3 h-3 text-primary fill-primary" /></span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Não há notas específicas mapeadas por item.</p>
+                      )}
+                    </div>
+
+                    {selectedEval.observations && (
+                      <div className="pt-4 border-t border-white/5 space-y-1.5">
+                        <span className="text-xs font-semibold text-primary">Comentários e Feedbacks:</span>
+                        <p className="text-xs italic bg-[#101014] border border-white/5 text-muted-foreground p-3 rounded-xl">
+                          "{selectedEval.observations}"
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            ) : (
+              <CardContent className="p-8 flex flex-col items-center justify-center text-center text-muted-foreground">
+                <FileText className="w-10 h-10 mb-3 opacity-30" />
+                <p className="font-medium text-sm">Selecione uma avaliação</p>
+                <p className="text-xs">Selecione uma data no histórico ao lado para abrir os detalhes do feedback Essenza.</p>
+              </CardContent>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* ==================== SCREEN: MINHAS METAS ==================== */}
+      {activeTab === 'metas' && (
+        <Card className="border-border bg-card/50">
+          <CardHeader>
+            <CardTitle className="text-base font-medium">Metas Individuais Registradas</CardTitle>
+            <CardDescription className="text-xs">Acompanhamento de faturamento do mês atual vs alvo contratual estabelecido.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 md:p-6 space-y-6">
+            {!currentGoal ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <Target className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p className="font-heading font-medium text-sm">Nenhuma meta ativa para {currentMonthStr}</p>
+                <p className="text-xs mt-1">A gerência estabelecerá metas de faturamento e comissionamento para você aqui.</p>
+              </div>
+            ) : (
+              <div className="max-w-xl mx-auto space-y-6">
+                <div className="bg-[#121217] p-6 rounded-3xl border border-white/5 text-center space-y-2">
+                  <span className="text-[10px] bg-primary/10 text-primary uppercase font-bold tracking-widest px-3 py-1 rounded-full">Meta Individual • {currentGoal.month}</span>
+                  <p className="text-muted-foreground text-sm font-light pt-2">Progresso Faturado</p>
+                  <p className="text-4xl font-heading font-light text-white">{formatBRL(currentMonthEarnings)}</p>
+                  <p className="text-xs text-muted-foreground">de um alvo de <span className="text-primary font-bold">{formatBRL(currentGoal.targetAmount)}</span></p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs font-mono">
+                    <span>Aderência à Meta</span>
+                    <span>{goalProgressPct}%</span>
+                  </div>
+                  <Progress value={goalProgressPct} className="h-3 rounded-full bg-black/60" />
+                </div>
+
+                {goalProgressPct >= 100 ? (
+                  <div className="flex gap-3 bg-green-500/10 border border-green-500/20 p-4 rounded-2xl items-center text-xs text-green-400">
+                    <Award className="w-6 h-6 text-green-400 shrink-0" />
+                    <div>
+                      <p className="font-bold">Parabéns! Meta 100% Batida</p>
+                      <p className="opacity-80">Você atingiu o faturamento estipulado para a equipe Essenza este mês. Mantenha os feedbacks em dia!</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center font-light leading-relaxed">
+                    Completar os agendamentos agendados e fidelizar novos clientes ajudam você a bater a meta mais rápido!
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
     </div>
   );
 }

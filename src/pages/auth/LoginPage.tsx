@@ -3,17 +3,19 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sparkles, ArrowLeft } from 'lucide-react';
+import { Sparkles, ArrowLeft, Chrome } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { toast } from 'sonner';
 import { doc, getDoc } from 'firebase/firestore';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/dashboard';
+  const { signInWithGoogle } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,15 +25,79 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      // Let AuthContext handle user state, just navigate
+      const user = userCredential.user;
+
+      // Clear any dev simulated role to prevent overriding logging user's role
+      sessionStorage.removeItem('demo_role');
+
+      // Resolve redirect target dynamically if login is directed to general /dashboard
+      let targetPath = from;
+      if (from === '/dashboard' || from === '/dashboard/') {
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          if (userSnap.exists()) {
+            const uRole = userSnap.data()?.role;
+            if (uRole === 'professional') {
+              targetPath = '/dashboard/meu-painel';
+            }
+          }
+        } catch (err) {
+          console.error("Error checking user role on login:", err);
+        }
+      }
+
       toast.success('Login efetuado com sucesso.');
-      navigate(from, { replace: true });
+      navigate(targetPath, { replace: true });
     } catch (error: any) {
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
         toast.error('E-mail ou senha incorretos. Verifique suas credenciais.');
       } else {
         console.error('Login error:', error);
         toast.error('Erro ao acessar: ' + (error.message || 'Verifique suas credenciais.'));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      const user = await signInWithGoogle();
+      
+      let targetPath = from;
+      if (from === '/dashboard' || from === '/dashboard/') {
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          if (userSnap.exists()) {
+            const uRole = userSnap.data()?.role;
+            if (uRole === 'professional') {
+              targetPath = '/dashboard/meu-painel';
+            } else if (uRole === 'platform_admin') {
+              targetPath = '/master';
+            } else {
+              targetPath = '/dashboard';
+            }
+          }
+        } catch (err) {
+          console.error("Error checking user role on Google login:", err);
+        }
+      }
+
+      toast.success('Login efetuado com sucesso via Google.');
+      navigate(targetPath, { replace: true });
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-registered-google') {
+        toast.error('Sua conta Google ainda não está vinculada a um salão. Escolha um plano ou acesse por convite.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        toast.error('A conexão do Google foi fechada antes de ser concluída.');
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        toast.error('Já existe uma conta associada a este e-mail do Google com outra senha.');
+      } else if (error.code === 'auth/unauthorized-domain') {
+        toast.error(`Domínio não autorizado nas configurações do Firebase. Adicione o domínio "${window.location.hostname}" em Firebase Console -> Authentication -> Configurações -> Domínios autorizados.`, { duration: 10000 });
+      } else {
+        console.error('Google login error:', error);
+        toast.error('Ocorreu um erro no login do Google: ' + (error.message || 'Erro inesperado'));
       }
     } finally {
       setLoading(false);
@@ -96,12 +162,35 @@ export default function LoginPage() {
               </Button>
             </div>
           </form>
+
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-[#141414] px-3 text-muted-foreground text-[11px] tracking-wider">ou entre com</span>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <Button
+                type="button"
+                disabled={loading}
+                onClick={handleGoogleLogin}
+                className="w-full rounded-full h-12 bg-black/40 hover:bg-black/80 text-foreground border border-white/10 hover:border-primary/20 transition-all flex items-center justify-center gap-2"
+              >
+                <Chrome className="w-4 h-4 text-primary" />
+                <span>Entrar com Google</span>
+              </Button>
+            </div>
+          </div>
           
           <div className="mt-6 text-center">
             <p className="text-sm text-muted-foreground">
               Não tem uma conta?{' '}
-              <Link to="/cadastro?plan=start" className="font-medium text-primary hover:text-gold-400">
-                Comece aqui
+              <Link to="/#planos" className="font-medium text-primary hover:text-gold-400">
+                Escolha um plano
               </Link>
             </p>
           </div>

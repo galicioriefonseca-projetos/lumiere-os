@@ -16,7 +16,9 @@ import {
   X,
   CreditCard,
   HelpCircle,
-  FileText
+  FileText,
+  TrendingUp,
+  Star
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -24,28 +26,54 @@ import { PWAInstallButton } from '../PWAInstallButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function DashboardLayout() {
-  const { userData, salonData, isPlatformAdmin, logout, setDemoRole } = useAuth();
+  const { userData, salonData, isPlatformAdmin, logout } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
-  const baseNavigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-    { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-    { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-    { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
-    { name: 'Serviços', href: '/dashboard/servicos', icon: Scissors },
-    { name: 'Categorias', href: '/dashboard/categorias', icon: Sparkles },
-    { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
-    { name: 'Metas', href: '/dashboard/metas', icon: Target },
-  ];
+  // Role based navigation rendering
+  const getNavigationByRole = (role: string | undefined) => {
+    if (role === 'professional') {
+      return [
+        { name: 'Meu Painel', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        { name: 'Minha Agenda', href: '/dashboard?tab=agenda', icon: CalendarDays },
+        { name: 'Meu Desempenho', href: '/dashboard?tab=desempenho', icon: TrendingUp },
+        { name: 'Minhas Avaliações', href: '/dashboard?tab=avaliacoes', icon: Star },
+        { name: 'Minhas Metas', href: '/dashboard?tab=metas', icon: Target },
+      ];
+    }
+    
+    if (role === 'attendant' || role === 'receptionist') {
+      return [
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+        { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+        { name: 'Serviços', href: '/dashboard/servicos', icon: Scissors },
+      ];
+    }
 
-  const navigation = userData?.role === 'professional'
-    ? [
-        { name: 'Painel Profissional', href: '/dashboard', icon: LayoutDashboard, exact: true },
-        { name: 'Minha Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-      ]
-    : baseNavigation;
+    if (role === 'platform_admin') {
+      return [
+        { name: 'Painel Master', href: '/master', icon: Settings, exact: true },
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+      ];
+    }
+
+    // Default for Owner or Manager
+    return [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+      { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+      { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+      { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
+      { name: 'Serviços', href: '/dashboard/servicos', icon: Scissors },
+      { name: 'Categorias', href: '/dashboard/categorias', icon: Sparkles },
+      { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
+      { name: 'Metas', href: '/dashboard/metas', icon: Target },
+    ];
+  };
+
+  const navigation = getNavigationByRole(userData?.role);
+
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -143,15 +171,8 @@ export default function DashboardLayout() {
                <span className="sm:hidden">Ajuda</span>
              </Button>
 
-             {/* Demo Role Switcher */}
-             <Button 
-               size="sm" 
-               variant="outline" 
-               onClick={() => setDemoRole(userData?.role === 'professional' ? null : 'professional')}
-               className="text-[10px] h-8 border-primary/20 hover:border-primary/50 text-primary hover:bg-primary/10 transition-all uppercase font-mono tracking-wider font-bold shrink-0"
-             >
-               {userData?.role === 'professional' ? 'Ver Proprietário' : 'Ver Profissional'}
-             </Button>
+
+
 
              {/* Plan badge */}
              <div className="hidden sm:flex items-center px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs text-muted-foreground">

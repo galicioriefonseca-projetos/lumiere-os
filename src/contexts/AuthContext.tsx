@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User as AuthUser, onAuthStateChanged, signOut } from 'firebase/auth';
+import { User as AuthUser, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { User, Salon, Role } from '../types';
 
 interface AuthContextType {
@@ -12,8 +12,24 @@ interface AuthContextType {
   loading: boolean;
   logout: () => Promise<void>;
   refreshUserData: () => Promise<void>;
-  demoRole: Role | null;
-  setDemoRole: (role: Role | null) => void;
+  signInWithGoogle: () => Promise<AuthUser>;
+  signInWithGoogleForRegister: (
+    salonFields: {
+      salonName: string;
+      businessType: string;
+      city: string;
+      state: string;
+      phone: string;
+      plan: string;
+      limit: number;
+    },
+    optionalFullName?: string
+  ) => Promise<AuthUser>;
+  signInWithGoogleForInvite: (
+    inviteData: any,
+    phone: string,
+    optionalFullName?: string
+  ) => Promise<AuthUser>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -24,8 +40,9 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   logout: async () => {},
   refreshUserData: async () => {},
-  demoRole: null,
-  setDemoRole: () => {},
+  signInWithGoogle: async () => { throw new Error('Not implemented'); },
+  signInWithGoogleForRegister: async () => { throw new Error('Not implemented'); },
+  signInWithGoogleForInvite: async () => { throw new Error('Not implemented'); },
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -34,22 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [salonData, setSalonData] = useState<Salon | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [demoRole, setDemoRoleState] = useState<Role | null>(() => {
-    return sessionStorage.getItem('demo_role') as Role | null;
-  });
 
-  const setDemoRole = (role: Role | null) => {
-    setDemoRoleState(role);
-    if (role) {
-      sessionStorage.setItem('demo_role', role);
-    } else {
-      sessionStorage.removeItem('demo_role');
-    }
-  };
-
-  const effectiveUserData = userData && demoRole 
-    ? { ...userData, role: demoRole, fullName: demoRole === 'professional' ? "Profissional de Teste" : userData.fullName } 
-    : userData;
 
   if (!auth || !db) {
     return (
@@ -105,19 +107,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let unsubscribeUserSnapshot: (() => void) | null = null;
+    let unsubscribeSalonSnapshot: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      
+      if (unsubscribeUserSnapshot) {
+        unsubscribeUserSnapshot();
+        unsubscribeUserSnapshot = null;
+      }
+      if (unsubscribeSalonSnapshot) {
+        unsubscribeSalonSnapshot();
+        unsubscribeSalonSnapshot = null;
+      }
+
       if (user) {
-        await fetchUserData(user.uid);
+        setLoading(true);
+
+        // Check platformAdmin status once
+        try {
+          const adminRef = doc(db, 'platformAdmins', user.uid);
+          const adminSnap = await getDoc(adminRef);
+          setIsPlatformAdmin(adminSnap.exists());
+        } catch (err) {
+          console.error("Error fetching platformAdmin:", err);
+        }
+
+        // Listen to users/{uid} document in real-time
+        unsubscribeUserSnapshot = onSnapshot(doc(db, 'users', user.uid), (userSnap) => {
+          if (userSnap.exists()) {
+            const uData = { id: userSnap.id, ...userSnap.data() } as User;
+            setUserData(uData);
+            if (uData.role === 'platform_admin') {
+              setIsPlatformAdmin(true);
+            }
+
+            // Listen to salons/{salonId} in real-time
+            if (uData.salonId) {
+              if (unsubscribeSalonSnapshot) {
+                unsubscribeSalonSnapshot();
+              }
+              unsubscribeSalonSnapshot = onSnapshot(doc(db, 'salons', uData.salonId), (salonSnap) => {
+                if (salonSnap.exists()) {
+                  setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
+                } else {
+                  setSalonData(null);
+                }
+                setLoading(false);
+              }, (err) => {
+                console.error("Error listening to salon:", err);
+                setLoading(false);
+              });
+            } else {
+              setSalonData(null);
+              setLoading(false);
+            }
+          } else {
+            setUserData(null);
+            setSalonData(null);
+            setLoading(false);
+          }
+        }, (err) => {
+          console.error("Error listening to user document:", err);
+          setLoading(false);
+        });
+
       } else {
         setUserData(null);
         setSalonData(null);
         setIsPlatformAdmin(false);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (unsubscribeUserSnapshot) unsubscribeUserSnapshot();
+      if (unsubscribeSalonSnapshot) unsubscribeSalonSnapshot();
+    };
   }, []);
 
   const logout = async () => {
@@ -129,8 +197,208 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   };
 
+  const signInWithGoogle = async (): Promise<AuthUser> => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      await signOut(auth);
+      throw { code: 'auth/user-not-registered-google' };
+    }
+    return user;
+  };
+
+  const signInWithGoogleForRegister = async (
+    salonFields: {
+      salonName: string;
+      businessType: string;
+      city: string;
+      state: string;
+      phone: string;
+      plan: string;
+      limit: number;
+    },
+    optionalFullName?: string
+  ): Promise<AuthUser> => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+
+    if (userSnap.exists()) {
+      const existingData = userSnap.data();
+      if (existingData.salonId) {
+        await signOut(auth);
+        throw { code: 'auth/social-email-already-linked' };
+      }
+      
+      const now = Date.now();
+      const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
+      const salonId = crypto.randomUUID();
+      const fullName = optionalFullName || user.displayName || existingData.fullName || '';
+
+      const salonData = {
+        id: salonId,
+        name: salonFields.salonName,
+        ownerName: fullName,
+        ownerId: user.uid,
+        ownerEmail: user.email || '',
+        phone: salonFields.phone,
+        businessType: salonFields.businessType,
+        city: salonFields.city,
+        state: salonFields.state,
+        plan: salonFields.plan,
+        subscriptionStatus: 'trial',
+        activationStatus: 'active',
+        trialEndsAt: trialEndsAt,
+        isActive: true,
+        professionalsLimit: salonFields.limit,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await setDoc(doc(db, 'salons', salonId), salonData);
+
+      await updateDoc(doc(db, 'users', user.uid), {
+        salonId: salonId,
+        fullName: fullName,
+        phone: salonFields.phone,
+        role: 'owner',
+        updatedAt: now,
+      });
+
+      sessionStorage.removeItem('demo_role');
+      return user;
+    }
+
+    const now = Date.now();
+    const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
+    const salonId = crypto.randomUUID();
+    const fullName = optionalFullName || user.displayName || '';
+
+    const salonData = {
+      id: salonId,
+      name: salonFields.salonName,
+      ownerName: fullName,
+      ownerId: user.uid,
+      ownerEmail: user.email || '',
+      phone: salonFields.phone,
+      businessType: salonFields.businessType,
+      city: salonFields.city,
+      state: salonFields.state,
+      plan: salonFields.plan,
+      subscriptionStatus: 'trial',
+      activationStatus: 'active',
+      trialEndsAt: trialEndsAt,
+      isActive: true,
+      professionalsLimit: salonFields.limit,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await setDoc(doc(db, 'salons', salonId), salonData);
+
+    const userData = {
+      id: user.uid,
+      fullName: fullName,
+      email: user.email || '',
+      phone: salonFields.phone,
+      role: 'owner',
+      salonId: salonId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await setDoc(doc(db, 'users', user.uid), userData);
+
+    sessionStorage.removeItem('demo_role');
+    return user;
+  };
+
+  const signInWithGoogleForInvite = async (
+    inviteData: any,
+    phone: string,
+    optionalFullName?: string
+  ): Promise<AuthUser> => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    if (inviteData.email && inviteData.email.trim().toLowerCase() !== user.email?.trim().toLowerCase()) {
+      await signOut(auth);
+      throw { code: 'auth/invite-email-mismatch', invitedEmail: inviteData.email };
+    }
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userDocRef);
+    if (userSnap.exists()) {
+      const existingData = userSnap.data();
+      if (existingData.salonId) {
+        await signOut(auth);
+        throw { code: 'auth/social-email-already-linked' };
+      }
+    }
+
+    const now = Date.now();
+    const fullName = optionalFullName || user.displayName || inviteData.fullName || '';
+    const professionUID = inviteData.inviteType === 'professional' ? user.uid : '';
+
+    const userProfile = {
+      id: user.uid,
+      fullName: fullName,
+      email: user.email || '',
+      phone: phone,
+      role: inviteData.inviteType,
+      salonId: inviteData.salonId,
+      professionalId: professionUID,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await setDoc(doc(db, 'users', user.uid), userProfile);
+
+    if (inviteData.inviteType === 'professional') {
+      const profRecord = {
+        userId: user.uid,
+        name: fullName,
+        email: user.email || '',
+        phone: phone,
+        role: inviteData.category || 'Profissional',
+        category: inviteData.category || 'Profissional',
+        status: 'active',
+        isActive: true,
+        joinedByInvite: true,
+        inviteId: inviteData.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
+    }
+
+    await updateDoc(doc(db, 'invites', inviteData.id), {
+      status: 'accepted',
+      acceptedByUserId: user.uid,
+      usedAt: now,
+      updatedAt: now,
+    });
+
+    sessionStorage.removeItem('demo_role');
+    return user;
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, userData: effectiveUserData, salonData, isPlatformAdmin, loading, logout, refreshUserData, demoRole, setDemoRole }}>
+    <AuthContext.Provider value={{
+      currentUser,
+      userData,
+      salonData,
+      isPlatformAdmin,
+      loading,
+      logout,
+      refreshUserData,
+      signInWithGoogle,
+      signInWithGoogleForRegister,
+      signInWithGoogleForInvite
+    }}>
       {!loading && children}
     </AuthContext.Provider>
   );

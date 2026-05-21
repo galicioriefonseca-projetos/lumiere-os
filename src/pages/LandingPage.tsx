@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Scissors, CalendarCheck2, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Scissors, CalendarCheck2, ArrowRight, ShieldCheck, CheckCircle2, RefreshCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function LandingPage() {
@@ -46,11 +46,8 @@ export default function LandingPage() {
             <span className="text-2xl font-heading font-medium tracking-wide">Lumière</span>
           </div>
           <div className="flex space-x-4 items-center">
-            <Link to="/login" className="text-sm font-medium hover:text-primary transition-colors">
+            <Button onClick={() => navigate("/login")} className="rounded-full bg-primary hover:bg-primary/90 text-primary-foreground min-w-[100px]">
               Entrar
-            </Link>
-            <Button onClick={() => navigate("/cadastro?plan=start")} className="rounded-full bg-primary hover:bg-primary/90 text-primary-foreground">
-              Começar Agora
             </Button>
           </div>
         </div>
@@ -91,8 +88,11 @@ export default function LandingPage() {
               transition={{ duration: 0.8, delay: 0.3 }}
               className="flex flex-col sm:flex-row justify-center gap-4 pt-4"
             >
-              <Button size="lg" onClick={() => navigate("/cadastro?plan=start")} className="rounded-full h-14 px-8 text-base bg-primary hover:bg-gold-400 text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] hover:shadow-[0_0_60px_rgba(212,175,55,0.5)] transition-all">
-                Comece Gratuitamente
+              <Button size="lg" onClick={() => {
+                const el = document.getElementById('planos');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }} className="rounded-full h-14 px-8 text-base bg-primary hover:bg-gold-400 text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] hover:shadow-[0_0_60px_rgba(212,175,55,0.5)] transition-all">
+                Ver Planos Disponíveis
               </Button>
               <Button size="lg" variant="outline" onClick={() => {
                 const el = document.getElementById('modulos');
@@ -196,6 +196,55 @@ export default function LandingPage() {
                   </Button>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Upcoming Updates */}
+        <section className="py-24 px-6 border-t border-white/5 bg-gradient-to-b from-black/0 to-primary/[0.02]">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-16 space-y-4">
+              <span className="text-xs uppercase font-semibold text-primary tracking-widest bg-primary/10 px-3 py-1 rounded-full">Roadmap da Visão</span>
+              <h2 className="text-4xl font-heading font-light tracking-tight text-white">Próximas Atualizações</h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto font-light">Mais prestígio e tecnologia premium a caminho. Nossa equipe trabalha continuamente para trazer o estado da arte em gestão.</p>
+            </div>
+            
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
+                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-heading font-semibold text-white text-lg mb-2">IA L'Or Predict</h3>
+                <p className="text-muted-foreground text-sm font-light leading-relaxed">Algoritmo inteligente de previsão de tendências de ocupação, metas automáticas de barbearias e otimização inteligente de comissões.</p>
+                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Jul 2026</div>
+              </div>
+
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
+                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                  <RefreshCcw className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-heading font-semibold text-white text-lg mb-2">Checkout & Split</h3>
+                <p className="text-muted-foreground text-sm font-light leading-relaxed">Gateway de pagamento com split automático direto para a conta dos profissionais envolvidos, links de pagamento e adiantamento.</p>
+                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Set 2026</div>
+              </div>
+
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
+                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                  <ShieldCheck className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-heading font-semibold text-white text-lg mb-2">Aplicativos Nativos</h3>
+                <p className="text-muted-foreground text-sm font-light leading-relaxed">Publicação direta de aplicativos exclusivos customizados para Android e iOS para que os clientes agendem com máxima conveniência.</p>
+                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Out 2026</div>
+              </div>
+
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
+                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                  <CheckCircle2 className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-heading font-semibold text-white text-lg mb-2">Fidelidade Ouro</h3>
+                <p className="text-muted-foreground text-sm font-light leading-relaxed">Sistema completo de recorrência de clientes com ofertas direcionadas via WhatsApp, campanhas inteligentes de indicação e mimos VIP.</p>
+                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Dez 2026</div>
+              </div>
             </div>
           </div>
         </section>
