@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, auth } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, updateDoc, where, Timestamp } from 'firebase/firestore';
 import { Professional } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ interface Invite {
   category: string | null;
   email: string | null;
   status: 'pending' | 'accepted' | 'expired' | 'canceled';
-  expiresAt: number;
+  expiresAt: any;
   createdAt: number;
   updatedAt: number;
 }
@@ -154,7 +154,8 @@ export default function ProfessionalsPage() {
       const invitedByEmail = userData.email || currentUser?.email || '';
 
       const inviteId = doc(collection(db, 'invites')).id;
-      const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 7; // 7 days
+      const expiresAtDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
+      const expiresAt = Timestamp.fromDate(expiresAtDate);
 
       // Normalize role - must be exactly one of: manager, receptionist, attendant, professional
       const selectedRole = inviteFormData.inviteType; 

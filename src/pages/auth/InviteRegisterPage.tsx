@@ -21,7 +21,7 @@ interface Invite {
   category: string;
   email?: string;
   status: 'pending' | 'accepted' | 'expired' | 'canceled';
-  expiresAt: number;
+  expiresAt: any;
   createdAt: number;
 }
 
@@ -69,7 +69,7 @@ export default function InviteRegisterPage() {
         const docSnap = await getDoc(docRef);
 
         if (!docSnap.exists()) {
-          setInvalidReason('Este convite não existe ou foi revogado.');
+          setInvalidReason('Convite não encontrado.');
           setLoadingInvite(false);
           return;
         }
@@ -77,13 +77,27 @@ export default function InviteRegisterPage() {
         const data = docSnap.data() as Invite;
 
         if (data.status !== 'pending') {
-          setInvalidReason(`Este convite já foi utilizado ou cancelado (Status: ${data.status}).`);
+          setInvalidReason('Este convite já foi utilizado ou cancelado.');
           setLoadingInvite(false);
           return;
         }
 
-        if (data.expiresAt < Date.now()) {
-          setInvalidReason('Este link de convite expirou.');
+        // Parse expiresAt cleanly - whether it is a Firestore Timestamp or milliseconds number
+        let expiresAtMillis = 0;
+        if (data.expiresAt) {
+          if (typeof data.expiresAt === 'object') {
+            if (typeof data.expiresAt.toMillis === 'function') {
+              expiresAtMillis = data.expiresAt.toMillis();
+            } else if (typeof data.expiresAt.seconds === 'number') {
+              expiresAtMillis = data.expiresAt.seconds * 1000;
+            }
+          } else {
+            expiresAtMillis = Number(data.expiresAt);
+          }
+        }
+
+        if (expiresAtMillis < Date.now()) {
+          setInvalidReason('Este convite expirou. Solicite um novo link.');
           setLoadingInvite(false);
           return;
         }
@@ -93,9 +107,13 @@ export default function InviteRegisterPage() {
         if (data.email) {
           setFormData(prev => ({ ...prev, email: data.email || '' }));
         }
-      } catch (err) {
-        console.error(err);
-        setInvalidReason('Erro ao conectar com o servidor e carregar o convite.');
+      } catch (err: any) {
+        console.error("Erro ao carregar convite:", err);
+        if (err?.code === 'permission-denied') {
+          setInvalidReason('Este convite expirou, já foi usado ou não está mais disponível.');
+        } else {
+          setInvalidReason('Erro ao conectar com o servidor e carregar o convite.');
+        }
       } finally {
         setLoadingInvite(false);
       }

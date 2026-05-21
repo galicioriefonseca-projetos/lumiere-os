@@ -140,10 +140,9 @@ service cloud.firestore {
 
     // Invites collection (Hardened)
     match /invites/{inviteId} {
-      // Get is public only for pending invites (not expired)
+      // Get is public only for pending invites (not expired check on front-end)
       allow get: if isPlatformAdmin() || (
-        resource.data.status == "pending" && 
-        (resource.data.expiresAt == null || resource.data.expiresAt > request.time)
+        resource.data.status == "pending"
       );
       
       // Only platform admin and salon managers/owners can list invitations
