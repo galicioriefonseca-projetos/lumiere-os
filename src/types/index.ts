@@ -11,6 +11,10 @@ export interface User {
   phone: string;
   role: Role;
   salonId: string;
+  professionalId?: string;
+  specialty?: string;
+  professionalFunction?: string;
+  professionalCategory?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -44,6 +48,11 @@ export interface Professional {
   phone: string;
   email?: string;
   isActive: boolean;
+  specialty?: string;
+  professionalFunction?: string;
+  category?: string;
+  joinedByInvite?: boolean;
+  inviteId?: string;
   createdAt: number;
   updatedAt: number;
 }

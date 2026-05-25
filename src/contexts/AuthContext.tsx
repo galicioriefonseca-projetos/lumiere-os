@@ -342,29 +342,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const now = Date.now();
     const fullName = optionalFullName || user.displayName || inviteData.fullName || '';
-    const professionUID = inviteData.inviteType === 'professional' ? user.uid : '';
+    const isProfRole = inviteData.role === 'professional' || inviteData.inviteType === 'professional';
+    const professionUID = isProfRole ? user.uid : '';
 
-    const userProfile = {
+    const userProfile: any = {
       id: user.uid,
       fullName: fullName,
       email: user.email || '',
       phone: phone,
-      role: inviteData.inviteType,
+      role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
       salonId: inviteData.salonId,
       professionalId: professionUID,
       createdAt: now,
       updatedAt: now,
     };
+
+    if (inviteData.inviteType === 'function_link') {
+      userProfile.specialty = inviteData.specialty || '';
+      userProfile.professionalFunction = inviteData.professionalFunction || '';
+      userProfile.professionalCategory = inviteData.category || '';
+    }
+
     await setDoc(doc(db, 'users', user.uid), userProfile);
 
-    if (inviteData.inviteType === 'professional') {
+    if (inviteData.inviteType === 'function_link' || inviteData.inviteType === 'professional') {
       const profRecord = {
         userId: user.uid,
+        professionalId: user.uid,
         name: fullName,
         email: user.email || '',
         phone: phone,
-        role: inviteData.category || 'Profissional',
+        role: inviteData.inviteType === 'function_link' ? (inviteData.specialty || inviteData.role) : (inviteData.category || 'Profissional'),
         category: inviteData.category || 'Profissional',
+        specialty: inviteData.specialty || inviteData.category || '',
+        professionalFunction: inviteData.professionalFunction || inviteData.category || '',
         status: 'active',
         isActive: true,
         joinedByInvite: true,
@@ -375,12 +386,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
     }
 
-    await updateDoc(doc(db, 'invites', inviteData.id), {
-      status: 'accepted',
-      acceptedByUserId: user.uid,
-      usedAt: now,
-      updatedAt: now,
-    });
+    if (inviteData.inviteType === 'function_link') {
+      const newUses = (inviteData.usesCount || 0) + 1;
+      const maxUses = inviteData.maxUses || 1;
+      const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
+
+      await updateDoc(doc(db, 'invites', inviteData.id), {
+        usesCount: newUses,
+        status: finalStatus,
+        updatedAt: now,
+      });
+    } else {
+      await updateDoc(doc(db, 'invites', inviteData.id), {
+        status: 'accepted',
+        acceptedByUserId: user.uid,
+        usedAt: now,
+        updatedAt: now,
+      });
+    }
 
     sessionStorage.removeItem('demo_role');
     return user;

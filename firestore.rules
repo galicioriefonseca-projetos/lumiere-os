@@ -189,6 +189,25 @@ service cloud.firestore {
             request.resource.data.inviteType == resource.data.inviteType && 
             request.resource.data.email == resource.data.email && 
             request.resource.data.createdAt == resource.data.createdAt
+          ) ||
+          // Sealed state transaction: accepting a pending function-based multi-use invite
+          (
+            resource.data.inviteType == "function_link" &&
+            resource.data.status == "pending" &&
+            resource.data.usesCount < resource.data.maxUses &&
+            request.resource.data.salonId == resource.data.salonId && 
+            request.resource.data.role == resource.data.role && 
+            request.resource.data.inviteType == resource.data.inviteType && 
+            request.resource.data.category == resource.data.category &&
+            request.resource.data.specialty == resource.data.specialty &&
+            request.resource.data.professionalFunction == resource.data.professionalFunction &&
+            request.resource.data.maxUses == resource.data.maxUses &&
+            request.resource.data.createdAt == resource.data.createdAt &&
+            request.resource.data.usesCount == resource.data.usesCount + 1 &&
+            (
+              (request.resource.data.usesCount < resource.data.maxUses && request.resource.data.status == "pending") ||
+              (request.resource.data.usesCount == resource.data.maxUses && request.resource.data.status == "used_limit_reached")
+            )
           )
         )
       );
@@ -215,20 +234,20 @@ service cloud.firestore {
 
     // 3. Checklist Configurations (Templates)
     match /salons/{salonId}/checklists/{checklistId} {
-      allow read, write: if canEvaluateTeam(salonId);
+      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow write: if canEvaluateTeam(salonId);
     }
 
     // 4. Checklist Daily Runs (Essenza Evaluations)
     match /salons/{salonId}/checklistRuns/{runId} {
-      allow read: if canEvaluateTeam(salonId) || (
-        isSalonProfessional(salonId) && resource.data.evaluatedProfessionalId == request.auth.uid
-      );
+      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
       allow create, update, delete: if canEvaluateTeam(salonId);
     }
 
     // 5. Monthly Goals
     match /salons/{salonId}/goals/{goalId} {
-      allow read, write: if canManageSalon(salonId);
+      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow write: if canManageSalon(salonId);
     }
 
     // 6. Professional-assigned Goals

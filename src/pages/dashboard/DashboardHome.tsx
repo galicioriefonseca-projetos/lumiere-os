@@ -43,6 +43,10 @@ export default function DashboardHome() {
 
   useEffect(() => {
     if (!salonData) return;
+    if (userData?.role === 'professional') {
+      setLoading(false);
+      return;
+    }
     
     const unsubs: (() => void)[] = [];
 
@@ -95,7 +99,7 @@ export default function DashboardHome() {
     }));
 
     return () => unsubs.forEach(u => u());
-  }, [salonData, professionals.length]);
+  }, [salonData, professionals.length, userData?.role]);
 
   if (loading || !salonData) {
     return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;

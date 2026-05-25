@@ -16,9 +16,13 @@ interface Invite {
   salonName: string;
   invitedByUserId: string;
   invitedByName: string;
-  inviteType: 'manager' | 'receptionist' | 'attendant' | 'professional';
+  inviteType: 'manager' | 'receptionist' | 'attendant' | 'professional' | 'function_link';
   role: string;
   category: string;
+  specialty?: string;
+  professionalFunction?: string;
+  maxUses?: number;
+  usesCount?: number;
   email?: string;
   status: 'pending' | 'accepted' | 'expired' | 'canceled';
   expiresAt: any;
@@ -82,6 +86,16 @@ export default function InviteRegisterPage() {
           return;
         }
 
+        if (data.inviteType === 'function_link') {
+          const uses = data.usesCount || 0;
+          const max = data.maxUses || 1;
+          if (uses >= max) {
+            setInvalidReason('Este link de convite atingiu o limite máximo de cadastros de profissionais.');
+            setLoadingInvite(false);
+            return;
+          }
+        }
+
         // Parse expiresAt cleanly - whether it is a Firestore Timestamp or milliseconds number
         let expiresAtMillis = 0;
         if (data.expiresAt) {
@@ -136,7 +150,8 @@ export default function InviteRegisterPage() {
 
       toast.success(`Cadastro corporativo concluído com sucesso via Google! Bem-vindo à equipe.`);
       
-      if (inviteData.inviteType === 'professional') {
+      const navigateRole = inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType;
+      if (navigateRole === 'professional') {
         navigate('/dashboard/meu-painel', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });
@@ -195,31 +210,42 @@ export default function InviteRegisterPage() {
       await updateProfile(user, { displayName: formData.fullName });
 
       const now = Date.now();
-      const professionUID = inviteData.inviteType === 'professional' ? user.uid : '';
+      const isProfRole = inviteData.role === 'professional' || inviteData.inviteType === 'professional';
+      const professionUID = isProfRole ? user.uid : '';
 
       // 2. Create the general user profile under Root `/users`
-      const userProfile = {
+      const userProfile: any = {
         id: user.uid,
         fullName: formData.fullName,
         email: formData.email,
         phone: formData.phone,
-        role: inviteData.inviteType,
+        role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
         salonId: inviteData.salonId,
         professionalId: professionUID,
         createdAt: now,
         updatedAt: now,
       };
+
+      if (inviteData.inviteType === 'function_link') {
+        userProfile.specialty = inviteData.specialty || '';
+        userProfile.professionalFunction = inviteData.professionalFunction || '';
+        userProfile.professionalCategory = inviteData.category || '';
+      }
+
       await setDoc(doc(db, 'users', user.uid), userProfile);
 
-      // 3. Create or Update Professional under Salon collection if invited as Professional
-      if (inviteData.inviteType === 'professional') {
+      // 3. Create or Update Professional under Salon collection if invited as Professional or via function_link
+      if (inviteData.inviteType === 'function_link' || inviteData.inviteType === 'professional') {
         const profRecord = {
           userId: user.uid,
+          professionalId: user.uid,
           name: formData.fullName,
           email: formData.email,
           phone: formData.phone,
-          role: inviteData.category || 'Profissional',
+          role: inviteData.inviteType === 'function_link' ? (inviteData.specialty || inviteData.role) : (inviteData.category || 'Profissional'),
           category: inviteData.category || 'Profissional',
+          specialty: inviteData.specialty || inviteData.category || '',
+          professionalFunction: inviteData.professionalFunction || inviteData.category || '',
           status: 'active',
           isActive: true,
           joinedByInvite: true,
@@ -231,12 +257,24 @@ export default function InviteRegisterPage() {
       }
 
       // 4. Update Invite Document Status and accepted tracking
-      await updateDoc(doc(db, 'invites', inviteData.id), {
-        status: 'accepted',
-        acceptedByUserId: user.uid,
-        usedAt: now,
-        updatedAt: now,
-      });
+      if (inviteData.inviteType === 'function_link') {
+        const newUses = (inviteData.usesCount || 0) + 1;
+        const maxUses = inviteData.maxUses || 1;
+        const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
+
+        await updateDoc(doc(db, 'invites', inviteData.id), {
+          usesCount: newUses,
+          status: finalStatus,
+          updatedAt: now,
+        });
+      } else {
+        await updateDoc(doc(db, 'invites', inviteData.id), {
+          status: 'accepted',
+          acceptedByUserId: user.uid,
+          usedAt: now,
+          updatedAt: now,
+        });
+      }
 
       // Clear layout-simulated demo role
       sessionStorage.removeItem('demo_role');
@@ -244,7 +282,8 @@ export default function InviteRegisterPage() {
       toast.success(`Cadastro corporativo concluído! Bem-vindo à equipe do ${inviteData.salonName}.`);
       
       // Navigate to correct dashboard layout redirect
-      if (inviteData.inviteType === 'professional') {
+      const navigateRole = inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType;
+      if (navigateRole === 'professional') {
         navigate('/dashboard/meu-painel', { replace: true });
       } else {
         navigate('/dashboard', { replace: true });
@@ -288,9 +327,12 @@ export default function InviteRegisterPage() {
             <p className="text-sm text-foreground/85 leading-relaxed">{invalidReason}</p>
             <p className="text-xs text-muted-foreground">Por favor, solicite um novo link de convite ao proprietário ou gerente do salão.</p>
             
-            <Button asChild className="mt-4 bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl">
-              <Link to="/login">Ir para o Login</Link>
-            </Button>
+            <Link 
+              to="/login" 
+              className="mt-4 bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl px-4 py-2 text-sm inline-flex items-center justify-center transition-colors"
+            >
+              Ir para o Login
+            </Link>
           </div>
         </div>
       </div>
