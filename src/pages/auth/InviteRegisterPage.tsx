@@ -210,7 +210,9 @@ export default function InviteRegisterPage() {
       await updateProfile(user, { displayName: formData.fullName });
 
       const now = Date.now();
-      const isProfRole = inviteData.role === 'professional' || inviteData.inviteType === 'professional';
+      const finalRole = inviteData.inviteType === 'function_link' ? (inviteData.role || 'professional') : inviteData.inviteType;
+      console.log("Role final aplicado ao usuário:", finalRole);
+      const isProfRole = finalRole === 'professional' || inviteData.inviteType === 'professional';
       const professionUID = isProfRole ? user.uid : '';
 
       // 2. Create the general user profile under Root `/users`
@@ -219,7 +221,7 @@ export default function InviteRegisterPage() {
         fullName: formData.fullName,
         email: formData.email,
         phone: formData.phone,
-        role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
+        role: finalRole,
         salonId: inviteData.salonId,
         professionalId: professionUID,
         createdAt: now,
@@ -230,6 +232,7 @@ export default function InviteRegisterPage() {
         userProfile.specialty = inviteData.specialty || '';
         userProfile.professionalFunction = inviteData.professionalFunction || '';
         userProfile.professionalCategory = inviteData.category || '';
+        userProfile.category = inviteData.category || '';
       }
 
       try {
@@ -247,7 +250,7 @@ export default function InviteRegisterPage() {
           name: formData.fullName,
           email: formData.email,
           phone: formData.phone,
-          role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
+          role: finalRole,
           category: inviteData.category || 'Profissional',
           specialty: inviteData.specialty || inviteData.category || '',
           professionalFunction: inviteData.professionalFunction || inviteData.category || '',

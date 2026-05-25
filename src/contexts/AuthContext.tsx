@@ -342,7 +342,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const now = Date.now();
     const fullName = optionalFullName || user.displayName || inviteData.fullName || '';
-    const isProfRole = inviteData.role === 'professional' || inviteData.inviteType === 'professional';
+    const finalRole = inviteData.inviteType === 'function_link' ? (inviteData.role || 'professional') : inviteData.inviteType;
+    console.log("Role final aplicado ao usuário:", finalRole);
+    const isProfRole = finalRole === 'professional' || inviteData.inviteType === 'professional';
     const professionUID = isProfRole ? user.uid : '';
 
     const userProfile: any = {
@@ -350,7 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fullName: fullName,
       email: user.email || '',
       phone: phone,
-      role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
+      role: finalRole,
       salonId: inviteData.salonId,
       professionalId: professionUID,
       createdAt: now,
@@ -361,6 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userProfile.specialty = inviteData.specialty || '';
       userProfile.professionalFunction = inviteData.professionalFunction || '';
       userProfile.professionalCategory = inviteData.category || '';
+      userProfile.category = inviteData.category || '';
     }
 
     try {
@@ -377,7 +380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         name: fullName,
         email: user.email || '',
         phone: phone,
-        role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
+        role: finalRole,
         category: inviteData.category || 'Profissional',
         specialty: inviteData.specialty || inviteData.category || '',
         professionalFunction: inviteData.professionalFunction || inviteData.category || '',

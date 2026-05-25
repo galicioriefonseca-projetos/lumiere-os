@@ -51,7 +51,7 @@ export function canAccessProfessionalDashboard(role: Role | string | undefined):
 }
 
 export function canAccessRoute(role: Role | undefined, route: string): boolean {
-  if (!role) return false;
+  if (!role || !ROLES.includes(role)) return false;
   
   if (isPlatformAdmin(role)) return true;
 
