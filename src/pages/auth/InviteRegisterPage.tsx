@@ -232,7 +232,12 @@ export default function InviteRegisterPage() {
         userProfile.professionalCategory = inviteData.category || '';
       }
 
-      await setDoc(doc(db, 'users', user.uid), userProfile);
+      try {
+        await setDoc(doc(db, 'users', user.uid), userProfile);
+      } catch (error) {
+        console.error("Erro ao criar usuário:", error);
+        throw error;
+      }
 
       // 3. Create or Update Professional under Salon collection if invited as Professional or via function_link
       if (inviteData.inviteType === 'function_link' || inviteData.inviteType === 'professional') {
@@ -242,7 +247,7 @@ export default function InviteRegisterPage() {
           name: formData.fullName,
           email: formData.email,
           phone: formData.phone,
-          role: inviteData.inviteType === 'function_link' ? (inviteData.specialty || inviteData.role) : (inviteData.category || 'Profissional'),
+          role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
           category: inviteData.category || 'Profissional',
           specialty: inviteData.specialty || inviteData.category || '',
           professionalFunction: inviteData.professionalFunction || inviteData.category || '',
@@ -253,27 +258,37 @@ export default function InviteRegisterPage() {
           createdAt: now,
           updatedAt: now,
         };
-        await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
+        try {
+          await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
+        } catch (error) {
+          console.error("Erro ao criar profissional:", error);
+          throw error;
+        }
       }
 
       // 4. Update Invite Document Status and accepted tracking
-      if (inviteData.inviteType === 'function_link') {
-        const newUses = (inviteData.usesCount || 0) + 1;
-        const maxUses = inviteData.maxUses || 1;
-        const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
+      try {
+        if (inviteData.inviteType === 'function_link') {
+          const newUses = (inviteData.usesCount || 0) + 1;
+          const maxUses = inviteData.maxUses || 1;
+          const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
 
-        await updateDoc(doc(db, 'invites', inviteData.id), {
-          usesCount: newUses,
-          status: finalStatus,
-          updatedAt: now,
-        });
-      } else {
-        await updateDoc(doc(db, 'invites', inviteData.id), {
-          status: 'accepted',
-          acceptedByUserId: user.uid,
-          usedAt: now,
-          updatedAt: now,
-        });
+          await updateDoc(doc(db, 'invites', inviteData.id), {
+            usesCount: newUses,
+            status: finalStatus,
+            updatedAt: now,
+          });
+        } else {
+          await updateDoc(doc(db, 'invites', inviteData.id), {
+            status: 'accepted',
+            acceptedByUserId: user.uid,
+            usedAt: now,
+            updatedAt: now,
+          });
+        }
+      } catch (error) {
+        console.error("Erro ao atualizar convite:", error);
+        throw error;
       }
 
       // Clear layout-simulated demo role

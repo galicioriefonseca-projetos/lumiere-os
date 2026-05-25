@@ -363,7 +363,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userProfile.professionalCategory = inviteData.category || '';
     }
 
-    await setDoc(doc(db, 'users', user.uid), userProfile);
+    try {
+      await setDoc(doc(db, 'users', user.uid), userProfile);
+    } catch (e) {
+      console.error("Erro ao criar usuário:", e);
+      throw e;
+    }
 
     if (inviteData.inviteType === 'function_link' || inviteData.inviteType === 'professional') {
       const profRecord = {
@@ -372,7 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         name: fullName,
         email: user.email || '',
         phone: phone,
-        role: inviteData.inviteType === 'function_link' ? (inviteData.specialty || inviteData.role) : (inviteData.category || 'Profissional'),
+        role: inviteData.inviteType === 'function_link' ? inviteData.role : inviteData.inviteType,
         category: inviteData.category || 'Profissional',
         specialty: inviteData.specialty || inviteData.category || '',
         professionalFunction: inviteData.professionalFunction || inviteData.category || '',
@@ -383,26 +388,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         createdAt: now,
         updatedAt: now,
       };
-      await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
+      
+      try {
+        await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
+      } catch (e) {
+        console.error("Erro ao criar profissional:", e);
+        throw e;
+      }
     }
 
-    if (inviteData.inviteType === 'function_link') {
-      const newUses = (inviteData.usesCount || 0) + 1;
-      const maxUses = inviteData.maxUses || 1;
-      const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
+    try {
+      if (inviteData.inviteType === 'function_link') {
+        const newUses = (inviteData.usesCount || 0) + 1;
+        const maxUses = inviteData.maxUses || 1;
+        const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
 
-      await updateDoc(doc(db, 'invites', inviteData.id), {
-        usesCount: newUses,
-        status: finalStatus,
-        updatedAt: now,
-      });
-    } else {
-      await updateDoc(doc(db, 'invites', inviteData.id), {
-        status: 'accepted',
-        acceptedByUserId: user.uid,
-        usedAt: now,
-        updatedAt: now,
-      });
+        await updateDoc(doc(db, 'invites', inviteData.id), {
+          usesCount: newUses,
+          status: finalStatus,
+          updatedAt: now,
+        });
+      } else {
+        await updateDoc(doc(db, 'invites', inviteData.id), {
+          status: 'accepted',
+          acceptedByUserId: user.uid,
+          usedAt: now,
+          updatedAt: now,
+        });
+      }
+    } catch (e) {
+      console.error("Erro ao atualizar convite:", e);
+      throw e;
     }
 
     sessionStorage.removeItem('demo_role');

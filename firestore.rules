@@ -221,7 +221,20 @@ service cloud.firestore {
     match /salons/{salonId}/professionals/{professionalId} {
       allow get: if canOperateFrontDesk(salonId) || (isSalonProfessional(salonId) && professionalId == request.auth.uid);
       allow list: if canOperateFrontDesk(salonId);
-      allow create, update, delete: if canManageSalon(salonId);
+      
+      allow create: if canManageSalon(salonId) || (
+        isSignedIn() && 
+        professionalId == request.auth.uid &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userSalonId() == salonId &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.professionalId == request.auth.uid &&
+        request.resource.data.role == userRole() &&
+        request.resource.data.isActive == true &&
+        request.resource.data.status == "active"
+      );
+      
+      allow update, delete: if canManageSalon(salonId);
     }
 
     // 2. Appointments & Appointments Scheduling
