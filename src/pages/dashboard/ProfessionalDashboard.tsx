@@ -287,17 +287,17 @@ export default function ProfessionalDashboard() {
     <div className="space-y-6">
       
       {/* Header Profile card */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-card/85 to-card/20 rounded-3xl border border-white/10 p-6 shadow-xl">
-        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="relative overflow-hidden bg-gradient-to-r from-[#0d0d11] to-[#050505] rounded-3xl border border-[#D4AF37]/15 p-6 shadow-xl">
+        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
           <div className="flex gap-4 items-center">
-            <div className="w-14 h-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-xl font-bold font-heading">
+            <div className="w-14 h-14 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] text-xl font-bold font-heading">
               {myProfile.name.charAt(0).toUpperCase()}
             </div>
             <div>
-              <span className="text-[10px] uppercase tracking-widest font-bold text-primary">COLABORADOR PARCEIRO</span>
+              <span className="text-[9px] uppercase tracking-widest font-bold text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-2 py-0.5 rounded-full inline-block leading-none mb-1.5 font-mono shadow-[0_2px_8px_rgba(212,175,55,0.05)]">COLABORADOR PARCEIRO</span>
               <h1 className="text-xl md:text-2xl font-heading font-light text-foreground leading-tight">
-                <b className="font-medium text-primary">{myProfile.name}</b>
+                <b className="font-semibold text-white">{myProfile.name}</b>
               </h1>
               <p className="text-xs text-muted-foreground">
                 Função: {myProfile.category || myProfile.role || "Profissional"} | {salonData?.name}
@@ -307,11 +307,11 @@ export default function ProfessionalDashboard() {
           
           {/* Quick tab switcher within the page */}
           <div className="flex flex-wrap gap-1.5 bg-black/40 p-1.5 rounded-2xl border border-white/5">
-            <Button size="xs" variant={activeTab === 'painel' ? 'default' : 'ghost'} onClick={() => setTab('painel')} className="text-xs">Resumo</Button>
-            <Button size="xs" variant={activeTab === 'agenda' ? 'default' : 'ghost'} onClick={() => setTab('agenda')} className="text-xs">Minha Agenda</Button>
-            <Button size="xs" variant={activeTab === 'desempenho' ? 'default' : 'ghost'} onClick={() => setTab('desempenho')} className="text-xs">Desempenho</Button>
-            <Button size="xs" variant={activeTab === 'avaliacoes' ? 'default' : 'ghost'} onClick={() => setTab('avaliacoes')} className="text-xs">Avaliações</Button>
-            <Button size="xs" variant={activeTab === 'metas' ? 'default' : 'ghost'} onClick={() => setTab('metas')} className="text-xs">Metas {currentGoal && "🎯"}</Button>
+            <Button size="xs" variant={activeTab === 'painel' ? 'default' : 'ghost'} onClick={() => setTab('painel')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'painel' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Resumo</Button>
+            <Button size="xs" variant={activeTab === 'agenda' ? 'default' : 'ghost'} onClick={() => setTab('agenda')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'agenda' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Agenda</Button>
+            <Button size="xs" variant={activeTab === 'desempenho' ? 'default' : 'ghost'} onClick={() => setTab('desempenho')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'desempenho' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Desempenho</Button>
+            <Button size="xs" variant={activeTab === 'avaliacoes' ? 'default' : 'ghost'} onClick={() => setTab('avaliacoes')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'avaliacoes' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Avaliações</Button>
+            <Button size="xs" variant={activeTab === 'metas' ? 'default' : 'ghost'} onClick={() => setTab('metas')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'metas' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Metas {currentGoal && "🎯"}</Button>
           </div>
         </div>
       </div>

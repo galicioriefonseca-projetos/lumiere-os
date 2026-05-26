@@ -71,8 +71,11 @@ export interface Service {
   name: string;
   category: string;
   price: number;
+  priceType?: 'fixed' | 'from' | 'variable';
   durationMinutes: number; // in minutes
+  description?: string;
   isActive: boolean;
+  source?: 'template' | 'custom' | string;
   createdAt: number;
   updatedAt: number;
 }

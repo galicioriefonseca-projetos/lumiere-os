@@ -18,7 +18,8 @@ import {
   HelpCircle,
   FileText,
   TrendingUp,
-  Star
+  Star,
+  Crown
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -66,7 +67,6 @@ export default function DashboardLayout() {
       { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
       { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
       { name: 'Serviços', href: '/dashboard/servicos', icon: Scissors },
-      { name: 'Categorias', href: '/dashboard/categorias', icon: Sparkles },
       { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
       { name: 'Metas', href: '/dashboard/metas', icon: Target },
     ];
@@ -74,19 +74,23 @@ export default function DashboardLayout() {
 
   const navigation = getNavigationByRole(userData?.role);
 
-
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-[#050505] flex text-white font-sans antialiased">
       {/* Sidebar Desktop */}
-      <aside className="hidden md:flex flex-col w-64 border-r border-white/5 bg-card/20 backdrop-blur-xl">
+      <aside className="hidden md:flex flex-col w-64 border-r border-[#D4AF37]/10 bg-[#09090b] relative z-20">
         <div className="h-20 flex items-center px-6 border-b border-white/5">
-          <Link to="/dashboard" className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-primary" />
-            <span className="text-xl font-heading font-medium tracking-wide">Lumière</span>
+          <Link to="/dashboard" className="flex items-center gap-2.5 group">
+            <div className="p-1.5 rounded-xl bg-gradient-to-br from-[#D4AF37]/20 to-[#D4AF37]/5 border border-[#D4AF37]/35 group-hover:border-[#D4AF37] transition-all duration-300">
+              <Crown className="w-5 h-5 text-[#D4AF37] filter drop-shadow-[0_0_6px_rgba(212,175,55,0.4)]" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-bold tracking-widest text-[#D4AF37] uppercase font-sans leading-none">Lumière<span className="text-white">OS</span></span>
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground mt-0.5 font-light">Premium Salon SaaS</span>
+            </div>
           </Link>
         </div>
         
-        <div className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
+        <div className="flex-1 py-6 px-4 space-y-1.5 overflow-y-auto">
           {navigation.map((item) => {
             const isActive = item.exact 
               ? location.pathname === item.href 
@@ -97,13 +101,13 @@ export default function DashboardLayout() {
                 key={item.name}
                 to={item.href}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all duration-200 border",
                   isActive 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    ? "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20 shadow-[0_0_15px_rgba(212,175,55,0.03)]" 
+                    : "text-muted-foreground hover:text-white hover:bg-white/[0.03] border-transparent"
                 )}
               >
-                <item.icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground")} />
+                <item.icon className={cn("w-4.5 h-4.5 transition-colors", isActive ? "text-[#D4AF37]" : "text-muted-foreground group-hover:text-white")} />
                 {item.name}
               </Link>
             )
@@ -112,30 +116,30 @@ export default function DashboardLayout() {
           {isPlatformAdmin && (
             <Link
               to="/master"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mt-8 text-primary shadow-[0_0_15px_rgba(212,175,55,0.1)] hover:bg-primary/10 border border-primary/20"
+              className="flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all duration-200 mt-6 text-[#D4AF37] bg-[#D4AF37]/5 hover:bg-[#D4AF37]/15 border border-[#D4AF37]/25 shadow-[0_0_15px_rgba(212,175,55,0.06)]"
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-4.5 h-4.5" />
               Painel Master
             </Link>
           )}
           
-          <div className="mt-8 px-3">
+          <div className="mt-8 px-2">
              <PWAInstallButton />
           </div>
         </div>
 
-        <div className="p-4 border-t border-white/5">
+        <div className="p-4 border-t border-white/5 bg-[#070708]">
           <div className="flex items-center gap-3 px-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37]/15 to-[#D4AF37]/5 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.05)] font-heading">
               {userData?.fullName?.charAt(0).toUpperCase()}
             </div>
             <div className="overflow-hidden">
-              <p className="text-sm font-medium truncate">{userData?.fullName}</p>
-              <p className="text-xs text-muted-foreground truncate">{isPlatformAdmin ? 'Administrador Global' : (salonData?.name || 'Sem salão')}</p>
+              <p className="text-xs font-semibold text-white truncate">{userData?.fullName}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{isPlatformAdmin ? 'Administrador Global' : (salonData?.name || 'Sem salão')}</p>
             </div>
           </div>
           <BugReportDialog />
-          <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10" onClick={logout}>
+          <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl mt-1.5 text-xs h-9" onClick={logout}>
             <LogOut className="w-4 h-4 mr-2" />
             Sair
           </Button>
@@ -143,17 +147,24 @@ export default function DashboardLayout() {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 md:h-20 border-b border-white/5 bg-background flex items-center justify-between px-4 md:px-8">
-          <div className="flex items-center gap-4 md:hidden">
-            <button onClick={() => setIsMobileMenuOpen(true)}>
-              <Menu className="w-6 h-6 text-foreground" />
+      <div className="flex-1 flex flex-col min-w-0 bg-[#050505]">
+        <header className="h-16 md:h-20 border-b border-white/5 bg-[#09090b]/80 backdrop-blur-md flex items-center justify-between px-4 md:px-8 sticky top-0 z-10">
+          <div className="flex items-center gap-3.5 md:hidden">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-1.5 rounded-lg border border-white/10 bg-white/5 hover:border-[#D4AF37]/30 transition-all duration-200"
+            >
+              <Menu className="w-5 h-5 text-foreground" />
             </button>
-            <span className="font-heading font-medium tracking-wide">Lumière</span>
+            <div className="flex items-center gap-1.5">
+              <Crown className="w-4 h-4 text-[#D4AF37]" />
+              <span className="font-sans font-bold tracking-widest text-[#D4AF37] text-sm uppercase leading-none">Lumiere<span className="text-white">OS</span></span>
+            </div>
           </div>
           
           <div className="hidden md:flex items-center">
-            <h1 className="text-xl font-heading text-muted-foreground">
+            <h1 className="text-lg font-medium text-white flex items-center gap-2 font-heading">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37]" />
               {navigation.find(n => n.exact ? location.pathname === n.href : location.pathname.startsWith(n.href))?.name || 'Dashboard'}
             </h1>
           </div>
@@ -164,32 +175,36 @@ export default function DashboardLayout() {
                size="sm"
                variant="outline"
                onClick={() => setIsGuideOpen(true)}
-               className="text-xs h-8 border-primary/20 hover:border-primary/50 text-primary hover:bg-primary/10 transition-all font-semibold rounded-xl bg-white/5 flex items-center gap-1.5 shrink-0"
+               className="text-xs h-8.5 border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
              >
-               <HelpCircle className="w-4 h-4 text-primary" />
+               <HelpCircle className="w-4 h-4 text-[#D4AF37]" />
                <span className="hidden sm:inline">Guia do Sistema</span>
                <span className="sm:hidden">Ajuda</span>
              </Button>
 
-
-
-
              {/* Plan badge */}
-             <div className="hidden sm:flex items-center px-3 py-1 bg-white/5 rounded-full border border-white/10 text-xs text-muted-foreground">
-               <span className="uppercase tracking-wider mr-2 font-bold text-primary">{isPlatformAdmin ? 'MASTER' : salonData?.plan}</span> 
-               | Status: {isPlatformAdmin ? 'ativo' : salonData?.subscriptionStatus}
+             <div className="hidden sm:flex items-center h-8.5 px-3 py-1 bg-white/[0.02] rounded-xl border border-white/10 text-[11px] text-muted-foreground whitespace-nowrap">
+               <span className="uppercase tracking-wider mr-2 font-bold text-[#D4AF37]">{isPlatformAdmin ? 'MASTER' : salonData?.plan}</span> 
+               <span className="opacity-40 mr-2">|</span>
+               <span>Status:</span>
+               <span className={cn(
+                 "ml-1 font-semibold capitalize",
+                 isPlatformAdmin || salonData?.subscriptionStatus === 'active' ? "text-green-400" : "text-[#D4AF37]"
+               )}>
+                 {isPlatformAdmin ? 'ativo' : (salonData?.subscriptionStatus === 'trial' ? 'teste' : salonData?.subscriptionStatus)}
+               </span>
              </div>
           </div>
         </header>
 
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
           {salonData?.subscriptionStatus === 'trial' && !isPlatformAdmin && (
-             <div className="mb-6 bg-primary/10 border border-primary/20 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                   <h4 className="font-medium text-primary flex items-center gap-2"><Sparkles className="w-4 h-4"/> Você está no período de teste</h4>
-                   <p className="text-sm text-foreground/80 mt-1">Aproveite todos os recursos do plano {salonData.plan} gratuitamente.</p>
+             <div className="mb-6 bg-gradient-to-r from-[#D4AF37]/15 to-transparent border border-[#D4AF37]/25 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_0_20px_rgba(212,175,55,0.03)]">
+                <div className="text-center sm:text-left">
+                   <h4 className="font-semibold text-[#D4AF37] flex items-center justify-center sm:justify-start gap-2 text-sm leading-none"><Sparkles className="w-4 h-4 animate-pulse"/> Você está no Período de Testes</h4>
+                   <p className="text-xs text-slate-300 mt-1.5 leading-relaxed font-light">Aproveite todos os recursos premium do plano <b className="text-white capitalize">{salonData.plan}</b> gratuitamente.</p>
                 </div>
-                <Button size="sm" className="bg-primary text-black">
+                <Button size="sm" className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold rounded-xl text-xs h-9.5 px-4 shrink-0 shadow-[0_4px_15px_rgba(212,175,55,0.15)]">
                   <CreditCard className="w-4 h-4 mr-2" />
                   Assinar Agora
                 </Button>
@@ -201,47 +216,107 @@ export default function DashboardLayout() {
         </main>
       </div>
 
-      {/* Mobile Menu (simplified for now) */}
+      {/* Mobile Slide-over Drawer Menu */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm md:hidden flex flex-col">
-           <div className="h-16 flex items-center justify-between px-4 border-b border-white/5">
-              <span className="font-heading font-medium tracking-wide">Menu</span>
-              <button onClick={() => setIsMobileMenuOpen(false)}>
-                <X className="w-6 h-6" />
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* Backdrop Overlay */}
+          <div 
+            className="fixed inset-0 bg-black/85 backdrop-blur-xs transition-opacity duration-300 pointer-events-auto"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          {/* Slider Container */}
+          <div className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-[#09090b] border-r border-[#D4AF37]/10 flex flex-col z-50 animate-in slide-in-from-left duration-200">
+            <div className="h-16 flex items-center justify-between px-5 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-[#D4AF37] filter drop-shadow-[0_0_4px_rgba(212,175,55,0.3)]" />
+                <span className="text-sm font-bold tracking-widest text-[#D4AF37] uppercase font-sans">Lumière<span className="text-white">OS</span></span>
+              </div>
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-[#D4AF37] transition-colors"
+              >
+                <X className="w-5 h-5" />
               </button>
-           </div>
-           {/* Re-use navigation logic here, keeping short for brevity */}
-           <div className="p-4 space-y-2 flex-1">
-             <div className="mb-4">
-               <Button 
-                 onClick={() => { setIsMobileMenuOpen(false); setIsGuideOpen(true); }}
-                 variant="outline"
-                 className="w-full text-primary border-primary/20 hover:bg-primary/5 h-10 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 bg-white/5"
-               >
-                 <HelpCircle className="w-4 h-4" /> Guia do Sistema
-               </Button>
-             </div>
-             {navigation.map(item => (
-                <Link key={item.name} to={item.href} onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 p-3 text-lg">
-                  <item.icon className="w-5 h-5 text-primary" /> {item.name}
+            </div>
+            
+            <div className="flex-1 py-5 px-4 space-y-1.5 overflow-y-auto">
+              <div className="mb-5">
+                 <Button 
+                   onClick={() => { setIsMobileMenuOpen(false); setIsGuideOpen(true); }}
+                   variant="outline"
+                   className="w-full text-[#D4AF37] border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 h-10 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 bg-white/[0.02]"
+                 >
+                   <HelpCircle className="w-4 h-4" /> Guia do Sistema
+                 </Button>
+              </div>
+              
+              {navigation.map((item) => {
+                const isActive = item.exact 
+                  ? location.pathname === item.href 
+                  : location.pathname.startsWith(item.href);
+                  
+                return (
+                  <Link 
+                    key={item.name} 
+                    to={item.href} 
+                    onClick={() => setIsMobileMenuOpen(false)} 
+                    className={cn(
+                      "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all duration-200 border",
+                      isActive 
+                        ? "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20" 
+                        : "text-muted-foreground hover:text-white hover:bg-white/[0.02] border-transparent"
+                    )}
+                  >
+                    <item.icon className={cn("w-4.5 h-4.5", isActive ? "text-[#D4AF37]" : "text-muted-foreground")} /> {item.name}
+                  </Link>
+                );
+              })}
+              
+              {isPlatformAdmin && (
+                <Link
+                  to="/master"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-colors mt-6 text-[#D4AF37] bg-[#D4AF37]/5 border border-[#D4AF37]/25"
+                >
+                  <Settings className="w-4.5 h-4.5" />
+                  Painel Master
                 </Link>
-             ))}
-             <div className="mt-4 pt-4 border-t border-white/5">
-                <PWAInstallButton />
-             </div>
-           </div>
-           <div className="p-4 border-t border-white/5">
-             <Button variant="ghost" className="w-full justify-start text-destructive" onClick={logout}>Sair da Conta</Button>
-           </div>
+              )}
+              
+              <div className="mt-6">
+                 <PWAInstallButton />
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-white/5 bg-[#070708]">
+              <div className="flex items-center gap-3 px-3 mb-4">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#D4AF37]/15 to-[#D4AF37]/5 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] font-bold">
+                  {userData?.fullName?.charAt(0).toUpperCase()}
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-semibold text-white truncate">{userData?.fullName}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{isPlatformAdmin ? 'Administrador Global' : (salonData?.name || 'Sem salão')}</p>
+                </div>
+              </div>
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl text-xs h-9 px-3" 
+                onClick={() => { setIsMobileMenuOpen(false); logout(); }}
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sair da Conta
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Guia do Sistema Modal */}
       <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
-        <DialogContent className="max-w-4xl bg-[#0a0a0c]/98 border border-white/10 text-white rounded-2xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto w-[94vw] sm:w-[90vw]">
+        <DialogContent className="max-w-4xl bg-[#09090b]/98 border border-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto w-[94vw] sm:w-[90vw]">
           <DialogHeader className="border-b border-white/5 pb-4">
             <DialogTitle className="text-xl md:text-2xl font-heading font-light tracking-tight text-white flex items-center gap-2">
-              <Sparkles className="w-5 md:w-6 h-5 md:h-6 text-primary animate-pulse" /> Guia do Sistema LumiereOS
+              <Crown className="w-5 md:w-6 h-5 md:h-6 text-[#D4AF37] animate-pulse" /> Guia do Sistema LumiereOS
             </DialogTitle>
             <p className="text-[#a1a1aa] text-xs font-light mt-1">
               Descubra como aproveitar ao máximo cada módulo do seu sistema operacional de salão de beleza premium.
@@ -250,9 +325,9 @@ export default function DashboardLayout() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 font-sans max-h-[50vh] overflow-y-auto pr-2">
             {/* Dashboard */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <LayoutDashboard className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <LayoutDashboard className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Dashboard</h4>
@@ -263,9 +338,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Agenda */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <CalendarDays className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <CalendarDays className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Agenda</h4>
@@ -276,9 +351,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Clientes */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <Users className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <Users className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Clientes</h4>
@@ -289,9 +364,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Profissionais */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <Users className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <Users className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Profissionais</h4>
@@ -302,9 +377,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Serviços */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <Scissors className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <Scissors className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Serviços e Categorias</h4>
@@ -315,9 +390,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Checklist */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <CheckSquare className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <CheckSquare className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Checklist</h4>
@@ -328,9 +403,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Metas */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <Target className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <Target className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Metas</h4>
@@ -341,9 +416,9 @@ export default function DashboardLayout() {
             </div>
 
             {/* Relatórios */}
-            <div className="bg-white/[0.02] border border-white/5 p-4 rounded-xl flex gap-3 hover:border-primary/20 transition-all">
-              <div className="p-2 h-max rounded-lg bg-primary/10 border border-primary/20 shrink-0">
-                <FileText className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/20 transition-all duration-200">
+              <div className="p-2 h-max rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 shrink-0">
+                <FileText className="w-4.5 h-4.5 text-[#D4AF37]" />
               </div>
               <div className="space-y-1">
                 <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Relatórios</h4>
@@ -355,14 +430,14 @@ export default function DashboardLayout() {
 
             {/* Painel Master */}
             {isPlatformAdmin && (
-              <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl flex gap-3 hover:border-primary/35 transition-all md:col-span-2">
-                <div className="p-2 h-max rounded-lg bg-primary/20 border border-primary/30 shrink-0">
-                  <Settings className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+              <div className="bg-[#D4AF37]/5 border border-[#D4AF37]/20 p-4 rounded-2xl flex gap-3 hover:border-[#D4AF37]/35 transition-all md:col-span-2">
+                <div className="p-2 h-max rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/30 shrink-0">
+                  <Settings className="w-4.5 h-4.5 text-[#D4AF37]" />
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <h4 className="font-semibold text-xs text-white uppercase tracking-wider">Painel Master</h4>
-                    <span className="text-[8px] bg-primary text-black font-bold px-1.5 py-0.5 rounded uppercase font-mono tracking-widest">Apenas Admin</span>
+                    <span className="text-[8px] bg-[#D4AF37] text-black font-bold px-1.5 py-0.5 rounded uppercase font-mono tracking-widest">Apenas Admin</span>
                   </div>
                   <p className="text-[11px] text-[#a1a1aa] leading-relaxed">
                     Área administrativa exclusiva de nível de plataforma. Permite gerenciar salões afiliados, planos, visualizações financeiras e o suporte geral do ecossistema LumiereOS.
@@ -373,7 +448,7 @@ export default function DashboardLayout() {
           </div>
           
           <div className="flex justify-end pt-4 border-t border-white/5 mt-4">
-            <Button onClick={() => setIsGuideOpen(false)} className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-9">
+            <Button onClick={() => setIsGuideOpen(false)} className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold rounded-xl text-xs px-5 h-9">
               Entendido
             </Button>
           </div>

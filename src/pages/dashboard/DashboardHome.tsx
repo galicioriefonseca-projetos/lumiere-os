@@ -1,14 +1,36 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, where, getDocs } from 'firebase/firestore';
+import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, ArrowRight, Users, Scissors, UserPlus, CalendarPlus, Target, ListTodo, Star, TrendingUp } from 'lucide-react';
+import { 
+  Loader2, 
+  Users, 
+  Scissors, 
+  UserPlus, 
+  CalendarPlus, 
+  Target, 
+  ListTodo, 
+  Star, 
+  TrendingUp, 
+  Crown, 
+  HelpCircle, 
+  Sparkles,
+  ArrowRight,
+  Clock,
+  Briefcase,
+  AlertCircle,
+  FileText,
+  Lock,
+  Compass
+} from 'lucide-react';
 import { formatBRL, cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import ProfessionalDashboard from './ProfessionalDashboard';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Appointment, Goal, ChecklistRun, Professional } from '../../types';
 
 import {
   ResponsiveContainer,
@@ -26,13 +48,15 @@ export default function DashboardHome() {
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(true);
-  const [professionals, setProfessionals] = useState<any[]>([]);
-  const [checklistRuns, setChecklistRuns] = useState<any[]>([]);                
-  const [goals, setGoals] = useState<any[]>([]);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [checklistRuns, setChecklistRuns] = useState<ChecklistRun[]>([]);                
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
+  const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
+  const [isFinanceDialogOpen, setIsFinanceDialogOpen] = useState(false);
+
   const [stats, setStats] = useState({
-    goals: 0,
     clients: 0,
-    todayAppointments: 0,
     goalTarget: 0,
     goalCurrent: 0,
     checklistPct: 0
@@ -40,6 +64,10 @@ export default function DashboardHome() {
 
   const todayStr = new Date().toISOString().substring(0, 10);
   const currentMonthStr = new Date().toISOString().substring(0, 7);
+
+  // Checks for permissions
+  const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin';
+  const isReceptionistOrAttendant = userData?.role === 'receptionist' || userData?.role === 'attendant';
 
   useEffect(() => {
     if (!salonData) return;
@@ -53,7 +81,7 @@ export default function DashboardHome() {
     // Professionals
     const qp = query(collection(db, `salons/${salonData.id}/professionals`), where('isActive', '==', true));
     unsubs.push(onSnapshot(qp, snap => {
-        const pros = snap.docs.map(doc => ({id: doc.id, ...doc.data()}));
+        const pros = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Professional[];
         setProfessionals(pros);
     }));
 
@@ -63,12 +91,16 @@ export default function DashboardHome() {
 
     // Appointments Today
     const qa = query(collection(db, `salons/${salonData.id}/appointments`), where('date', '==', todayStr));
-    unsubs.push(onSnapshot(qa, snap => setStats(p => ({...p, todayAppointments: snap.docs.length}))));
+    unsubs.push(onSnapshot(qa, snap => {
+       const list = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Appointment[];
+       const sorted = list.sort((a, b) => a.time.localeCompare(b.time));
+       setTodayAppointments(sorted);
+    }));
 
-    // General Salon Goals & Current Goal
+    // General Salon Goals
     const qg = query(collection(db, `salons/${salonData.id}/goals`));
     unsubs.push(onSnapshot(qg, snap => {
-       const arr = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }) as any);
+       const arr = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }) as any) as Goal[];
        setGoals(arr);
        
        const currentGoal = arr.find(g => g.month === currentMonthStr);
@@ -82,7 +114,7 @@ export default function DashboardHome() {
     // Checklist Today
     const qk = query(collection(db, `salons/${salonData.id}/checklistRuns`), where('date', '==', todayStr));
     unsubs.push(onSnapshot(qk, snap => {
-       const runs = snap.docs.map(doc => ({id: doc.id, ...doc.data()}) as any);
+       const runs = snap.docs.map(doc => ({id: doc.id, ...doc.data()}) as any) as ChecklistRun[];
        setChecklistRuns(runs);
        
        let isProfessionalEval = false;
@@ -102,7 +134,12 @@ export default function DashboardHome() {
   }, [salonData, professionals.length, userData?.role]);
 
   if (loading || !salonData) {
-    return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="flex flex-col items-center justify-center p-24 gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
+        <span className="text-xs text-[#a1a1aa] tracking-widest font-mono uppercase animate-pulse">Sincronizando LumiereOS...</span>
+      </div>
+    );
   }
 
   if (userData?.role === 'professional') {
@@ -111,7 +148,7 @@ export default function DashboardHome() {
 
   const goalPct = stats.goalTarget > 0 ? Math.min(Math.round((stats.goalCurrent / stats.goalTarget) * 100), 100) : 0;
 
-  // Generate list of last 6 months in format YYYY-MM
+  // Last 6 months format helper
   const getLast6Months = () => {
     const list = [];
     const date = new Date();
@@ -141,7 +178,7 @@ export default function DashboardHome() {
 
   const last6Months = getLast6Months();
 
-  // Map and merge database goals with last 6 months list
+  // Map and merge goals
   const chartData = last6Months.map(m => {
     const existingGoal = goals.find((g: any) => g.month === m);
     return {
@@ -152,246 +189,607 @@ export default function DashboardHome() {
   });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8 font-sans pb-12 animate-fade-in">
       
-      {/* Header Profile */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-heading flex items-center gap-3">
-             {salonData.name}
-             {isPlatformAdmin ? (
-                <span className="text-[10px] uppercase tracking-wider bg-primary text-black font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                   <Star className="w-3 h-3" /> MASTER
-                </span>
-             ) : salonData.plan !== 'start' ? (
-                <span className="text-[10px] uppercase tracking-wider bg-primary text-black font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                   <Star className="w-3 h-3" /> {salonData.plan}
-                </span>
-             ) : null}
+      {/* Header Profile - Premium Luxury Styling */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-[#0d0d11] to-[#050505] rounded-3xl border border-[#D4AF37]/15 p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-[0_4px_30px_rgba(0,0,0,0.4)]">
+        <div className="absolute top-0 right-0 -translate-y-12 translate-x-12 w-80 h-80 bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase font-bold tracking-widest text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-2.5 py-1 rounded-full flex items-center gap-1 leading-none shadow-[0_2px_10px_rgba(212,175,55,0.05)]">
+               <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
+            </span>
+          </div>
+          <h1 className="text-2xl md:text-3xl font-light tracking-tight text-white font-heading">
+            <span className="font-semibold text-white">{salonData.name}</span>
           </h1>
-          <p className="text-muted-foreground mt-1">
-            Olá, <span className="text-foreground font-medium">{userData?.fullName}</span>. 
-            Sua assinatura está <span className="text-primary">{salonData.subscriptionStatus === 'trial' ? 'em teste' : 'ativa'}</span>.
+          <p className="text-xs text-muted-foreground max-w-xl leading-relaxed">
+            Olá, <span className="text-[#eeef] font-semibold">{userData?.fullName}</span>. Seu LumiereOS está de cara nova. Gerencie agendamentos, equipe, checklists Essenza e faturamento com facilidade.
           </p>
         </div>
         
-        <div className="flex gap-2">
-           <Button onClick={() => navigate('/dashboard/agendamentos')} className="rounded-full bg-primary hover:bg-gold-400 text-black">
+        <div className="flex flex-wrap gap-2.5 relative z-10">
+           <Button onClick={() => navigate('/dashboard/agendamentos')} className="rounded-xl bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold text-xs h-10 px-5 shadow-[0_4px_15px_rgba(212,175,55,0.15)] select-none">
+             <CalendarPlus className="w-4 h-4 mr-2" />
              Novo Agendamento
            </Button>
+           <Button onClick={() => navigate('/dashboard/clientes')} variant="outline" className="rounded-xl border-white/10 hover:border-[#D4AF37]/40 text-white bg-white/[0.02] text-xs h-10 px-5 font-medium">
+             <UserPlus className="w-4 h-4 mr-2 text-[#D4AF37]" />
+             Novo Cliente
+           </Button>
         </div>
-      </div>      {/* Banner de Avaliação - Apenas Owner, Manager ou Platform Admin */}
-      {(userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin') && professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id)).length > 0 && (() => {
+      </div>
+
+      {/* Checklist Evaluated notification pending checklist (Owners / Managers) */}
+      {isOwnerOrManager && professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id)).length > 0 && (() => {
         const pendingOnes = professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id));
         const names = pendingOnes.map(p => p.name).join(", ");
         return (
-          <Card className="border border-amber-500/20 bg-amber-500/5 rounded-2xl shadow-xl overflow-hidden">
-             <CardContent className="p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="border border-[#D4AF37]/20 bg-[#D4AF37]/5 rounded-2xl shadow-lg relative overflow-hidden backdrop-blur-md">
+             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#D4AF37]" />
+             <div className="p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div className="flex items-start gap-3.5">
-                   <div className="bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 mt-0.5">
-                      <ListTodo className="w-5 h-5 text-amber-500 animate-pulse" />
+                   <div className="bg-[#D4AF37]/10 p-2 rounded-xl border border-[#D4AF37]/25 mt-0.5">
+                      <ListTodo className="w-5 h-5 text-[#D4AF37] animate-pulse" />
                    </div>
                    <div>
-                      <p className="font-heading font-semibold text-amber-400 text-sm flex items-center gap-2">
+                      <p className="font-semibold text-[#D4AF37] text-sm flex items-center gap-1.5 leading-none">
                          Avaliação Diária Essenza: {pendingOnes.length} {pendingOnes.length === 1 ? 'Pendente' : 'Pendentes'}
                       </p>
-                      <p className="text-xs text-muted-foreground font-light leading-relaxed mt-1">
-                         Profissionais pendentes hoje: <span className="text-foreground font-medium">{names}</span>. Registre a presença ou falta deles para manter os relatórios diários em dia.
+                      <p className="text-xs text-slate-300 font-light leading-relaxed mt-1.5">
+                         Colaboradores pendentes hoje: <span className="text-white font-medium">{names}</span>. Registre a presença ou feedback deles hoje para acompanhar os relatórios diários.
                       </p>
                    </div>
                 </div>
                 <Button 
                    onClick={() => navigate('/dashboard/checklist')} 
-                   className="w-full md:w-auto shrink-0 bg-primary hover:bg-gold-400 text-black font-semibold text-xs h-9 rounded-xl px-4"
+                   className="w-full md:w-auto shrink-0 bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold text-xs h-9 rounded-xl px-4"
                 >
                    Avaliar Equipe
                 </Button>
-             </CardContent>
-          </Card>
+             </div>
+          </div>
         );
       })()}
 
-      {/* Grid Menu Acesso Rápido */}
-      <div className={cn("grid gap-3", 
-        (userData?.role === 'receptionist' || userData?.role === 'attendant') ? "grid-cols-2" : "grid-cols-2 md:grid-cols-4"
-      )}>
-         <Link to="/dashboard/clientes" className="bg-card hover:bg-white/[0.03] transition-colors border border-border p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2">
-            <UserPlus className="w-6 h-6 text-primary" />
-            <span className="text-sm font-medium">Novo Cliente</span>
-         </Link>
-         <Link to="/dashboard/servicos" className="bg-card hover:bg-white/[0.03] transition-colors border border-border p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2">
-            <Scissors className="w-6 h-6 text-primary" />
-            <span className="text-sm font-medium">Serviços</span>
-         </Link>
-         {(userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin') && (
-           <>
-             <Link to="/dashboard/equipe" className="bg-card hover:bg-white/[0.03] transition-colors border border-border p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2">
-                <Users className="w-6 h-6 text-primary" />
-                <span className="text-sm font-medium">Equipe</span>
-             </Link>
-             <Link to="/dashboard/checklist" className="bg-card hover:bg-white/[0.03] transition-colors border border-border p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2">
-                <ListTodo className="w-6 h-6 text-primary" />
-                <span className="text-sm font-medium">Checklist</span>
-             </Link>
-           </>
-         )}
+      {/* Quick Access Shortcuts - Beautiful grid custom aligned for roles */}
+      <div className="space-y-3.5">
+         <div className="flex items-center gap-2">
+           <Compass className="w-4 h-4 text-[#D4AF37]" />
+           <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Módulos de Acesso Rápido</span>
+         </div>
+         <div className={cn("grid gap-3.5", 
+           isReceptionistOrAttendant ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+         )}>
+            <Link to="/dashboard/agendamentos" className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group">
+               <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
+                 <CalendarPlus className="w-5 h-5 text-[#D4AF37]" />
+               </div>
+               <span className="text-xs font-semibold text-slate-200">Agenda</span>
+            </Link>
+            <Link to="/dashboard/clientes" className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group">
+               <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
+                 <Users className="w-5 h-5 text-[#D4AF37]" />
+               </div>
+               <span className="text-xs font-semibold text-slate-200">Clientes</span>
+            </Link>
+            <Link to="/dashboard/servicos" className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group">
+               <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
+                 <Scissors className="w-5 h-5 text-[#D4AF37]" />
+               </div>
+               <span className="text-xs font-semibold text-slate-200">Serviços</span>
+            </Link>
+            {isOwnerOrManager && (
+              <>
+                <Link to="/dashboard/equipe" className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group">
+                   <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
+                     <Briefcase className="w-5 h-5 text-[#D4AF37]" />
+                   </div>
+                   <span className="text-xs font-semibold text-slate-200">Equipe</span>
+                </Link>
+                <Link to="/dashboard/checklist" className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group">
+                   <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
+                     <ListTodo className="w-5 h-5 text-[#D4AF37]" />
+                   </div>
+                   <span className="text-xs font-semibold text-slate-200">Checklists</span>
+                </Link>
+                <button onClick={() => setIsReportsDialogOpen(true)} className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group w-full">
+                   <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
+                     <FileText className="w-5 h-5 text-[#D4AF37]" />
+                   </div>
+                   <span className="text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5">
+                     Relatórios <span className="text-[8px] bg-[#D4AF37]/20 border border-[#D4AF37]/30 text-[#D4AF37] px-1 py-0.5 rounded uppercase leading-none font-mono tracking-wider">Premium</span>
+                   </span>
+                </button>
+              </>
+            )}
+         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className={cn("grid gap-4",
-        (userData?.role === 'receptionist' || userData?.role === 'attendant') ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
-      )}>
+      {/* Stats Cards Dashboard Indicators */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-widest text-[10px]">Agendamentos (Hoje)</CardTitle>
-            <CalendarPlus className="h-4 w-4 text-primary" />
+        {/* Today's appointments */}
+        <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-3 opacity-10">
+            <CalendarPlus className="h-20 w-20 text-[#D4AF37]" />
+          </div>
+          <CardHeader className="pb-2">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-mono">Agendamentos Hoje</span>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-light">{stats.todayAppointments}</div>
+            <div className="text-3xl font-light tracking-tight text-white flex items-baseline gap-1.5">
+              <span>{todayAppointments.length}</span>
+              <span className="text-xs text-muted-foreground font-normal">atendimentos</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2 leading-none">Prontos para realização hoje</p>
           </CardContent>
         </Card>
 
-        {(userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin') && (
-          <>
-            <Card className="border-border">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-widest text-[10px]">Meta Mensal</CardTitle>
-                <Target className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-light">{formatBRL(stats.goalCurrent)}</div>
-                <div className="mt-3 space-y-1">
-                   <div className="text-[10px] flex justify-between text-muted-foreground">
-                      <span>Progresso</span>
-                      <span>{goalPct}%</span>
-                   </div>
-                   <Progress value={goalPct} className="h-1" />
-                </div>
-              </CardContent>
-            </Card>
+        {/* Client database size */}
+        <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-3 opacity-10">
+            <Users className="h-20 w-20 text-[#D4AF37]" />
+          </div>
+          <CardHeader className="pb-2">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-mono">Total Clientes</span>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-light tracking-tight text-white flex items-baseline gap-1.5">
+              <span>{stats.clients}</span>
+              <span className="text-xs text-[#D4AF37] font-semibold">ativos</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2 leading-none">Base total de clientes salvos</p>
+          </CardContent>
+        </Card>
 
-            <Card className="border-border">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-widest text-[10px]">Checklist do Dia</CardTitle>
-                <ListTodo className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-light">{stats.checklistPct}%</div>
-                <div className="mt-3 space-y-1">
-                   <div className="text-[10px] flex justify-between text-muted-foreground">
-                      <span>Concluído</span>
-                   </div>
-                   <Progress value={stats.checklistPct} className="h-1" />
-                </div>
-              </CardContent>
-            </Card>
-          </>
+        {/* Operational / Checklist Percentage (Owners / Managers) */}
+        {isOwnerOrManager ? (
+          <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <ListTodo className="h-20 w-20 text-[#D4AF37]" />
+            </div>
+            <CardHeader className="pb-2">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-mono">Aderência aos Checklists</span>
+            </CardHeader>
+            <CardContent className="space-y-3.5">
+              <div className="text-3xl font-light tracking-tight text-white">
+                {stats.checklistPct}%
+              </div>
+              <div className="space-y-1">
+                 <div className="text-[9px] flex justify-between text-muted-foreground font-mono leading-none">
+                    <span>Aproveitamento do dia</span>
+                    <span>{stats.checklistPct}%</span>
+                 </div>
+                 <Progress value={stats.checklistPct} className="h-1 bg-black/40" />
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Briefcase className="h-20 w-20 text-[#D4AF37]" />
+            </div>
+            <CardHeader className="pb-2">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-mono">Time Operacional</span>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-light tracking-tight text-white flex items-baseline gap-1.5">
+                <span>{professionals.length}</span>
+                <span className="text-xs text-muted-foreground font-normal">membros</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2 leading-none">Profissionais cadastrados ativos</p>
+            </CardContent>
+          </Card>
         )}
 
-        <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-widest text-[10px]">Base</CardTitle>
-            <Users className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-light"><span className="text-primary font-bold">{stats.clients}</span> Clientes</div>
-            <div className="text-sm text-muted-foreground"><span className="text-foreground">{professionals.length}</span> Profissionais</div>
-          </CardContent>
-        </Card>
+        {/* Goal Indicator / Month Target Progress (Owners / Managers) */}
+        {isOwnerOrManager ? (
+          <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Target className="h-20 w-20 text-[#D4AF37]" />
+            </div>
+            <CardHeader className="pb-2 flex justify-between items-center w-full">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-mono">Meta de Faturamento</span>
+            </CardHeader>
+            <CardContent className="space-y-3.5">
+              {stats.goalTarget > 0 ? (
+                <>
+                  <div className="text-2xl font-semibold tracking-tight text-white leading-none">
+                    {formatBRL(stats.goalCurrent)}
+                  </div>
+                  <div className="space-y-1">
+                     <div className="text-[9px] flex justify-between text-muted-foreground font-mono leading-none">
+                        <span>Alvo: {formatBRL(stats.goalTarget)}</span>
+                        <span>{goalPct}%</span>
+                     </div>
+                     <Progress value={goalPct} className="h-1 bg-black/40" />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1.5 py-1">
+                  <div className="text-sm font-semibold text-slate-300 leading-none">Não Definida</div>
+                  <button onClick={() => navigate('/dashboard/metas')} className="text-[10px] text-[#D4AF37] font-semibold hover:underline block leading-none text-left">
+                    Configurar agora
+                  </button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-3 opacity-5">
+              <Lock className="h-16 w-16 text-[#D4AF37]" />
+            </div>
+            <CardHeader className="pb-2">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-mono">Finanças</span>
+            </CardHeader>
+            <CardContent className="flex flex-col justify-center py-2">
+              <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#D4AF37]" /> Módulo reservado para gerência
+              </span>
+            </CardContent>
+          </Card>
+        )}
 
       </div>
 
-      {/* Chart performance card - Show for Owner, Manager, Admin & Platform Admin */}
-      {(userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin') && (
-        <Card className="border-border bg-card shadow-xl rounded-2xl overflow-hidden">
-          <CardHeader className="border-b border-border/80 pb-4">
-             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                   <CardTitle className="text-lg font-heading text-foreground flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-primary" />
-                      Desempenho de Faturamento
-                   </CardTitle>
-                   <p className="text-xs text-muted-foreground mt-1">
-                      Curva mensal comparativa entre faturamento real (atual) e faturamento estimado (meta).
-                   </p>
-                </div>
-                <div className="flex gap-2">
-                   <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/metas')} className="text-xs border-primary/20 hover:bg-primary/10 hover:text-primary">
-                      Definir Metas
-                   </Button>
-                </div>
-             </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-             <div className="h-80 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                   <AreaChart
-                      data={chartData}
-                      margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                   >
-                      <defs>
-                         <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#d4af37" stopOpacity={0.2}/>
-                            <stop offset="95%" stopColor="#d4af37" stopOpacity={0}/>
-                         </linearGradient>
-                         <linearGradient id="colorMeta" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0.05}/>
-                            <stop offset="95%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0}/>
-                         </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
-                      <XAxis 
-                         dataKey="name" 
-                         stroke="#71717a" 
-                         fontSize={11} 
-                         tickLine={false} 
-                         axisLine={false} 
-                      />
-                      <YAxis 
-                         stroke="#71717a" 
-                         fontSize={11} 
-                         tickLine={false} 
-                         axisLine={false}
-                         tickFormatter={(value) => `R$ ${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
-                      />
-                      <Tooltip 
-                         contentStyle={{ 
-                            backgroundColor: '#121214', 
-                            borderRadius: '12px', 
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            fontFamily: 'sans-serif'
-                         }}
-                         labelStyle={{ color: '#d4af37', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}
-                         itemStyle={{ color: '#e4e4e7', fontSize: '12px' }}
-                         formatter={(value: any, name: string) => [formatBRL(value), name]}
-                      />
-                      <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} />
-                      <Area 
-                         type="monotone" 
-                         dataKey="Faturamento" 
-                         name="Faturamento Real"
-                         stroke="#d4af37" 
-                         strokeWidth={2}
-                         fillOpacity={1} 
-                         fill="url(#colorFaturamento)" 
-                      />
-                      <Area 
-                         type="monotone" 
-                         dataKey="Meta" 
-                         name="Meta de Faturamento"
-                         stroke="rgba(255, 255, 255, 0.4)" 
-                         strokeWidth={1.5}
-                         strokeDasharray="4 4"
-                         fillOpacity={1} 
-                         fill="url(#colorMeta)" 
-                      />
-                   </AreaChart>
-                </ResponsiveContainer>
-             </div>
-          </CardContent>
-        </Card>
+      {/* Main Grid: Agenda de Hoje (Left Col) & Sidebar indicators (Right Col) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+         {/* Today's Agenda (Col-Span 2) */}
+         <div className="lg:col-span-2 space-y-3">
+            <div className="flex justify-between items-center px-1">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#D4AF37]" />
+                <h3 className="text-sm text-slate-200 uppercase tracking-wider font-semibold font-heading">Agenda de Hoje</h3>
+              </div>
+              <Button onClick={() => navigate('/dashboard/agendamentos')} size="sm" variant="ghost" className="text-xs text-[#D4AF37] hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] h-8 rounded-lg select-none">
+                Ver completa <ArrowRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </div>
+
+            <Card className="border-white/5 bg-[#0c0c0f] rounded-2xl shadow-xl overflow-hidden">
+               <CardContent className="p-0">
+                  {todayAppointments.length === 0 ? (
+                     <div className="p-10 text-center space-y-3.5 flex flex-col items-center">
+                        <div className="p-3 bg-white/[0.02] border border-white/5 text-muted-foreground rounded-2xl">
+                          <CalendarPlus className="w-8 h-8 opacity-25" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-white">Nenhum agendamento para hoje</p>
+                          <p className="text-xs text-muted-foreground font-light max-w-sm mx-auto">Sua agenda de hoje está livre de compromissos. Cadastre agendamentos na aba operacional para acompanhar o dia.</p>
+                        </div>
+                        <Button onClick={() => navigate('/dashboard/agendamentos')} className="h-8.5 text-xs bg-[#D4AF37] hover:bg-[#D4AF37]/80 text-black font-semibold rounded-xl px-4">
+                           Novo Agendamento
+                        </Button>
+                     </div>
+                  ) : (
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[500px]">
+                           <thead>
+                              <tr className="border-b border-light/5 text-muted-foreground text-[10px] font-semibold uppercase font-mono tracking-widest bg-white/[0.01]">
+                                 <th className="py-3 px-5">Horário</th>
+                                 <th className="py-3 px-4">Cliente</th>
+                                 <th className="py-3 px-4">Serviço</th>
+                                 <th className="py-3 px-4">Profissional</th>
+                                 <th className="py-3 px-5 text-right">Status</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-white/[0.03]">
+                              {todayAppointments.map((appt) => (
+                                 <tr key={appt.id} className="hover:bg-white/[0.01] transition-colors">
+                                    <td className="py-3.5 px-5 whitespace-nowrap">
+                                       <span className="font-mono text-xs font-semibold text-[#D4AF37] bg-[#D4AF37]/10 px-2.5 py-1 rounded-lg border border-[#D4AF37]/25 shadow-[0_2px_8px_rgba(212,175,55,0.05)]">
+                                         {appt.time}
+                                       </span>
+                                    </td>
+                                    <td className="py-3.5 px-4 font-medium text-xs text-white whitespace-nowrap">
+                                       {appt.clientName}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-xs text-slate-300">
+                                       {appt.serviceName}
+                                    </td>
+                                    <td className="py-3.5 px-4 text-xs text-slate-400">
+                                       {appt.professionalName}
+                                    </td>
+                                    <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                                       <span className={cn(
+                                         "text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full font-mono",
+                                         appt.status === 'completed' ? "bg-green-500/10 text-green-400 border border-green-500/20" :
+                                         appt.status === 'canceled' ? "bg-destructive/15 text-destructive border border-destructive/25" :
+                                         appt.status === 'no_show' ? "bg-slate-800 text-slate-400" :
+                                         "bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20"
+                                       )}>
+                                         {appt.status === 'scheduled' ? 'Confirmado' : 
+                                          appt.status === 'completed' ? 'Concluído' :
+                                          appt.status === 'canceled' ? 'Cancelado' : 'Falta'}
+                                       </span>
+                                    </td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                  )}
+               </CardContent>
+            </Card>
+         </div>
+
+         {/* Meta do Mês & Desempenho da Equipe (Owners & Managers) */}
+         <div className="space-y-6">
+            
+            {/* Owner Goals visual */}
+            {isOwnerOrManager && (
+              <div className="space-y-3">
+                <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground px-1 block">Metas do Mês</span>
+                <Card className="border-white/5 bg-[#0c0c0f] rounded-2xl shadow-xl overflow-hidden p-5">
+                   {stats.goalTarget > 0 ? (
+                      <div className="space-y-4">
+                         <div className="flex justify-between items-start">
+                            <div className="space-y-0.5">
+                               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider font-mono">Mês Atual</p>
+                               <span className="text-xs font-semibold text-slate-200 capitalize">{formatMonthLabel(currentMonthStr)}</span>
+                            </div>
+                            <span className="text-xs font-mono font-bold bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-2 py-0.5 rounded text-[#D4AF37] shadow-[0_2px_8px_rgba(212,175,55,0.05)]">
+                               {goalPct}% Batido
+                            </span>
+                         </div>
+                         
+                         <div className="space-y-1.5">
+                            <span className="text-xs text-muted-foreground">Progresso Faturado / Alvo</span>
+                            <div className="flex justify-between items-baseline font-mono">
+                               <span className="text-lg font-bold text-white">{formatBRL(stats.goalCurrent)}</span>
+                               <span className="text-xs text-slate-400">/ {formatBRL(stats.goalTarget)}</span>
+                            </div>
+                            <Progress value={goalPct} className="h-2 bg-black/50" />
+                         </div>
+
+                         {goalPct >= 100 && (
+                            <div className="flex gap-2.5 bg-green-500/10 border border-green-500/25 p-3 rounded-xl text-xs text-green-400 items-baseline">
+                               <span className="font-bold">★ SENSACIONAL:</span>
+                               <span className="font-light">Meta de faturamento atingida!</span>
+                            </div>
+                         )}
+                      </div>
+                   ) : (
+                      <div className="text-center py-6 space-y-3 flex flex-col items-center">
+                         <Target className="w-8 h-8 text-[#D4AF37] opacity-20" />
+                         <div className="space-y-1">
+                           <p className="text-xs font-semibold text-white">Nenhuma meta configurada</p>
+                           <p className="text-[11px] text-muted-foreground font-light">Estimule sua equipe definindo faturamentos desejados.</p>
+                         </div>
+                         <Button onClick={() => navigate('/dashboard/metas')} size="xs" className="h-8 text-xs bg-white/[0.03] border border-white/10 text-white hover:bg-[#D4AF37] hover:text-black hover:border-transparent font-medium rounded-xl px-3.5">
+                            Definir Metas
+                         </Button>
+                      </div>
+                   )}
+                </Card>
+              </div>
+            )}
+
+            {/* Team Evaluation performance listing */}
+            {isOwnerOrManager && (
+              <div className="space-y-3">
+                 <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground px-1 block">Aderência da Equipe</span>
+                 <Card className="border-white/5 bg-[#0c0c0f] rounded-2xl shadow-xl p-4 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                       <span className="text-xs font-semibold text-slate-300">Avaliação Essenza Ativa</span>
+                       <span className="text-[10px] text-muted-foreground font-light">{todayStr.split("-").reverse().join("/")}</span>
+                    </div>
+
+                    {professionals.length === 0 ? (
+                       <p className="text-xs text-muted-foreground font-mono text-center py-4">Nenhum profissional cadastrado.</p>
+                    ) : (
+                       <div className="space-y-2.5">
+                          {professionals.map((pro) => {
+                             const todayRun = checklistRuns.find(r => r.evaluatedProfessionalId === pro.id);
+                             return (
+                                <div key={pro.id} className="flex justify-between items-center text-xs p-3 bg-black/20 border border-white/[0.03] rounded-xl hover:border-white/10 transition-all duration-150">
+                                   <div className="space-y-0.5 max-w-[65%]">
+                                      <p className="font-semibold text-white truncate">{pro.name}</p>
+                                      <p className="text-[10px] text-muted-foreground truncate">{pro.category || pro.role || "Especialista"}</p>
+                                   </div>
+                                   <div className="text-right">
+                                      {todayRun ? (
+                                         todayRun.attendanceStatus === 'absent' ? (
+                                            <span className="text-[10px] font-semibold text-destructive uppercase font-mono bg-destructive/10 px-2 py-0.5 rounded border border-destructive/20">Falta</span>
+                                         ) : (
+                                            <span className="text-[10px] font-semibold text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">
+                                               {todayRun.totalScore !== undefined ? `Nota ${todayRun.totalScore}pt` : "Presente"}
+                                            </span>
+                                         )
+                                      ) : (
+                                         <span className="text-[10px] font-mono text-slate-500 font-medium">Não avaliado</span>
+                                      )}
+                                   </div>
+                                </div>
+                             );
+                          })}
+                       </div>
+                    )}
+                 </Card>
+              </div>
+            )}
+
+         </div>
+
+      </div>
+
+      {/* Chart performance card - Show only if faturamento/metas are active or for Owner / Manager */}
+      {isOwnerOrManager && (
+        <div className="space-y-3.5">
+          <div className="flex items-center gap-2 px-1">
+             <TrendingUp className="w-4 h-4 text-[#D4AF37]" />
+             <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Histórico e Tendência Anual</span>
+          </div>
+          <Card className="border-white/5 bg-[#0c0c0f] shadow-xl rounded-2xl overflow-hidden">
+            <CardHeader className="border-b border-white/5 pb-4 bg-white/[0.01]">
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                     <CardTitle className="text-sm font-heading font-semibold text-white">
+                        Curva Comparativa de Faturamento
+                     </CardTitle>
+                     <p className="text-[11px] text-muted-foreground mt-1">
+                        Acompanhe graficamente a relação entre faturamentos realizados e metas mensais estipuladas.
+                     </p>
+                  </div>
+                  <div className="flex gap-2">
+                     <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/metas')} className="text-xs border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] text-[#D4AF37]">
+                        Definir Metas
+                     </Button>
+                     <Button variant="outline" size="sm" onClick={() => setIsFinanceDialogOpen(true)} className="text-xs border-white/15 hover:bg-white/5 text-white">
+                        Finanças Avançadas
+                     </Button>
+                  </div>
+               </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+               <div className="h-80 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                     <AreaChart
+                        data={chartData}
+                        margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                     >
+                        <defs>
+                           <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#d4af37" stopOpacity={0.25}/>
+                              <stop offset="95%" stopColor="#d4af37" stopOpacity={0}/>
+                           </linearGradient>
+                           <linearGradient id="colorMeta" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0.05}/>
+                              <stop offset="95%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0}/>
+                           </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                        <XAxis 
+                           dataKey="name" 
+                           stroke="#71717a" 
+                           fontSize={11} 
+                           tickLine={false} 
+                           axisLine={false} 
+                        />
+                        <YAxis 
+                           stroke="#71717a" 
+                           fontSize={11} 
+                           tickLine={false} 
+                           axisLine={false}
+                           tickFormatter={(value) => `R$ ${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+                        />
+                        <Tooltip 
+                           contentStyle={{ 
+                              backgroundColor: '#121214', 
+                              borderRadius: '12px', 
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              fontFamily: 'sans-serif'
+                           }}
+                           labelStyle={{ color: '#d4af37', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}
+                           itemStyle={{ color: '#e4e4e7', fontSize: '12px' }}
+                           formatter={(value: any) => [formatBRL(value)]}
+                        />
+                        <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} />
+                        <Area 
+                           type="monotone" 
+                           dataKey="Faturamento" 
+                           name="Faturamento Real"
+                           stroke="#d4af37" 
+                           strokeWidth={2}
+                           fillOpacity={1} 
+                           fill="url(#colorFaturamento)" 
+                        />
+                        <Area 
+                           type="monotone" 
+                           dataKey="Meta" 
+                           name="Meta de Faturamento"
+                           stroke="rgba(255, 255, 255, 0.4)" 
+                           strokeWidth={1.5}
+                           strokeDasharray="4 4"
+                           fillOpacity={1} 
+                           fill="url(#colorMeta)" 
+                        />
+                     </AreaChart>
+                  </ResponsiveContainer>
+               </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
+
+      {/* Premium Relatórios modal - "Em Breve" */}
+      <Dialog open={isReportsDialogOpen} onOpenChange={setIsReportsDialogOpen}>
+         <DialogContent className="max-w-md bg-[#09090b] border border-[#D4AF37]/20 text-white rounded-3xl shadow-2xl p-6">
+            <DialogHeader className="items-center text-center space-y-3">
+               <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]">
+                  <FileText className="w-6 h-6 animate-pulse" />
+               </div>
+               <DialogTitle className="text-lg font-heading font-medium text-white">Relatórios Avançados Lumière</DialogTitle>
+               <DialogDescription className="text-xs text-slate-300 leading-relaxed max-w-xs font-light">
+                  A nossa plataforma de relatórios consolidados, notas analíticas de conformidade Essenza e exportações automáticas de agenda em PDF de alta resolução está na fase final de homologação.
+               </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 space-y-3 border-y border-white/5 my-4">
+               <div className="flex gap-3 items-start text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-white">Relatórios em alta definição</p>
+                    <p className="text-[11px] text-[#a1a1aa] leading-relaxed">Impressão limpa e otimizada do desempenho operacional e checklists.</p>
+                  </div>
+               </div>
+               <div className="flex gap-3 items-start text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-white">Faturamento e Ticket Médio por Profissional</p>
+                    <p className="text-[11px] text-[#a1a1aa] leading-relaxed">Visualizações dedicadas de produção com apuração financeira precisa por parceiro.</p>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex justify-center">
+               <Button onClick={() => setIsReportsDialogOpen(false)} className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold text-xs rounded-xl h-9.5 px-6">
+                  Voltar ao Painel
+               </Button>
+            </div>
+         </DialogContent>
+      </Dialog>
+
+      {/* Premium Financeiro Avançado modal - "Em Breve" */}
+      <Dialog open={isFinanceDialogOpen} onOpenChange={setIsFinanceDialogOpen}>
+         <DialogContent className="max-w-md bg-[#09090b] border border-[#D4AF37]/20 text-white rounded-3xl shadow-2xl p-6">
+            <DialogHeader className="items-center text-center space-y-3">
+               <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]">
+                  <TrendingUp className="w-6 h-6 animate-pulse" />
+               </div>
+               <DialogTitle className="text-lg font-heading font-medium text-white">Painel de Comissões e Custos</DialogTitle>
+               <DialogDescription className="text-xs text-slate-300 leading-relaxed max-w-xs font-light">
+                  A gestão financeira inteligente com cálculo matemático de margens, faturamento líquido do estabelecimento e comissionamento retroativo para parceiros está em fase final de desenvolvimento.
+               </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 space-y-3 border-y border-white/5 my-4">
+               <div className="flex gap-3 items-start text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-white">Fechamento de Caixa Automatizado</p>
+                    <p className="text-[11px] text-[#a1a1aa] leading-relaxed">Consolidação automática de recebíveis diários de cartões, Pix e espécie.</p>
+                  </div>
+               </div>
+               <div className="flex gap-3 items-start text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] mt-1.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-white">Comissões por Desempenho (Essenza-Fin)</p>
+                    <p className="text-[11px] text-[#a1a1aa] leading-relaxed">Divisão imediata e correta baseada no contrato cadastrado para cada especialista.</p>
+                  </div>
+               </div>
+            </div>
+
+            <div className="flex justify-center">
+               <Button onClick={() => setIsFinanceDialogOpen(false)} className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold text-xs rounded-xl h-9.5 px-6">
+                  Entendi
+               </Button>
+            </div>
+         </DialogContent>
+      </Dialog>
 
     </div>
   );
