@@ -131,7 +131,7 @@ export default function DashboardLayout() {
             </div>
             <div className="overflow-hidden">
               <p className="text-sm font-medium truncate">{userData?.fullName}</p>
-              <p className="text-xs text-muted-foreground truncate">{salonData?.name}</p>
+              <p className="text-xs text-muted-foreground truncate">{isPlatformAdmin ? 'Administrador Global' : (salonData?.name || 'Sem salão')}</p>
             </div>
           </div>
           <BugReportDialog />

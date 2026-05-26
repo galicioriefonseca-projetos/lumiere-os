@@ -28,10 +28,7 @@ service cloud.firestore {
 
     // Super Admin global role helper
     function isPlatformAdmin() {
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
-        (exists(userDoc()) && userRole() == "platform_admin")
-      );
+      return isSignedIn() && exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
     }
 
     function isOwnerOfUser(userId) {
@@ -92,7 +89,10 @@ service cloud.firestore {
       );
       
       // Client creation check
-      allow create: if isOwnerOfUser(userId) && request.resource.data.role != 'platform_admin';
+      allow create: if isOwnerOfUser(userId) && (
+        request.resource.data.role != 'platform_admin' ||
+        exists(/databases/$(database)/documents/platformAdmins/$(userId))
+      );
       
       // Client updates protect role-escalation and salon spoofing
       allow update: if isPlatformAdmin() || (

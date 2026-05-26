@@ -124,27 +124,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (user) {
         setLoading(true);
+        console.log("[AuthInit] Usuário autenticado no Firebase Auth. UID:", user.uid, "Email:", user.email);
 
-        // Check platformAdmin status once
+        let isPlatformAdminFromColl = false;
         try {
           const adminRef = doc(db, 'platformAdmins', user.uid);
           const adminSnap = await getDoc(adminRef);
-          setIsPlatformAdmin(adminSnap.exists());
+          isPlatformAdminFromColl = adminSnap.exists();
+          setIsPlatformAdmin(isPlatformAdminFromColl);
+          console.log("[AuthInit] PlatformAdmin doc existe em platformAdmins/", user.uid, "?", isPlatformAdminFromColl);
         } catch (err) {
-          console.error("Error fetching platformAdmin:", err);
+          console.error("[AuthInit] Erro ao buscar platformAdmins document:", err);
         }
 
         // Listen to users/{uid} document in real-time
         unsubscribeUserSnapshot = onSnapshot(doc(db, 'users', user.uid), (userSnap) => {
-          if (userSnap.exists()) {
-            const uData = { id: userSnap.id, ...userSnap.data() } as User;
-            setUserData(uData);
-            if (uData.role === 'platform_admin') {
-              setIsPlatformAdmin(true);
-            }
+          let uData: User | null = null;
 
-            // Listen to salons/{salonId} in real-time
-            if (uData.salonId) {
+          if (userSnap.exists()) {
+            uData = { id: userSnap.id, ...userSnap.data() } as User;
+            console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
+          } else if (isPlatformAdminFromColl) {
+            console.log("[AuthInit] users doc não existe, mas o usuário pertence à coleção platformAdmins. Gerando perfil virtual...");
+            uData = {
+              id: user.uid,
+              fullName: user.displayName || 'Platform Admin',
+              email: user.email || '',
+              phone: '',
+              role: 'platform_admin',
+              isActive: true,
+              salonId: '',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            } as User;
+          }
+
+          if (uData) {
+            const finalIsPlatform = isPlatformAdminFromColl || uData.role === 'platform_admin';
+            setIsPlatformAdmin(finalIsPlatform);
+            setUserData(uData);
+
+            // Listen to salons/{salonId} in real-time if they have a salonId and are not platform_admin
+            if (uData.salonId && uData.role !== 'platform_admin') {
               if (unsubscribeSalonSnapshot) {
                 unsubscribeSalonSnapshot();
               }
@@ -156,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
                 setLoading(false);
               }, (err) => {
-                console.error("Error listening to salon:", err);
+                console.error("[AuthInit] Erro ao ouvir salons doc:", err);
                 setLoading(false);
               });
             } else {
@@ -169,7 +190,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
           }
         }, (err) => {
-          console.error("Error listening to user document:", err);
+          console.error("[AuthInit] Erro ao escutar users doc:", err);
+          
+          // Force fallback to platform admin if users snapshot is blocked due to missing users doc permissions
+          if (isPlatformAdminFromColl) {
+            console.log("[AuthInit] Ativando perfil virtual de platform_admin sob erro de permissão.");
+            setIsPlatformAdmin(true);
+            setUserData({
+              id: user.uid,
+              fullName: user.displayName || 'Platform Admin',
+              email: user.email || '',
+              phone: '',
+              role: 'platform_admin',
+              isActive: true,
+              salonId: '',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            } as User);
+          }
           setLoading(false);
         });
 
@@ -199,14 +237,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<AuthUser> => {
     const provider = new GoogleAuthProvider();
+    console.log("[PlatformAuth] Chamando signInWithPopup...");
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
-    const userDocRef = doc(db, 'users', user.uid);
-    const userDocSnap = await getDoc(userDocRef);
-    if (!userDocSnap.exists()) {
-      await signOut(auth);
-      throw { code: 'auth/user-not-registered-google' };
+    console.log("[PlatformAuth] Autenticado via Google Popup. UID:", user.uid, "Email:", user.email);
+    
+    let userDocSnap = null;
+    try {
+      userDocSnap = await getDoc(doc(db, 'users', user.uid));
+      console.log("[PlatformAuth] users doc lido. Existe?", userDocSnap.exists());
+    } catch (e) {
+      console.warn("[PlatformAuth] Erro ao ler users doc. Ignorando para possível criação...", e);
     }
+    
+    let adminDocSnap = null;
+    try {
+      adminDocSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+      console.log("[PlatformAuth] platformAdmins doc lido. Existe?", adminDocSnap.exists());
+    } catch (e) {
+      console.warn("[PlatformAuth] Erro ao ler platformAdmins doc. Ignorando...", e);
+    }
+    
+    // Check if user is platform admin in platformAdmins/{uid} OR if users/{uid}.role === 'platform_admin'
+    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin');
+    console.log("[PlatformAuth] Usuário é platform_admin detectado?", isPlatformAdminExplicit);
+
+    if (!userDocSnap || !userDocSnap.exists()) {
+      if (isPlatformAdminExplicit) {
+        console.log("[PlatformAuth] platform_admin sem documento user. Criando perfil...");
+        const now = Date.now();
+        const newProfile = {
+          id: user.uid,
+          fullName: user.displayName || 'Platform Admin',
+          email: user.email || '',
+          phone: user.phoneNumber || '',
+          role: 'platform_admin',
+          createdAt: now,
+          updatedAt: now,
+        };
+        try {
+          await setDoc(doc(db, 'users', user.uid), newProfile);
+          console.log("[PlatformAuth] Perfil gravado com sucesso.");
+        } catch (writeErr) {
+          console.error("[PlatformAuth] Erro ao gravar perfil users no Firestore:", writeErr);
+        }
+      } else {
+        console.log("[PlatformAuth] Bloqueando login: Usuário normal não registrado.");
+        await signOut(auth);
+        throw { code: 'auth/user-not-registered-google' };
+      }
+    } else {
+      // User doc already exists. Sync role if they are found in platformAdmins
+      const currentRole = userDocSnap.data()?.role;
+      if (isPlatformAdminExplicit && currentRole !== 'platform_admin') {
+        console.log("[PlatformAuth] Sincronizando papel de usuário existente para 'platform_admin'...");
+        try {
+          await updateDoc(doc(db, 'users', user.uid), {
+            role: 'platform_admin',
+            updatedAt: Date.now()
+          });
+          console.log("[PlatformAuth] Papel sincronizado no Firestore.");
+        } catch (writeErr) {
+          console.error("[PlatformAuth] Erro ao atualizar papel no Firestore:", writeErr);
+        }
+      }
+    }
+    
     return user;
   };
 

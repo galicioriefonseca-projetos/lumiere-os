@@ -31,20 +31,30 @@ export default function LoginPage() {
       // Clear any dev simulated role to prevent overriding logging user's role
       sessionStorage.removeItem('demo_role');
 
-      // Resolve redirect target dynamically if login is directed to general /dashboard
-      let targetPath = from;
-      if (from === '/dashboard' || from === '/dashboard/') {
-        try {
-          const userSnap = await getDoc(doc(db, 'users', user.uid));
-          if (userSnap.exists()) {
-            const uRole = userSnap.data()?.role;
-            if (uRole === 'professional') {
-              targetPath = '/dashboard/meu-painel';
+      // Resolve redirect target dynamically
+      let targetPath = '/dashboard';
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+        
+        const isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
+        
+        if (isPlatform) {
+          targetPath = '/master';
+        } else if (userSnap.exists()) {
+          const uRole = userSnap.data()?.role;
+          if (uRole === 'professional') {
+            targetPath = '/dashboard/meu-painel';
+          } else {
+            if (from && from.startsWith('/dashboard') && from !== '/dashboard' && from !== '/dashboard/') {
+              targetPath = from;
+            } else {
+              targetPath = '/dashboard';
             }
           }
-        } catch (err) {
-          console.error("Error checking user role on login:", err);
         }
+      } catch (err) {
+        console.error("Error checking user role on login:", err);
       }
 
       toast.success('Login efetuado com sucesso.');
@@ -66,23 +76,29 @@ export default function LoginPage() {
     try {
       const user = await signInWithGoogle();
       
-      let targetPath = from;
-      if (from === '/dashboard' || from === '/dashboard/') {
-        try {
-          const userSnap = await getDoc(doc(db, 'users', user.uid));
-          if (userSnap.exists()) {
-            const uRole = userSnap.data()?.role;
-            if (uRole === 'professional') {
-              targetPath = '/dashboard/meu-painel';
-            } else if (uRole === 'platform_admin') {
-              targetPath = '/master';
+      let targetPath = '/dashboard';
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+        
+        const isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
+        
+        if (isPlatform) {
+          targetPath = '/master';
+        } else if (userSnap.exists()) {
+          const uRole = userSnap.data()?.role;
+          if (uRole === 'professional') {
+            targetPath = '/dashboard/meu-painel';
+          } else {
+            if (from && from.startsWith('/dashboard') && from !== '/dashboard' && from !== '/dashboard/') {
+              targetPath = from;
             } else {
               targetPath = '/dashboard';
             }
           }
-        } catch (err) {
-          console.error("Error checking user role on Google login:", err);
         }
+      } catch (err) {
+        console.error("Error checking user role on Google login:", err);
       }
 
       toast.success('Login efetuado com sucesso via Google.');
