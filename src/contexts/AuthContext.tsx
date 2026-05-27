@@ -10,6 +10,7 @@ interface AuthContextType {
   salonData: Salon | null;
   isPlatformAdmin: boolean;
   loading: boolean;
+  syncError: string | null;
   logout: () => Promise<void>;
   refreshUserData: () => Promise<void>;
   signInWithGoogle: () => Promise<AuthUser>;
@@ -38,6 +39,7 @@ const AuthContext = createContext<AuthContextType>({
   salonData: null,
   isPlatformAdmin: false,
   loading: true,
+  syncError: null,
   logout: async () => {},
   refreshUserData: async () => {},
   signInWithGoogle: async () => { throw new Error('Not implemented'); },
@@ -51,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [salonData, setSalonData] = useState<Salon | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
 
   if (!auth || !db) {
@@ -71,118 +74,409 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const fetchUserData = async (uid: string) => {
+   const logSecurityState = (details: {
+    uid: string;
+    email: string | null;
+    userDocExists: boolean;
+    platformAdminDocExists: boolean;
+    finalRole: string | null;
+    finalSalonId: string | null;
+    salonDataLoaded: boolean;
+    error: string | null;
+  }) => {
+    console.log(`[SecurityLog] SECURE AUTH SYNC REPORT:
+- UID autenticado: ${details.uid}
+- Email: ${details.email}
+- users/{uid} existe?: ${details.userDocExists}
+- platformAdmins/{uid} existe?: ${details.platformAdminDocExists}
+- role final: ${details.finalRole}
+- salonId final: ${details.finalSalonId}
+- salonData carregou?: ${details.salonDataLoaded}
+- erro final: ${details.error || 'Nenhum'}`);
+  };
+
+  const runDemoBootstrapFallback = async (uid: string, email: string, displayName: string | null) => {
+    console.log("[TEMPORARY BOOTSTRAP FALLBACK] Iniciando para", email, "UID:", uid);
+    const demoSalonId = 'demo_salon_lumiere';
+    const now = Date.now();
+    
     try {
-      // 1. Primariamente, verifica se o usuário é Administrador da Plataforma (Platform Admin)
-      // pela coleção 'platformAdmins' no Firestore.
-      const adminRef = doc(db, 'platformAdmins', uid);
-      const adminSnap = await getDoc(adminRef);
-      
+      // 1. PRIMARIAMENTE, criamos ou garantimos que o documento users/{uid} existe no Firestore.
+      // Pelas regras do Firestore, para acessar o salão e subcoleções, o documento 'users/{uid}'
+      // deve existir e possuir o salonId correspondente. Como o 'create' de seu próprio perfil
+      // é permitido para qualquer usuário autenticado que não tente se passar por platform_admin,
+      // esta operação de create/setDoc SEMPRE tem permissão garantida sem exigir nada prévio.
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
       
-      // TEMPORARY BOOTSTRAP FALLBACK: Apenas caso o banco de dados não tenha sido populado ainda,
-      // usamos o e-mail master do proprietário do SaaS para bootstrap inicial.
-      const isGaliEmailFallback = currentUser?.email === 'galicioriefonseca@gmail.com';
-      const isExplicitAdmin = adminSnap.exists() || isGaliEmailFallback;
-
-      if (userSnap.exists() || isGaliEmailFallback) {
-        let uData: User;
-        if (userSnap.exists()) {
-          uData = { id: userSnap.id, ...userSnap.data() } as User;
-        } else {
-          // Cria o modelo virtual de bootstrap se ainda não existir no users
-          uData = {
-            id: uid,
-            fullName: currentUser?.displayName || 'Gali Ciório Fonseca',
-            email: currentUser?.email || 'galicioriefonseca@gmail.com',
-            phone: '',
-            role: 'platform_admin',
-            isActive: true,
-            salonId: '',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          } as User;
-        }
-
-        // Se for identificado como Platform Admin (pelo ID do doc ou papel ou email fallback de bootstrap),
-        // garante o papel correto no objeto de sessão.
-        if (isExplicitAdmin || uData.role === 'platform_admin') {
-          uData.role = 'platform_admin';
-          uData.salonId = '';
-        }
-        
-        // TEMPORARY BOOTSTRAP FALLBACK: Se for o e-mail de teste operacional, definimos como owner e garantimos
-        // que ele tenha um salão de demonstração vinculado.
-        if (currentUser?.email === 'leandropfonseca20@gmail.com') {
-          if (uData.role !== 'owner') {
-            uData.role = 'owner';
-          }
-          if (!uData.salonId) {
-            try {
-              const salonsRef = collection(db, 'salons');
-              const q = query(salonsRef, where('isDemo', '==', true));
-              const qSnap = await getDocs(q);
-              if (!qSnap.empty) {
-                uData.salonId = qSnap.docs[0].id;
-              }
-            } catch (e) {
-              console.error("Error finding demo salon:", e);
-            }
-          }
-        }
-
-        setUserData(uData);
-        setIsPlatformAdmin(isExplicitAdmin || uData.role === 'platform_admin');
-
-        if (uData.salonId && uData.role !== 'platform_admin') {
-          const salonRef = doc(db, 'salons', uData.salonId);
-          const salonSnap = await getDoc(salonRef);
-          if (salonSnap.exists()) {
-            setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
-          }
-        } else {
-          setSalonData(null);
-        }
+      let uData: any;
+      if (!userSnap.exists()) {
+        uData = {
+          id: uid,
+          fullName: displayName || 'Leandro Fonseca',
+          email: email,
+          phone: '17996140963',
+          role: 'owner',
+          isActive: true,
+          salonId: demoSalonId,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await setDoc(userRef, uData);
+        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Perfil de usuário de Leandro cadastrado com sucesso:", uid);
       } else {
-        setIsPlatformAdmin(isExplicitAdmin);
+        uData = { ...userSnap.data(), id: uid };
+        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Perfil de Leandro já existe no Firestore.");
         
-        // TEMPORARY BOOTSTRAP FALLBACK: Se for o e-mail de teste de owner demo mas não tem documento ainda
-        if (currentUser?.email === 'leandropfonseca20@gmail.com') {
-          let demoSalonId = '';
+        // Verifica se os campos salonId ou role diferem e tenta atualizar de forma segura
+        if (uData.role !== 'owner' || uData.salonId !== demoSalonId) {
           try {
-            const salonsRef = collection(db, 'salons');
-            const q = query(salonsRef, where('isDemo', '==', true));
-            const qSnap = await getDocs(q);
-            if (!qSnap.empty) {
-              demoSalonId = qSnap.docs[0].id;
-            }
-          } catch (e) {
-            console.error("Error finding demo salon:", e);
-          }
-          const uData = {
-            id: uid,
-            fullName: currentUser?.displayName || 'Leandro Fonseca',
-            email: currentUser?.email || '',
-            phone: '17996140963',
-            role: 'owner' as const,
-            isActive: true,
-            salonId: demoSalonId,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          } as User;
-          setUserData(uData);
-          if (demoSalonId) {
-            const salonRef = doc(db, 'salons', demoSalonId);
-            const salonSnap = await getDoc(salonRef);
-            if (salonSnap.exists()) {
-              setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
-            }
+            await updateDoc(userRef, {
+              role: 'owner',
+              salonId: demoSalonId,
+              updatedAt: now,
+            });
+            uData.role = 'owner';
+            uData.salonId = demoSalonId;
+            console.log("[TEMPORARY BOOTSTRAP FALLBACK] Vínculos de owner e salonId atualizados no Firestore.");
+          } catch (updateErr) {
+            console.warn("[TEMPORARY BOOTSTRAP FALLBACK] Update do user_doc bloqueado pelas regras (esperado se não houver privilégio platform_admin de escrita direta, prosseguindo com dados em memória):", updateErr);
+            uData.role = 'owner';
+            uData.salonId = demoSalonId;
           }
         }
       }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
+
+      // 2. Agora que o 'userDoc' está estabelecido no banco, buscamos o salão com id 'demo_salon_lumiere' por getDoc direto.
+      // Isso consome as regras de leitura individuais, passando perfeitamente pela vericação 'userSalonId() == salonId'
+      // sem tentar listar a coleção geral 'salons' (que possui restrição a Platform Admins).
+      const salonRef = doc(db, 'salons', demoSalonId);
+      let salonExists = false;
+      
+      try {
+        const salonSnap = await getDoc(salonRef);
+        salonExists = salonSnap.exists();
+      } catch (getSalonErr) {
+        console.warn("[TEMPORARY BOOTSTRAP FALLBACK] Não foi possível verificar existência do salão por getDoc individual:", getSalonErr);
+      }
+      
+      if (!salonExists) {
+        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Criando salão demo 'demo_salon_lumiere' com subcoleções...");
+        const newDemoSalon = {
+          id: demoSalonId,
+          name: 'Lumière Demo Studio',
+          ownerName: displayName || 'Leandro Fonseca',
+          ownerId: uid,
+          ownerEmail: email,
+          phone: '17996140963',
+          businessType: 'Barbearia / Salão',
+          city: 'São José do Rio Preto',
+          state: 'SP',
+          plan: 'Premium',
+          subscriptionStatus: 'active',
+          activationStatus: 'active',
+          trialEndsAt: now + 30 * 24 * 60 * 60 * 1000,
+          isActive: true,
+          isDemo: true,
+          professionalsLimit: 20,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await setDoc(salonRef, newDemoSalon);
+
+        // Seed das subcoleções básicas utilizando escritas diretas por ID para evitar listagens
+        // e otimizar a carga de dados iniciais do Dashboard do cliente.
+        
+        // Profissionais
+        await setDoc(doc(db, `salons/${demoSalonId}/professionals`, 'prof_camila'), {
+          id: 'prof_camila',
+          name: 'Camila Rocha',
+          role: 'manager',
+          phone: '11999999999',
+          email: 'camila@lumiere.demo',
+          status: 'active',
+          isActive: true,
+          commissionRate: 40,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await setDoc(doc(db, `salons/${demoSalonId}/professionals`, 'prof_bruna'), {
+          id: 'prof_bruna',
+          name: 'Bruna Almeida',
+          role: 'receptionist',
+          phone: '11999999999',
+          email: 'bruna@lumiere.demo',
+          status: 'active',
+          isActive: true,
+          commissionRate: 0,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await setDoc(doc(db, `salons/${demoSalonId}/professionals`, 'prof_rafaela'), {
+          id: 'prof_rafaela',
+          name: 'Rafaela Santos',
+          role: 'attendant',
+          phone: '11999999999',
+          email: 'rafaela@lumiere.demo',
+          status: 'active',
+          isActive: true,
+          commissionRate: 0,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Clientes
+        await setDoc(doc(db, `salons/${demoSalonId}/clients`, 'client_lucas'), {
+          id: 'client_lucas',
+          name: 'Lucas Antunes',
+          phone: '11988880001',
+          email: 'lucas@demo.com',
+          notes: 'Cliente VIP',
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await setDoc(doc(db, `salons/${demoSalonId}/clients`, 'client_marcos'), {
+          id: 'client_marcos',
+          name: 'Marcos Aurelio',
+          phone: '11988880002',
+          email: 'marcos@demo.com',
+          notes: '',
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Meta Mensal
+        const currentMonthStr = new Date().toISOString().substring(0, 7);
+        await setDoc(doc(db, `salons/${demoSalonId}/goals`, 'goal_current'), {
+          id: 'goal_current',
+          month: currentMonthStr,
+          targetAmount: 85000,
+          currentAmount: 32750,
+          type: 'monthly_revenue',
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Agendamentos de Hoje
+        const todayStr = new Date().toISOString().substring(0, 10);
+        await setDoc(doc(db, `salons/${demoSalonId}/appointments`, 'appt_1'), {
+          id: 'appt_1',
+          clientId: 'client_lucas',
+          clientName: 'Lucas Antunes',
+          professionalId: 'prof_camila',
+          professionalName: 'Camila Rocha',
+          serviceId: 'srv_corte',
+          serviceName: 'Corte Premium',
+          date: todayStr,
+          time: '10:00',
+          status: 'completed',
+          price: 120,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        await setDoc(doc(db, `salons/${demoSalonId}/appointments`, 'appt_2'), {
+          id: 'appt_2',
+          clientId: 'client_marcos',
+          clientName: 'Marcos Aurelio',
+          professionalId: 'prof_rafaela',
+          professionalName: 'Rafaela Santos',
+          serviceId: 'srv_barba',
+          serviceName: 'Barba Terápica',
+          date: todayStr,
+          time: '14:30',
+          status: 'scheduled',
+          price: 80,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Checklist Config
+        await setDoc(doc(db, `salons/${demoSalonId}/checklists`, 'chk_default'), {
+          id: 'chk_default',
+          title: 'Checklist de Abertura e Fechamento',
+          isActive: true,
+          items: [
+            { id: 'it_1', label: 'Verificar ar condicionado', required: true, points: 5 },
+            { id: 'it_2', label: 'Esterilizar materiais', required: true, points: 5 },
+            { id: 'it_3', label: 'Limpeza das bancadas', required: true, points: 5 }
+          ],
+          createdAt: now,
+          updatedAt: now
+        });
+
+        // Checklist Daily Run de Hoje
+        await setDoc(doc(db, `salons/${demoSalonId}/checklistRuns`, 'run_1'), {
+          id: 'run_1',
+          checklistId: 'chk_default',
+          checklistTitle: 'Checklist de Abertura e Fechamento',
+          evaluationDate: todayStr,
+          date: todayStr,
+          evaluatedProfessionalId: 'prof_camila',
+          evaluatedProfessionalName: 'Camila Rocha',
+          evaluatorName: 'Leandro Fonseca',
+          attendanceStatus: 'present',
+          completionPercentage: 100,
+          totalScore: 15,
+          maxScore: 15,
+          createdAt: now,
+          updatedAt: now
+        });
+
+        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Subcoleções básicas do Lumière Demo Studio criadas com sucesso.");
+      } else {
+        // Se o salão já existe, certificamos de atualizar seus dados principais com o usuário atual como owner
+        try {
+          await updateDoc(salonRef, {
+            ownerId: uid,
+            ownerEmail: email,
+            ownerName: displayName || 'Leandro Fonseca',
+            updatedAt: now
+          });
+          console.log("[TEMPORARY BOOTSTRAP FALLBACK] Salão demo atualizado com o UID correspondente.");
+        } catch (updateSalonErr) {
+          console.warn("[TEMPORARY BOOTSTRAP FALLBACK] Falha ao sintonizar proprietário no salão:", updateSalonErr);
+        }
+      }
+
+      console.log("[TEMPORARY BOOTSTRAP FALLBACK] Processo de bootstrap operado com sucesso de ponta a ponta!");
+      return { uData, demoSalonId };
+    } catch (err) {
+      console.error("[TEMPORARY BOOTSTRAP FALLBACK] Erro no bootstrap de Leandro Fonseca:", err);
+      throw err;
+    }
+  };
+
+  const fetchUserData = async (uid: string) => {
+    try {
+      setSyncError(null);
+      
+      const adminRef = doc(db, 'platformAdmins', uid);
+      const adminSnap = await getDoc(adminRef);
+      const isPlatformAdminFromColl = adminSnap.exists() || currentUser?.email === 'galicioriefonseca@gmail.com';
+      setIsPlatformAdmin(isPlatformAdminFromColl);
+
+      if (currentUser?.email === 'leandropfonseca20@gmail.com') {
+        await runDemoBootstrapFallback(uid, currentUser.email, currentUser.displayName);
+      }
+
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      let uData: User | null = null;
+      let userDocExists = userSnap.exists();
+
+      if (userSnap.exists()) {
+        uData = { id: userSnap.id, ...userSnap.data() } as User;
+        if (isPlatformAdminFromColl || uData.role === 'platform_admin' || currentUser?.email === 'galicioriefonseca@gmail.com') {
+          uData.role = 'platform_admin';
+          uData.salonId = '';
+        }
+      } else if (isPlatformAdminFromColl || currentUser?.email === 'galicioriefonseca@gmail.com') {
+        uData = {
+          id: uid,
+          fullName: currentUser?.displayName || 'Gali Ciório Fonseca',
+          email: currentUser?.email || 'galicioriefonseca@gmail.com',
+          phone: '',
+          role: 'platform_admin',
+          isActive: true,
+          salonId: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        } as User;
+        await setDoc(doc(db, 'users', uid), uData);
+        userDocExists = true;
+      }
+
+      if (!uData) {
+        setUserData(null);
+        setSalonData(null);
+        setSyncError("Sua conta foi autenticada, mas ainda não está vinculada a um salão. Entre em contato com o administrador.");
+        logSecurityState({
+          uid,
+          email: currentUser?.email || null,
+          userDocExists: false,
+          platformAdminDocExists: isPlatformAdminFromColl,
+          finalRole: null,
+          finalSalonId: null,
+          salonDataLoaded: false,
+          error: "Usuário sem registro users/{uid}",
+        });
+        return;
+      }
+
+      if (uData.role === 'platform_admin') {
+        setUserData(uData);
+        setSalonData(null);
+        setSyncError(null);
+        logSecurityState({
+          uid,
+          email: currentUser?.email || null,
+          userDocExists: true,
+          platformAdminDocExists: isPlatformAdminFromColl,
+          finalRole: 'platform_admin',
+          finalSalonId: '',
+          salonDataLoaded: false,
+          error: null,
+        });
+        return;
+      }
+
+      if (!uData.salonId) {
+        setUserData(uData);
+        setSalonData(null);
+        if (uData.role === 'owner') {
+          setSyncError("Sua conta de proprietário ainda não está vinculada a um salão.");
+        } else {
+          setSyncError("Sua conta de colaborador ainda não está vinculada a um salão.");
+        }
+        logSecurityState({
+          uid,
+          email: currentUser?.email || null,
+          userDocExists: true,
+          platformAdminDocExists: isPlatformAdminFromColl,
+          finalRole: uData.role,
+          finalSalonId: null,
+          salonDataLoaded: false,
+          error: "User sem salonId",
+        });
+        return;
+      }
+
+      const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
+      if (salonSnap.exists()) {
+        setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
+        setSyncError(null);
+        setUserData(uData);
+        logSecurityState({
+          uid,
+          email: currentUser?.email || null,
+          userDocExists: true,
+          platformAdminDocExists: isPlatformAdminFromColl,
+          finalRole: uData.role,
+          finalSalonId: uData.salonId,
+          salonDataLoaded: true,
+          error: null,
+        });
+      } else {
+        setSalonData(null);
+        setSyncError("Não foi possível localizar o salão vinculado a esta conta.");
+        setUserData(uData);
+        logSecurityState({
+          uid,
+          email: currentUser?.email || null,
+          userDocExists: true,
+          platformAdminDocExists: isPlatformAdminFromColl,
+          finalRole: uData.role,
+          finalSalonId: uData.salonId,
+          salonDataLoaded: false,
+          error: "Salão ID inexistente no Firestore",
+        });
+      }
+    } catch (error: any) {
+      console.error('Error fetching user data manually:', error);
+      setSyncError(error.message || "Erro ao recuperar dados.");
     }
   };
 
@@ -210,6 +504,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (user) {
         setLoading(true);
+        setSyncError(null);
         console.log("[AuthInit] Usuário autenticado no Firebase Auth. UID:", user.uid, "Email:", user.email);
 
         let isPlatformAdminFromColl = false;
@@ -227,126 +522,178 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // TEMPORARY BOOTSTRAP FALLBACK para leandropfonseca20@gmail.com
+        if (user.email === 'leandropfonseca20@gmail.com') {
+          try {
+            await runDemoBootstrapFallback(user.uid, user.email, user.displayName);
+          } catch (err) {
+            console.error("[AuthInit] Falha ao rodar bootstrap Leandro Fonseca:", err);
+          }
+        }
+
         // Listen to users/{uid} document in real-time
         unsubscribeUserSnapshot = onSnapshot(doc(db, 'users', user.uid), async (userSnap) => {
           let uData: User | null = null;
+          let userDocExists = userSnap.exists();
+          let platformAdminDocExists = isPlatformAdminFromColl;
+          let finalRole: string | null = null;
+          let finalSalonId: string | null = null;
+          let salonDataLoaded = false;
+          let currentErr: string | null = null;
 
-          if (userSnap.exists()) {
-            uData = { id: userSnap.id, ...userSnap.data() } as User;
-            console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
-            
-            // Se for identificado como Platform Admin (pela coleção platformAdmins ou pelo próprio campo role 'platform_admin'),
-            // garantimos as credenciais de platform_admin.
-            if (isPlatformAdminFromColl || uData.role === 'platform_admin') {
-              uData.role = 'platform_admin';
-              uData.salonId = '';
-            }
-
-            // TEMPORARY BOOTSTRAP FALLBACK: Se o e-mail de administrador de bootstrap logar e o doc existir, garantimos platform_admin.
-            if (user.email === 'galicioriefonseca@gmail.com') {
-              uData.role = 'platform_admin';
-              uData.salonId = '';
-            }
-
-            // TEMPORARY BOOTSTRAP FALLBACK: Se for o e-mail de owner demo logando, garantimos owner e salão demo.
-            if (user.email === 'leandropfonseca20@gmail.com') {
-              uData.role = 'owner';
-              if (!uData.salonId) {
-                try {
-                  const salonsRef = collection(db, 'salons');
-                  const q = query(salonsRef, where('isDemo', '==', true));
-                  const qSnap = await getDocs(q);
-                  if (!qSnap.empty) {
-                    uData.salonId = qSnap.docs[0].id;
-                  }
-                } catch (e) {
-                  console.error("Error finding demo salon inside listener:", e);
-                }
+          try {
+            if (userSnap.exists()) {
+              uData = { id: userSnap.id, ...userSnap.data() } as User;
+              console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
+              
+              if (isPlatformAdminFromColl || uData.role === 'platform_admin' || user.email === 'galicioriefonseca@gmail.com') {
+                uData.role = 'platform_admin';
+                uData.salonId = '';
+              }
+            } else if (isPlatformAdminFromColl || user.email === 'galicioriefonseca@gmail.com') {
+              console.log("[AuthInit] users doc não existe, mas platform admin. Gerando perfil virtual...");
+              uData = {
+                id: user.uid,
+                fullName: user.displayName || 'Gali Ciório Fonseca',
+                email: user.email || 'galicioriefonseca@gmail.com',
+                phone: '',
+                role: 'platform_admin',
+                isActive: true,
+                salonId: '',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              } as User;
+              try {
+                await setDoc(doc(db, 'users', user.uid), uData);
+                userDocExists = true;
+              } catch (e) {
+                console.error("Error saving virtual platform admin doc:", e);
               }
             }
-          } else if (isPlatformAdminFromColl || user.email === 'galicioriefonseca@gmail.com') {
-            console.log("[AuthInit] users doc não existe, mas o usuário pertence à coleção platformAdmins ou possui e-mail de bootstrap. Gerando perfil virtual...");
-            uData = {
-              id: user.uid,
-              fullName: user.displayName || 'Gali Ciório Fonseca',
-              email: user.email || 'galicioriefonseca@gmail.com',
-              phone: '',
-              role: 'platform_admin',
-              isActive: true,
-              salonId: '',
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            } as User;
-            try {
-              await setDoc(doc(db, 'users', user.uid), uData);
-            } catch (e) {
-              console.error("Error saving users platform admin doc:", e);
-            }
-          } else if (user.email === 'leandropfonseca20@gmail.com') {
-            // TEMPORARY BOOTSTRAP FALLBACK: Criar conta para owner demo caso não exista no users.
-            let demoSalonId = '';
-            try {
-              const salonsRef = collection(db, 'salons');
-              const q = query(salonsRef, where('isDemo', '==', true));
-              const qSnap = await getDocs(q);
-              if (!qSnap.empty) {
-                demoSalonId = qSnap.docs[0].id;
-              }
-            } catch (e) {
-              console.error("Error finding demo salon:", e);
-            }
-            uData = {
-              id: user.uid,
-              fullName: user.displayName || 'Leandro Fonseca',
-              email: user.email || 'leandropfonseca20@gmail.com',
-              phone: '17996140963',
-              role: 'owner',
-              isActive: true,
-              salonId: demoSalonId,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            } as User;
-            try {
-              await setDoc(doc(db, 'users', user.uid), uData);
-            } catch (e) {
-              console.error("Error creating demo owner:", e);
-            }
-          }
 
-          if (uData) {
-            const finalIsPlatform = isPlatformAdminFromColl || uData.role === 'platform_admin';
-            setIsPlatformAdmin(finalIsPlatform);
-            setUserData(uData);
-
-            // Listen to salons/{salonId} in real-time if they have a salonId and are not platform_admin
-            if (uData.salonId && uData.role !== 'platform_admin') {
-              if (unsubscribeSalonSnapshot) {
-                unsubscribeSalonSnapshot();
-              }
-              unsubscribeSalonSnapshot = onSnapshot(doc(db, 'salons', uData.salonId), (salonSnap) => {
-                if (salonSnap.exists()) {
-                  setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
-                } else {
-                  setSalonData(null);
-                }
-                setLoading(false);
-              }, (err) => {
-                console.error("[AuthInit] Erro ao ouvir salons doc:", err);
-                setLoading(false);
-              });
-            } else {
+            if (!uData) {
+              setUserData(null);
               setSalonData(null);
+              setSyncError("Sua conta foi autenticada, mas ainda não está vinculada a um salão. Entre em contato com o administrador.");
               setLoading(false);
+              logSecurityState({
+                uid: user.uid,
+                email: user.email,
+                userDocExists: false,
+                platformAdminDocExists: isPlatformAdminFromColl,
+                finalRole: null,
+                finalSalonId: null,
+                salonDataLoaded: false,
+                error: "Usuário sem registro users/{uid}",
+              });
+              return;
             }
-          } else {
-            setUserData(null);
-            setSalonData(null);
+
+            finalRole = uData.role;
+            finalSalonId = uData.salonId || '';
+
+            if (uData.role === 'platform_admin') {
+              setUserData(uData);
+              setSalonData(null);
+              setSyncError(null);
+              setLoading(false);
+              logSecurityState({
+                uid: user.uid,
+                email: user.email,
+                userDocExists: userDocExists,
+                platformAdminDocExists: isPlatformAdminFromColl,
+                finalRole: uData.role,
+                finalSalonId: '',
+                salonDataLoaded: false,
+                error: null,
+              });
+              return;
+            }
+
+            if (!uData.salonId) {
+              setUserData(uData);
+              setSalonData(null);
+              if (uData.role === 'owner') {
+                setSyncError("Sua conta de proprietário ainda não está vinculada a um salão.");
+                currentErr = "Owner sem salonId";
+              } else {
+                setSyncError("Sua conta de colaborador ainda não está vinculada a um salão.");
+                currentErr = "User sem salonId";
+              }
+              setLoading(false);
+              logSecurityState({
+                uid: user.uid,
+                email: user.email,
+                userDocExists: userDocExists,
+                platformAdminDocExists: isPlatformAdminFromColl,
+                finalRole: uData.role,
+                finalSalonId: null,
+                salonDataLoaded: false,
+                error: currentErr,
+              });
+              return;
+            }
+
+            if (unsubscribeSalonSnapshot) {
+              unsubscribeSalonSnapshot();
+            }
+            unsubscribeSalonSnapshot = onSnapshot(doc(db, 'salons', uData.salonId), (salonSnap) => {
+              if (salonSnap.exists()) {
+                setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
+                setSyncError(null);
+                setUserData(uData!);
+                setLoading(false);
+                logSecurityState({
+                  uid: user.uid,
+                  email: user.email,
+                  userDocExists: userDocExists,
+                  platformAdminDocExists: isPlatformAdminFromColl,
+                  finalRole: uData!.role,
+                  finalSalonId: uData!.salonId,
+                  salonDataLoaded: true,
+                  error: null,
+                });
+              } else {
+                setSalonData(null);
+                setSyncError("Não foi possível localizar o salão vinculado a esta conta.");
+                setUserData(uData!);
+                setLoading(false);
+                logSecurityState({
+                  uid: user.uid,
+                  email: user.email,
+                  userDocExists: userDocExists,
+                  platformAdminDocExists: isPlatformAdminFromColl,
+                  finalRole: uData!.role,
+                  finalSalonId: uData!.salonId,
+                  salonDataLoaded: false,
+                  error: "Salão ID inexistente no Firestore",
+                });
+              }
+            }, (err) => {
+              console.error("[AuthInit] Erro ao ouvir salons doc:", err);
+              setSalonData(null);
+              setSyncError("Erro de acesso aos dados do salão.");
+              setLoading(false);
+              logSecurityState({
+                uid: user.uid,
+                email: user.email,
+                userDocExists: userDocExists,
+                platformAdminDocExists: isPlatformAdminFromColl,
+                finalRole: uData!.role,
+                finalSalonId: uData!.salonId,
+                salonDataLoaded: false,
+                error: err.message,
+              });
+            });
+
+          } catch (syncErr: any) {
+            console.error("[AuthInit] Erro no fluxo de sincronização de snapshot:", syncErr);
+            setSyncError(syncErr.message || "Erro de sincronização");
             setLoading(false);
           }
         }, (err) => {
-          console.error("[AuthInit] Erro ao escutar users doc:", err);
+          console.error("[AuthInit] Erro ao escutar users doc snapshot:", err);
           
-          // Force fallback to platform admin if users snapshot is blocked due to missing users doc permissions
           if (isPlatformAdminFromColl) {
             console.log("[AuthInit] Ativando perfil virtual de platform_admin sob erro de permissão.");
             setIsPlatformAdmin(true);
@@ -361,14 +708,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               createdAt: Date.now(),
               updatedAt: Date.now(),
             } as User);
+          } else {
+            setSyncError("Erro de permissão ou acesso aos dados de usuário no Firestore.");
           }
           setLoading(false);
+          logSecurityState({
+            uid: user.uid,
+            email: user.email,
+            userDocExists: false,
+            platformAdminDocExists: isPlatformAdminFromColl,
+            finalRole: null,
+            finalSalonId: null,
+            salonDataLoaded: false,
+            error: err.message,
+          });
         });
 
       } else {
         setUserData(null);
         setSalonData(null);
         setIsPlatformAdmin(false);
+        setSyncError(null);
         setLoading(false);
       }
     });
@@ -744,6 +1104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       salonData,
       isPlatformAdmin,
       loading,
+      syncError,
       logout,
       refreshUserData,
       signInWithGoogle,

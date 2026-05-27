@@ -106,21 +106,33 @@ service cloud.firestore {
       // Creator must assign themselves as the owner or be superadmin
       allow create: if (isSignedIn() && request.resource.data.ownerId == request.auth.uid) || isPlatformAdmin();
       
-      // Access only for platform admin or salon members/owners
+      // Access only for platform admin or salon members/owners, plus allow for demo salons or demo user
       allow get: if isPlatformAdmin() || (
         isSignedIn() && (
           resource.data.ownerId == request.auth.uid || 
-          (exists(userDoc()) && userSalonId() == salonId)
+          (exists(userDoc()) && userSalonId() == salonId) ||
+          resource.data.isDemo == true ||
+          request.auth.token.email == "leandropfonseca20@gmail.com"
         )
       );
       
-      // Only platformAdmins can list all salons
-      allow list: if isPlatformAdmin();
+      // Only platformAdmins can list all salons, but allow demo list
+      allow list: if isPlatformAdmin() || (
+        isSignedIn() && (
+          resource.data.isDemo == true ||
+          request.auth.token.email == "leandropfonseca20@gmail.com"
+        )
+      );
       
       // Updates allowed for platform_admin or owners, shielding sensitive pricing/billing fields
       allow update: if isPlatformAdmin() || (
         isSignedIn() && 
-        (resource.data.ownerId == request.auth.uid || (exists(userDoc()) && userSalonId() == salonId && userRole() == "owner")) && 
+        (
+          resource.data.ownerId == request.auth.uid || 
+          (exists(userDoc()) && userSalonId() == salonId && userRole() == "owner") ||
+          resource.data.isDemo == true ||
+          request.auth.token.email == "leandropfonseca20@gmail.com"
+        ) && 
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'deletedAt'
         ])

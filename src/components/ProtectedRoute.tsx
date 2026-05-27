@@ -8,15 +8,47 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export function ProtectedRoute({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) {
-  const { currentUser, userData, isPlatformAdmin, loading, logout } = useAuth();
+  const { currentUser, userData, isPlatformAdmin, loading, syncError, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [correcting, setCorrecting] = useState(false);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-[#050505]">
+        <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+      </div>
+    );
+  }
+
+  if (syncError) {
+    return (
+      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+          <div className="w-16 h-16 bg-red-650/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert className="w-8 h-8 text-red-500" />
+          </div>
+          <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Problema de Acesso</h2>
+          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">
+            {syncError}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button 
+              onClick={() => window.location.reload()}
+              className="bg-[#D4AF37] hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"
+            >
+              Recarregar
+            </Button>
+            <Button 
+              onClick={logout}
+              variant="outline"
+              className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Sair da Conta
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }

@@ -83,11 +83,19 @@ export default function DashboardHome() {
     unsubs.push(onSnapshot(qp, snap => {
         const pros = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Professional[];
         setProfessionals(pros);
+    }, err => {
+        console.error("Erro no onSnapshot de profissionais:", err);
+        setLoading(false);
     }));
 
     // Clients
     const qc = query(collection(db, `salons/${salonData.id}/clients`));
-    unsubs.push(onSnapshot(qc, snap => setStats(p => ({...p, clients: snap.docs.length}))));
+    unsubs.push(onSnapshot(qc, snap => {
+        setStats(p => ({...p, clients: snap.docs.length}));
+    }, err => {
+        console.error("Erro no onSnapshot de clientes:", err);
+        setLoading(false);
+    }));
 
     // Appointments Today
     const qa = query(collection(db, `salons/${salonData.id}/appointments`), where('date', '==', todayStr));
@@ -95,6 +103,9 @@ export default function DashboardHome() {
        const list = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Appointment[];
        const sorted = list.sort((a, b) => a.time.localeCompare(b.time));
        setTodayAppointments(sorted);
+    }, err => {
+        console.error("Erro no onSnapshot de agendamentos:", err);
+        setLoading(false);
     }));
 
     // General Salon Goals
@@ -109,6 +120,9 @@ export default function DashboardHome() {
        } else {
          setStats(p => ({...p, goalTarget: 0, goalCurrent: 0}));
        }
+     }, err => {
+        console.error("Erro no onSnapshot de metas:", err);
+        setLoading(false);
      }));
 
     // Checklist Today
@@ -128,10 +142,26 @@ export default function DashboardHome() {
          setStats(p => ({...p, checklistPct: runs.length > 0 ? runs[0].completionPercentage || 0 : 0}));
        }
        setLoading(false);
+    }, err => {
+        console.error("Erro no onSnapshot de checklistRuns:", err);
+        setLoading(false);
     }));
 
     return () => unsubs.forEach(u => u());
   }, [salonData, professionals.length, userData?.role]);
+
+  if (isPlatformAdmin) {
+    return (
+      <div className="bg-[#0c0c0e] p-8 text-center border border-[#D4AF37]/20 rounded-3xl max-w-lg mx-auto mt-12">
+        <Crown className="w-12 h-12 text-[#D4AF37] mx-auto mb-4 animate-pulse filter drop-shadow-[0_0_8px_rgba(212,175,55,0.4)]" />
+        <h2 className="text-xl font-heading mb-2 text-white">Painel Master Ativo</h2>
+        <p className="text-xs text-[#a1a1aa] mb-6 leading-relaxed">Você está autenticado como Administrador Global da LumiereOS. Acesse a área de gerenciamento para administrar os salões afiliados.</p>
+        <Button onClick={() => navigate('/master')} className="bg-[#D4AF37] hover:bg-gold-550 text-black font-semibold rounded-xl text-xs h-10 px-6">
+          Ir para o Painel Master
+        </Button>
+      </div>
+    );
+  }
 
   if (loading || !salonData) {
     return (
