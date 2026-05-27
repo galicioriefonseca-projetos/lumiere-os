@@ -83,6 +83,8 @@ export default function ProfessionalDashboard() {
             setMyAppointments(
               arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
             );
+          }, (err) => {
+            console.error("Erro ao carregar meus agendamentos:", err);
           });
 
           // 2. Load Evaluations
@@ -99,6 +101,8 @@ export default function ProfessionalDashboard() {
             if (arr.length > 0 && !selectedEval) {
               setSelectedEval(arr[0]);
             }
+          }, (err) => {
+            console.error("Erro ao carregar minhas avaliações:", err);
           });
 
           // 3. Load Services to map pricing
@@ -107,6 +111,8 @@ export default function ProfessionalDashboard() {
             const arr: Service[] = [];
             snapServ.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
             setServices(arr);
+          }, (err) => {
+            console.error("Erro ao carregar serviços no painel de profissional:", err);
           });
 
           // 4. Load Goals
@@ -119,10 +125,16 @@ export default function ProfessionalDashboard() {
             snapGoal.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
             setMyGoals(arr);
             setLoading(false);
+          }, (err) => {
+            console.error("Erro ao carregar minhas metas de profissional:", err);
+            setLoading(false);
           });
         } else {
           setLoading(false);
         }
+      }, (err) => {
+        console.error("Erro no onSnapshot do perfil de profissional:", err);
+        setLoading(false);
       });
     } else {
       // For owners, managers or platform_admin using Dashboard demo view
@@ -155,6 +167,8 @@ export default function ProfessionalDashboard() {
             setMyAppointments(
               arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
             );
+          }, (err) => {
+            console.error("Erro ao carregar agendamentos (view de teste):", err);
           });
 
           // 2. Load Evaluations
@@ -171,6 +185,8 @@ export default function ProfessionalDashboard() {
             if (arr.length > 0 && !selectedEval) {
               setSelectedEval(arr[0]);
             }
+          }, (err) => {
+            console.error("Erro ao carregar avaliações (view de teste):", err);
           });
 
           // 3. Load Services to map pricing
@@ -179,6 +195,8 @@ export default function ProfessionalDashboard() {
             const arr: Service[] = [];
             snapServ.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
             setServices(arr);
+          }, (err) => {
+            console.error("Erro ao carregar serviços (view de teste):", err);
           });
 
           // 4. Load Goals
@@ -191,10 +209,16 @@ export default function ProfessionalDashboard() {
             snapGoal.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
             setMyGoals(arr);
             setLoading(false);
+          }, (err) => {
+            console.error("Erro ao carregar metas (view de teste):", err);
+            setLoading(false);
           });
         } else {
           setLoading(false);
         }
+      }, (err) => {
+        console.error("Erro no onSnapshot da lista de profissionais (view de teste):", err);
+        setLoading(false);
       });
     }
 

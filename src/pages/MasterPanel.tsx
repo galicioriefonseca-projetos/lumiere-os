@@ -47,6 +47,8 @@ export default function MasterPanel() {
         const arr: any[] = [];
         snap.forEach(d => arr.push({id: d.id, ...d.data()}));
         setBugReports(arr.sort((a,b) => b.createdAt - a.createdAt));
+    }, (err) => {
+        console.error("Error reading bug reports:", err);
     });
     
     return () => { unsubSalons(); unsubBugs(); };

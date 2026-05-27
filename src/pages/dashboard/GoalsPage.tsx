@@ -76,6 +76,9 @@ export default function GoalsPage() {
         const arr: Goal[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Goal));
         setGoals(arr.sort((a, b) => b.month.localeCompare(a.month)));
+      }, (error) => {
+        console.error("Erro ao carregar metas gerais:", error);
+        setLoading(false);
       })
     );
 
@@ -86,6 +89,9 @@ export default function GoalsPage() {
         const arr: Professional[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Professional));
         setProfessionals(arr.filter((p) => p.isActive));
+      }, (error) => {
+        console.error("Erro ao carregar profissionais:", error);
+        setLoading(false);
       })
     );
 
@@ -96,6 +102,9 @@ export default function GoalsPage() {
         const arr: Service[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Service));
         setServices(arr);
+      }, (error) => {
+        console.error("Erro ao carregar serviço:", error);
+        setLoading(false);
       })
     );
 
@@ -106,6 +115,9 @@ export default function GoalsPage() {
         const arr: Appointment[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Appointment));
         setAppointments(arr);
+      }, (error) => {
+        console.error("Erro ao carregar agendamentos:", error);
+        setLoading(false);
       })
     );
 

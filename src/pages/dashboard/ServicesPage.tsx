@@ -102,6 +102,9 @@ export default function ServicesPage() {
       );
       setServices(svcs.sort((a, b) => b.createdAt - a.createdAt));
       setLoading(false);
+    }, (error) => {
+      console.error("Erro ao carregar serviços:", error);
+      setLoading(false);
     });
 
     // Load Categories (just in case they have old categories stored in Firestore)
@@ -112,6 +115,8 @@ export default function ServicesPage() {
         cats.push({ id: doc.id, ...doc.data() } as Category),
       );
       setCategories(cats);
+    }, (error) => {
+      console.error("Erro ao carregar categorias:", error);
     });
 
     return () => {

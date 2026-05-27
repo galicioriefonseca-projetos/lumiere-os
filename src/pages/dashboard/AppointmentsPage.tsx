@@ -46,6 +46,9 @@ export default function AppointmentsPage() {
       snapshot.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
       setAppointments(arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime()));
       setLoading(false);
+    }, (error) => {
+      console.error("Erro ao carregar agendamentos:", error);
+      setLoading(false);
     }));
 
     // Load Clients
@@ -54,6 +57,8 @@ export default function AppointmentsPage() {
       const arr: Client[] = [];
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Client));
       setClients(arr);
+    }, (error) => {
+      console.error("Erro ao carregar clientes:", error);
     }));
 
     // Load Professionals
@@ -62,6 +67,8 @@ export default function AppointmentsPage() {
       const arr: Professional[] = [];
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Professional));
       setProfessionals(arr.filter(p => p.isActive));
+    }, (error) => {
+      console.error("Erro ao carregar profissionais:", error);
     }));
 
     // Load Services
@@ -70,6 +77,8 @@ export default function AppointmentsPage() {
       const arr: Service[] = [];
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
       setServices(arr.filter(s => s.isActive));
+    }, (error) => {
+      console.error("Erro ao carregar serviços:", error);
     }));
 
     return () => unsubs.forEach(u => u());

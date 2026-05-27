@@ -135,6 +135,9 @@ export default function ChecklistPage() {
         });
         setProfessionals(pros);
         setTotalPros(pros.length);
+      }, (error) => {
+        console.error("Erro ao carregar profissionais:", error);
+        setLoading(false);
       }),
     );
 
