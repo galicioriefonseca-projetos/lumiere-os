@@ -235,9 +235,11 @@ export default function MasterPanel() {
             }}>
               <Sparkles className="w-4 h-4 mr-2" /> Criar Salão Demo Completo
             </Button>
-            <Button variant="outline" className="border-border hover:bg-white/5" render={<Link to="/dashboard" />} nativeButton={false}>
-                <Home className="w-4 h-4 mr-2" /> Dashboard
-            </Button>
+            {userData?.salonId && (
+              <Button variant="outline" className="border-border hover:bg-white/5" render={<Link to="/dashboard" />} nativeButton={false}>
+                  <Home className="w-4 h-4 mr-2" /> Dashboard
+              </Button>
+            )}
             <Button variant="ghost" className="text-muted-foreground hover:text-white" onClick={logout}>
               <LogOut className="w-4 h-4 mr-2" /> Sair
             </Button>

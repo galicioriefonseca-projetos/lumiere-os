@@ -37,10 +37,28 @@ export default function LoginPage() {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
         const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
         
-        const isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
+        let isPlatform = false;
+        let isOwner = false;
+        
+        if (adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin')) {
+          isPlatform = true;
+        } else if (userSnap.exists() && userSnap.data()?.role === 'owner') {
+          isOwner = true;
+        }
+
+        // TEMPORARY BOOTSTRAP FALLBACK: fallback por e-mail para configuração inicial caso o banco de dados esteja vazio
+        if (!isPlatform && !isOwner) {
+          if (user.email === 'galicioriefonseca@gmail.com') {
+            isPlatform = true;
+          } else if (user.email === 'leandropfonseca20@gmail.com') {
+            isOwner = true;
+          }
+        }
         
         if (isPlatform) {
           targetPath = '/master';
+        } else if (isOwner) {
+          targetPath = '/dashboard';
         } else if (userSnap.exists()) {
           const uRole = userSnap.data()?.role;
           if (uRole === 'professional') {
@@ -81,10 +99,28 @@ export default function LoginPage() {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
         const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
         
-        const isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
+        let isPlatform = false;
+        let isOwner = false;
+        
+        if (adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin')) {
+          isPlatform = true;
+        } else if (userSnap.exists() && userSnap.data()?.role === 'owner') {
+          isOwner = true;
+        }
+
+        // TEMPORARY BOOTSTRAP FALLBACK: fallback por e-mail para configuração inicial caso o banco de dados esteja vazio
+        if (!isPlatform && !isOwner) {
+          if (user.email === 'galicioriefonseca@gmail.com') {
+            isPlatform = true;
+          } else if (user.email === 'leandropfonseca20@gmail.com') {
+            isOwner = true;
+          }
+        }
         
         if (isPlatform) {
           targetPath = '/master';
+        } else if (isOwner) {
+          targetPath = '/dashboard';
         } else if (userSnap.exists()) {
           const uRole = userSnap.data()?.role;
           if (uRole === 'professional') {

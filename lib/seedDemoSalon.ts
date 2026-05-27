@@ -19,11 +19,28 @@ export async function createDemoSalon(adminEmail: string | undefined): Promise<{
     const salonId = salonRef.id;
     const now = Date.now();
 
+    // Query Leandro user to find their actual UID and batch update it
+    const usersRef = collection(db, 'users');
+    const userQ = query(usersRef, where('email', '==', 'leandropfonseca20@gmail.com'));
+    const userSnap = await getDocs(userQ);
+    let targetOwnerId = 'demo-admin-id';
+    
+    if (!userSnap.empty) {
+      targetOwnerId = userSnap.docs[0].id;
+      userSnap.forEach(uDoc => {
+        batch.update(uDoc.ref, {
+          salonId: salonId,
+          role: 'owner',
+          updatedAt: now
+        });
+      });
+    }
+
     batch.set(salonRef, {
       name: 'Lumière Demo Studio',
       ownerName: 'Leandro Fonseca',
-      ownerEmail: adminEmail || 'admin@demo.com',
-      ownerId: 'demo-admin-id',
+      ownerEmail: 'leandropfonseca20@gmail.com',
+      ownerId: targetOwnerId,
       phone: '17996140963',
       businessType: 'salon',
       city: 'Fernandópolis',

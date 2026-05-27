@@ -27,6 +27,11 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
 
   const role = userData?.role;
 
+  // Redirect platform_admin to /master if trying to access client dashboard or onboarding pages
+  if (role === 'platform_admin' && !location.pathname.startsWith('/master')) {
+    return <Navigate to="/master" replace />;
+  }
+
   // Intercept legacy function_link data errors to offer self-healing
   if (role === 'function_link' || (role && !['platform_admin', 'owner', 'manager', 'receptionist', 'attendant', 'professional'].includes(role))) {
     return (

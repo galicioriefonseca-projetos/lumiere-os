@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User as AuthUser, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { User, Salon, Role } from '../types';
 
 interface AuthContextType {
@@ -73,27 +73,113 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserData = async (uid: string) => {
     try {
-      // Check platform admin status
+      // 1. Primariamente, verifica se o usuário é Administrador da Plataforma (Platform Admin)
+      // pela coleção 'platformAdmins' no Firestore.
       const adminRef = doc(db, 'platformAdmins', uid);
       const adminSnap = await getDoc(adminRef);
-      let isExplicitAdmin = adminSnap.exists();
-
+      
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const uData = { id: userSnap.id, ...userSnap.data() } as User;
+      
+      // TEMPORARY BOOTSTRAP FALLBACK: Apenas caso o banco de dados não tenha sido populado ainda,
+      // usamos o e-mail master do proprietário do SaaS para bootstrap inicial.
+      const isGaliEmailFallback = currentUser?.email === 'galicioriefonseca@gmail.com';
+      const isExplicitAdmin = adminSnap.exists() || isGaliEmailFallback;
+
+      if (userSnap.exists() || isGaliEmailFallback) {
+        let uData: User;
+        if (userSnap.exists()) {
+          uData = { id: userSnap.id, ...userSnap.data() } as User;
+        } else {
+          // Cria o modelo virtual de bootstrap se ainda não existir no users
+          uData = {
+            id: uid,
+            fullName: currentUser?.displayName || 'Gali Ciório Fonseca',
+            email: currentUser?.email || 'galicioriefonseca@gmail.com',
+            phone: '',
+            role: 'platform_admin',
+            isActive: true,
+            salonId: '',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          } as User;
+        }
+
+        // Se for identificado como Platform Admin (pelo ID do doc ou papel ou email fallback de bootstrap),
+        // garante o papel correto no objeto de sessão.
+        if (isExplicitAdmin || uData.role === 'platform_admin') {
+          uData.role = 'platform_admin';
+          uData.salonId = '';
+        }
+        
+        // TEMPORARY BOOTSTRAP FALLBACK: Se for o e-mail de teste operacional, definimos como owner e garantimos
+        // que ele tenha um salão de demonstração vinculado.
+        if (currentUser?.email === 'leandropfonseca20@gmail.com') {
+          if (uData.role !== 'owner') {
+            uData.role = 'owner';
+          }
+          if (!uData.salonId) {
+            try {
+              const salonsRef = collection(db, 'salons');
+              const q = query(salonsRef, where('isDemo', '==', true));
+              const qSnap = await getDocs(q);
+              if (!qSnap.empty) {
+                uData.salonId = qSnap.docs[0].id;
+              }
+            } catch (e) {
+              console.error("Error finding demo salon:", e);
+            }
+          }
+        }
+
         setUserData(uData);
         setIsPlatformAdmin(isExplicitAdmin || uData.role === 'platform_admin');
 
-        if (uData.salonId) {
+        if (uData.salonId && uData.role !== 'platform_admin') {
           const salonRef = doc(db, 'salons', uData.salonId);
           const salonSnap = await getDoc(salonRef);
           if (salonSnap.exists()) {
             setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
           }
+        } else {
+          setSalonData(null);
         }
       } else {
         setIsPlatformAdmin(isExplicitAdmin);
+        
+        // TEMPORARY BOOTSTRAP FALLBACK: Se for o e-mail de teste de owner demo mas não tem documento ainda
+        if (currentUser?.email === 'leandropfonseca20@gmail.com') {
+          let demoSalonId = '';
+          try {
+            const salonsRef = collection(db, 'salons');
+            const q = query(salonsRef, where('isDemo', '==', true));
+            const qSnap = await getDocs(q);
+            if (!qSnap.empty) {
+              demoSalonId = qSnap.docs[0].id;
+            }
+          } catch (e) {
+            console.error("Error finding demo salon:", e);
+          }
+          const uData = {
+            id: uid,
+            fullName: currentUser?.displayName || 'Leandro Fonseca',
+            email: currentUser?.email || '',
+            phone: '17996140963',
+            role: 'owner' as const,
+            isActive: true,
+            salonId: demoSalonId,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          } as User;
+          setUserData(uData);
+          if (demoSalonId) {
+            const salonRef = doc(db, 'salons', demoSalonId);
+            const salonSnap = await getDoc(salonRef);
+            if (salonSnap.exists()) {
+              setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -130,26 +216,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const adminRef = doc(db, 'platformAdmins', user.uid);
           const adminSnap = await getDoc(adminRef);
-          isPlatformAdminFromColl = adminSnap.exists();
+          isPlatformAdminFromColl = adminSnap.exists() || user.email === 'galicioriefonseca@gmail.com';
           setIsPlatformAdmin(isPlatformAdminFromColl);
           console.log("[AuthInit] PlatformAdmin doc existe em platformAdmins/", user.uid, "?", isPlatformAdminFromColl);
         } catch (err) {
           console.error("[AuthInit] Erro ao buscar platformAdmins document:", err);
+          if (user.email === 'galicioriefonseca@gmail.com') {
+            isPlatformAdminFromColl = true;
+            setIsPlatformAdmin(true);
+          }
         }
 
         // Listen to users/{uid} document in real-time
-        unsubscribeUserSnapshot = onSnapshot(doc(db, 'users', user.uid), (userSnap) => {
+        unsubscribeUserSnapshot = onSnapshot(doc(db, 'users', user.uid), async (userSnap) => {
           let uData: User | null = null;
 
           if (userSnap.exists()) {
             uData = { id: userSnap.id, ...userSnap.data() } as User;
             console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
-          } else if (isPlatformAdminFromColl) {
-            console.log("[AuthInit] users doc não existe, mas o usuário pertence à coleção platformAdmins. Gerando perfil virtual...");
+            
+            // Se for identificado como Platform Admin (pela coleção platformAdmins ou pelo próprio campo role 'platform_admin'),
+            // garantimos as credenciais de platform_admin.
+            if (isPlatformAdminFromColl || uData.role === 'platform_admin') {
+              uData.role = 'platform_admin';
+              uData.salonId = '';
+            }
+
+            // TEMPORARY BOOTSTRAP FALLBACK: Se o e-mail de administrador de bootstrap logar e o doc existir, garantimos platform_admin.
+            if (user.email === 'galicioriefonseca@gmail.com') {
+              uData.role = 'platform_admin';
+              uData.salonId = '';
+            }
+
+            // TEMPORARY BOOTSTRAP FALLBACK: Se for o e-mail de owner demo logando, garantimos owner e salão demo.
+            if (user.email === 'leandropfonseca20@gmail.com') {
+              uData.role = 'owner';
+              if (!uData.salonId) {
+                try {
+                  const salonsRef = collection(db, 'salons');
+                  const q = query(salonsRef, where('isDemo', '==', true));
+                  const qSnap = await getDocs(q);
+                  if (!qSnap.empty) {
+                    uData.salonId = qSnap.docs[0].id;
+                  }
+                } catch (e) {
+                  console.error("Error finding demo salon inside listener:", e);
+                }
+              }
+            }
+          } else if (isPlatformAdminFromColl || user.email === 'galicioriefonseca@gmail.com') {
+            console.log("[AuthInit] users doc não existe, mas o usuário pertence à coleção platformAdmins ou possui e-mail de bootstrap. Gerando perfil virtual...");
             uData = {
               id: user.uid,
-              fullName: user.displayName || 'Platform Admin',
-              email: user.email || '',
+              fullName: user.displayName || 'Gali Ciório Fonseca',
+              email: user.email || 'galicioriefonseca@gmail.com',
               phone: '',
               role: 'platform_admin',
               isActive: true,
@@ -157,6 +277,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               createdAt: Date.now(),
               updatedAt: Date.now(),
             } as User;
+            try {
+              await setDoc(doc(db, 'users', user.uid), uData);
+            } catch (e) {
+              console.error("Error saving users platform admin doc:", e);
+            }
+          } else if (user.email === 'leandropfonseca20@gmail.com') {
+            // TEMPORARY BOOTSTRAP FALLBACK: Criar conta para owner demo caso não exista no users.
+            let demoSalonId = '';
+            try {
+              const salonsRef = collection(db, 'salons');
+              const q = query(salonsRef, where('isDemo', '==', true));
+              const qSnap = await getDocs(q);
+              if (!qSnap.empty) {
+                demoSalonId = qSnap.docs[0].id;
+              }
+            } catch (e) {
+              console.error("Error finding demo salon:", e);
+            }
+            uData = {
+              id: user.uid,
+              fullName: user.displayName || 'Leandro Fonseca',
+              email: user.email || 'leandropfonseca20@gmail.com',
+              phone: '17996140963',
+              role: 'owner',
+              isActive: true,
+              salonId: demoSalonId,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            } as User;
+            try {
+              await setDoc(doc(db, 'users', user.uid), uData);
+            } catch (e) {
+              console.error("Error creating demo owner:", e);
+            }
           }
 
           if (uData) {
@@ -259,8 +413,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Check if user is platform admin in platformAdmins/{uid} OR if users/{uid}.role === 'platform_admin'
-    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin');
+    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin') || user.email === 'galicioriefonseca@gmail.com';
     console.log("[PlatformAuth] Usuário é platform_admin detectado?", isPlatformAdminExplicit);
+
+    const isDemoOwner = user.email === 'leandropfonseca20@gmail.com';
 
     if (!userDocSnap || !userDocSnap.exists()) {
       if (isPlatformAdminExplicit) {
@@ -268,7 +424,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const now = Date.now();
         const newProfile = {
           id: user.uid,
-          fullName: user.displayName || 'Platform Admin',
+          fullName: user.displayName || 'Gali Ciório Fonseca',
           email: user.email || '',
           phone: user.phoneNumber || '',
           role: 'platform_admin',
@@ -281,10 +437,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (writeErr) {
           console.error("[PlatformAuth] Erro ao gravar perfil users no Firestore:", writeErr);
         }
+      } else if (isDemoOwner) {
+        console.log("[PlatformAuth] leandropfonseca20@gmail.com sem documento user. Criando perfil de owner de teste...");
+        // Find existing demo salon
+        let demoSalonId = '';
+        try {
+          const salonsRef = collection(db, 'salons');
+          const q = query(salonsRef, where('isDemo', '==', true));
+          const qSnap = await getDocs(q);
+          if (!qSnap.empty) {
+            demoSalonId = qSnap.docs[0].id;
+          }
+        } catch (e) {
+          console.error("Error finding demo salon:", e);
+        }
+        
+        const now = Date.now();
+        const newProfile = {
+          id: user.uid,
+          fullName: user.displayName || 'Leandro Fonseca',
+          email: user.email || '',
+          phone: user.phoneNumber || '17996140963',
+          role: 'owner',
+          salonId: demoSalonId,
+          createdAt: now,
+          updatedAt: now,
+        };
+        try {
+          await setDoc(doc(db, 'users', user.uid), newProfile);
+          console.log("[PlatformAuth] Perfil de owner de teste gravado.");
+        } catch (writeErr) {
+          console.error("[PlatformAuth] Erro ao gravar perfil de owner no Firestore:", writeErr);
+        }
       } else {
         console.log("[PlatformAuth] Bloqueando login: Usuário normal não registrado.");
-        await signOut(auth);
-        throw { code: 'auth/user-not-registered-google' };
+         await signOut(auth);
+         throw { code: 'auth/user-not-registered-google' };
       }
     } else {
       // User doc already exists. Sync role if they are found in platformAdmins
@@ -299,6 +487,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[PlatformAuth] Papel sincronizado no Firestore.");
         } catch (writeErr) {
           console.error("[PlatformAuth] Erro ao atualizar papel no Firestore:", writeErr);
+        }
+      } else if (isDemoOwner) {
+        // Find existing demo salon
+        let demoSalonId = '';
+        try {
+          const salonsRef = collection(db, 'salons');
+          const q = query(salonsRef, where('isDemo', '==', true));
+          const qSnap = await getDocs(q);
+          if (!qSnap.empty) {
+            demoSalonId = qSnap.docs[0].id;
+          }
+        } catch (e) {
+          console.error("Error finding demo salon:", e);
+        }
+        if (currentRole !== 'owner' || userDocSnap.data()?.salonId !== demoSalonId) {
+          console.log("[PlatformAuth] Sincronizando perfil do owner de teste com o salão demo...");
+          try {
+            await updateDoc(doc(db, 'users', user.uid), {
+              role: 'owner',
+              salonId: demoSalonId,
+              updatedAt: Date.now()
+            });
+          } catch (writeErr) {
+            console.error("[PlatformAuth] Erro ao atualizar papel no Firestore:", writeErr);
+          }
         }
       }
     }
