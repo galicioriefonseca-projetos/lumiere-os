@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Toaster } from '@/components/ui/sonner';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -60,6 +61,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <Toaster theme="dark" />
+        <PWAInstallPrompt />
       </BrowserRouter>
     </AuthProvider>
   );
