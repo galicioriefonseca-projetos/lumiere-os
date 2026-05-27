@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, auth } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, where, Timestamp } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, updateDoc, where, Timestamp, deleteDoc } from 'firebase/firestore';
 import { Professional } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,8 @@ export default function ProfessionalsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [editingProf, setEditingProf] = useState<Professional | null>(null);
+  const [deletingProf, setDeletingProf] = useState<Professional | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   // States for Functional links
   const [isFunctionDialogOpen, setIsFunctionDialogOpen] = useState(false);
@@ -377,6 +379,25 @@ export default function ProfessionalsPage() {
     setIsDialogOpen(true);
   };
 
+  const handleDeleteClick = (prof: Professional) => {
+    setDeletingProf(prof);
+    setIsConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!salonData || !deletingProf) return;
+    try {
+      const profRef = doc(db, `salons/${salonData.id}/professionals`, deletingProf.id);
+      await deleteDoc(profRef);
+      toast.success(`Profissional ${deletingProf.name} excluído definitivamente.`);
+      setIsConfirmOpen(false);
+      setDeletingProf(null);
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao excluir profissional.');
+    }
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
@@ -692,6 +713,43 @@ export default function ProfessionalsPage() {
               </form>
             </DialogContent>
           </Dialog>
+
+          {/* Exclusão Confirm Dialog */}
+          <Dialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+            <DialogContent className="sm:max-w-[400px] bg-card border-border">
+              <DialogHeader>
+                <DialogTitle className="font-heading font-normal flex items-center gap-2 text-destructive">
+                  <Trash2 className="w-5 h-5" /> Excluir Profissional
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-3">
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Tem certeza que deseja excluir o(a) profissional <strong className="text-white">{deletingProf?.name}</strong>?
+                </p>
+                <div className="text-xs text-red-400 bg-red-950/20 p-3 rounded-lg border border-red-900/30 font-medium">
+                  Esta ação é permanente e removerá por completo todas as configurações e alocações de equipe associadas a este profissional no LumiereOS.
+                </div>
+                <div className="flex gap-2 justify-end pt-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setIsConfirmOpen(false);
+                      setDeletingProf(null);
+                    }}
+                    className="rounded-xl border-white/10 text-white hover:bg-white/5 h-10 px-4 text-xs font-semibold"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={handleDeleteConfirm}
+                    className="bg-destructive hover:bg-destructive/90 text-white rounded-xl h-10 px-4 text-xs font-semibold"
+                  >
+                    Excluir Definitivamente
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -823,11 +881,14 @@ export default function ProfessionalsPage() {
                 </div>
                 
                 <div className="flex gap-1 -mr-2">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(prof)} className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(prof)} className="h-8 w-8 text-muted-foreground hover:text-primary" title="Editar">
                     <Edit2 className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => toggleStatus(prof)} className={`h-8 w-8 ${prof.isActive ? 'text-destructive hover:bg-destructive/10' : 'text-primary hover:bg-primary/10'}`}>
+                  <Button variant="ghost" size="icon" onClick={() => toggleStatus(prof)} className={`h-8 w-8 ${prof.isActive ? 'text-destructive hover:bg-destructive/10' : 'text-primary hover:bg-primary/10'}`} title={prof.isActive ? "Desativar" : "Ativar"}>
                     {prof.isActive ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(prof)} className="h-8 w-8 text-destructive hover:bg-destructive/10" title="Excluir Definitivamente">
+                    <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
               </CardHeader>
