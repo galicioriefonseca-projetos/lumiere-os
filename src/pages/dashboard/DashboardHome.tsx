@@ -226,9 +226,15 @@ export default function DashboardHome() {
         <div className="absolute top-0 right-0 -translate-y-12 translate-x-12 w-80 h-80 bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-2.5 py-1 rounded-full flex items-center gap-1 leading-none shadow-[0_2px_10px_rgba(212,175,55,0.05)]">
-               <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
-            </span>
+            {salonData?.plan === 'founder' ? (
+              <span className="text-[10px] uppercase font-bold tracking-widest text-[#D4AF37] bg-[#D4AF37]/15 border border-[#D4AF37]/35 px-3 py-1.5 rounded-full flex items-center gap-2 leading-none shadow-[0_2px_15px_rgba(212,175,55,0.1)] animate-pulse">
+                <Crown className="w-3.5 h-3.5 filter drop-shadow-[0_0_2px_rgba(212,175,55,0.4)]" /> PLANO FOUNDER • ACESSO COMPLETO • ATUALIZAÇÕES INCLUÍDAS
+              </span>
+            ) : (
+              <span className="text-[10px] uppercase font-bold tracking-widest text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-2.5 py-1 rounded-full flex items-center gap-1 leading-none shadow-[0_2px_10px_rgba(212,175,55,0.05)]">
+                 <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
+              </span>
+            )}
           </div>
           <h1 className="text-2xl md:text-3xl font-light tracking-tight text-white font-heading">
             <span className="font-semibold text-white">{salonData.name}</span>
@@ -328,7 +334,11 @@ export default function DashboardHome() {
                      <FileText className="w-5 h-5 text-[#D4AF37]" />
                    </div>
                    <span className="text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5">
-                     Relatórios <span className="text-[8px] bg-[#D4AF37]/20 border border-[#D4AF37]/30 text-[#D4AF37] px-1 py-0.5 rounded uppercase leading-none font-mono tracking-wider">Premium</span>
+                     Relatórios {salonData?.plan === 'founder' ? (
+                        <span className="text-[8px] bg-amber-500/20 border border-amber-500/40 text-[#D4AF37] px-1 py-0.5 rounded uppercase leading-none font-mono tracking-wider">FOUNDER</span>
+                      ) : (
+                        <span className="text-[8px] bg-[#D4AF37]/20 border border-[#D4AF37]/30 text-[#D4AF37] px-1 py-0.5 rounded uppercase leading-none font-mono tracking-wider">Premium</span>
+                      )}
                    </span>
                 </button>
               </>
@@ -752,9 +762,9 @@ export default function DashboardHome() {
                <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]">
                   <FileText className="w-6 h-6 animate-pulse" />
                </div>
-               <DialogTitle className="text-lg font-heading font-medium text-white">Relatórios Avançados Lumière</DialogTitle>
+               <DialogTitle className="text-lg font-heading font-medium text-white">Relatórios Avançados Lumière {salonData?.plan === 'founder' && <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-[#D4AF37] font-mono px-2 py-0.5 rounded leading-none ml-2">FOUNDER</span>}</DialogTitle>
                <DialogDescription className="text-xs text-slate-300 leading-relaxed max-w-xs font-light">
-                  A nossa plataforma de relatórios consolidados, notas analíticas de conformidade Essenza e exportações automáticas de agenda em PDF de alta resolução está na fase final de homologação.
+                  {salonData?.plan === 'founder' ? 'Como contratante do plano Founder para o Essenza Studio di Bellezza, seu acesso a todos os relatórios consolidados e de comissão está inteiramente liberado neste painel! Estamos compilando as informações operacionais da sua equipe para exibição estendida nas telas.' : 'A nossa plataforma de relatórios consolidados, notas analíticas de conformidade Essenza e exportações automáticas de agenda em PDF de alta resolução está na fase final de homologação.'}
                </DialogDescription>
             </DialogHeader>
 

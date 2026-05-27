@@ -19,18 +19,55 @@ import {
   FileText,
   TrendingUp,
   Star,
-  Crown
+  Crown,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
 import PWAInstallButton from '../PWAInstallButton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 export default function DashboardLayout() {
   const { userData, salonData, isPlatformAdmin, logout } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isFounderDetailOpen, setIsFounderDetailOpen] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [isSubmittingSubscription, setIsSubmittingSubscription] = useState(false);
+  const [subscriptionSuccess, setSubscriptionSuccess] = useState(false);
+
+  // Trial ending check logic
+  const trialEndsAt = salonData?.trialEndsAt || 0;
+  const now = Date.now();
+  const timeLeftMs = trialEndsAt - now;
+  const daysLeftDecimal = timeLeftMs / (1000 * 60 * 60 * 24);
+  const isTrialEndingSoon = 
+    salonData?.subscriptionStatus === 'trial' && 
+    !isPlatformAdmin && 
+    trialEndsAt > 0 && 
+    daysLeftDecimal <= 3;
+
+  // Text representation of time left
+  const getTrialDaysMessage = () => {
+    if (timeLeftMs <= 0) {
+      return "Expirado";
+    }
+    const days = Math.floor(daysLeftDecimal);
+    const hours = Math.floor((timeLeftMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (days === 0) {
+      if (hours === 0) {
+        return "menos de 1 hora";
+      }
+      return `${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+    }
+    
+    return `${days} ${days === 1 ? 'dia' : 'dias'}${hours > 0 ? ` e ${hours} ${hours === 1 ? 'hora' : 'horas'}` : ''}`;
+  };
+
+  const timeLeftFormatted = getTrialDaysMessage();
 
   // Role based navigation rendering
   const getNavigationByRole = (role: string | undefined) => {
@@ -183,28 +220,102 @@ export default function DashboardLayout() {
              </Button>
 
              {/* Plan badge */}
-             <div className="hidden sm:flex items-center h-8.5 px-3 py-1 bg-white/[0.02] rounded-xl border border-white/10 text-[11px] text-muted-foreground whitespace-nowrap">
-               <span className="uppercase tracking-wider mr-2 font-bold text-[#D4AF37]">{isPlatformAdmin ? 'MASTER' : salonData?.plan}</span> 
+             <button
+               onClick={() => {
+                 if (salonData?.plan === 'founder') {
+                   setIsFounderDetailOpen(true);
+                 }
+               }}
+               className={cn(
+                 "hidden sm:flex items-center h-8.5 px-3 py-1 bg-white/[0.02] rounded-xl border border-white/10 text-[11px] text-muted-foreground whitespace-nowrap text-left transition-all",
+                 salonData?.plan === 'founder' ? "hover:bg-[#D4AF37]/10 hover:border-[#D4AF37]/35 cursor-pointer text-[#D4AF37]" : "cursor-default"
+               )}
+             >
+               <span className="uppercase tracking-wider mr-2 font-bold text-[#D4AF37]">{isPlatformAdmin ? 'MASTER' : (salonData?.plan === 'founder' ? 'FOUNDER' : salonData?.plan)}</span> 
                <span className="opacity-40 mr-2">|</span>
                <span>Status:</span>
                <span className={cn(
                  "ml-1 font-semibold capitalize",
                  isPlatformAdmin || salonData?.subscriptionStatus === 'active' ? "text-green-400" : "text-[#D4AF37]"
                )}>
-                 {isPlatformAdmin ? 'ativo' : (salonData?.subscriptionStatus === 'trial' ? 'teste' : salonData?.subscriptionStatus)}
+                 {isPlatformAdmin ? 'ativo' : (salonData?.subscriptionStatus === 'trial' ? 'teste' : (salonData?.subscriptionStatus === 'active' ? 'ativo' : 'pendente'))}
                </span>
-             </div>
+               {salonData?.plan === 'founder' && !isPlatformAdmin && (
+                 <Sparkles className="w-3.5 h-3.5 text-amber-400 ml-1.5 animate-pulse shrink-0 font-bold" />
+               )}
+             </button>
           </div>
         </header>
 
+        {isTrialEndingSoon && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 md:px-8 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left font-sans">
+            <div className="flex items-start gap-2.5 text-[#D4AF37]">
+              <AlertTriangle className="w-4 h-4 text-[#D4AF37] mt-0.5 shrink-0 animate-pulse" />
+              <div className="space-y-0.5">
+                <span className="font-semibold text-xs text-[#D4AF37] block">Atenção • Seu teste expira em breve</span>
+                <span className="text-[11.5px] text-zinc-300 leading-relaxed font-light">
+                  Seu período de testes premium expira em <span className="font-semibold text-[#D4AF37]">{timeLeftFormatted}</span>. Faça o upgrade agora para garantir acesso contínuo aos recursos do LumiereOS sem interrupções!
+                </span>
+              </div>
+            </div>
+            <Button 
+              size="xs" 
+              onClick={() => setIsUpgradeModalOpen(true)}
+              className="bg-amber-500 hover:bg-amber-600 text-black font-semibold rounded-xl text-[11px] h-8 px-4 shrink-0 transition-all font-sans cursor-pointer flex items-center gap-1.5 self-start sm:self-center"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              Fazer Upgrade
+            </Button>
+          </div>
+        )}
+
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
           {salonData?.subscriptionStatus === 'trial' && !isPlatformAdmin && (
-             <div className="mb-6 bg-gradient-to-r from-[#D4AF37]/15 to-transparent border border-[#D4AF37]/25 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_0_20px_rgba(212,175,55,0.03)]">
+             <div className={cn(
+               "mb-6 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all duration-300",
+               isTrialEndingSoon 
+                 ? "bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 shadow-[0_0_25px_rgba(245,158,11,0.06)]"
+                 : "bg-gradient-to-r from-[#D4AF37]/15 to-transparent border border-[#D4AF37]/25 shadow-[0_0_20px_rgba(212,175,55,0.03)]"
+             )}>
                 <div className="text-center sm:text-left">
-                   <h4 className="font-semibold text-[#D4AF37] flex items-center justify-center sm:justify-start gap-2 text-sm leading-none"><Sparkles className="w-4 h-4 animate-pulse"/> Você está no Período de Testes</h4>
-                   <p className="text-xs text-slate-300 mt-1.5 leading-relaxed font-light">Aproveite todos os recursos premium do plano <b className="text-white capitalize">{salonData.plan}</b> gratuitamente.</p>
+                   <h4 className={cn(
+                     "font-semibold flex items-center justify-center sm:justify-start gap-2 text-sm leading-none",
+                     isTrialEndingSoon ? "text-[#f59e0b]" : "text-[#D4AF37]"
+                   )}>
+                     {isTrialEndingSoon ? (
+                       <>
+                         <AlertTriangle className="w-4.5 h-4.5 animate-bounce text-amber-400" />
+                         Seu Período de Testes Expirará em breve!
+                       </>
+                     ) : (
+                       <>
+                         <Sparkles className="w-4 h-4 animate-pulse" />
+                         Você está no Período de Testes
+                       </>
+                     )}
+                   </h4>
+                   <p className="text-xs text-slate-300 mt-1.5 leading-relaxed font-light">
+                     {isTrialEndingSoon ? (
+                       <>
+                         Ative sua assinatura agora para evitar interrupções. Restam apenas <span className="font-semibold text-amber-400">{timeLeftFormatted}</span> de uso gratuito do plano <b className="text-white capitalize">{salonData.plan}</b>.
+                       </>
+                     ) : (
+                       <>
+                         Aproveite todos os recursos premium do plano <b className="text-white capitalize">{salonData.plan}</b> gratuitamente.
+                       </>
+                     )}
+                   </p>
                 </div>
-                <Button size="sm" className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold rounded-xl text-xs h-9.5 px-4 shrink-0 shadow-[0_4px_15px_rgba(212,175,55,0.15)]">
+                <Button 
+                  size="sm" 
+                  onClick={() => setIsUpgradeModalOpen(true)}
+                  className={cn(
+                    "font-semibold rounded-xl text-xs h-9.5 px-4 shrink-0 transition-all shadow-[0_4px_15px_rgba(212,175,55,0.15)]",
+                    isTrialEndingSoon 
+                      ? "bg-[#e0a82e] hover:bg-[#c99522] text-black border border-[#e0a82e]/20" 
+                      : "bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black border border-[#D4AF37]/20"
+                  )}
+                >
                   <CreditCard className="w-4 h-4 mr-2" />
                   Assinar Agora
                 </Button>
@@ -452,6 +563,227 @@ export default function DashboardLayout() {
               Entendido
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detalhes do Plano Founder Dialog */}
+      <Dialog open={isFounderDetailOpen} onOpenChange={setIsFounderDetailOpen}>
+        <DialogContent className="max-w-md bg-[#09090b]/98 border border-amber-500/30 text-white rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full">
+          <DialogHeader className="border-b border-white/5 pb-4 text-left">
+            <DialogTitle className="text-lg md:text-xl font-heading font-medium text-white flex items-center gap-2">
+              <Crown className="w-5 h-5 text-[#D4AF37] filter drop-shadow-[0_0_4px_rgba(212,175,55,0.4)]" /> Plano Founder • Detalhes
+            </DialogTitle>
+            <p className="text-[#a1a1aa] text-xs font-light mt-1">
+              Informações contratuais e níveis de privilégio da sua conta de co-criador piloto.
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4 font-sans text-left">
+            <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/25 rounded-2xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-400 font-bold px-2 py-0.5 rounded-full uppercase font-mono tracking-wider flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Membro Founder Piloto
+                </span>
+                <span className={cn(
+                  "text-[9px] font-bold px-2 py-0.5 rounded-full uppercase font-mono tracking-wider border",
+                  salonData?.subscriptionStatus === 'active' 
+                    ? "bg-green-500/25 border-green-500/45 text-green-400" 
+                    : (salonData?.subscriptionStatus === 'trial' ? "bg-amber-500/25 border-amber-500/45 text-amber-400" : "bg-red-500/25 border-red-500/45 text-red-400")
+                )}>
+                  CONTRATO: {salonData?.subscriptionStatus === 'trial' ? 'teste' : (salonData?.subscriptionStatus === 'active' ? 'ativo' : 'pendente')}
+                </span>
+              </div>
+              <h4 className="font-semibold text-white text-sm leading-snug">
+                Plano Founder Ativo ({salonData?.name || 'Seu Salão'})
+              </h4>
+              <p className="text-xs text-slate-300 leading-relaxed font-light">
+                Como contratante do plano Founder piloto, seu estabelecimento possui acesso completo, ilimitado e prioritário a todas as funcionalidades presentes e futuras do LumiereOS.
+              </p>
+            </div>
+
+            <div className="bg-black/40 border border-white/5 rounded-2xl p-4 space-y-2.5">
+              <div className="text-xs text-zinc-400 flex justify-between gap-10 font-sans">
+                <span>Plano Especial:</span>
+                <strong className="text-white">Piloto (Co-criador)</strong>
+              </div>
+              <div className="text-xs text-zinc-400 flex justify-between gap-10 font-sans">
+                <span>Atualizações do Sistema:</span>
+                <strong className="text-[#D4AF37]">Inclusas / Vitalícias</strong>
+              </div>
+              <div className="text-xs text-zinc-400 flex justify-between gap-10 font-sans">
+                <span>Acesso a relatórios:</span>
+                <strong className="text-green-400">Liberado</strong>
+              </div>
+              <div className="text-xs text-zinc-400 flex justify-between gap-10 font-sans">
+                <span>Checklist Essenza:</span>
+                <strong className="text-[#D4AF37]">Ilimitado</strong>
+              </div>
+              <div className="text-xs text-zinc-400 flex justify-between gap-10 font-sans">
+                <span>Metas & Equipes:</span>
+                <strong className="text-white">Liberadas</strong>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-amber-400 font-mono flex items-center justify-center gap-1.5 leading-none bg-amber-500/5 py-2.5 rounded-xl border border-amber-500/10">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Atualizações futuras totalmente inclusas
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2 mt-2">
+            <Button onClick={() => setIsFounderDetailOpen(false)} className="bg-amber-500 hover:bg-amber-600 text-black font-semibold rounded-xl text-xs px-5 h-9">
+              Fechar Detalhes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upgrade / Assinatura de Plano Dialog */}
+      <Dialog open={isUpgradeModalOpen} onOpenChange={(open) => {
+        setIsUpgradeModalOpen(open);
+        if (!open) setSubscriptionSuccess(false);
+      }}>
+        <DialogContent className="max-w-xl bg-[#09090b]/98 border border-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full overflow-hidden">
+          <button 
+            onClick={() => {
+              setIsUpgradeModalOpen(false);
+              setSubscriptionSuccess(false);
+            }} 
+            className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-full transition-colors bg-white/5 z-10"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          {!subscriptionSuccess ? (
+            <div className="space-y-5 text-left p-2">
+              <div className="border-b border-white/5 pb-4">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-heading font-medium text-white flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-[#D4AF37]" /> Upgrade de Conta Premium
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-zinc-400">
+                    Ative o LumiereOS no seu salão e garanta a produtividade máxima de toda a sua equipe.
+                  </DialogDescription>
+                </DialogHeader>
+              </div>
+
+              {/* Special pilot founder banner if that's their plan */}
+              {salonData?.plan === 'founder' ? (
+                <div className="bg-gradient-to-br from-[#D4AF37]/15 to-transparent border border-[#D4AF37]/35 rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs text-[#D4AF37] font-semibold tracking-wider uppercase font-mono">
+                    <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Oferta Founder Ativa
+                  </div>
+                  <h4 className="text-sm font-semibold text-white">Plano Especial Piloto (Founder)</h4>
+                  <p className="text-[11.5px] text-zinc-300 font-light leading-relaxed">
+                    Você possui uma condição exclusiva por tempo limitado de co-criador. Garanta todas as ferramentas e integrações futuras liberando seu acesso completo.
+                  </p>
+                  <div className="border-t border-white/5 pt-2 flex items-center justify-between text-xs mt-1">
+                    <span className="text-zinc-400">Mensalidade especial:</span>
+                    <span className="font-semibold text-[#D4AF37]">R$ 297,00/mês nos primeiros 90 dias</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>Início da recorrência regular (Studio):</span>
+                    <span>R$ 397,00/mês após este período</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-[10px] bg-primary/10 border border-primary/25 text-primary font-bold px-2 py-0.5 rounded-full uppercase font-mono tracking-wider">Plano Atual: <b className="uppercase">{salonData?.plan}</b></span>
+                    <h4 className="text-sm font-semibold text-white">LumiereOS Premium</h4>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-zinc-400">Plano contratado:</span>
+                    <p className="text-lg font-bold text-white capitalize">{salonData?.plan}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Credit card input mockup for simulation */}
+              <div className="space-y-3.5 bg-black/40 border border-white/5 p-4 rounded-2xl">
+                <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-zinc-400" /> Método de Pagamento (Simulação)
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono">Número do Cartão</label>
+                    <input 
+                      disabled 
+                      value="•••• •••• •••• 4242" 
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-xs text-zinc-300 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono">Nome no Cartão</label>
+                    <input 
+                      disabled 
+                      value={userData?.fullName || "Proprietário do Salão"} 
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-xs text-zinc-300 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-zinc-500 font-light leading-relaxed">
+                  Para fins desta demonstração/piloto, o processo de faturamento é totalmente simulado e nenhum valor real será cobrado de sua conta.
+                </p>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <Button 
+                  onClick={() => setIsUpgradeModalOpen(false)} 
+                  variant="outline" 
+                  className="border-white/10 text-zinc-400 hover:text-white rounded-xl text-xs h-9.5 px-4 bg-transparent"
+                >
+                  Continuar Testando
+                </Button>
+                <Button 
+                  disabled={isSubmittingSubscription}
+                  onClick={async () => {
+                    setIsSubmittingSubscription(true);
+                    // Simulate API network call
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    setIsSubmittingSubscription(false);
+                    setSubscriptionSuccess(true);
+                  }}
+                  className="bg-amber-500 hover:bg-amber-600 text-black font-semibold rounded-xl text-xs h-9.5 px-5 flex items-center gap-1.5"
+                >
+                  {isSubmittingSubscription ? (
+                    <span className="flex items-center gap-1.5">
+                      <svg className="animate-spin h-3.5 w-3.5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                      Processando...
+                    </span>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-black" />
+                      Confirmar Assinatura
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="py-8 px-4 text-center space-y-4 font-sans flex flex-col items-center">
+              <div className="w-12 h-12 rounded-full bg-green-500/25 border border-green-500/40 text-green-400 flex items-center justify-center mb-1">
+                <CheckCircle2 className="w-6 h-6 animate-pulse" />
+              </div>
+              <h3 className="text-lg font-medium text-white font-heading">Assinatura Ativada com Sucesso!</h3>
+              <p className="text-xs text-zinc-300 font-light max-w-sm leading-relaxed mx-auto">
+                Parabéns! Sua simulação de upgrade foi concluído. Em uma operação de produção, o sistema do LumiereOS ativa o salão instantaneamente ao constatar o pagamento via Gateway.
+              </p>
+              <p className="text-[11px] text-amber-400 bg-amber-500/5 px-3 py-2 rounded-xl border border-amber-500/10 font-mono inline-block">
+                Contrato ativo e integrado em modo Piloto!
+              </p>
+              <div className="pt-2">
+                <Button 
+                  onClick={() => {
+                    setIsUpgradeModalOpen(false);
+                    setSubscriptionSuccess(false);
+                  }}
+                  className="bg-green-500 hover:bg-green-600 text-black font-semibold rounded-xl text-xs h-9.5 px-6"
+                >
+                  Retornar ao Painel
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

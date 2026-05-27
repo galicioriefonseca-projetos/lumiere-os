@@ -117,8 +117,9 @@ export default function ProfessionalsPage() {
     e.preventDefault();
     if (!salonData) return;
 
-    if (!editingProf && !isAdmin && professionals.length >= salonData.professionalsLimit) {
-      toast.error(`Você atingiu o limite de ${salonData.professionalsLimit} profissionais do seu plano.`);
+    const allowedLimit = salonData.plan === 'founder' ? Math.max(salonData.professionalsLimit || 0, 20) : salonData.professionalsLimit;
+    if (!editingProf && !isAdmin && professionals.length >= allowedLimit) {
+      toast.error(`Você atingiu o limite de ${allowedLimit} profissionais do seu plano.`);
       return;
     }
 
@@ -680,8 +681,8 @@ export default function ProfessionalsPage() {
             <DialogTrigger asChild>
               <Button 
                  className="bg-primary hover:bg-gold-500 text-black font-semibold h-10 rounded-xl px-4 text-xs"
-                 disabled={!salonData || (!isAdmin && professionals.length >= salonData.professionalsLimit)}
-                 title={!isAdmin && professionals.length >= (salonData?.professionalsLimit || 0) ? "Limite do plano atingido" : ""}
+                 disabled={!salonData || (!isAdmin && professionals.length >= (salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 20) : (salonData?.professionalsLimit || 0)))}
+                 title={!isAdmin && professionals.length >= (salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 20) : (salonData?.professionalsLimit || 0)) ? "Limite do plano atingido" : ""}
               >
                 <Plus className="w-4 h-4 mr-2" /> Novo Profissional (Direto)
               </Button>
