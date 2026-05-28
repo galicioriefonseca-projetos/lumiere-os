@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
 import { createDemoSalon, deleteDemoSalon } from '@/lib/seedDemoSalon';
+import { APP_INFO } from '../config/appInfo';
 
 export default function MasterPanel() {
   const { logout, isPlatformAdmin, userData } = useAuth();
@@ -213,6 +214,11 @@ export default function MasterPanel() {
                Painel Master
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">Controle absoluto de todas as instâncias da plataforma.</p>
+            <p className="text-xs text-[#D4AF37] mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono select-none">
+              <span>LumiereOS v{APP_INFO.version}</span>
+              <span className="opacity-30">|</span>
+              <span>Desenvolvedor: {APP_INFO.company}</span>
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" className="border-border hover:bg-white/5 border-primary/50 text-primary" onClick={async () => {

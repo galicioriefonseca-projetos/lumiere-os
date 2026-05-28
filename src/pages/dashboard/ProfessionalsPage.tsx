@@ -9,7 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, Plus, Edit2, Power, PowerOff, UserMinus, Link2, Copy, Trash2, Check, Share2, MessageSquare } from 'lucide-react';
+import { 
+  Loader2, Plus, Edit2, Power, PowerOff, UserMinus, Link2, Copy, Trash2, Check, Share2, MessageSquare,
+  ChevronDown, ChevronUp, Search, Filter, Mail, Phone, Calendar, Sparkles
+} from 'lucide-react';
 import { PROFESSIONAL_SPECIALTIES } from '../../data/professionalSpecialties';
 
 const roleTranslations: Record<string, string> = {
@@ -77,6 +80,11 @@ export default function ProfessionalsPage() {
   });
   const [generatedLink, setGeneratedLink] = useState('');
   const [copiedLink, setCopiedLink] = useState('');
+
+  // Premium collapse & filtration states
+  const [isInvitesCollapsed, setIsInvitesCollapsed] = useState(() => localStorage.getItem('lumiere_invites_section_collapsed') === 'true');
+  const [filterType, setFilterType] = useState<'all' | 'active' | 'inactive' | 'manager' | 'professional'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!salonData) return;
@@ -756,161 +764,430 @@ export default function ProfessionalsPage() {
 
       {/* Convites Ativos List */}
       {invites.filter(i => i.status === 'pending').length > 0 && (
-        <Card className="border border-[#d4af37]/20 bg-[#d4af37]/5 rounded-2xl shadow-lg">
-          <CardHeader className="pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <CardTitle className="text-sm font-heading font-normal flex items-center gap-2 text-primary">
-                <Link2 className="w-4 h-4" /> Links de Convite Ativos
-              </CardTitle>
-              <CardDescription className="text-xs">Copie e envie para novos profissionais ou gerentes se registrarem em sua equipe.</CardDescription>
+        <Card className="border border-[#D4AF37]/20 bg-zinc-950/60 rounded-2xl shadow-lg transition-all duration-300 overflow-hidden">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4 select-none hover:bg-white/[0.01] transition-colors duration-200">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-heading font-normal flex items-center gap-2 text-primary">
+                  <Link2 className="w-4 h-4 text-[#D4AF37]" /> Links de Convite Ativos
+                </CardTitle>
+                <span className="text-[10px] bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20 uppercase tracking-wider font-mono font-bold">
+                  {invites.filter(i => i.status === 'pending').length} ativos
+                </span>
+              </div>
+              <CardDescription className="text-xs mt-0.5 hidden sm:block text-zinc-400">
+                Copie e envie para novos profissionais ou gerentes se registrarem em sua equipe do Essenza.
+              </CardDescription>
             </div>
-            {invites.some(i => i.inviteType === 'function_link' && i.status === 'pending') && (
-              <Button 
-                onClick={copyGroupMessage}
-                variant="outline"
-                className="w-full sm:w-auto border-primary/20 hover:border-primary/50 text-primary hover:bg-primary/5 bg-transparent rounded-xl h-9 px-3 text-xs font-semibold flex items-center gap-1.5"
+            
+            <div className="flex items-center gap-2">
+              {invites.some(i => i.inviteType === 'function_link' && i.status === 'pending') && (
+                <Button 
+                  onClick={copyGroupMessage}
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 bg-transparent rounded-xl h-9 px-3 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5" /> 
+                  <span className="hidden md:inline">Copiar Links Grupo (WA)</span>
+                  <span className="md:hidden">Copiar Grupo</span>
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const nextVal = !isInvitesCollapsed;
+                  setIsInvitesCollapsed(nextVal);
+                  localStorage.setItem('lumiere_invites_section_collapsed', String(nextVal));
+                }}
+                className="text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl h-9 px-3 text-xs font-medium flex items-center gap-1"
               >
-                <Copy className="w-3.5 h-3.5" /> Copiar Links Grupo (WA)
+                {isInvitesCollapsed ? (
+                  <>
+                    <ChevronDown className="w-4 h-4 text-[#D4AF37]" /> Expandir
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="w-4 h-4 text-[#D4AF37]" /> Ocultar
+                  </>
+                )}
               </Button>
-            )}
+            </div>
           </CardHeader>
-          <CardContent className="space-y-3 p-4">
-            {invites.filter(i => i.status === 'pending').map((invite) => {
-              const link = `${window.location.origin}/cadastro-profissional?invite=${invite.id}`;
-              const isCopied = copiedLink === link;
-              const isFunctionLink = invite.inviteType === 'function_link';
+          {!isInvitesCollapsed && (
+            <CardContent className="space-y-3 p-4 border-t border-white/5 bg-black/20">
+              {invites.filter(i => i.status === 'pending').map((invite) => {
+                const link = `${window.location.origin}/cadastro-profissional?invite=${invite.id}`;
+                const isCopied = copiedLink === link;
+                const isFunctionLink = invite.inviteType === 'function_link';
 
-              const roleDisplay = roleTranslations[invite.role] || invite.role;
-              const specialtyDisplay = invite.specialty || invite.category || roleDisplay;
+                const roleDisplay = roleTranslations[invite.role] || invite.role;
+                const specialtyDisplay = invite.specialty || invite.category || roleDisplay;
 
-              return (
-                <div key={invite.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 bg-black/40 border border-white/5 rounded-xl gap-3">
-                  <div className="space-y-0.5 min-w-0">
-                    <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
-                      {specialtyDisplay} 
-                      <span className="text-[10px] uppercase bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold font-mono">
-                        {isFunctionLink ? `Link por Função` : (roleTranslations[invite.inviteType] || invite.inviteType)}
-                      </span>
-                    </p>
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {isFunctionLink 
-                        ? `Acessos: ${invite.usesCount || 0}/${invite.maxUses || 1} • Expira em: ${invite.expiresAt?.toDate ? invite.expiresAt.toDate().toLocaleDateString() : 'N/A'}`
-                        : (invite.email ? `Exclusivo para: ${invite.email}` : 'Qualquer e-mail')
-                      }
-                    </p>
+                return (
+                  <div key={invite.id} className="flex flex-col sm:flex-row items-shrink sm:items-center justify-between p-3 bg-[#0d0d11] border border-white/5 rounded-xl gap-3 hover:border-[#D4AF37]/20 transition-all duration-300">
+                    <div className="space-y-1 min-w-0">
+                      <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
+                        {specialtyDisplay} 
+                        <span className="text-[9px] uppercase bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37] px-2 py-0.5 rounded font-bold font-mono">
+                          {isFunctionLink ? `Link por Função` : (roleTranslations[invite.inviteType] || invite.inviteType)}
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-zinc-400 truncate">
+                        {isFunctionLink 
+                          ? `Acessos: ${invite.usesCount || 0}/${invite.maxUses || 1} • Expira em: ${invite.expiresAt?.toDate ? invite.expiresAt.toDate().toLocaleDateString('pt-BR') : 'N/A'}`
+                          : (invite.email ? `Exclusivo para: ${invite.email}` : 'Qualquer e-mail')
+                        }
+                      </p>
+                    </div>
+                    
+                    <div className="flex gap-1.5 self-stretch sm:self-auto shrink-0 flex-wrap justify-end">
+                      <Button 
+                        onClick={() => copyToClipboard(link)}
+                        className="bg-[#D4AF37] hover:bg-[#b08f2e] text-black flex items-center gap-1 h-7.5 rounded-lg text-xs px-2.5 font-bold transition-all"
+                      >
+                        {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {isCopied ? 'Copiado!' : 'Copiar Link'}
+                      </Button>
+
+                      {isFunctionLink && (
+                        <>
+                          <Button 
+                            onClick={() => {
+                              const specStr = invite.specialty || invite.role;
+                              const msg = `Você recebeu um convite para acessar o LumiereOS do ${salonData?.name} como ${specStr}. Acesse o link e conclua seu cadastro: ${link}`;
+                              navigator.clipboard.writeText(msg);
+                              toast.success('Mensagem individual copiada!');
+                            }}
+                            variant="outline"
+                            className="border-white/10 text-white hover:bg-white/5 flex items-center gap-1 h-7.5 rounded-lg text-xs px-2.5"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-[#D4AF37]" />
+                            Mensagem
+                          </Button>
+
+                          <a 
+                            href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                              `Você recebeu um convite para acessar o LumiereOS do ${salonData?.name} como ${invite.specialty || invite.role}. Acesse o link e conclua seu cadastro: ${link}`
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="bg-[#25D366] hover:bg-[#128C7E] flex items-center gap-1 h-7.5 rounded-lg text-xs px-2.5 text-white transition-colors duration-200"
+                          >
+                            <Share2 className="w-3 h-3" />
+                            WhatsApp
+                          </a>
+                        </>
+                      )}
+
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => cancelInvite(invite.id)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10 h-7.5 w-7.5 p-0 rounded-md flex items-center justify-center transition-colors"
+                        title="Cancelar"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  
-                  <div className="flex gap-1.5 self-end sm:self-auto shrink-0 flex-wrap">
-                    <Button 
-                      onClick={() => copyToClipboard(link)}
-                      className="bg-primary hover:bg-gold-500 text-black flex items-center gap-1 h-7 rounded-md text-xs px-2.5 font-semibold"
-                    >
-                      {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      {isCopied ? 'Copiado!' : 'Copiar Link'}
-                    </Button>
-
-                    {isFunctionLink && (
-                      <>
-                        <Button 
-                          onClick={() => {
-                            const specStr = invite.specialty || invite.role;
-                            const msg = `Você recebeu um convite para acessar o LumiereOS do ${salonData?.name} como ${specStr}. Acesse o link e conclua seu cadastro: ${link}`;
-                            navigator.clipboard.writeText(msg);
-                            toast.success('Mensagem individual copiada!');
-                          }}
-                          variant="outline"
-                          className="border-white/10 text-white hover:bg-white/5 flex items-center gap-1 h-7 rounded-md text-xs px-2.5"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5 text-primary" />
-                          Mensagem
-                        </Button>
-
-                        <a 
-                          href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-                            `Você recebeu um convite para acessar o LumiereOS do ${salonData?.name} como ${invite.specialty || invite.role}. Acesse o link e conclua seu cadastro: ${link}`
-                          )}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="bg-[#25D366] hover:bg-[#128C7E] flex items-center gap-1 h-7 rounded-md text-xs px-2.5 text-white transition-colors"
-                        >
-                          <Share2 className="w-3 h-3" />
-                          WhatsApp
-                        </a>
-                      </>
-                    )}
-
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => cancelInvite(invite.id)}
-                      className="text-destructive hover:bg-destructive/10 h-7 rounded-md px-2"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
+                );
+              })}
+            </CardContent>
+          )}
         </Card>
       )}
 
-      {professionals.length === 0 ? (
-        <Card className="border-border bg-card/40">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <UserMinus className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="text-lg font-medium mb-1">Nenhum profissional</h3>
-            <p className="text-muted-foreground text-sm">Cadastre sua equipe para iniciar os agendamentos ou envie links de convites corporativos.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {professionals.map((prof) => (
-            <Card key={prof.id} className={`border-border transition-colors ${!prof.isActive && 'opacity-60 grayscale'}`}>
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-                <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-muted-foreground font-bold shrink-0">
-                      {prof.name.charAt(0).toUpperCase()}
-                   </div>
-                   <div>
-                      <CardTitle className="text-base font-medium leading-tight">
-                        {prof.name}
-                      </CardTitle>
-                      <p className="text-xs text-primary mt-0.5">{prof.role}</p>
-                   </div>
+      {/* Filtros e Busca */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-zinc-950/40 p-4 border border-white/5 rounded-2xl">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <Input
+            type="text"
+            placeholder="Buscar por nome, e-mail ou especialidade..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 h-10 bg-black/40 border-white/10 focus:border-[#D4AF37]/50 rounded-xl text-xs text-white"
+          />
+          {searchQuery && (
+            <button 
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-white"
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 md:pb-0">
+          <button
+            onClick={() => setFilterType('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              filterType === 'all' 
+                ? 'bg-[#D4AF37] text-black font-bold' 
+                : 'bg-white/[0.02] border border-white/5 text-zinc-300 hover:bg-white/5'
+            }`}
+          >
+            Todos ({professionals.length})
+          </button>
+          <button
+            onClick={() => setFilterType('active')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              filterType === 'active' 
+                ? 'bg-[#D4AF37] text-black font-bold' 
+                : 'bg-white/[0.02] border border-white/5 text-zinc-300 hover:bg-white/5'
+            }`}
+          >
+            Ativos ({professionals.filter(p => p.isActive).length})
+          </button>
+          <button
+            onClick={() => setFilterType('inactive')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              filterType === 'inactive' 
+                ? 'bg-[#D4AF37] text-black font-bold' 
+                : 'bg-white/[0.02] border border-white/5 text-zinc-300 hover:bg-white/5'
+            }`}
+          >
+            Inativos ({professionals.filter(p => !p.isActive).length})
+          </button>
+          <button
+            onClick={() => setFilterType('manager')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              filterType === 'manager' 
+                ? 'bg-[#D4AF37] text-black font-bold' 
+                : 'bg-white/[0.02] border border-white/5 text-zinc-300 hover:bg-white/5'
+            }`}
+          >
+            Gerentes ({professionals.filter(p => p.role === 'manager').length})
+          </button>
+          <button
+            onClick={() => setFilterType('professional')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              filterType === 'professional' 
+                ? 'bg-[#D4AF37] text-black font-bold' 
+                : 'bg-white/[0.02] border border-white/5 text-zinc-300 hover:bg-white/5'
+            }`}
+          >
+            Profissionais ({professionals.filter(p => p.role === 'professional').length})
+          </button>
+        </div>
+      </div>
+
+      {/* Grid de Profissionais */}
+      {(() => {
+        // Apply filters
+        const filteredProfs = professionals.filter(prof => {
+          if (filterType === 'active' && !prof.isActive) return false;
+          if (filterType === 'inactive' && prof.isActive) return false;
+          if (filterType === 'manager' && prof.role !== 'manager') return false;
+          if (filterType === 'professional' && prof.role !== 'professional') return false;
+
+          if (!searchQuery.trim()) return true;
+          const queryLower = searchQuery.toLowerCase();
+
+          // Priority values
+          const realFunc = (
+            prof.professionalFunction ||
+            prof.specialty ||
+            prof.category ||
+            prof.role ||
+            ''
+          ).toLowerCase();
+
+          return (
+            prof.name.toLowerCase().includes(queryLower) ||
+            (prof.email || '').toLowerCase().includes(queryLower) ||
+            (prof.phone || '').includes(queryLower) ||
+            realFunc.includes(queryLower)
+          );
+        });
+
+        if (filteredProfs.length === 0) {
+          return (
+            <Card className="border-white/5 bg-[#09090b]/40 rounded-2xl">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-12 h-12 rounded-full bg-zinc-800/60 flex items-center justify-center mb-4 border border-white/5">
+                  <UserMinus className="w-6 h-6 text-zinc-400" />
                 </div>
-                
-                <div className="flex gap-1 -mr-2">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(prof)} className="h-8 w-8 text-muted-foreground hover:text-primary" title="Editar">
-                    <Edit2 className="w-4 h-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => toggleStatus(prof)} className={`h-8 w-8 ${prof.isActive ? 'text-destructive hover:bg-destructive/10' : 'text-primary hover:bg-primary/10'}`} title={prof.isActive ? "Desativar" : "Ativar"}>
-                    {prof.isActive ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(prof)} className="h-8 w-8 text-destructive hover:bg-destructive/10" title="Excluir Definitivamente">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm mt-2 text-muted-foreground space-y-1">
-                   <p>{prof.phone}</p>
-                   {prof.email && <p>{prof.email}</p>}
-                </div>
-                <div className="mt-4 flex justify-between items-center">
-                   <span className={`text-xs px-2 py-0.5 rounded-full ${prof.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                     {prof.isActive ? 'Ativo' : 'Inativo'}
-                   </span>
-                   {prof.joinedByInvite && (
-                     <span className="text-[10px] text-primary bg-primary/5 px-2 py-0.5 rounded border border-primary/10 uppercase tracking-wider font-bold">Via Convite</span>
-                   )}
-                </div>
+                <h3 className="text-sm font-semibold text-white mb-1">Nenhum profissional correspondente</h3>
+                <p className="text-zinc-400 text-xs max-w-sm font-light">Tente redefinir seus termos de busca ou filtros selecionados na página.</p>
               </CardContent>
             </Card>
-          ))}
-        </div>
-      )}
+          );
+        }
+
+        return (
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {filteredProfs.map((prof) => {
+              // Priority for display function
+              const displayFunction = 
+                prof.professionalFunction || 
+                prof.specialty || 
+                (prof as any).professionalCategory || 
+                prof.category || 
+                (prof as any).title || 
+                roleTranslations[prof.role] || 
+                prof.role || 
+                'Função não definida';
+
+              // User access profile badge translations
+              const getAccessProfileLabel = (r: string) => {
+                const map: Record<string, string> = {
+                  owner: 'Proprietário',
+                  manager: 'Gerente',
+                  professional: 'Profissional',
+                  attendant: 'Atendente',
+                  receptionist: 'Recepcionista',
+                  platform_admin: 'Admin Geral'
+                };
+                return map[r] || roleTranslations[r] || rDisplay(r);
+              };
+
+              function rDisplay(str: string) {
+                if (!str) return 'Profissional';
+                return str.charAt(0).toUpperCase() + str.slice(1);
+              }
+
+              // Determine initials for Avatar
+              const getInitials = (nameStr: string) => {
+                const parts = nameStr.trim().split(/\s+/);
+                if (parts.length === 0 || !parts[0]) return 'E';
+                if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+                return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+              };
+
+              // Determine Origin label
+              const getOriginLabel = (p: typeof prof) => {
+                if (p.joinedByInvite) {
+                  const linkedInvite = invites.find(inv => inv.id === p.inviteId);
+                  if (linkedInvite?.inviteType === 'function_link') {
+                    return 'Link por Função';
+                  }
+                  return 'Convite E-mail';
+                }
+                return 'Cadastro Direto';
+              };
+
+              return (
+                <Card 
+                  key={prof.id} 
+                  className={`relative bg-zinc-950/40 hover:bg-[#0c0c10] border rounded-2xl p-5 transition-all duration-300 shadow-xl overflow-hidden group flex flex-col justify-between ${
+                    prof.isActive 
+                      ? 'border-[#D4AF37]/15 hover:border-[#D4AF37]/40 shadow-black/40' 
+                      : 'border-white/5 opacity-60 grayscale shadow-none'
+                  }`}
+                >
+                  <div>
+                    {/* Header: Avatar, Info, Actions */}
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      {/* Avatar + Name / Specialties */}
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-zinc-900 to-black border border-[#D4AF37]/30 group-hover:border-[#D4AF37]/60 flex items-center justify-center text-[#D4AF37] font-semibold text-sm shadow-md shrink-0 select-none transition-colors">
+                          {getInitials(prof.name)}
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <h4 className="text-[15px] font-semibold text-white leading-tight font-sans truncate pr-8" title={prof.name}>
+                            {prof.name}
+                          </h4>
+                          <div className="flex flex-col gap-1 items-start">
+                            {/* Real function badge (Gold style) */}
+                            <span className="text-[10px] uppercase font-bold text-[#D4AF37] tracking-wider leading-none">
+                              {displayFunction}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Top Right Action Button Cluster */}
+                      <div className="absolute top-4 right-4 flex gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => openEdit(prof)} 
+                          className="h-8 w-8 text-zinc-400 hover:text-[#D4AF37] hover:bg-[#D4AF37]/10 rounded-lg transition-all" 
+                          title="Editar cadastro"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => toggleStatus(prof)} 
+                          className={`h-8 w-8 rounded-lg transition-all ${
+                            prof.isActive 
+                              ? 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10' 
+                              : 'text-[#D4AF37] hover:text-[#D4AF37] hover:bg-[#D4AF37]/10'
+                          }`} 
+                          title={prof.isActive ? "Inativar do salão" : "Ativar no salão"}
+                        >
+                          {prof.isActive ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          onClick={() => handleDeleteClick(prof)} 
+                          className="h-8 w-8 text-zinc-400 hover:text-red-500 hover:bg-red-500/15 rounded-lg transition-all" 
+                          title="Excluir do LumiereOS"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Body Info: Access profile, Contact, Origin, Entry Date */}
+                    <div className="space-y-2.5 pt-1 border-t border-white/[0.03]">
+                      {/* Access profile badge */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-400 font-light font-sans">Nível de Acesso:</span>
+                        <span className="text-[10px] font-medium bg-zinc-900 border border-white/5 text-zinc-300 px-2 py-0.5 rounded-full select-none">
+                          {getAccessProfileLabel(prof.role)}
+                        </span>
+                      </div>
+
+                      {/* Phone metadata */}
+                      <div className="flex items-center gap-2 text-xs text-zinc-300 font-sans">
+                        <Phone className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="truncate select-all select-none">{prof.phone || 'Telefone não informado'}</span>
+                      </div>
+
+                      {/* Email metadata */}
+                      <div className="flex items-center gap-2 text-xs text-zinc-300 font-sans">
+                        <Mail className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span className="truncate select-all select-none" title={prof.email}>{prof.email || 'E-mail não informado'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Footer Status section */}
+                  <div className="mt-4 pt-3 border-t border-white/[0.03] flex items-center justify-between gap-2.5">
+                    {/* Status indicator badge */}
+                    <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full border ${
+                      prof.isActive 
+                        ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/10' 
+                        : 'bg-zinc-800/40 text-zinc-400 border-white/5'
+                    }`}>
+                      {prof.isActive ? 'Ativo' : 'Inativo'}
+                    </span>
+
+                    {/* Origin & entry dates metrics */}
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[9px] uppercase tracking-widest bg-zinc-900 text-zinc-400 border border-white/5 px-2 py-0.5 rounded font-mono font-bold">
+                        {getOriginLabel(prof)}
+                      </span>
+                      {prof.createdAt && (
+                        <span className="text-[9px] text-zinc-500 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-[#D4AF37]/50" />
+                          {new Date(prof.createdAt).toLocaleDateString('pt-BR')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }

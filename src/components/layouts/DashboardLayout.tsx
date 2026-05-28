@@ -28,6 +28,9 @@ import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
 import PWAInstallButton from '../PWAInstallButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { APP_INFO } from '../../config/appInfo';
+import SystemUpdatesDialog from '../SystemUpdatesDialog';
+import { useEffect } from 'react';
 
 export default function DashboardLayout() {
   const { userData, salonData, isPlatformAdmin, logout } = useAuth();
@@ -39,6 +42,15 @@ export default function DashboardLayout() {
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isSubmittingSubscription, setIsSubmittingSubscription] = useState(false);
   const [subscriptionSuccess, setSubscriptionSuccess] = useState(false);
+  const [isUpdatesDialogOpen, setIsUpdatesDialogOpen] = useState(false);
+  const [hasNewVersionNotice, setHasNewVersionNotice] = useState(false);
+
+  useEffect(() => {
+    const lastSeenVersion = localStorage.getItem('lumiere_last_seen_version');
+    if (lastSeenVersion !== APP_INFO.version) {
+      setHasNewVersionNotice(true);
+    }
+  }, []);
 
   // Trial ending check logic
   const trialEndsAt = salonData?.trialEndsAt || 0;
@@ -162,8 +174,30 @@ export default function DashboardLayout() {
             </Link>
           )}
           
-          <div className="mt-8 px-2">
+          <div className="mt-8 px-2 flex flex-col gap-2">
              <PWAInstallButton />
+
+             {/* Institutional version footer desktop */}
+             <div className="mt-2.5 px-3 py-3.5 bg-zinc-900/40 border border-white/5 rounded-xl text-center flex flex-col items-center gap-1.5">
+               <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-sans select-none justify-center">
+                 <span>LumiereOS</span> • <span className="font-semibold text-[#D4AF37]">v{APP_INFO.version}</span>
+                 {hasNewVersionNotice && (
+                   <span className="relative flex h-1.5 w-1.5">
+                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D4AF37] opacity-75"></span>
+                     <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#D4AF37]"></span>
+                   </span>
+                 )}
+               </div>
+               <button 
+                 onClick={() => setIsUpdatesDialogOpen(true)}
+                 className="text-[10px] tracking-wider uppercase font-bold text-[#D4AF37] hover:text-amber-400 font-mono transition-all flex items-center gap-1 cursor-pointer focus:outline-none"
+               >
+                 <Sparkles className="w-3 h-3 text-[#D4AF37]" /> O que há de novo?
+               </button>
+               <p className="text-[9px] text-zinc-500 leading-tight mt-1 select-none text-center font-light">
+                 © Galiciori e Fonseca
+               </p>
+             </div>
           </div>
         </div>
 
@@ -415,8 +449,33 @@ export default function DashboardLayout() {
                 </Link>
               )}
               
-              <div className="mt-6">
+              <div className="mt-6 flex flex-col gap-2">
                  <PWAInstallButton />
+
+                 {/* Institutional version footer mobile */}
+                 <div className="mt-2.5 px-3 py-3.5 bg-zinc-900/40 border border-white/5 rounded-xl text-center flex flex-col items-center gap-1.5">
+                   <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-sans select-none justify-center">
+                     <span>LumiereOS</span> • <span className="font-semibold text-[#D4AF37]">v{APP_INFO.version}</span>
+                     {hasNewVersionNotice && (
+                       <span className="relative flex h-1.5 w-1.5">
+                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D4AF37] opacity-75"></span>
+                         <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#D4AF37]"></span>
+                       </span>
+                     )}
+                   </div>
+                   <button 
+                     onClick={() => {
+                       setIsMobileMenuOpen(false);
+                       setIsUpdatesDialogOpen(true);
+                     }}
+                     className="text-[10px] tracking-wider uppercase font-bold text-[#D4AF37] hover:text-amber-400 font-mono transition-all flex items-center gap-1 cursor-pointer focus:outline-none"
+                   >
+                     <Sparkles className="w-3 h-3 text-[#D4AF37]" /> O que há de novo?
+                   </button>
+                   <p className="text-[9px] text-zinc-500 leading-tight mt-1 select-none text-center font-light">
+                     © Galiciori e Fonseca
+                   </p>
+                 </div>
               </div>
             </div>
             
@@ -916,6 +975,12 @@ export default function DashboardLayout() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <SystemUpdatesDialog 
+        isOpen={isUpdatesDialogOpen} 
+        onClose={() => setIsUpdatesDialogOpen(false)}
+        onMarkAsSeen={() => setHasNewVersionNotice(false)}
+      />
     </div>
   );
 }
