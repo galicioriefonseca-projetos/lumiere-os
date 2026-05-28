@@ -116,6 +116,22 @@ export default function ChecklistPage() {
   const [isHowToUseOpen, setIsHowToUseOpen] = useState(false);
   const [showCategoryCriteria, setShowCategoryCriteria] = useState<Record<string, boolean>>({});
 
+  const [mobileStep, setMobileStep] = useState<"list" | "evaluation" | "completed">("list");
+  const [incompleteValidationCategories, setIncompleteValidationCategories] = useState<string[]>([]);
+
+  const scrollEvaluationToTop = () => {
+    const container = document.getElementById("evaluation-scroll-container");
+    if (container) {
+      container.scrollTop = 0;
+    }
+  };
+
+  useEffect(() => {
+    if (evalProfessionalId) {
+      scrollEvaluationToTop();
+    }
+  }, [evalProfessionalId]);
+
   const [isDailyExpanded, setIsDailyExpanded] = useState(() => {
     return localStorage.getItem("lumiere_checklist_daily_expanded") !== "false";
   });
@@ -469,7 +485,7 @@ export default function ChecklistPage() {
     return rule ? rule.label : "Precisa de alinhamento";
   };
 
-  const handleSaveEvaluation = async (goToNext = false) => {
+  const handleSaveAndNext = async () => {
     if (
       !salonData ||
       !evalProfessionalId ||
@@ -480,16 +496,20 @@ export default function ChecklistPage() {
     if (attendanceStatus === "present") {
       const allCategories =
         activeProfessionalEvaluationChecklist.categories || [];
-      if (allCategories.some((c) => !categoryScores[c])) {
-        toast.error("Preencha todas as categorias");
+      const missing = allCategories.filter((c) => categoryScores[c] === undefined);
+      if (missing.length > 0) {
+        toast.error("Preencha todas as 8 categorias antes de salvar.");
+        setIncompleteValidationCategories(missing);
         return;
       }
     } else if (attendanceStatus === "absent") {
       if (!observations) {
-        toast.error("Motivo da falta é obrigatório");
+        toast.error("Motivo da falta é obrigatório / Justificativa é obrigatória.");
         return;
       }
     }
+
+    setIncompleteValidationCategories([]);
 
     const totalScore =
       attendanceStatus === "present"
@@ -543,32 +563,147 @@ export default function ChecklistPage() {
       await setDoc(runRef, removeUndefinedDeep(runData));
       toast.success("Avaliação salva");
 
-      // Determine if there is a next pending professional
-      const pendingPros = professionals.filter((p) => {
-        if (p.id === evalProfessionalId) return false;
-        const run = evaluationRuns.find(
-          (r) => r.evaluatedProfessionalId === p.id,
-        );
-        return !run;
-      });
+      const currentEvaluatedIds = new Set(evaluationRuns.map((r) => r.evaluatedProfessionalId));
+      currentEvaluatedIds.add(evalProfessionalId);
 
-      if (goToNext && pendingPros.length > 0) {
+      const pendingPros = professionals.filter((p) => !currentEvaluatedIds.has(p.id));
+
+      if (pendingPros.length > 0) {
         const nextPro = pendingPros[0];
         setEvalProfessionalId(nextPro.id);
-        setAttendanceStatus("present");
-        setCategoryScores({});
-        setObservations("");
+        
+        const nextRun = evaluationRuns.find((r) => r.evaluatedProfessionalId === nextPro.id);
+        setAttendanceStatus(nextRun?.attendanceStatus || "present");
+        setCategoryScores(nextRun?.categoryScores || {});
+        setObservations(nextRun?.observations || nextRun?.absenceReason || "");
+        setMobileStep("evaluation");
+        setTimeout(scrollEvaluationToTop, 50);
       } else {
-        setEvalProfessionalId("");
-        setAttendanceStatus("");
-        setObservations("");
-        setCategoryScores({});
-        setIsEvaluationOpen(false);
+        setMobileStep("completed");
       }
     } catch (e) {
       toast.error("Erro ao salvar");
       console.error(e);
     }
+  };
+
+  const handleSaveOnly = async () => {
+    if (
+      !salonData ||
+      !evalProfessionalId ||
+      !activeProfessionalEvaluationChecklist
+    )
+      return;
+
+    if (attendanceStatus === "present") {
+      const allCategories =
+        activeProfessionalEvaluationChecklist.categories || [];
+      const missing = allCategories.filter((c) => categoryScores[c] === undefined);
+      if (missing.length > 0) {
+        toast.error("Preencha todas as 8 categorias antes de salvar.");
+        setIncompleteValidationCategories(missing);
+        return;
+      }
+    } else if (attendanceStatus === "absent") {
+      if (!observations) {
+        toast.error("Motivo da falta é obrigatório / Justificativa é obrigatória.");
+        return;
+      }
+    }
+
+    setIncompleteValidationCategories([]);
+
+    const totalScore =
+      attendanceStatus === "present"
+        ? (Object.values(categoryScores).reduce((a: number, b: any) => a + (Number(b) || 0), 0) as number)
+        : 0;
+    const classification =
+      attendanceStatus === "present"
+        ? getClassification(totalScore as number)
+        : "Falta registrada";
+    const maxScore = activeProfessionalEvaluationChecklist.maxScore || 40;
+
+    const existingRun = evaluationRuns.find(
+      (r) => r.evaluatedProfessionalId === evalProfessionalId,
+    );
+
+    const runData: Partial<ChecklistRun> = {
+      checklistId: activeProfessionalEvaluationChecklist.id,
+      checklistTitle: activeProfessionalEvaluationChecklist.title,
+      checklistType: activeProfessionalEvaluationChecklist.type,
+      scoringMode: activeProfessionalEvaluationChecklist.scoringMode,
+      date: todayStr,
+      evaluationDate: todayStr,
+      evaluatedProfessionalId: evalProfessionalId,
+      evaluatedProfessionalName:
+        professionals.find((p) => p.id === evalProfessionalId)?.name ||
+        "Unknown",
+      evaluatorName: userData?.fullName || "Administrador",
+      attendanceStatus: attendanceStatus,
+      observations: observations,
+      categoryScores: attendanceStatus === "present" ? categoryScores : {},
+      totalScore: attendanceStatus === "present" ? (totalScore as number) : undefined,
+      maxScore: attendanceStatus === "present" ? maxScore : undefined,
+      percentage:
+        attendanceStatus === "present"
+          ? ((totalScore as number) / maxScore) * 100
+          : undefined,
+      classification: classification,
+      absenceReason: attendanceStatus === "absent" ? observations : undefined,
+      status: "completed",
+      createdAt:
+        existingRun && existingRun.createdAt
+          ? existingRun.createdAt
+          : serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      const runRef = existingRun
+        ? doc(db, `salons/${salonData.id}/checklistRuns`, existingRun.id)
+        : doc(collection(db, `salons/${salonData.id}/checklistRuns`));
+      await setDoc(runRef, removeUndefinedDeep(runData));
+      toast.success("Avaliação salva");
+      
+      setMobileStep("list");
+    } catch (e) {
+      toast.error("Erro ao salvar");
+      console.error(e);
+    }
+  };
+
+  const continueNextPending = () => {
+    const pendingPros = professionals.filter((p) => {
+      const run = evaluationRuns.find((r) => r.evaluatedProfessionalId === p.id);
+      return !run;
+    });
+
+    if (pendingPros.length > 0) {
+      const nextPro = pendingPros[0];
+      setEvalProfessionalId(nextPro.id);
+      const nextRun = evaluationRuns.find((r) => r.evaluatedProfessionalId === nextPro.id);
+      setAttendanceStatus(nextRun?.attendanceStatus || "present");
+      setCategoryScores(nextRun?.categoryScores || {});
+      setObservations(nextRun?.observations || nextRun?.absenceReason || "");
+      setMobileStep("evaluation");
+      setTimeout(scrollEvaluationToTop, 50);
+    } else {
+      toast.info("Todos os profissionais já foram avaliados hoje!");
+    }
+  };
+
+  const handleViewReport = () => {
+    setIsEvaluationOpen(false);
+    setIsReportsExpanded(true);
+    localStorage.setItem("lumiere_checklist_reports_expanded", "true");
+    setReportDate(todayStr);
+    setTimeout(() => {
+      fetchReport();
+      const el = document.getElementById("reports-section");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth" });
+      }
+    }, 100);
   };
 
   const fetchReport = async () => {
@@ -837,20 +972,98 @@ export default function ChecklistPage() {
                         </Button>
                       </DialogTrigger>
                       
-                      <DialogContent className="max-w-5xl md:max-w-6xl w-[95vw] h-[90vh] md:h-[85vh] flex flex-col bg-zinc-950 border border-white/10 shadow-[0_10px_50px_rgba(0,0,0,0.6)] rounded-3xl p-0 overflow-hidden text-white font-sans">
+                      <DialogContent className="max-w-5xl md:max-w-6xl w-full h-[100dvh] md:w-[95vw] md:h-[85vh] flex flex-col bg-zinc-950 border-0 md:border border-white/10 shadow-[0_10px_50px_rgba(0,0,0,0.6)] rounded-none md:rounded-3xl p-0 overflow-hidden text-white font-sans">
                         
-                        {/* fixed header */}
-                        <DialogHeader className="p-5 pb-4 border-b border-white/5 flex flex-col justify-center shrink-0">
-                          <DialogTitle className="text-lg font-heading font-medium text-white flex items-center gap-2">
-                            <Sparkles className="w-5 h-5 text-primary animate-pulse" /> Avaliação Diária Essenza
-                          </DialogTitle>
+                        {/* Fixed header with mobile navigation */}
+                        <DialogHeader className="p-5 pb-4 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
+                          <div className="flex items-center gap-2">
+                            {mobileStep === "evaluation" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setMobileStep("list")}
+                                className="h-8 w-8 text-zinc-400 hover:text-white mr-1 -ml-1 md:hidden"
+                              >
+                                <ArrowLeft className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <DialogTitle className="text-base sm:text-lg font-heading font-medium text-white flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-primary animate-pulse" />
+                              <span>
+                                {mobileStep === "completed"
+                                  ? "Avaliação Concluída"
+                                  : mobileStep === "evaluation"
+                                    ? "Ficha de Avaliação"
+                                    : "Avaliação Diária Essenza"}
+                              </span>
+                            </DialogTitle>
+                          </div>
                         </DialogHeader>
 
-                        {/* Split layout wrapper */}
-                        <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
-                          
-                          {/* LEFT SIDEBAR: Professionals list & Filters */}
-                          <div className="w-full md:w-5/12 lg:w-4/12 border-r border-white/5 flex flex-col h-full overflow-hidden">
+                        {/* Layout Content wrapper */}
+                        {mobileStep === "completed" ? (
+                          <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-6 text-center text-white bg-zinc-950 font-sans max-w-xl mx-auto space-y-6">
+                            <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center text-green-400 animate-bounce mt-4">
+                              <CheckCircle2 className="w-8 h-8" />
+                            </div>
+
+                            <div className="space-y-2">
+                              <h3 className="text-xl md:text-2xl font-heading font-normal tracking-tight text-white">
+                                Avaliação Diária Concluída!
+                              </h3>
+                              <p className="text-xs md:text-sm text-zinc-404 font-light leading-relaxed">
+                                Excelente! Todos os colaboradores ativos do estabelecimento foram devidamente avaliados ou tiveram suas faltas registradas hoje no LumièreOS.
+                              </p>
+                            </div>
+
+                            {/* Summary panel */}
+                            <div className="w-full bg-zinc-900/10 border border-white/5 rounded-2xl p-4 md:p-5 space-y-4">
+                              <span className="text-[10px] text-primary uppercase font-bold tracking-wider font-mono block">Resumo do Dia</span>
+                              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                <div className="bg-green-500/5 border border-green-500/10 p-3 rounded-xl">
+                                  <span className="text-green-400 font-bold block text-lg">{avaliados}</span>
+                                  <span className="text-zinc-500 text-[9px] uppercase tracking-wider block mt-0.5 font-mono">Avaliados</span>
+                                </div>
+                                <div className="bg-red-500/5 border border-red-500/10 p-3 rounded-xl">
+                                  <span className="text-red-400 font-bold block text-lg">{faltas}</span>
+                                  <span className="text-zinc-500 text-[9px] uppercase tracking-wider block mt-0.5 font-mono">Faltas</span>
+                                </div>
+                                <div className="bg-zinc-850 border border-white/5 p-3 rounded-xl">
+                                  <span className="text-white font-bold block text-lg">{totalPros}</span>
+                                  <span className="text-zinc-500 text-[9px] uppercase tracking-wider block mt-0.5 font-mono">Total</span>
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5 pt-2">
+                                <div className="flex justify-between items-center text-[10px] text-zinc-400 uppercase font-mono">
+                                  <span>Progresso Geral</span>
+                                  <strong className="text-white">100%</strong>
+                                </div>
+                                <Progress value={100} className="h-2 bg-zinc-900" />
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3 w-full pt-2 pb-4">
+                              <Button
+                                onClick={handleViewReport}
+                                className="flex-1 bg-primary hover:bg-gold-500 text-black font-semibold h-11 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+                              >
+                                Ver Relatório
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => setIsEvaluationOpen(false)}
+                                className="flex-1 border-white/10 text-white hover:bg-white/5 h-11 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+                              >
+                                Fechar Janela
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+                            
+                            {/* LEFT SIDEBAR: Professionals list & Filters */}
+                            <div className={`w-full md:w-5/12 lg:w-4/12 border-r border-white/5 flex flex-col h-full overflow-hidden ${mobileStep === "list" ? "flex" : "hidden md:flex"}`}>
                             
                             {/* Summary panel in left sidebar */}
                             <div className="p-4 bg-zinc-900/10 border-b border-white/5 space-y-3 shrink-0">
@@ -935,6 +1148,8 @@ export default function ChecklistPage() {
                                         setAttendanceStatus(run?.attendanceStatus || "present");
                                         setCategoryScores(run?.categoryScores || {});
                                         setObservations(run?.observations || run?.absenceReason || "");
+                                        setIncompleteValidationCategories([]);
+                                        setMobileStep("evaluation");
                                       }}
                                       className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 select-none ${
                                         isSelected
@@ -1263,55 +1478,67 @@ export default function ChecklistPage() {
 
                                 </div>
 
-                                {/* STICKY FOOTER IN PORTABLE OR SIDE VIEWS */}
+                                {/* STICKY FOOTER IN THE MODAL */}
                                 {(() => {
-                                  const pendingPros = professionals.filter((p) => {
+                                  const nextPendingPros = professionals.filter((p) => {
                                     if (p.id === evalProfessionalId) return false;
                                     return !evaluationRuns.some((r) => r.evaluatedProfessionalId === p.id);
                                   });
-                                  const hasNextPending = pendingPros.length > 0;
+                                  const hasNextPending = nextPendingPros.length > 0;
+                                  const isAllCategoriesFilled = activeProfessionalEvaluationChecklist?.categories?.every(
+                                    (c) => categoryScores[c] !== undefined
+                                  );
 
                                   return (
-                                    <div className="shrink-0 p-4 bg-zinc-950 border-t border-white/5 flex flex-col sm:flex-row gap-2 justify-end z-10 font-sans shadow-lg shadow-black/80">
+                                    <div className="shrink-0 p-4 pb-6 bg-zinc-950 border-t border-[#D4AF37]/10 flex items-center justify-between gap-2 z-10 shadow-lg shadow-black/80 font-sans w-full">
+                                      
+                                      {/* Back or Clear Selection Button */}
                                       <Button
                                         type="button"
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => {
-                                          setEvalProfessionalId("");
-                                          setAttendanceStatus("");
-                                          setCategoryScores({});
-                                          setObservations("");
+                                          setIncompleteValidationCategories([]);
+                                          if (window.innerWidth < 768) {
+                                            setMobileStep("list");
+                                          } else {
+                                            setEvalProfessionalId("");
+                                            setAttendanceStatus("");
+                                            setCategoryScores({});
+                                            setObservations("");
+                                          }
                                         }}
-                                        className="h-9.5 rounded-xl text-xs text-[#a1a1aa] hover:text-white"
+                                        className="h-10 rounded-xl text-xs text-[#a1a1aa] hover:text-white px-2.5 flex items-center gap-1 shrink-0 cursor-pointer"
                                       >
-                                        Limpar seleção
+                                        <ArrowLeft className="w-4 h-4 mr-0.5" />
+                                        <span>Voltar</span>
                                       </Button>
-                                      
-                                      {hasNextPending && (
+
+                                      {/* Core Saving Actions */}
+                                      <div className="flex gap-2 flex-1 justify-end">
                                         <Button
                                           type="button"
                                           size="sm"
-                                          onClick={() => handleSaveEvaluation(true)}
-                                          className="bg-[#D4AF37] hover:bg-gold-500 text-black font-bold h-9.5 rounded-xl text-xs px-5.5 active:scale-98 transition-all cursor-pointer"
+                                          variant="outline"
+                                          onClick={handleSaveOnly}
+                                          className="h-10 rounded-xl font-bold text-xs px-3.5 border-white/10 text-zinc-300 bg-white/5 hover:bg-white/10 shrink-0 cursor-pointer"
                                         >
-                                          Salvar e avaliar próximo
+                                          Salvar rascunho
                                         </Button>
-                                      )}
-                                      
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant={hasNextPending ? "outline" : "default"}
-                                        onClick={() => handleSaveEvaluation(false)}
-                                        className={`h-9.5 rounded-xl font-bold text-xs px-5.5 active:scale-98 transition-all cursor-pointer ${
-                                          hasNextPending 
-                                            ? "border-[#D4AF37]/35 text-primary bg-primary/5 hover:bg-[#D4AF37]/10" 
-                                            : "bg-primary text-black hover:bg-gold-500"
-                                        }`}
-                                      >
-                                        Salvar Avaliação
-                                      </Button>
+
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          onClick={handleSaveAndNext}
+                                          className={`h-10 rounded-xl font-bold text-xs px-4 active:scale-98 transition-all shrink-0 cursor-pointer ${
+                                            isAllCategoriesFilled || attendanceStatus === "absent"
+                                              ? "bg-primary text-black hover:bg-[#D4AF37] shadow-[0_0_15px_rgba(212,175,55,0.25)]"
+                                              : "bg-[#D4AF37]/50 border border-[#D4AF37]/20 text-zinc-300 hover:bg-primary hover:text-black"
+                                          }`}
+                                        >
+                                          {hasNextPending ? "Salvar e Próximo" : "Finalizar Tudo"}
+                                        </Button>
+                                      </div>
                                     </div>
                                   );
                                 })()}
@@ -1328,6 +1555,7 @@ export default function ChecklistPage() {
                           </div>
 
                         </div>
+                      )}
                       </DialogContent>
                     </Dialog>
                   </div>
