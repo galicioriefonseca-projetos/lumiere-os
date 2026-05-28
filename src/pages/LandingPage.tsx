@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Scissors, CalendarCheck2, ArrowRight, ShieldCheck, CheckCircle2, RefreshCcw } from 'lucide-react';
+import { Sparkles, Scissors, CalendarCheck2, ArrowRight, ShieldCheck, CheckCircle2, RefreshCcw, FileText, TrendingUp, CalendarDays, Inbox } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PWAInstallButton from '../components/PWAInstallButton';
 
@@ -205,44 +205,88 @@ export default function LandingPage() {
             <div className="text-center mb-16 space-y-4">
               <span className="text-xs uppercase font-semibold text-primary tracking-widest bg-primary/10 px-3 py-1 rounded-full">Roadmap da Visão</span>
               <h2 className="text-4xl font-heading font-light tracking-tight text-white">Próximas Atualizações</h2>
-              <p className="text-muted-foreground max-w-2xl mx-auto font-light">Mais prestígio e tecnologia premium a caminho. Nossa equipe trabalha continuamente para trazer o estado da arte em gestão.</p>
+              <p className="text-muted-foreground max-w-2xl mx-auto font-light">Mais prestígio e tecnologia premium a caminho. Nossa equipe trabalha continuamente para trazer o estado da arte na gestão do seu ecossistema comercial.</p>
             </div>
             
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
-                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                  <Sparkles className="w-5 h-5 text-primary" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-card/30 transition-all duration-300 flex flex-col justify-between h-full">
+                <div>
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                    <CalendarDays className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-white text-base mb-2">Integração com Google Agenda</h3>
+                  <p className="text-muted-foreground text-xs font-light leading-relaxed">
+                    Sincronização futura dos agendamentos do salão. Conecte de forma transparente a agenda dos profissionais com os calendários móveis para um controle unificado, veloz e sem conflito de horários.
+                  </p>
                 </div>
-                <h3 className="font-heading font-semibold text-white text-lg mb-2">IA L'Or Predict</h3>
-                <p className="text-muted-foreground text-sm font-light leading-relaxed">Algoritmo inteligente de previsão de tendências de ocupação, metas automáticas de barbearias e otimização inteligente de comissões.</p>
-                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Jul 2026</div>
+                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37] font-semibold">Agenda Connect</span>
+                  <span className="text-[9px] font-mono bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20 uppercase">Em Breve</span>
+                </div>
               </div>
 
-              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
-                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                  <RefreshCcw className="w-5 h-5 text-primary" />
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-card/30 transition-all duration-300 flex flex-col justify-between h-full">
+                <div>
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-white text-base mb-2">Relatórios Exportáveis</h3>
+                  <p className="text-muted-foreground text-xs font-light leading-relaxed">
+                    Exportação futura para planilhas e relatórios gerenciais. Obtenha arquivos prontos e consolidados sobre faturamento, taxas e checklists, otimizando auditorias e integrações contábeis.
+                  </p>
                 </div>
-                <h3 className="font-heading font-semibold text-white text-lg mb-2">Checkout & Split</h3>
-                <p className="text-muted-foreground text-sm font-light leading-relaxed">Gateway de pagamento com split automático direto para a conta dos profissionais envolvidos, links de pagamento e adiantamento.</p>
-                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Set 2026</div>
+                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37] font-semibold">Data Export</span>
+                  <span className="text-[9px] font-mono bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20 uppercase">Planejado</span>
+                </div>
               </div>
 
-              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
-                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                  <ShieldCheck className="w-5 h-5 text-primary" />
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-card/30 transition-all duration-300 flex flex-col justify-between h-full">
+                <div>
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                    <Sparkles className="w-5 h-5 text-primary font-bold" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-white text-base mb-2">Assistente Inteligente</h3>
+                  <p className="text-muted-foreground text-xs font-light leading-relaxed">
+                    Futuro assistente virtual LumiereOS. Uma tecnologia exclusiva de orientação sob medida dentro do sistema para auxiliar sua equipe no uso das ferramentas e solucionar fluxos do dia a dia.
+                  </p>
                 </div>
-                <h3 className="font-heading font-semibold text-white text-lg mb-2">Aplicativos Nativos</h3>
-                <p className="text-muted-foreground text-sm font-light leading-relaxed">Publicação direta de aplicativos exclusivos customizados para Android e iOS para que os clientes agendem com máxima conveniência.</p>
-                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Out 2026</div>
+                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37] font-semibold">Lumière Assist</span>
+                  <span className="text-[9px] font-mono bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20 uppercase">Nova Era</span>
+                </div>
               </div>
 
-              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-primary/20 transition-all duration-300">
-                <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                  <CheckCircle2 className="w-5 h-5 text-primary" />
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-card/30 transition-all duration-300 flex flex-col justify-between h-full">
+                <div>
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                    <TrendingUp className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-white text-base mb-2">Insights de Desempenho</h3>
+                  <p className="text-muted-foreground text-xs font-light leading-relaxed">
+                    Análise futura refinada de equipe, metas, checklist e produtividade de cada profissional, consolidando indicadores de desempenho para embasar suas decisões estratégicas.
+                  </p>
                 </div>
-                <h3 className="font-heading font-semibold text-white text-lg mb-2">Fidelidade Ouro</h3>
-                <p className="text-muted-foreground text-sm font-light leading-relaxed">Sistema completo de recorrência de clientes com ofertas direcionadas via WhatsApp, campanhas inteligentes de indicação e mimos VIP.</p>
-                <div className="absolute right-4 bottom-4 text-[10px] uppercase font-mono tracking-widest text-primary/60 font-semibold bg-primary/5 px-2 py-0.5 rounded border border-primary/10">Dez 2026</div>
+                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37] font-semibold">Analitycs L'Or</span>
+                  <span className="text-[9px] font-mono bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20 uppercase">Planejado</span>
+                </div>
+              </div>
+
+              <div className="bg-card/20 border border-white/10 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-card/30 transition-all duration-300 flex flex-col justify-between h-full">
+                <div>
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
+                    <Inbox className="w-5 h-5 text-primary" />
+                  </div>
+                  <h3 className="font-heading font-semibold text-white text-base mb-2">Relatórios Automáticos</h3>
+                  <p className="text-muted-foreground text-xs font-light leading-relaxed">
+                    Envio futuro de resumos semanais/mensais diretamente nos canais de comunicação corporativa do salão. Acompanhe taxas de retenção e faturamento sem precisar minerar relatórios.
+                  </p>
+                </div>
+                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37] font-semibold">Auto Report</span>
+                  <span className="text-[9px] font-mono bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded border border-[#D4AF37]/20 uppercase">Em Roadmap</span>
+                </div>
               </div>
             </div>
           </div>

@@ -21,7 +21,8 @@ import {
   Star,
   Crown,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Inbox
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isRoadmapOpen, setIsRoadmapOpen] = useState(false);
   const [isFounderDetailOpen, setIsFounderDetailOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isSubmittingSubscription, setIsSubmittingSubscription] = useState(false);
@@ -219,6 +221,18 @@ export default function DashboardLayout() {
                <span className="sm:hidden">Ajuda</span>
              </Button>
 
+             {/* Próximas Atualizações Button */}
+             <Button
+               size="sm"
+               variant="outline"
+               onClick={() => setIsRoadmapOpen(true)}
+               className="text-xs h-8.5 border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+             >
+               <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+               <span className="hidden sm:inline">Próximas Atualizações</span>
+               <span className="sm:hidden">Roadmap</span>
+             </Button>
+
              {/* Plan badge */}
              <button
                onClick={() => {
@@ -351,13 +365,20 @@ export default function DashboardLayout() {
             </div>
             
             <div className="flex-1 py-5 px-4 space-y-1.5 overflow-y-auto">
-              <div className="mb-5">
+              <div className="mb-5 flex flex-col gap-2">
                  <Button 
                    onClick={() => { setIsMobileMenuOpen(false); setIsGuideOpen(true); }}
                    variant="outline"
                    className="w-full text-[#D4AF37] border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 h-10 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 bg-white/[0.02]"
                  >
                    <HelpCircle className="w-4 h-4" /> Guia do Sistema
+                 </Button>
+                 <Button 
+                   onClick={() => { setIsMobileMenuOpen(false); setIsRoadmapOpen(true); }}
+                   variant="outline"
+                   className="w-full text-[#D4AF37] border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 h-10 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 bg-white/[0.02]"
+                 >
+                   <Sparkles className="w-4 h-4" /> Próximas Atualizações
                  </Button>
               </div>
               
@@ -784,6 +805,115 @@ export default function DashboardLayout() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Próximas Atualizações / Roadmap Dialog */}
+      <Dialog open={isRoadmapOpen} onOpenChange={setIsRoadmapOpen}>
+        <DialogContent className="max-w-xl bg-[#09090b]/98 border border-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full overflow-hidden max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="border-b border-white/5 pb-4 text-left">
+            <span className="text-[10px] uppercase font-bold text-[#D4AF37] tracking-widest bg-[#D4AF37]/10 px-2.5 py-1 rounded-full w-max flex items-center gap-1.5 font-mono mb-2">
+              <Sparkles className="w-3.5 h-3.5" /> Evolução & Visão Futura
+            </span>
+            <DialogTitle className="text-lg md:text-xl font-heading font-medium text-white flex items-center gap-2">
+              LumièreOS • Próximas Atualizações
+            </DialogTitle>
+            <p className="text-[#a1a1aa] text-xs font-light mt-1">
+              Descubra os novos módulos e recursos comerciais planejados para elevar o prestígio e eficiência do seu salão de beleza premium.
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4 font-sans text-left">
+            {/* Item 1 */}
+            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3.5 hover:border-[#D4AF37]/20 transition-all">
+              <div className="p-2 h-max rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary">
+                <CalendarDays className="w-4.5 h-4.5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-sm text-white">1. Integração com Google Agenda</h4>
+                  <span className="text-[9px] bg-[#D4AF37]/15 border border-[#D4AF37]/25 text-[#D4AF37] px-2 py-0.5 rounded-full uppercase font-mono tracking-wider font-semibold">Fase 1</span>
+                </div>
+                <p className="text-xs text-zinc-300 font-light leading-relaxed font-sans">
+                  Sincronização futura dos agendamentos do salão. Conecte de forma transparente as agendas dos seus profissionais com os calendários móveis pessoais, eliminando conflitos de horários de forma totalmente automática.
+                </p>
+              </div>
+            </div>
+
+            {/* Item 2 */}
+            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3.5 hover:border-[#D4AF37]/20 transition-all">
+              <div className="p-2 h-max rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary">
+                <FileText className="w-4.5 h-4.5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-sm text-white">2. Relatórios Exportáveis</h4>
+                  <span className="text-[9px] bg-zinc-500/15 border border-zinc-500/25 text-zinc-400 px-2 py-0.5 rounded-full uppercase font-mono tracking-wider font-semibold">Fase 2</span>
+                </div>
+                <p className="text-xs text-zinc-300 font-light leading-relaxed font-sans">
+                  Exportação futura para planilhas e relatórios gerenciais estruturados. Tenha em mãos dados estruturados para otimizar auditorias contábeis, cálculo de comissões e consolidação financeira do salão em instantes.
+                </p>
+              </div>
+            </div>
+
+            {/* Item 3 */}
+            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3.5 hover:border-[#D4AF37]/20 transition-all">
+              <div className="p-2 h-max rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary">
+                <Sparkles className="w-4.5 h-4.5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-sm text-white">3. Assistente Inteligente LumiereOS</h4>
+                  <span className="text-[9px] bg-amber-500/15 border border-amber-500/25 text-amber-400 px-2 py-0.5 rounded-full uppercase font-mono tracking-wider font-semibold">Fase Assessor</span>
+                </div>
+                <p className="text-xs text-zinc-300 font-light leading-relaxed font-sans">
+                  Futuro assistente nativo para orientar o uso do sistema e gerar insights valiosos do negócio. Otimize o treinamento de novos funcionários e domine todo o potencial do ecossistema LumiereOS sem fricção.
+                </p>
+              </div>
+            </div>
+
+            {/* Item 4 */}
+            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3.5 hover:border-[#D4AF37]/20 transition-all">
+              <div className="p-2 h-max rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary">
+                <TrendingUp className="w-4.5 h-4.5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-sm text-white">4. Insights de Desempenho</h4>
+                  <span className="text-[9px] bg-zinc-500/15 border border-zinc-500/25 text-zinc-400 px-2 py-0.5 rounded-full uppercase font-mono tracking-wider font-semibold">Planejado</span>
+                </div>
+                <p className="text-xs text-zinc-300 font-light leading-relaxed font-sans">
+                  Análise futura profunda de equipe, metas, checklists de qualidade e produtividade integrada. Monitore taxas de ociosidade e desempenho técnico de forma de inteligência, gerando planos de ação certeiros.
+                </p>
+              </div>
+            </div>
+
+            {/* Item 5 */}
+            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3.5 hover:border-[#D4AF37]/20 transition-all">
+              <div className="p-2 h-max rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary">
+                <Inbox className="w-4.5 h-4.5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-semibold text-sm text-white">5. Relatórios Automáticos</h4>
+                  <span className="text-[9px] bg-[#D4AF37]/15 border border-[#D4AF37]/25 text-[#D4AF37] px-2 py-0.5 rounded-full uppercase font-mono tracking-wider font-semibold font-sans">Em Roadmap</span>
+                </div>
+                <p className="text-xs text-zinc-300 font-light leading-relaxed font-sans">
+                  Envio futuro de resumos semanais/mensais de métricas de faturamento e taxas de retenção. Mantenha os sócios ou gestores integrados ao progresso do negócio diretamente por canais de comunicação corporativa.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-zinc-500 font-light text-center leading-relaxed font-sans pt-1">
+              * Nota: Os recursos listados acima representam a nossa visão de evolução contínua da experiência LumiereOS e serão disponibilizados em atualizações futuras sem alteração na mensalidade dos membros pioneiros.
+            </p>
+          </div>
+
+          <div className="flex justify-end pt-2 mt-4 border-t border-white/5">
+            <Button onClick={() => setIsRoadmapOpen(false)} className="bg-amber-500 hover:bg-amber-600 text-black font-semibold rounded-xl text-xs px-5 h-9">
+              Excelente, Entendido!
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
