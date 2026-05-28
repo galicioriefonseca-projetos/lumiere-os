@@ -765,7 +765,14 @@ export default function ProfessionalsPage() {
       {/* Convites Ativos List */}
       {invites.filter(i => i.status === 'pending').length > 0 && (
         <Card className="border border-[#D4AF37]/20 bg-zinc-950/60 rounded-2xl shadow-lg transition-all duration-300 overflow-hidden">
-          <CardHeader className="pb-3 flex flex-row items-center justify-between gap-4 select-none hover:bg-white/[0.01] transition-colors duration-200">
+          <CardHeader 
+            onClick={() => {
+              const nextVal = !isInvitesCollapsed;
+              setIsInvitesCollapsed(nextVal);
+              localStorage.setItem('lumiere_invites_section_collapsed', String(nextVal));
+            }}
+            className="pb-3 flex flex-row items-center justify-between gap-4 select-none hover:bg-white/[0.02] active:bg-[#D4AF37]/5 transition-colors duration-200 cursor-pointer"
+          >
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-sm font-heading font-normal flex items-center gap-2 text-primary">
@@ -783,7 +790,10 @@ export default function ProfessionalsPage() {
             <div className="flex items-center gap-2">
               {invites.some(i => i.inviteType === 'function_link' && i.status === 'pending') && (
                 <Button 
-                  onClick={copyGroupMessage}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyGroupMessage();
+                  }}
                   variant="outline"
                   size="sm"
                   className="w-full sm:w-auto border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 bg-transparent rounded-xl h-9 px-3 text-xs font-semibold flex items-center gap-1.5"
@@ -796,12 +806,13 @@ export default function ProfessionalsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   const nextVal = !isInvitesCollapsed;
                   setIsInvitesCollapsed(nextVal);
                   localStorage.setItem('lumiere_invites_section_collapsed', String(nextVal));
                 }}
-                className="text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl h-9 px-3 text-xs font-medium flex items-center gap-1"
+                className="text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl h-9 px-3 text-xs font-medium flex items-center gap-1 cursor-pointer"
               >
                 {isInvitesCollapsed ? (
                   <>
