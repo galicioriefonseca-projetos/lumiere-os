@@ -125,7 +125,7 @@ export default function ProfessionalsPage() {
     e.preventDefault();
     if (!salonData) return;
 
-    const allowedLimit = salonData.plan === 'founder' ? Math.max(salonData.professionalsLimit || 0, 20) : salonData.professionalsLimit;
+    const allowedLimit = salonData.plan === 'founder' ? Math.max(salonData.professionalsLimit || 0, 22) : salonData.professionalsLimit;
     if (!editingProf && !isAdmin && professionals.length >= allowedLimit) {
       toast.error(`Você atingiu o limite de ${allowedLimit} profissionais do seu plano.`);
       return;
@@ -419,7 +419,7 @@ export default function ProfessionalsPage() {
         <div>
           <h2 className="text-2xl font-heading font-light">Equipe</h2>
           <p className="text-muted-foreground text-sm">
-            {professionals.length} de {salonData?.professionalsLimit} profissionais cadastrados ({activeCount} ativos).
+            {professionals.length} de {salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 22) : salonData?.professionalsLimit} profissionais cadastrados ({activeCount} ativos).
           </p>
         </div>
         
@@ -688,9 +688,9 @@ export default function ProfessionalsPage() {
           }}>
             <DialogTrigger asChild>
               <Button 
-                 className="bg-primary hover:bg-gold-500 text-black font-semibold h-10 rounded-xl px-4 text-xs"
-                 disabled={!salonData || (!isAdmin && professionals.length >= (salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 20) : (salonData?.professionalsLimit || 0)))}
-                 title={!isAdmin && professionals.length >= (salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 20) : (salonData?.professionalsLimit || 0)) ? "Limite do plano atingido" : ""}
+                 className="bg-primary hover:bg-gold-500 text-black font-semibold h-10 rounded-xl px-4 text-xs cursor-pointer"
+                 disabled={!salonData || (!isAdmin && professionals.length >= (salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 22) : (salonData?.professionalsLimit || 0)))}
+                 title={!isAdmin && professionals.length >= (salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 22) : (salonData?.professionalsLimit || 0)) ? "Limite do plano atingido" : ""}
               >
                 <Plus className="w-4 h-4 mr-2" /> Novo Profissional (Direto)
               </Button>
@@ -1082,9 +1082,9 @@ export default function ProfessionalsPage() {
               return (
                 <Card 
                   key={prof.id} 
-                  className={`relative bg-zinc-950/40 hover:bg-[#0c0c10] border rounded-2xl p-5 transition-all duration-300 shadow-xl overflow-hidden group flex flex-col justify-between ${
+                  className={`relative bg-gradient-to-b from-zinc-900/80 to-black hover:from-black hover:to-zinc-950 border rounded-2xl p-5 transition-all duration-300 shadow-[0_4px_30px_rgba(0,0,0,0.4)] overflow-hidden group flex flex-col justify-between ${
                     prof.isActive 
-                      ? 'border-[#D4AF37]/15 hover:border-[#D4AF37]/40 shadow-black/40' 
+                      ? 'border-[#D4AF37]/20 hover:border-[#D4AF37]/80 hover:shadow-[0_0_20px_rgba(212,175,55,0.06)]' 
                       : 'border-white/5 opacity-60 grayscale shadow-none'
                   }`}
                 >
@@ -1093,11 +1093,11 @@ export default function ProfessionalsPage() {
                     <div className="flex items-start justify-between gap-3 mb-4">
                       {/* Avatar + Name / Specialties */}
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-zinc-900 to-black border border-[#D4AF37]/30 group-hover:border-[#D4AF37]/60 flex items-center justify-center text-[#D4AF37] font-semibold text-sm shadow-md shrink-0 select-none transition-colors">
+                        <div className="w-13 h-13 rounded-full bg-gradient-to-br from-zinc-950 to-zinc-900 border-2 border-[#D4AF37]/30 group-hover:border-[#D4AF37]/80 flex items-center justify-center text-[#D4AF37] font-bold text-sm shadow-md shrink-0 select-none transition-all duration-300 transform group-hover:scale-105">
                           {getInitials(prof.name)}
                         </div>
                         <div className="space-y-1 min-w-0">
-                          <h4 className="text-[15px] font-semibold text-white leading-tight font-sans truncate pr-8" title={prof.name}>
+                          <h4 className="text-[15px] font-semibold text-white leading-tight font-sans truncate pr-8 group-hover:text-[#D4AF37] transition-all" title={prof.name}>
                             {prof.name}
                           </h4>
                           <div className="flex flex-col gap-1 items-start">

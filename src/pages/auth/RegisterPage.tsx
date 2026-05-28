@@ -61,7 +61,7 @@ export default function RegisterPage() {
     try {
       let limit = 3;
       if (planParam === 'studio') limit = 10;
-      if (planParam === 'founder') limit = 20;
+      if (planParam === 'founder') limit = 22;
       if (planParam === 'performance') limit = 20;
       if (planParam === 'network') limit = 999;
 
@@ -115,7 +115,7 @@ export default function RegisterPage() {
       // Map professionals limits based on plan
       let limit = 3;
       if (planParam === 'studio') limit = 10;
-      if (planParam === 'founder') limit = 20;
+      if (planParam === 'founder') limit = 22;
       if (planParam === 'performance') limit = 20;
       if (planParam === 'network') limit = 999;
       

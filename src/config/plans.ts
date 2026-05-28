@@ -80,8 +80,9 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
     nextAmount: 397,
     accessLevel: 'full',
     includesFutureUpdates: true,
-    maxProfessionals: 20,
+    maxProfessionals: 22,
     features: [
+      'Até 22 profissionais',
       'Acesso Completo a todos os recursos',
       'Sem bloqueios ou limites restritos',
       'Atualizações futuras inclusas',
