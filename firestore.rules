@@ -249,7 +249,15 @@ service cloud.firestore {
         request.resource.data.status == "active"
       );
       
-      allow update, delete: if canManageSalon(salonId);
+      allow update: if canManageSalon(salonId) || (
+        isSignedIn() && 
+        professionalId == request.auth.uid &&
+        userSalonId() == salonId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'role', 'salonId', 'userId', 'professionalId', 'isActive', 'status', 'joinedByInvite', 'inviteId', 'inviteType', 'createdAt'
+        ])
+      );
+      allow delete: if canManageSalon(salonId);
     }
 
     // 2. Appointments & Appointments Scheduling

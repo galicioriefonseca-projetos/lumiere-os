@@ -7,6 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useSearchParams } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { PROFESSIONAL_SPECIALTIES } from "../../data/professionalSpecialties";
 import { 
   Calendar, 
   Clock, 
@@ -42,6 +46,48 @@ export default function ProfessionalDashboard() {
   const [myGoals, setMyGoals] = useState<ProfessionalGoal[]>([]);
   const [selectedEval, setSelectedEval] = useState<ChecklistRun | null>(null);
   const [agendaTab, setAgendaTab] = useState<"today" | "all">("today");
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editPrimary, setEditPrimary] = useState('');
+  const [editCustomPrimary, setEditCustomPrimary] = useState('');
+  const [editExtras, setEditExtras] = useState<string[]>([]);
+  const [editCustomExtras, setEditCustomExtras] = useState('');
+
+  useEffect(() => {
+    if (myProfile) {
+      setEditName(myProfile.name || '');
+      setEditPhone(myProfile.phone || '');
+      
+      const primary = myProfile.primaryFunction || myProfile.professionalFunction || myProfile.specialty || myProfile.category || '';
+      if (primary) {
+        if (PROFESSIONAL_SPECIALTIES.includes(primary)) {
+          setEditPrimary(primary);
+          setEditCustomPrimary('');
+        } else {
+          setEditPrimary('Outro');
+          setEditCustomPrimary(primary);
+        }
+      } else {
+        setEditPrimary('');
+        setEditCustomPrimary('');
+      }
+
+      const extras = myProfile.additionalFunctions || [];
+      const standardExtras = extras.filter(e => PROFESSIONAL_SPECIALTIES.includes(e));
+      const customExtras = extras.filter(e => !PROFESSIONAL_SPECIALTIES.includes(e));
+
+      const finalExtrasList = [...standardExtras];
+      if (customExtras.length > 0) {
+        finalExtrasList.push('Outro');
+        setEditCustomExtras(customExtras.join(', '));
+      } else {
+        setEditCustomExtras('');
+      }
+      setEditExtras(finalExtrasList);
+    }
+  }, [myProfile?.id]);
 
   const todayStr = new Date().toISOString().substring(0, 10);
   const currentMonthStr = new Date().toISOString().substring(0, 7);
@@ -302,6 +348,85 @@ export default function ProfessionalDashboard() {
     ? Math.min(Math.round((currentMonthEarnings / currentGoal.targetAmount) * 100), 100)
     : 0;
 
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData || !myProfile) return;
+
+    if (!editPrimary) {
+      toast.error("Por favor, selecione sua função principal.");
+      return;
+    }
+
+    const finalPrimary = (editPrimary === 'Outro' ? editCustomPrimary.trim() : editPrimary) || 'Função não definida';
+
+    let rawExtras: string[] = [];
+    editExtras.forEach((f) => {
+      if (f === 'Outro') {
+        editCustomExtras.split(',').forEach(part => {
+          const trimmed = part.trim();
+          if (trimmed) rawExtras.push(trimmed);
+        });
+      } else {
+        rawExtras.push(f);
+      }
+    });
+
+    const cleanExtras = Array.from(new Set(rawExtras))
+      .filter(f => f && f !== finalPrimary);
+
+    const allSpecialties = Array.from(new Set([finalPrimary, ...cleanExtras])).filter(Boolean);
+
+    try {
+      setIsSaving(true);
+      
+      const docRef = doc(db, `salons/${salonData.id}/professionals`, myProfile.id);
+      
+      const updatePayload = {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        updatedAt: Date.now(),
+        
+        primaryFunction: finalPrimary,
+        professionalFunction: finalPrimary,
+        professionalCategory: finalPrimary,
+        category: finalPrimary,
+        specialty: finalPrimary,
+        additionalFunctions: cleanExtras,
+        specialties: allSpecialties
+      };
+
+      await updateDoc(docRef, updatePayload);
+
+      // Also update users/{uid} root document if existing
+      if (userData?.id) {
+        try {
+          const userRef = doc(db, 'users', userData.id);
+          await updateDoc(userRef, {
+            fullName: editName.trim(),
+            phone: editPhone.trim(),
+            primaryFunction: finalPrimary,
+            professionalFunction: finalPrimary,
+            professionalCategory: finalPrimary,
+            category: finalPrimary,
+            specialty: finalPrimary,
+            additionalFunctions: cleanExtras,
+            specialties: allSpecialties,
+            updatedAt: Date.now()
+          });
+        } catch (err) {
+          console.log("Root user doc modification skipped or permissions insufficient", err);
+        }
+      }
+
+      toast.success("Perfil atualizado com sucesso!");
+    } catch (err: any) {
+      console.error("Erro ao salvar perfil próprio:", err);
+      toast.error("Erro ao salvar suas alterações: " + (err.message || ''));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Function to switch tab
   const setTab = (tab: string) => {
     setSearchParams({ tab });
@@ -323,9 +448,20 @@ export default function ProfessionalDashboard() {
               <h1 className="text-xl md:text-2xl font-heading font-light text-foreground leading-tight">
                 <b className="font-semibold text-white">{myProfile.name}</b>
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Função: {myProfile.category || myProfile.role || "Profissional"} | {salonData?.name}
+              <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap mt-0.5">
+                <span className="text-[#D4AF37] font-semibold">{myProfile.primaryFunction || myProfile.professionalFunction || myProfile.specialty || myProfile.category || myProfile.role || "Profissional"}</span>
+                {salonData?.name && <span>| {salonData.name}</span>}
               </p>
+              {myProfile.additionalFunctions && myProfile.additionalFunctions.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span className="text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Outras Especialidades:</span>
+                  {myProfile.additionalFunctions.map(ext => (
+                    <span key={ext} className="text-[9px] bg-zinc-950 border border-white/5 text-zinc-300 font-medium px-1.5 py-0.5 rounded">
+                      {ext}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           
@@ -336,6 +472,7 @@ export default function ProfessionalDashboard() {
             <Button size="xs" variant={activeTab === 'desempenho' ? 'default' : 'ghost'} onClick={() => setTab('desempenho')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'desempenho' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Desempenho</Button>
             <Button size="xs" variant={activeTab === 'avaliacoes' ? 'default' : 'ghost'} onClick={() => setTab('avaliacoes')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'avaliacoes' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Avaliações</Button>
             <Button size="xs" variant={activeTab === 'metas' ? 'default' : 'ghost'} onClick={() => setTab('metas')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'metas' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Metas {currentGoal && "🎯"}</Button>
+            <Button size="xs" variant={activeTab === 'perfil' ? 'default' : 'ghost'} onClick={() => setTab('perfil')} className={cn("text-xs font-medium px-3 h-7 rounded-xl select-none", activeTab === 'perfil' ? "bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 hover:text-black font-semibold" : "text-slate-300 hover:text-white hover:bg-white/5")}>Meu Perfil 👤</Button>
           </div>
         </div>
       </div>
@@ -816,6 +953,161 @@ export default function ProfessionalDashboard() {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ==================== SCREEN: MEU PERFIL ==================== */}
+      {activeTab === 'perfil' && (
+        <Card className="border-border bg-card/50 max-w-2xl mx-auto">
+          <CardHeader>
+            <CardTitle className="text-base font-medium flex items-center gap-2">
+              <User className="w-4 h-4 text-[#D4AF37]" /> Meu Perfil Profissional
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Mantenha seus dados de contato e especialidades de atendimento sempre atualizados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 md:p-6">
+            <form onSubmit={handleSaveProfile} className="space-y-6">
+              
+              {/* Name & Phone inputs group */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="perfName" className="text-xs font-semibold text-zinc-300">Meu Nome Completo <span className="text-[#D4AF37]">*</span></Label>
+                  <Input 
+                    id="perfName" 
+                    value={editName} 
+                    onChange={(e) => setEditName(e.target.value)} 
+                    placeholder="Seu nome por extenso"
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="perfPhone" className="text-xs font-semibold text-zinc-300">Celular (Opcional)</Label>
+                  <Input 
+                    id="perfPhone" 
+                    value={editPhone} 
+                    onChange={(e) => setEditPhone(e.target.value)} 
+                    placeholder="Ex: (00) 00000-0000"
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50"
+                  />
+                </div>
+              </div>
+
+              {/* Email (Read Only Warning) */}
+              <div className="space-y-1 bg-zinc-950/40 p-3 rounded-xl border border-white/5">
+                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Conta Atrelada (E-mail)</span>
+                <span className="text-xs text-zinc-300 font-mono block select-none">{myProfile.email}</span>
+                <p className="text-[9px] text-zinc-500">Para alterar seu e-mail cadastrado, entre em contato com seu administrador.</p>
+              </div>
+
+              {/* Primary function selection dropdown */}
+              <div className="space-y-2">
+                <Label htmlFor="perfPrimary" className="text-xs font-semibold text-zinc-300">Função Principal <span className="text-[#D4AF37]">*</span></Label>
+                <div className="relative">
+                  <select
+                    id="perfPrimary"
+                    value={editPrimary}
+                    onChange={(e) => setEditPrimary(e.target.value)}
+                    required
+                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-11 px-3 text-xs focus:outline-none focus:border-primary appearance-none cursor-pointer"
+                  >
+                    <option value="">-- Escolha sua função principal --</option>
+                    {PROFESSIONAL_SPECIALTIES.map((spec) => (
+                      <option key={spec} value={spec}>{spec}</option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">
+                    ▼
+                  </div>
+                </div>
+
+                {editPrimary === 'Outro' && (
+                  <div className="pt-2">
+                    <Label htmlFor="perfCustomPrimary" className="text-[10px] text-zinc-400">Escreva qual é o seu cargo/função principal:</Label>
+                    <Input
+                      id="perfCustomPrimary"
+                      value={editCustomPrimary}
+                      onChange={(e) => setEditCustomPrimary(e.target.value)}
+                      placeholder="Ex: Cabeleireira Visagista"
+                      className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50 mt-1"
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Additional Functions Checkboxes Grid */}
+              <div className="space-y-2 pt-1">
+                <Label className="text-xs font-semibold text-zinc-300">Funções Adicionais / Especialidades Extras</Label>
+                <p className="text-[11px] text-zinc-400 font-light leading-relaxed">
+                  Marque todas as outras funções que você realiza além da sua principal. No LumiereOS, você usa um único cadastro para todas as suas frentes.
+                </p>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-52 overflow-y-auto p-3 bg-black/40 border border-[#ffffff05] rounded-2xl scrollbar-thin">
+                  {PROFESSIONAL_SPECIALTIES.filter(s => s !== editPrimary).map((spec) => {
+                    const isChecked = editExtras.includes(spec);
+                    return (
+                      <button
+                        key={spec}
+                        type="button"
+                        onClick={() => {
+                          setEditExtras(prev =>
+                            prev.includes(spec) ? prev.filter(p => p !== spec) : [...prev, spec]
+                          );
+                        }}
+                        className={`flex items-center gap-2.5 p-2 rounded-xl text-left text-xs transition-all border ${
+                          isChecked 
+                            ? 'bg-primary/10 border-primary/45 text-primary font-semibold shadow-[0_2px_10px_rgba(212,175,55,0.05)]' 
+                            : 'bg-black/30 border-[#ffffff05] text-zinc-400 hover:border-white/10 hover:text-zinc-200'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <div className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${isChecked ? 'bg-primary border-primary text-black' : 'border-zinc-500'} shrink-0`}>
+                          {isChecked && <CheckCircle className="w-3 h-3 stroke-[2.5]" />}
+                        </div>
+                        <span className="truncate leading-none">{spec}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {editExtras.includes('Outro') && (
+                  <div className="pt-2">
+                    <Label htmlFor="perfCustomExtras" className="text-[10px] text-zinc-400">Escreva suas outras funções adicionais separadas por vírgula:</Label>
+                    <Input
+                      id="perfCustomExtras"
+                      value={editCustomExtras}
+                      onChange={(e) => setEditCustomExtras(e.target.value)}
+                      placeholder="Ex: Escovista, Designer de Cargas"
+                      className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50 mt-1"
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Buttons footer */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                <Button
+                  type="submit"
+                  disabled={isSaving}
+                  className="bg-[#D4AF37] hover:bg-[#b08f2e] text-black font-semibold h-11 px-6 rounded-xl text-xs flex items-center justify-center gap-2 transition-all"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                    </>
+                  ) : (
+                    "Salvar Dados do Perfil"
+                  )}
+                </Button>
+              </div>
+
+            </form>
           </CardContent>
         </Card>
       )}

@@ -29,7 +29,7 @@ interface Invite {
   invitedByUserId: string;
   invitedByName: string;
   invitedByEmail: string;
-  inviteType: 'manager' | 'receptionist' | 'attendant' | 'professional' | 'function_link';
+  inviteType: 'manager' | 'receptionist' | 'attendant' | 'professional' | 'function_link' | 'team_public_link';
   role: string;
   category: string | null;
   specialty?: string | null;
@@ -66,12 +66,21 @@ export default function ProfessionalsPage() {
     validityDays: 7,
   });
 
+  // Team public link states
+  const [teamInviteLink, setTeamInviteLink] = useState('');
+  const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     role: '',
     phone: '',
     email: '',
   });
+
+  const [primaryFunction, setPrimaryFunction] = useState('');
+  const [customPrimary, setCustomPrimary] = useState('');
+  const [additionalFunctions, setAdditionalFunctions] = useState<string[]>([]);
+  const [customAdicional, setCustomAdicional] = useState('');
 
   const [inviteFormData, setInviteFormData] = useState({
     inviteType: 'professional' as Invite['inviteType'],
@@ -131,20 +140,86 @@ export default function ProfessionalsPage() {
       return;
     }
 
+    const finalPrimary = (primaryFunction === 'Outro' ? customPrimary.trim() : primaryFunction) || 'Função não definida';
+    
+    // Cleanup functions and avoid duplicates
+    let rawExtras: string[] = [];
+    additionalFunctions.forEach((f) => {
+      if (f === 'Outro') {
+        customAdicional.split(',').forEach(part => {
+          const trimmed = part.trim();
+          if (trimmed) rawExtras.push(trimmed);
+        });
+      } else {
+        rawExtras.push(f);
+      }
+    });
+
+    const cleanExtras = Array.from(new Set(rawExtras))
+      .filter(f => f && f !== finalPrimary);
+
+    const allSpecialties = Array.from(new Set([finalPrimary, ...cleanExtras])).filter(Boolean);
+
     try {
       if (editingProf) {
         const profRef = doc(db, `salons/${salonData.id}/professionals`, editingProf.id);
-        await updateDoc(profRef, {
-          ...formData,
+        const updatePayload = {
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email,
           updatedAt: Date.now(),
-        });
+          
+          primaryFunction: finalPrimary,
+          professionalFunction: finalPrimary,
+          professionalCategory: finalPrimary,
+          category: finalPrimary,
+          specialty: finalPrimary,
+          additionalFunctions: cleanExtras,
+          specialties: allSpecialties
+        };
+
+        await updateDoc(profRef, updatePayload);
+
+        // Try to update users/{uid} as well (since the professional has a corresponding account of the same ID)
+        try {
+          const userRef = doc(db, 'users', editingProf.id);
+          await updateDoc(userRef, {
+            fullName: formData.name,
+            phone: formData.phone,
+            email: formData.email,
+            primaryFunction: finalPrimary,
+            professionalFunction: finalPrimary,
+            professionalCategory: finalPrimary,
+            category: finalPrimary,
+            specialty: finalPrimary,
+            additionalFunctions: cleanExtras,
+            specialties: allSpecialties,
+            updatedAt: Date.now()
+          });
+        } catch (err) {
+          console.log("Ignored: corresponding usersDoc not existing or no permission to update root users.", err);
+        }
+
         toast.success('Profissional atualizado!');
       } else {
         const profRef = doc(collection(db, `salons/${salonData.id}/professionals`));
         await setDoc(profRef, {
           id: profRef.id,
-          ...formData,
+          name: formData.name,
+          role: 'professional',
+          phone: formData.phone,
+          email: formData.email || null,
           isActive: true,
+          status: 'active',
+          
+          primaryFunction: finalPrimary,
+          professionalFunction: finalPrimary,
+          professionalCategory: finalPrimary,
+          category: finalPrimary,
+          specialty: finalPrimary,
+          additionalFunctions: cleanExtras,
+          specialties: allSpecialties,
+          
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
@@ -152,6 +227,10 @@ export default function ProfessionalsPage() {
       }
       setIsDialogOpen(false);
       setFormData({ name: '', role: '', phone: '', email: '' });
+      setPrimaryFunction('');
+      setCustomPrimary('');
+      setAdditionalFunctions([]);
+      setCustomAdicional('');
       setEditingProf(null);
     } catch (error) {
       console.error(error);
@@ -360,6 +439,63 @@ export default function ProfessionalsPage() {
     }
   };
 
+  const handleGetOrCreateTeamLink = async () => {
+    if (!salonData) return;
+    try {
+      const activeLink = invites.find(
+        i => i.inviteType === 'team_public_link' && i.status === 'pending'
+      );
+      
+      let finalInviteId = '';
+      if (activeLink) {
+        finalInviteId = activeLink.id;
+      } else {
+        const salonId = userData?.salonId || salonData?.id;
+        const invitedByUserId = userData?.id || currentUser?.uid || auth.currentUser?.uid;
+        if (!invitedByUserId) {
+          throw new Error('Identificador do usuário convidante não encontrado (undefined invitedByUserId).');
+        }
+
+        const invitedByName = userData?.fullName || currentUser?.displayName || 'Administrador';
+        const invitedByEmail = userData?.email || currentUser?.email || '';
+
+        const inviteId = doc(collection(db, 'invites')).id;
+        const expiresAtDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 365); // 1 year
+        const expiresAt = Timestamp.fromDate(expiresAtDate);
+
+        const inviteDoc = {
+          id: inviteId,
+          salonId,
+          salonName: salonData.name,
+          role: 'professional',
+          inviteType: "team_public_link",
+          status: "pending",
+          maxUses: 9999,
+          usesCount: 0,
+          invitedByUserId,
+          invitedByName,
+          invitedByEmail,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          expiresAt,
+          email: null,
+          invitedName: null,
+          invitedPhone: null
+        };
+
+        await setDoc(doc(db, 'invites', inviteId), inviteDoc);
+        finalInviteId = inviteId;
+      }
+
+      const link = `${window.location.origin}/cadastro-profissional?invite=${finalInviteId}`;
+      setTeamInviteLink(link);
+      setIsTeamDialogOpen(true);
+    } catch (err: any) {
+      console.error("Erro ao obter/criar link de equipe:", err);
+      toast.error('Erro ao processar link único de equipe: ' + (err.message || ''));
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedLink(text);
@@ -384,7 +520,37 @@ export default function ProfessionalsPage() {
 
   const openEdit = (prof: Professional) => {
     setEditingProf(prof);
-    setFormData({ name: prof.name, role: prof.role, phone: prof.phone, email: prof.email || '' });
+    setFormData({ name: prof.name, role: prof.role || 'professional', phone: prof.phone || '', email: prof.email || '' });
+
+    // Fallback sequence: primaryFunction -> professionalFunction -> specialty -> category -> fallback
+    const primary = prof.primaryFunction || prof.professionalFunction || prof.specialty || prof.category || '';
+    
+    if (primary) {
+      if (PROFESSIONAL_SPECIALTIES.includes(primary)) {
+        setPrimaryFunction(primary);
+        setCustomPrimary('');
+      } else {
+        setPrimaryFunction('Outro');
+        setCustomPrimary(primary);
+      }
+    } else {
+      setPrimaryFunction('');
+      setCustomPrimary('');
+    }
+
+    const extras = prof.additionalFunctions || [];
+    const standardExtras = extras.filter(e => PROFESSIONAL_SPECIALTIES.includes(e));
+    const customExtras = extras.filter(e => !PROFESSIONAL_SPECIALTIES.includes(e));
+
+    const finalExtrasList = [...standardExtras];
+    if (customExtras.length > 0) {
+      finalExtrasList.push('Outro');
+      setCustomAdicional(customExtras.join(', '));
+    } else {
+      setCustomAdicional('');
+    }
+    setAdditionalFunctions(finalExtrasList);
+
     setIsDialogOpen(true);
   };
 
@@ -423,7 +589,14 @@ export default function ProfessionalsPage() {
           </p>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+          <Button 
+            onClick={handleGetOrCreateTeamLink}
+            className="bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-black font-bold rounded-xl h-10 px-4 text-xs shadow-[0_0_15px_rgba(212,175,55,0.15)] transition-all active:scale-[0.98] flex items-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-black" /> Link Único da Equipe
+          </Button>
+
           {/* Gerar Link por Função Dialog Trigger */}
           <Dialog open={isFunctionDialogOpen} onOpenChange={(open) => {
             setIsFunctionDialogOpen(open);
@@ -684,7 +857,14 @@ export default function ProfessionalsPage() {
 
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
             setIsDialogOpen(open);
-            if (!open) { setEditingProf(null); setFormData({ name: '', role: '', phone: '', email: '' }); }
+            if (!open) { 
+              setEditingProf(null); 
+              setFormData({ name: '', role: '', phone: '', email: '' }); 
+              setPrimaryFunction('');
+              setCustomPrimary('');
+              setAdditionalFunctions([]);
+              setCustomAdicional('');
+            }
           }}>
             <DialogTrigger asChild>
               <Button 
@@ -695,19 +875,99 @@ export default function ProfessionalsPage() {
                 <Plus className="w-4 h-4 mr-2" /> Novo Profissional (Direto)
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px] bg-card border-border">
+            <DialogContent className="sm:max-w-[480px] bg-card border-border">
               <DialogHeader>
                 <DialogTitle className="font-heading">{editingProf ? 'Editar Profissional' : 'Novo Profissional'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 pt-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome Completo</Label>
-                  <Input id="name" required value={formData.name} onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))} className="bg-background-accent bg-background" />
+                  <Input id="name" required value={formData.name} onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))} className="bg-background" />
                 </div>
+
+                {/* Primary Function Selection */}
                 <div className="space-y-2">
-                  <Label htmlFor="role">Função / Especialidade</Label>
-                  <Input id="role" required value={formData.role} onChange={(e) => setFormData(prev => ({...prev, role: e.target.value}))} className="bg-background" placeholder="Ex: Cabeleireiro Sênior" />
+                  <Label htmlFor="primarySelectModal" className="text-xs font-semibold text-zinc-300">Função Principal <span className="text-[#D4AF37]">*</span></Label>
+                  <div className="relative">
+                    <select
+                      id="primarySelectModal"
+                      value={primaryFunction}
+                      onChange={(e) => setPrimaryFunction(e.target.value)}
+                      required
+                      className="w-full bg-zinc-950 border border-white/10 text-white rounded-xl h-10 px-3 text-sm focus:outline-none focus:border-primary appearance-none cursor-pointer"
+                    >
+                      <option value="">-- Selecione a função principal --</option>
+                      {PROFESSIONAL_SPECIALTIES.map((spec) => (
+                        <option key={spec} value={spec}>{spec}</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
+                      ▼
+                    </div>
+                  </div>
+
+                  {primaryFunction === 'Outro' && (
+                    <div className="pt-2 animate-fadeIn">
+                      <Label htmlFor="customPrimaryInputModal" className="text-[11px] text-zinc-300">Escreva a função principal:</Label>
+                      <Input
+                        id="customPrimaryInputModal"
+                        value={customPrimary}
+                        onChange={(e) => setCustomPrimary(e.target.value)}
+                        placeholder="Ex: Designer de Cílios Sênior"
+                        className="bg-zinc-950 h-10 rounded-xl mt-1 border-primary/30 focus:border-primary"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
+
+                {/* Additional Functions Selection */}
+                <div className="space-y-2 pt-1">
+                  <Label className="text-xs font-semibold text-zinc-300">Funções Extras / Adicionais (Opcional)</Label>
+                  <p className="text-[10px] text-zinc-400 font-light">Selecione outras habilidades que o profissional realiza no salão.</p>
+                  
+                  <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto p-3 bg-zinc-950/70 border border-white/5 rounded-xl scrollbar-thin">
+                    {PROFESSIONAL_SPECIALTIES.filter(s => s !== primaryFunction).map((spec) => {
+                      const isChecked = additionalFunctions.includes(spec);
+                      return (
+                        <button
+                          key={spec}
+                          type="button"
+                          onClick={() => {
+                            setAdditionalFunctions(prev =>
+                              prev.includes(spec) ? prev.filter(p => p !== spec) : [...prev, spec]
+                            );
+                          }}
+                          className={`flex items-center gap-2 p-1.5 rounded-lg text-left text-xs transition-all border ${
+                            isChecked 
+                              ? 'bg-primary/10 border-primary/40 text-primary font-medium' 
+                              : 'bg-black/30 border-white/5 text-zinc-400 hover:border-white/10 hover:text-zinc-200'
+                          }`}
+                        >
+                          <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border text-[10px] ${isChecked ? 'bg-primary border-primary text-black' : 'border-zinc-500'}`}>
+                            {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                          </div>
+                          <span className="truncate">{spec}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {additionalFunctions.includes('Outro') && (
+                    <div className="pt-2 animate-fadeIn">
+                      <Label htmlFor="customAdicionalInputModal" className="text-[11px] text-zinc-300">Escreva outras funções (separe por vírgula):</Label>
+                      <Input
+                        id="customAdicionalInputModal"
+                        value={customAdicional}
+                        onChange={(e) => setCustomAdicional(e.target.value)}
+                        placeholder="Ex: Designer de Cílios, Depiladora"
+                        className="bg-zinc-950 h-10 rounded-xl mt-1"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="phone">Celular</Label>
                   <Input id="phone" required value={formData.phone} onChange={(e) => setFormData(prev => ({...prev, phone: e.target.value}))} className="bg-background" />
@@ -755,6 +1015,66 @@ export default function ProfessionalsPage() {
                   >
                     Excluir Definitivamente
                   </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* New Team Link Dialog */}
+          <Dialog open={isTeamDialogOpen} onOpenChange={setIsTeamDialogOpen}>
+            <DialogContent className="sm:max-w-[480px] bg-zinc-950 border border-[#D4AF37]/20 text-white rounded-3xl p-6 shadow-2xl">
+              <DialogHeader>
+                <DialogTitle className="font-heading font-normal text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" /> Link Único de Equipe (Essenza)
+                </DialogTitle>
+                <CardDescription className="text-xs text-zinc-400">
+                  Envie este link único no WhatsApp do grupo. Cada profissional poderá escolher sua função principal e secundárias por conta própria.
+                </CardDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 pt-4">
+                <div className="flex items-center gap-2 bg-black border border-white/5 p-3 rounded-xl select-all min-w-0">
+                  <span className="text-xs font-mono text-primary truncate flex-1">{teamInviteLink}</span>
+                  <Button
+                    size="icon"
+                    onClick={() => copyToClipboard(teamInviteLink)}
+                    className="h-7 w-7 bg-primary text-black hover:bg-gold-500 rounded-lg shrink-0"
+                  >
+                    {copiedLink === teamInviteLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+
+                <div className="p-3.5 bg-zinc-900/50 border border-white/5 rounded-2xl space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider font-bold text-primary">Mensagem Sugerida para Grupos:</p>
+                  <pre className="text-[11.5px] font-sans text-zinc-300 leading-relaxed whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
+                    {`Pessoal, segue o link para cadastro no LumiereOS do ${salonData?.name || 'nosso salão'}. Acesse com sua conta Google, escolha sua função principal e marque também as funções extras que você realiza no salão.\n\n${teamInviteLink}`}
+                  </pre>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const msg = `Pessoal, segue o link para cadastro no LumiereOS do ${salonData?.name || 'nosso salão'}. Acesse com sua conta Google, escolha sua função principal e marque também as funções extras que você realiza no salão.\n\n${teamInviteLink}`;
+                      navigator.clipboard.writeText(msg);
+                      toast.success('Mensagem formatada copiada!');
+                    }}
+                    variant="outline"
+                    className="border-white/10 hover:border-primary/20 hover:text-primary rounded-xl h-10 px-4 text-xs font-semibold flex items-center justify-center gap-1.5"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copiar Mensagem
+                  </Button>
+
+                  <a
+                    href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                      `Pessoal, segue o link para cadastro no LumiereOS do ${salonData?.name || 'nosso salão'}. Acesse com sua conta Google, escolha sua função principal e marque também as funções extras que você realiza no salão.\n\n${teamInviteLink}`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-[#25D366] hover:bg-[#128C7E] border border-transparent rounded-xl h-10 px-4 text-xs font-semibold flex items-center justify-center gap-1.5 text-white transition-colors duration-200"
+                  >
+                    <Share2 className="w-3.5 h-3.5" /> Enviar WhatsApp
+                  </a>
                 </div>
               </div>
             </DialogContent>
@@ -996,20 +1316,24 @@ export default function ProfessionalsPage() {
           if (!searchQuery.trim()) return true;
           const queryLower = searchQuery.toLowerCase();
 
-          // Priority values
-          const realFunc = (
-            prof.professionalFunction ||
-            prof.specialty ||
-            prof.category ||
-            prof.role ||
-            ''
-          ).toLowerCase();
+          // Search matches across all primary and additional professional functions
+          const allFuncs = [
+            prof.primaryFunction,
+            prof.professionalFunction,
+            prof.specialty,
+            prof.category,
+            ...(prof.additionalFunctions || []),
+            ...(prof.specialties || []),
+            prof.role
+          ].filter(Boolean).map(f => f!.toLowerCase());
+
+          const queryMatch = allFuncs.some(f => f.includes(queryLower));
 
           return (
             prof.name.toLowerCase().includes(queryLower) ||
             (prof.email || '').toLowerCase().includes(queryLower) ||
             (prof.phone || '').includes(queryLower) ||
-            realFunc.includes(queryLower)
+            queryMatch
           );
         });
 
@@ -1105,6 +1429,30 @@ export default function ProfessionalsPage() {
                             <span className="text-[10px] uppercase font-bold text-[#D4AF37] tracking-wider leading-none">
                               {displayFunction}
                             </span>
+                            
+                            {/* Additional Functions (max 3, plus +N badge) */}
+                            {prof.additionalFunctions && prof.additionalFunctions.length > 0 && (
+                              <div className="flex items-center flex-wrap gap-1 mt-1 leading-normal max-w-full">
+                                <span className="font-semibold text-[8px] uppercase text-zinc-400 tracking-wider">Também:</span>
+                                {prof.additionalFunctions.slice(0, 3).map((func) => (
+                                  <span key={func} className="text-[8.5px] bg-zinc-950 border border-white/5 text-zinc-300 font-medium px-1.5 py-0.5 rounded">
+                                    {func}
+                                  </span>
+                                ))}
+                                {prof.additionalFunctions.length > 3 && (
+                                  <span className="text-[9.5px] font-bold text-primary">
+                                    +{prof.additionalFunctions.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Deletion requested indicator badge */}
+                            {(prof.status === 'deletion_requested' || (prof as any).accountDeletionRequested) && (
+                              <span className="mt-1 text-[9px] uppercase font-bold text-red-400 bg-red-950/40 border border-red-900/30 px-1.5 py-0.5 rounded leading-none select-none">
+                                Solicitou Exclusão
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

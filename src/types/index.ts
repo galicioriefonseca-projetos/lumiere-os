@@ -55,6 +55,9 @@ export interface Professional {
   inviteId?: string;
   createdAt: number;
   updatedAt: number;
+  primaryFunction?: string;
+  additionalFunctions?: string[];
+  specialties?: string[];
 }
 
 export interface Category {

@@ -22,18 +22,23 @@ import {
   Crown,
   AlertTriangle,
   CheckCircle2,
-  Inbox
+  Inbox,
+  UserX,
+  Loader2
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
 import PWAInstallButton from '../PWAInstallButton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { APP_INFO } from '../../config/appInfo';
 import SystemUpdatesDialog from '../SystemUpdatesDialog';
 import { useEffect } from 'react';
+import { db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { toast } from 'sonner';
 
 export default function DashboardLayout() {
-  const { userData, salonData, isPlatformAdmin, logout } = useAuth();
+  const { userData, salonData, isPlatformAdmin, logout, currentUser } = useAuth();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -44,6 +49,48 @@ export default function DashboardLayout() {
   const [subscriptionSuccess, setSubscriptionSuccess] = useState(false);
   const [isUpdatesDialogOpen, setIsUpdatesDialogOpen] = useState(false);
   const [hasNewVersionNotice, setHasNewVersionNotice] = useState(false);
+  const [isDeletionRequestedOpen, setIsDeletionRequestedOpen] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  const handleRequestDeletion = async () => {
+    if (!currentUser) {
+      toast.error("Você precisa estar autenticado.");
+      return;
+    }
+    setIsDeletingAccount(true);
+    try {
+      const now = Date.now();
+      const uid = currentUser.uid;
+
+      // Update Root `/users/{uid}`
+      await updateDoc(doc(db, 'users', uid), {
+        accountDeletionRequested: true,
+        accountDeletionRequestedAt: now,
+        status: 'deletion_requested'
+      });
+
+      // Update Subcollection `salons/{salonId}/professionals/{uid}` (if salonId exists)
+      if (userData?.salonId) {
+        try {
+          await updateDoc(doc(db, `salons/${userData.salonId}/professionals`, uid), {
+            accountDeletionRequested: true,
+            status: 'deletion_requested',
+            updatedAt: now
+          });
+        } catch (subErr) {
+          console.log("Professional subcollection update omitted (could be non-professional owner).", subErr);
+        }
+      }
+
+      toast.success("Solicitação de exclusão enviada com sucesso! Um administrador revisará o pedido.");
+      setIsDeletionRequestedOpen(false);
+    } catch (err: any) {
+      console.error("Erro ao solicitar exclusão:", err);
+      toast.error("Erro ao registrar solicitação: " + (err.message || ''));
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   useEffect(() => {
     const lastSeenVersion = localStorage.getItem('lumiere_last_seen_version');
@@ -212,6 +259,17 @@ export default function DashboardLayout() {
             </div>
           </div>
           <BugReportDialog />
+          {userData && (
+            <Button 
+              variant="ghost" 
+              disabled={userData.status === 'deletion_requested'}
+              className="w-full justify-start text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-xl mt-1.5 text-xs h-9" 
+              onClick={() => setIsDeletionRequestedOpen(true)}
+            >
+              <UserX className="w-4 h-4 mr-2" />
+              {userData.status === 'deletion_requested' ? 'Exclusão Solicitada' : 'Solicitar Exclusão da Conta'}
+            </Button>
+          )}
           <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl mt-1.5 text-xs h-9" onClick={logout}>
             <LogOut className="w-4 h-4 mr-2" />
             Sair
@@ -489,6 +547,17 @@ export default function DashboardLayout() {
                   <p className="text-[10px] text-muted-foreground truncate">{isPlatformAdmin ? 'Administrador Global' : (salonData?.name || 'Sem salão')}</p>
                 </div>
               </div>
+              {userData && (
+                <Button 
+                  variant="ghost" 
+                  disabled={userData.status === 'deletion_requested'}
+                  className="w-full justify-start text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-xl text-xs h-9 px-3 mt-1.5" 
+                  onClick={() => { setIsMobileMenuOpen(false); setIsDeletionRequestedOpen(true); }}
+                >
+                  <UserX className="w-4 h-4 mr-2" />
+                  {userData.status === 'deletion_requested' ? 'Exclusão Solicitada' : 'Solicitar Exclusão da Conta'}
+                </Button>
+              )}
               <Button 
                 variant="ghost" 
                 className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl text-xs h-9 px-3" 
@@ -981,6 +1050,58 @@ export default function DashboardLayout() {
         onClose={() => setIsUpdatesDialogOpen(false)}
         onMarkAsSeen={() => setHasNewVersionNotice(false)}
       />
+
+      {/* Account Deletion Request Dialog */}
+      <Dialog open={isDeletionRequestedOpen} onOpenChange={setIsDeletionRequestedOpen}>
+        <DialogContent className="sm:max-w-[440px] bg-card border-border text-foreground rounded-3xl p-6 shadow-2xl">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="font-heading font-normal flex items-center gap-2 text-red-500">
+              <AlertTriangle className="w-5 h-5 text-red-500" /> Solicitar Exclusão de Conta
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Entenda como funciona o desligamento e a retenção histórica no LumiereOS.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3.5 pt-3 text-xs leading-relaxed text-zinc-300">
+            <p className="font-light">
+              Ao confirmar, sua solicitação de exclusão de conta será encaminhada para análise e revisão dos proprietários do salão ou administradores da plataforma.
+            </p>
+            <div className="p-3 bg-red-950/20 border border-red-900/40 rounded-xl text-red-200 text-[11px] font-medium leading-relaxed">
+              <strong>Importante:</strong> Seus dados operacionais (como histórico de agendamentos realizados, comissões faturadas, respostas a checklists de qualidade Essenza e feedback dos clientes) <strong>नहीं serão excluídos de forma definitiva automaticamente</strong> para manter a consistência contábil, integridade operacional e relatórios gerenciais do salão.
+            </div>
+            <p className="text-[11px] text-zinc-400 font-light">
+              Sua conta receberá o status <strong>"Exclusão Solicitada"</strong> e seu login poderá ser bloqueado ou suspenso durante a análise. Deseja prosseguir?
+            </p>
+          </div>
+
+          <DialogFooter className="flex sm:flex-row justify-end gap-2 pt-4 border-t border-white/5 mt-5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDeletionRequestedOpen(false)}
+              className="rounded-xl border-white/10 text-white hover:bg-white/5 h-10 px-4 text-xs font-semibold"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={isDeletingAccount}
+              onClick={handleRequestDeletion}
+              className="bg-red-500 hover:bg-red-600 text-white font-semibold rounded-xl h-10 px-4 text-xs flex items-center justify-center gap-1.5"
+            >
+              {isDeletingAccount ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                'Confirmar Solicitação'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

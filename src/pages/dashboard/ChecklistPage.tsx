@@ -170,7 +170,7 @@ export default function ChecklistPage() {
 
   const getDisplayFunction = (p: any) => {
     if (!p) return "Profissional";
-    const baseSpecialty = p.professionalFunction || p.specialty || p.professionalCategory || p.category || p.title;
+    const baseSpecialty = p.primaryFunction || p.professionalFunction || p.specialty || p.professionalCategory || p.category || p.title;
     if (baseSpecialty) return baseSpecialty;
     const roleTranslated = p.role ? (roleTranslations[p.role] || p.role) : "Profissional";
     return roleTranslated;
@@ -1210,9 +1210,26 @@ export default function ChecklistPage() {
                                         <h3 className="font-heading font-medium text-sm md:text-base text-white">
                                           {professionals.find((p) => p.id === evalProfessionalId)?.name}
                                         </h3>
-                                        <p className="text-xs text-[#D4AF37] mt-0.5">
-                                          {getDisplayFunction(professionals.find((p) => p.id === evalProfessionalId))}
-                                        </p>
+                                        <div className="text-xs text-[#D4AF37] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                                          <span className="font-semibold">{getDisplayFunction(professionals.find((p) => p.id === evalProfessionalId))}</span>
+                                          {(() => {
+                                            const foundPro = professionals.find((p) => p.id === evalProfessionalId);
+                                            if (foundPro?.additionalFunctions && foundPro.additionalFunctions.length > 0) {
+                                              return (
+                                                <>
+                                                  <span className="text-zinc-600">•</span>
+                                                  <span className="text-[10px] text-zinc-400">Também:</span>
+                                                  {foundPro.additionalFunctions.map((func) => (
+                                                    <span key={func} className="text-[9px] bg-zinc-950 border border-white/5 text-zinc-300 px-1.5 py-0.5 rounded leading-none">
+                                                      {func}
+                                                    </span>
+                                                  ))}
+                                                </>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
+                                        </div>
                                       </div>
                                     </div>
 

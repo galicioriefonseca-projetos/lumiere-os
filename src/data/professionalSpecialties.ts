@@ -1,12 +1,12 @@
-export const PROFESSIONAL_SPECIALTIES = [
+export const professionalSpecialties = [
   "Cabeleireira",
   "Cabeleireiro",
   "Colorista",
   "Especialista em mechas",
   "Especialista em loiro",
   "Especialista em corte",
-  "Especialista em escova",
-  "Especialista em penteados",
+  "Escovista",
+  "Penteadista",
   "Manicure",
   "Pedicure",
   "Nail designer",
@@ -24,10 +24,7 @@ export const PROFESSIONAL_SPECIALTIES = [
   "Terapeuta capilar",
   "Barbeiro",
   "Auxiliar de salão",
-  "Assistente de cabeleireiro",
-  "Recepcionista",
-  "Atendente",
-  "Gerente",
-  "Coordenadora",
   "Outro"
 ];
+
+export const PROFESSIONAL_SPECIALTIES = professionalSpecialties;
