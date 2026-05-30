@@ -30,6 +30,7 @@ import {
   DollarSign,
   Target,
   Filter,
+  Info,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
 
@@ -812,10 +813,25 @@ export default function ProfessionalDashboard() {
                       )}
                     >
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{evalRun.date.split("-").reverse().join("/")}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-[10px] text-muted-foreground">{evalRun.date.split("-").reverse().join("/")}</p>
+                          {(() => {
+                            const evalFunc = evalRun.evaluationFunction || evalRun.evaluatedFunction || evalRun.professionalFunction || evalRun.primaryFunction;
+                            if (evalFunc) {
+                              return (
+                                <span className="text-[9px] bg-primary/10 border border-primary/20 text-[#D4AF37] px-1.5 py-0.5 rounded leading-none uppercase font-semibold font-mono">
+                                  {evalFunc}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                         <h4 className="text-sm font-medium mt-1">
                           {evalRun.attendanceStatus === 'absent' ? (
                             <span className="text-destructive font-semibold">Falta Registrada</span>
+                          ) : evalRun.attendanceStatus === 'not_performed' ? (
+                            <span className="text-cyan-400 font-semibold font-mono">Função não Executada / Dispensa</span>
                           ) : (
                             `Avaliação Diária: Nota ${evalRun.totalScore}/${evalRun.maxScore || 40}`
                           )}
@@ -855,6 +871,19 @@ export default function ProfessionalDashboard() {
                     <p className="text-xs text-muted-foreground p-3 border border-destructive/10 bg-destructive/5 rounded-xl italic mt-3">
                       Justificativa: "{selectedEval.absenceReason || "Nenhuma observação prestada"}"
                     </p>
+                  </div>
+                ) : selectedEval.attendanceStatus === 'not_performed' ? (
+                  <div className="text-center py-6 font-sans">
+                    <Info className="w-8 h-8 text-cyan-400 mx-auto mb-2 animate-pulse" />
+                    <h4 className="font-semibold text-cyan-400 uppercase tracking-widest text-xs font-mono">Função não Executada / Dispensa</h4>
+                    <p className="text-xs text-zinc-400 mt-2 max-w-sm mx-auto font-light leading-relaxed">
+                      Esta função específica não precisou ser desempenhada ou avaliada nesta data de hoje (ex: devido a escalas diferenciadas ou falta de demandas nesta especialidade).
+                    </p>
+                    {selectedEval.observations && (
+                      <p className="text-xs text-slate-300 p-3 border border-cyan-500/10 bg-cyan-500/5 rounded-xl italic mt-3">
+                        Comentário de Dispensa: "{selectedEval.observations}"
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">

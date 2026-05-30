@@ -221,28 +221,6 @@ export default function MasterPanel() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="border-border hover:bg-white/5 border-primary/50 text-primary" onClick={async () => {
-              const loadingToast = toast.loading('Processando salão demo...');
-              const demoSalon = salons.find(s => s.isDemo || s.name === 'Lumière Demo Studio');
-              if (demoSalon) {
-                if (window.confirm('Um salão demo já existe. Deseja apagá-lo e recriar os dados?')) {
-                  await deleteDemoSalon(demoSalon.id);
-                  const res = await createDemoSalon(userData?.email);
-                  toast.dismiss(loadingToast);
-                  if (res.success) toast.success(res.message);
-                  else toast.error(res.message);
-                } else {
-                  toast.dismiss(loadingToast);
-                }
-              } else {
-                const res = await createDemoSalon(userData?.email);
-                toast.dismiss(loadingToast);
-                if (res.success) toast.success(res.message);
-                else toast.error(res.message);
-              }
-            }}>
-              <Sparkles className="w-4 h-4 mr-2" /> Criar Salão Demo Completo
-            </Button>
             {userData?.salonId && (
               <Button variant="outline" className="border-border hover:bg-white/5" render={<Link to="/dashboard" />} nativeButton={false}>
                   <Home className="w-4 h-4 mr-2" /> Dashboard

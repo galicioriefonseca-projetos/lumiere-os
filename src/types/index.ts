@@ -176,7 +176,7 @@ export interface ChecklistRun {
   evaluatedProfessionalId?: string;
   evaluatedProfessionalName?: string;
   evaluatorName?: string;
-  attendanceStatus?: 'present' | 'absent';
+  attendanceStatus?: 'present' | 'absent' | 'not_performed';
   categoryScores?: Record<string, number>; // Maps category name or item id to a score (1-5)
   totalScore?: number;
   maxScore?: number;
@@ -185,6 +185,13 @@ export interface ChecklistRun {
   observations?: string;
   absenceReason?: string;
   status?: string;
+
+  evaluationFunction?: string;
+  evaluatedFunction?: string;
+  evaluatedPrimaryFunction?: string;
+  professionalFunction?: string;
+  primaryFunction?: string;
+  professionalFunctions?: string[];
 
   createdAt: any;
   updatedAt: any;

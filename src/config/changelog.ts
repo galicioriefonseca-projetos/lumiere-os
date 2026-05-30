@@ -9,6 +9,21 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.4.3-founder',
+    date: 'Maio de 2026',
+    title: 'Ambiente de Demonstração & Seletor de Perfil Seguro',
+    description: 'Implementado o ambiente oficial demo/tutorial do LumiereOS com seletor de perfil e seed automatizado para simulações e treinamentos.',
+    highlights: [
+      'Ambiente demo dedicado e seguro para leandropfonseca20@gmail.com operando no salão exclusivo Lumiere Beauty Studio - Demo.',
+      'Sincronização de 10 profissionais fictícios com nomes bíblicos, metas mensais de faturamento realistas e agendamentos distribuídos no tempo.',
+      'Histórico completo do Checklist Essenza avaliando os profissionais ativos no mesmo dia.',
+      'Seletor de perfis inteligente (DemoRoleSwitcher) que permite alternar a visualização como Proprietário, Gerente, Recepcionista, Atendente ou Profissional.',
+      'Simulação de permissões operada estritamente em memória/localStorage sem alterar privilégios reais dos usuários e totalmente oculto de clientes normais.',
+      'Ocultação de utilitários de criação de instâncias demo normais no Painel Master.'
+    ],
+    isNew: true
+  },
+  {
     version: '1.4.2',
     date: 'Maio de 2026',
     title: 'Painel de Equipe Premium & Central de Atualizações',
@@ -22,7 +37,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Origem com indicação clara se o membro entrou via link de função, convite ou direto.',
       'Rodapé institucional integrado com termo de versão do sistema e desenvolvedora.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.4.0',

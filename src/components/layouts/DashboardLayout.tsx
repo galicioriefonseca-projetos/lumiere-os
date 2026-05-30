@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
+import { DemoRoleSwitcher } from '../DemoRoleSwitcher';
 import PWAInstallButton from '../PWAInstallButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { APP_INFO } from '../../config/appInfo';
@@ -427,7 +428,8 @@ export default function DashboardLayout() {
                 </Button>
              </div>
           )}
-          <div className="max-w-7xl mx-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
+            <DemoRoleSwitcher />
             <Outlet />
           </div>
         </main>

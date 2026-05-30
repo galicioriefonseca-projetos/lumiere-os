@@ -3,6 +3,7 @@ import { User as AuthUser, onAuthStateChanged, signOut, GoogleAuthProvider, sign
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { User, Salon, Role } from '../types';
+import { ensureTutorialSalonForLeandro } from '@/lib/seedTutorialSalon';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -98,251 +99,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const runDemoBootstrapFallback = async (uid: string, email: string, displayName: string | null) => {
     console.log("[TEMPORARY BOOTSTRAP FALLBACK] Iniciando para", email, "UID:", uid);
-    const demoSalonId = 'demo_salon_lumiere';
-    const now = Date.now();
-    
+    const demoSalonId = 'tutorial_lumiere_studio';
     try {
-      // 1. PRIMARIAMENTE, criamos ou garantimos que o documento users/{uid} existe no Firestore.
-      // Pelas regras do Firestore, para acessar o salão e subcoleções, o documento 'users/{uid}'
-      // deve existir e possuir o salonId correspondente. Como o 'create' de seu próprio perfil
-      // é permitido para qualquer usuário autenticado que não tente se passar por platform_admin,
-      // esta operação de create/setDoc SEMPRE tem permissão garantida sem exigir nada prévio.
-      const userRef = doc(db, 'users', uid);
-      const userSnap = await getDoc(userRef);
-      
-      let uData: any;
-      if (!userSnap.exists()) {
-        uData = {
-          id: uid,
-          fullName: displayName || 'Leandro Fonseca',
-          email: email,
-          phone: '17996140963',
-          role: 'owner',
-          isActive: true,
-          salonId: demoSalonId,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await setDoc(userRef, uData);
-        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Perfil de usuário de Leandro cadastrado com sucesso:", uid);
-      } else {
-        uData = { ...userSnap.data(), id: uid };
-        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Perfil de Leandro já existe no Firestore.");
-        
-        // Verifica se os campos salonId ou role diferem e tenta atualizar de forma segura
-        if (uData.role !== 'owner' || uData.salonId !== demoSalonId) {
-          try {
-            await updateDoc(userRef, {
-              role: 'owner',
-              salonId: demoSalonId,
-              updatedAt: now,
-            });
-            uData.role = 'owner';
-            uData.salonId = demoSalonId;
-            console.log("[TEMPORARY BOOTSTRAP FALLBACK] Vínculos de owner e salonId atualizados no Firestore.");
-          } catch (updateErr) {
-            console.warn("[TEMPORARY BOOTSTRAP FALLBACK] Update do user_doc bloqueado pelas regras (esperado se não houver privilégio platform_admin de escrita direta, prosseguindo com dados em memória):", updateErr);
-            uData.role = 'owner';
-            uData.salonId = demoSalonId;
-          }
-        }
-      }
-
-      // 2. Agora que o 'userDoc' está estabelecido no banco, buscamos o salão com id 'demo_salon_lumiere' por getDoc direto.
-      // Isso consome as regras de leitura individuais, passando perfeitamente pela vericação 'userSalonId() == salonId'
-      // sem tentar listar a coleção geral 'salons' (que possui restrição a Platform Admins).
-      const salonRef = doc(db, 'salons', demoSalonId);
-      let salonExists = false;
-      
-      try {
-        const salonSnap = await getDoc(salonRef);
-        salonExists = salonSnap.exists();
-      } catch (getSalonErr) {
-        console.warn("[TEMPORARY BOOTSTRAP FALLBACK] Não foi possível verificar existência do salão por getDoc individual:", getSalonErr);
-      }
-      
-      if (!salonExists) {
-        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Criando salão demo 'demo_salon_lumiere' com subcoleções...");
-        const newDemoSalon = {
-          id: demoSalonId,
-          name: 'Lumière Demo Studio',
-          ownerName: displayName || 'Leandro Fonseca',
-          ownerId: uid,
-          ownerEmail: email,
-          phone: '17996140963',
-          businessType: 'Barbearia / Salão',
-          city: 'São José do Rio Preto',
-          state: 'SP',
-          plan: 'Premium',
-          subscriptionStatus: 'active',
-          activationStatus: 'active',
-          trialEndsAt: now + 30 * 24 * 60 * 60 * 1000,
-          isActive: true,
-          isDemo: true,
-          professionalsLimit: 20,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await setDoc(salonRef, newDemoSalon);
-
-        // Seed das subcoleções básicas utilizando escritas diretas por ID para evitar listagens
-        // e otimizar a carga de dados iniciais do Dashboard do cliente.
-        
-        // Profissionais
-        await setDoc(doc(db, `salons/${demoSalonId}/professionals`, 'prof_camila'), {
-          id: 'prof_camila',
-          name: 'Camila Rocha',
-          role: 'manager',
-          phone: '11999999999',
-          email: 'camila@lumiere.demo',
-          status: 'active',
-          isActive: true,
-          commissionRate: 40,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        await setDoc(doc(db, `salons/${demoSalonId}/professionals`, 'prof_bruna'), {
-          id: 'prof_bruna',
-          name: 'Bruna Almeida',
-          role: 'receptionist',
-          phone: '11999999999',
-          email: 'bruna@lumiere.demo',
-          status: 'active',
-          isActive: true,
-          commissionRate: 0,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        await setDoc(doc(db, `salons/${demoSalonId}/professionals`, 'prof_rafaela'), {
-          id: 'prof_rafaela',
-          name: 'Rafaela Santos',
-          role: 'attendant',
-          phone: '11999999999',
-          email: 'rafaela@lumiere.demo',
-          status: 'active',
-          isActive: true,
-          commissionRate: 0,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Clientes
-        await setDoc(doc(db, `salons/${demoSalonId}/clients`, 'client_lucas'), {
-          id: 'client_lucas',
-          name: 'Lucas Antunes',
-          phone: '11988880001',
-          email: 'lucas@demo.com',
-          notes: 'Cliente VIP',
-          createdAt: now,
-          updatedAt: now
-        });
-
-        await setDoc(doc(db, `salons/${demoSalonId}/clients`, 'client_marcos'), {
-          id: 'client_marcos',
-          name: 'Marcos Aurelio',
-          phone: '11988880002',
-          email: 'marcos@demo.com',
-          notes: '',
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Meta Mensal
-        const currentMonthStr = new Date().toISOString().substring(0, 7);
-        await setDoc(doc(db, `salons/${demoSalonId}/goals`, 'goal_current'), {
-          id: 'goal_current',
-          month: currentMonthStr,
-          targetAmount: 85000,
-          currentAmount: 32750,
-          type: 'monthly_revenue',
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Agendamentos de Hoje
-        const todayStr = new Date().toISOString().substring(0, 10);
-        await setDoc(doc(db, `salons/${demoSalonId}/appointments`, 'appt_1'), {
-          id: 'appt_1',
-          clientId: 'client_lucas',
-          clientName: 'Lucas Antunes',
-          professionalId: 'prof_camila',
-          professionalName: 'Camila Rocha',
-          serviceId: 'srv_corte',
-          serviceName: 'Corte Premium',
-          date: todayStr,
-          time: '10:00',
-          status: 'completed',
-          price: 120,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        await setDoc(doc(db, `salons/${demoSalonId}/appointments`, 'appt_2'), {
-          id: 'appt_2',
-          clientId: 'client_marcos',
-          clientName: 'Marcos Aurelio',
-          professionalId: 'prof_rafaela',
-          professionalName: 'Rafaela Santos',
-          serviceId: 'srv_barba',
-          serviceName: 'Barba Terápica',
-          date: todayStr,
-          time: '14:30',
-          status: 'scheduled',
-          price: 80,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Checklist Config
-        await setDoc(doc(db, `salons/${demoSalonId}/checklists`, 'chk_default'), {
-          id: 'chk_default',
-          title: 'Checklist de Abertura e Fechamento',
-          isActive: true,
-          items: [
-            { id: 'it_1', label: 'Verificar ar condicionado', required: true, points: 5 },
-            { id: 'it_2', label: 'Esterilizar materiais', required: true, points: 5 },
-            { id: 'it_3', label: 'Limpeza das bancadas', required: true, points: 5 }
-          ],
-          createdAt: now,
-          updatedAt: now
-        });
-
-        // Checklist Daily Run de Hoje
-        await setDoc(doc(db, `salons/${demoSalonId}/checklistRuns`, 'run_1'), {
-          id: 'run_1',
-          checklistId: 'chk_default',
-          checklistTitle: 'Checklist de Abertura e Fechamento',
-          evaluationDate: todayStr,
-          date: todayStr,
-          evaluatedProfessionalId: 'prof_camila',
-          evaluatedProfessionalName: 'Camila Rocha',
-          evaluatorName: 'Leandro Fonseca',
-          attendanceStatus: 'present',
-          completionPercentage: 100,
-          totalScore: 15,
-          maxScore: 15,
-          createdAt: now,
-          updatedAt: now
-        });
-
-        console.log("[TEMPORARY BOOTSTRAP FALLBACK] Subcoleções básicas do Lumière Demo Studio criadas com sucesso.");
-      } else {
-        // Se o salão já existe, certificamos de atualizar seus dados principais com o usuário atual como owner
-        try {
-          await updateDoc(salonRef, {
-            ownerId: uid,
-            ownerEmail: email,
-            ownerName: displayName || 'Leandro Fonseca',
-            updatedAt: now
-          });
-          console.log("[TEMPORARY BOOTSTRAP FALLBACK] Salão demo atualizado com o UID correspondente.");
-        } catch (updateSalonErr) {
-          console.warn("[TEMPORARY BOOTSTRAP FALLBACK] Falha ao sintonizar proprietário no salão:", updateSalonErr);
-        }
-      }
-
+      await ensureTutorialSalonForLeandro(uid);
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      const uData = userSnap.exists() ? { ...userSnap.data(), id: uid } : null;
       console.log("[TEMPORARY BOOTSTRAP FALLBACK] Processo de bootstrap operado com sucesso de ponta a ponta!");
       return { uData, demoSalonId };
     } catch (err) {
@@ -800,19 +561,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else if (isDemoOwner) {
         console.log("[PlatformAuth] leandropfonseca20@gmail.com sem documento user. Criando perfil de owner de teste...");
-        // Find existing demo salon
-        let demoSalonId = '';
-        try {
-          const salonsRef = collection(db, 'salons');
-          const q = query(salonsRef, where('isDemo', '==', true));
-          const qSnap = await getDocs(q);
-          if (!qSnap.empty) {
-            demoSalonId = qSnap.docs[0].id;
-          }
-        } catch (e) {
-          console.error("Error finding demo salon:", e);
-        }
-        
+        const demoSalonId = 'tutorial_lumiere_studio';
         const now = Date.now();
         const newProfile = {
           id: user.uid,
@@ -850,18 +599,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("[PlatformAuth] Erro ao atualizar papel no Firestore:", writeErr);
         }
       } else if (isDemoOwner) {
-        // Find existing demo salon
-        let demoSalonId = '';
-        try {
-          const salonsRef = collection(db, 'salons');
-          const q = query(salonsRef, where('isDemo', '==', true));
-          const qSnap = await getDocs(q);
-          if (!qSnap.empty) {
-            demoSalonId = qSnap.docs[0].id;
-          }
-        } catch (e) {
-          console.error("Error finding demo salon:", e);
-        }
+        const demoSalonId = 'tutorial_lumiere_studio';
         if (currentRole !== 'owner' || userDocSnap.data()?.salonId !== demoSalonId) {
           console.log("[PlatformAuth] Sincronizando perfil do owner de teste com o salão demo...");
           try {

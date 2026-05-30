@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { getEvaluableFunctions, sanitizeFunctionSlug } from '../../lib/evaluation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Loader2, 
@@ -68,6 +69,40 @@ export default function DashboardHome() {
   // Checks for permissions
   const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin';
   const isReceptionistOrAttendant = userData?.role === 'receptionist' || userData?.role === 'attendant';
+
+  const evaluationTargets = useMemo(() => {
+    const list: Array<{
+      professionalId: string;
+      professionalName: string;
+      evaluationFunction: string;
+      professional: Professional;
+    }> = [];
+    professionals.forEach((p) => {
+      const funcs = getEvaluableFunctions(p);
+      funcs.forEach((func) => {
+        list.push({
+          professionalId: p.id,
+          professionalName: p.name,
+          evaluationFunction: func,
+          professional: p
+        });
+      });
+    });
+    return list;
+  }, [professionals]);
+
+  const findRunForTarget = (target: any, runs: ChecklistRun[]) => {
+    return runs.find((r) => {
+      if (r.evaluatedProfessionalId !== target.professionalId) return false;
+      const runFunc = r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction;
+      if (runFunc) {
+        return sanitizeFunctionSlug(runFunc) === sanitizeFunctionSlug(target.evaluationFunction);
+      }
+      const p = target.professional;
+      const mainFunc = p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
+      return sanitizeFunctionSlug(target.evaluationFunction) === sanitizeFunctionSlug(mainFunc);
+    });
+  };
 
   useEffect(() => {
     if (!salonData) return;
@@ -257,9 +292,10 @@ export default function DashboardHome() {
       </div>
 
       {/* Checklist Evaluated notification pending checklist (Owners / Managers) */}
-      {isOwnerOrManager && professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id)).length > 0 && (() => {
-        const pendingOnes = professionals.filter(p => !checklistRuns.find(r => r.evaluatedProfessionalId === p.id));
-        const names = pendingOnes.map(p => p.name).join(", ");
+      {isOwnerOrManager && evaluationTargets.filter(t => !findRunForTarget(t, checklistRuns)).length > 0 && (() => {
+        const pendingOnes = evaluationTargets.filter(t => !findRunForTarget(t, checklistRuns));
+        const uniqueNames = Array.from(new Set(pendingOnes.map(t => t.professionalName)));
+        const names = uniqueNames.join(", ");
         return (
           <div className="border border-[#D4AF37]/20 bg-[#D4AF37]/5 rounded-2xl shadow-lg relative overflow-hidden backdrop-blur-md">
              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#D4AF37]" />
@@ -270,10 +306,10 @@ export default function DashboardHome() {
                    </div>
                    <div>
                       <p className="font-semibold text-[#D4AF37] text-sm flex items-center gap-1.5 leading-none">
-                         Avaliação Diária Essenza: {pendingOnes.length} {pendingOnes.length === 1 ? 'Pendente' : 'Pendentes'}
+                         Avaliação Diária Essenza: {pendingOnes.length} {pendingOnes.length === 1 ? 'Função Pendente' : 'Funções Pendentes'}
                       </p>
                       <p className="text-xs text-slate-300 font-light leading-relaxed mt-1.5">
-                         Colaboradores pendentes hoje: <span className="text-white font-medium">{names}</span>. Registre a presença ou feedback deles hoje para acompanhar os relatórios diários.
+                         Colaboradores pendentes hoje: <span className="text-white font-medium">{names}</span>. Registre a presença ou feedback deles hoje por função para acompanhar os relatórios diários.
                       </p>
                    </div>
                 </div>
@@ -618,24 +654,27 @@ export default function DashboardHome() {
                        <span className="text-[10px] text-muted-foreground font-light">{todayStr.split("-").reverse().join("/")}</span>
                     </div>
 
-                    {professionals.length === 0 ? (
-                       <p className="text-xs text-muted-foreground font-mono text-center py-4">Nenhum profissional cadastrado.</p>
+                    {evaluationTargets.length === 0 ? (
+                       <p className="text-xs text-muted-foreground font-mono text-center py-4">Nenhum profissional com funções cadastrado.</p>
                     ) : (
                        <div className="space-y-2.5">
-                          {professionals.map((pro) => {
-                             const todayRun = checklistRuns.find(r => r.evaluatedProfessionalId === pro.id);
+                          {evaluationTargets.map((target) => {
+                             const pro = target.professional;
+                             const todayRun = findRunForTarget(target, checklistRuns);
                              return (
-                                <div key={pro.id} className="flex justify-between items-center text-xs p-3 bg-black/20 border border-white/[0.03] rounded-xl hover:border-white/10 transition-all duration-150">
+                                <div key={`${pro.id}_${sanitizeFunctionSlug(target.evaluationFunction)}`} className="flex justify-between items-center text-xs p-3 bg-black/20 border border-white/[0.03] rounded-xl hover:border-white/10 transition-all duration-150">
                                    <div className="space-y-0.5 max-w-[65%]">
                                       <p className="font-semibold text-white truncate">{pro.name}</p>
-                                      <p className="text-[10px] text-muted-foreground truncate">{pro.category || pro.role || "Especialista"}</p>
+                                      <p className="text-[10px] text-primary uppercase font-mono tracking-wider truncate">{target.evaluationFunction}</p>
                                    </div>
                                    <div className="text-right">
                                       {todayRun ? (
                                          todayRun.attendanceStatus === 'absent' ? (
-                                            <span className="text-[10px] font-semibold text-destructive uppercase font-mono bg-destructive/10 px-2 py-0.5 rounded border border-destructive/20">Falta</span>
+                                            <span className="text-[10px] font-semibold text-destructive uppercase font-mono bg-destructive/10 px-2 py-0.5 rounded border border-destructive/20 font-mono">Falta</span>
+                                         ) : todayRun.attendanceStatus === 'not_performed' ? (
+                                            <span className="text-[10px] font-semibold text-cyan-400 uppercase font-mono bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20 font-mono">Dispensa</span>
                                          ) : (
-                                            <span className="text-[10px] font-semibold text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">
+                                            <span className="text-[10px] font-semibold text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20 font-mono">
                                                {todayRun.totalScore !== undefined ? `Nota ${todayRun.totalScore}pt` : "Presente"}
                                             </span>
                                          )

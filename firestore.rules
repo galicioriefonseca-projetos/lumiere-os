@@ -56,17 +56,31 @@ service cloud.firestore {
       return isSignedIn() && exists(userDoc()) && userSalonId() == salonId && userRole() == "professional";
     }
 
+    // --- Demo/Tutorial User Helpers ---
+    function isTutorialDemoSalon(salonId) {
+      return salonId == "tutorial_lumiere_studio";
+    }
+
+    function isTutorialDemoUser() {
+      return isSignedIn() && request.auth.token.email == "leandropfonseca20@gmail.com";
+    }
+
+    function canUseTutorialDemo(salonId) {
+      return isTutorialDemoUser() && isTutorialDemoSalon(salonId);
+    }
+
     // Permission gates
     function canManageSalon(salonId) {
-      return isPlatformAdmin() || isSalonOwner(salonId) || isSalonManager(salonId) || request.auth.token.email == "leandropfonseca20@gmail.com";
+      return isPlatformAdmin() || isSalonOwner(salonId) || isSalonManager(salonId) || canUseTutorialDemo(salonId);
     }
 
     function canOperateFrontDesk(salonId) {
-      return isPlatformAdmin() || isSalonOwner(salonId) || isSalonManager(salonId) || isSalonReceptionist(salonId) || isSalonAttendant(salonId) || request.auth.token.email == "leandropfonseca20@gmail.com";
+      return isPlatformAdmin() || isSalonOwner(salonId) || isSalonManager(salonId) || isSalonReceptionist(salonId) || isSalonAttendant(salonId) || canUseTutorialDemo(salonId);
     }
 
+    // --- End Permission gates ---
     function canEvaluateTeam(salonId) {
-      return isPlatformAdmin() || isSalonOwner(salonId) || isSalonManager(salonId) || request.auth.token.email == "leandropfonseca20@gmail.com";
+      return isPlatformAdmin() || isSalonOwner(salonId) || isSalonManager(salonId) || canUseTutorialDemo(salonId);
     }
 
     // --- Collection Rules ---
@@ -99,7 +113,11 @@ service cloud.firestore {
         isOwnerOfUser(userId) && 
         (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId']) ||
-          request.auth.token.email == "leandropfonseca20@gmail.com"
+          (
+            isTutorialDemoUser() && 
+            request.resource.data.salonId == "tutorial_lumiere_studio" && 
+            (request.resource.data.role == "owner" || request.resource.data.role == "manager")
+          )
         )
       );
     }
@@ -109,35 +127,32 @@ service cloud.firestore {
       // Creator must assign themselves as the owner or be superadmin
       allow create: if (isSignedIn() && request.resource.data.ownerId == request.auth.uid) || isPlatformAdmin();
       
-      // Access only for platform admin or salon members/owners, plus allow for demo salons or demo user
+      // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
       allow get: if isPlatformAdmin() || (
         isSignedIn() && (
           resource.data.ownerId == request.auth.uid || 
           (exists(userDoc()) && userSalonId() == salonId) ||
-          resource.data.isDemo == true ||
-          request.auth.token.email == "leandropfonseca20@gmail.com"
+          canUseTutorialDemo(salonId)
         )
       );
       
-      // Only platformAdmins can list all salons, but allow demo list
+      // Only platformAdmins can list all salons, but allow demo list for the authorized demo user
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
-          resource.data.isDemo == true ||
-          request.auth.token.email == "leandropfonseca20@gmail.com"
+          isTutorialDemoUser() && isTutorialDemoSalon(resource.id)
         )
       );
       
-      // Updates allowed for platform_admin or owners, shielding sensitive pricing/billing fields
+      // Updates allowed for platform_admin or owners, shielding sensitive pricing/billing/config fields
       allow update: if isPlatformAdmin() || (
         isSignedIn() && 
         (
           resource.data.ownerId == request.auth.uid || 
           (exists(userDoc()) && userSalonId() == salonId && userRole() == "owner") ||
-          resource.data.isDemo == true ||
-          request.auth.token.email == "leandropfonseca20@gmail.com"
+          canUseTutorialDemo(salonId)
         ) && 
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'deletedAt'
+          'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'professionalLimit', 'maxProfessionals', 'deletedAt', 'ownerId', 'ownerEmail', 'isDemo', 'isTutorial'
         ])
       );
                      
