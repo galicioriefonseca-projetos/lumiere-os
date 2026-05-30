@@ -1,8 +1,9 @@
 export type Role = 'owner' | 'admin' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
 export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'other';
 export type PlanType = 'start' | 'studio' | 'performance' | 'network' | 'founder';
-export type SubscriptionStatus = 'trial' | 'active' | 'overdue' | 'canceled';
+export type SubscriptionStatus = 'trial' | 'active' | 'pending_payment' | 'overdue' | 'canceled';
 export type ActivationStatus = 'active' | 'pending' | 'blocked' | 'canceled';
+export type PaymentStatus = 'none' | 'pending' | 'reported' | 'paid' | 'overdue' | 'rejected' | 'canceled';
 
 export interface User {
   id: string; // from Firebase Auth uid
@@ -32,13 +33,45 @@ export interface Salon {
   plan: PlanType;
   subscriptionStatus: SubscriptionStatus;
   activationStatus: ActivationStatus;
+  paymentStatus?: PaymentStatus;
   trialEndsAt: number;
+  currentPeriodStart?: number;
+  currentPeriodEnd?: number;
+  nextBillingDate?: number;
+  lastPaymentAt?: number;
+  lastPaymentAmount?: number;
+  lastPaymentMethod?: string;
+  billingNotes?: string;
   isActive: boolean;
   professionalsLimit: number;
+  professionalLimit?: number;
+  maxProfessionals?: number;
   isDemo?: boolean;
+  isTutorial?: boolean;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
+}
+
+export interface Payment {
+  id: string;
+  salonId: string;
+  plan: PlanType;
+  amount: number;
+  method: 'pix';
+  status: 'reported' | 'paid' | 'rejected' | 'canceled';
+  reportedByUserId: string;
+  reportedByEmail: string;
+  reportedAt: number;
+  confirmedByUserId?: string;
+  confirmedByEmail?: string;
+  confirmedAt?: number;
+  rejectedByUserId?: string;
+  rejectedByEmail?: string;
+  rejectedAt?: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Professional {

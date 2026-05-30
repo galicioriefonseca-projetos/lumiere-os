@@ -101,6 +101,34 @@ export default function MasterPanel() {
         case 'change_plan':
           updates.plan = selectedPlan;
           break;
+        case 'payment_paid':
+          updates.subscriptionStatus = 'active';
+          updates.paymentStatus = 'paid';
+          updates.isActive = true;
+          updates.activationStatus = 'active';
+          updates.lastPaymentAt = Date.now();
+          updates.lastPaymentAmount = selectedSalon.plan === 'founder' ? 297 : 0; // Or better dynamic mapping
+          updates.lastPaymentMethod = 'pix';
+          updates.currentPeriodStart = Date.now();
+          updates.currentPeriodEnd = Date.now() + (30 * 24 * 60 * 60 * 1000);
+          updates.nextBillingDate = Date.now() + (30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'payment_overdue':
+          updates.subscriptionStatus = 'overdue';
+          updates.paymentStatus = 'overdue';
+          break;
+        case 'payment_cancel':
+          updates.subscriptionStatus = 'canceled';
+          updates.paymentStatus = 'canceled';
+          updates.isActive = false;
+          updates.activationStatus = 'canceled';
+          break;
+        case 'payment_reactivate':
+          updates.subscriptionStatus = 'active';
+          updates.paymentStatus = 'paid';
+          updates.isActive = true;
+          updates.activationStatus = 'active';
+          break;
         default:
           return;
       }
@@ -277,31 +305,48 @@ export default function MasterPanel() {
                         <td className="px-4 py-3">
                            <div className="flex flex-col gap-1 items-start">
                               <span className="text-xs uppercase tracking-wider text-primary font-bold">{salon.plan}</span>
-                              <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getStatusColor(salon.activationStatus)}`}>
-                                 {getStatusLabel(salon.activationStatus)}
-                              </span>
+                              <div className="flex gap-1">
+                                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getStatusColor(salon.activationStatus)}`}>
+                                   {getStatusLabel(salon.activationStatus)}
+                                </span>
+                                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${salon.paymentStatus === 'reported' ? 'bg-blue-500/20 text-blue-400' : salon.paymentStatus === 'overdue' ? 'bg-red-500/20 text-red-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                                   Pgto: {salon.paymentStatus || 'none'}
+                                </span>
+                              </div>
                            </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                           <div className="flex justify-end gap-2">
+                           <div className="flex justify-end gap-2 flex-wrap max-w-[280px]">
                               {salon.activationStatus !== 'active' && (
-                                <Button size="sm" variant="outline" className="h-8 border-green-500/20 text-green-400 hover:bg-green-500/10" onClick={() => { setSelectedSalon(salon); setDialogAction(salon.activationStatus === 'canceled' ? 'reactivate' : 'approve'); setIsDialogOpen(true); }}>
+                                <Button size="sm" variant="outline" className="h-8 border-green-500/20 text-green-400 hover:bg-green-500/10 mb-1" onClick={() => { setSelectedSalon(salon); setDialogAction(salon.activationStatus === 'canceled' ? 'reactivate' : 'approve'); setIsDialogOpen(true); }}>
                                   <CheckCircle className="w-3 h-3 mr-1" /> {salon.activationStatus === 'canceled' ? 'Reativar' : 'Aprovar'}
                                 </Button>
                               )}
                               {salon.activationStatus === 'active' && (
-                                <Button size="sm" variant="outline" className="h-8 border-orange-500/20 text-orange-400 hover:bg-orange-500/10" onClick={() => { setSelectedSalon(salon); setDialogAction('block'); setIsDialogOpen(true); }}>
+                                <Button size="sm" variant="outline" className="h-8 border-orange-500/20 text-orange-400 hover:bg-orange-500/10 mb-1" onClick={() => { setSelectedSalon(salon); setDialogAction('block'); setIsDialogOpen(true); }}>
                                   <Ban className="w-3 h-3 mr-1" /> Bloquear
                                 </Button>
                               )}
                               {salon.activationStatus !== 'canceled' && (
-                                <Button size="sm" variant="outline" className="h-8 border-destructive/20 text-destructive hover:bg-destructive/10" onClick={() => { setSelectedSalon(salon); setDialogAction('cancel'); setIsDialogOpen(true); }}>
+                                <Button size="sm" variant="outline" className="h-8 border-destructive/20 text-destructive hover:bg-destructive/10 mb-1" onClick={() => { setSelectedSalon(salon); setDialogAction('cancel'); setIsDialogOpen(true); }}>
                                   Cancelar
                                 </Button>
                               )}
-                              <Button size="sm" className="h-8 bg-black/40 hover:bg-black/60 border border-border" onClick={() => { setSelectedPlan(salon.plan); setSelectedSalon(salon); setDialogAction('change_plan'); setIsDialogOpen(true); }}>
+                              <Button size="sm" className="h-8 bg-black/40 hover:bg-black/60 border border-border mb-1" onClick={() => { setSelectedPlan(salon.plan); setSelectedSalon(salon); setDialogAction('change_plan'); setIsDialogOpen(true); }}>
                                 <RefreshCcw className="w-3 h-3 mr-1" /> Plano
                               </Button>
+
+                              <Select onValueChange={(val) => { setSelectedSalon(salon); setDialogAction(val); setIsDialogOpen(true); }}>
+                                <SelectTrigger className="h-8 w-28 bg-black/20 border-border text-[10px] uppercase text-white">
+                                  <SelectValue placeholder="Pagto" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-card border-border">
+                                  <SelectItem value="payment_paid">Marcar como Pago</SelectItem>
+                                  <SelectItem value="payment_overdue">Marcar Vencido</SelectItem>
+                                  <SelectItem value="payment_cancel">Cancelar Assinatura</SelectItem>
+                                  <SelectItem value="payment_reactivate">Reativar Assinatura</SelectItem>
+                                </SelectContent>
+                              </Select>
                            </div>
                         </td>
                       </tr>
@@ -414,6 +459,10 @@ export default function MasterPanel() {
              {dialogAction === 'block' && <p>Tem certeza que deseja <b>Bloquear</b> a conta do salão {selectedSalon?.name}?</p>}
              {dialogAction === 'cancel' && <p className="text-destructive font-medium">Tem certeza que deseja <b>Cancelar (Soft Delete)</b> a conta do salão {selectedSalon?.name}? Isso inativará a conta completamente.</p>}
              {dialogAction === 'reactivate' && <p>Tem certeza que deseja <b>Reativar</b> a conta do salão {selectedSalon?.name}?</p>}
+             {dialogAction === 'payment_paid' && <p>Marcar o último pagamento do salão <b>{selectedSalon?.name}</b> como <b>PAGO</b>? Isso renovará o acesso por +30 dias.</p>}
+             {dialogAction === 'payment_overdue' && <p>Marcar o pagamento do salão <b>{selectedSalon?.name}</b> como <b>VENCIDO</b>?</p>}
+             {dialogAction === 'payment_cancel' && <p className="text-destructive font-medium">Cancelar completamente a assinatura do salão <b>{selectedSalon?.name}</b>? O acesso será bloqueado.</p>}
+             {dialogAction === 'payment_reactivate' && <p>Reativar a assinatura do salão <b>{selectedSalon?.name}</b> marcando como pago?</p>}
              {dialogAction === 'change_plan' && (
                 <div className="space-y-4">
                    <p>Alterar plano para o salão <b>{selectedSalon?.name}</b>:</p>

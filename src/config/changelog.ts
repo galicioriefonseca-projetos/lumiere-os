@@ -9,6 +9,19 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.4.4-founder',
+    date: 'Maio de 2026',
+    title: 'Fluxo de Pagamentos Manuais',
+    description: 'Sistema de gestão financeira interno integrado.',
+    highlights: [
+      'Adicionado pagamento manual por PIX.',
+      'Cliente pode informar pagamento pelo dashboard.',
+      'Painel Master agora permite confirmar pagamentos e controlar vencimentos.',
+      'Preparação para futura integração com gateway.'
+    ],
+    isNew: true
+  },
+  {
     version: '1.4.3-founder',
     date: 'Maio de 2026',
     title: 'Ambiente de Demonstração & Seletor de Perfil Seguro',

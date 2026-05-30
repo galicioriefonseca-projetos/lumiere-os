@@ -247,6 +247,26 @@ service cloud.firestore {
 
     // --- Salons Subcollections (Hardened & Granular RBAC) ---
 
+    // Payments
+    match /salons/{salonId}/payments/{paymentId} {
+      allow read: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
+      );
+      allow create: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") && 
+        request.resource.data.status == "reported" &&
+        request.resource.data.salonId == salonId &&
+        request.resource.data.method == "pix"
+      );
+      allow update, delete: if isPlatformAdmin();
+    }
+
     // 1. Professionals & Staff
     match /salons/{salonId}/professionals/{professionalId} {
       allow get: if canOperateFrontDesk(salonId) || (isSalonProfessional(salonId) && professionalId == request.auth.uid);

@@ -25,13 +25,16 @@ import {
   AlertCircle,
   FileText,
   Lock,
-  Compass
+  Compass,
+  CreditCard
 } from 'lucide-react';
 import { formatBRL, cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
 import ProfessionalDashboard from './ProfessionalDashboard';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Appointment, Goal, ChecklistRun, Professional } from '../../types';
+import { PaymentDialog } from '../../components/billing/PaymentDialog';
+import { isPaymentDueInDays, isPaymentOverdue } from '../../lib/billing';
 
 import {
   ResponsiveContainer,
@@ -55,6 +58,7 @@ export default function DashboardHome() {
   const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
   const [isFinanceDialogOpen, setIsFinanceDialogOpen] = useState(false);
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
 
   const [stats, setStats] = useState({
     clients: 0,
@@ -290,6 +294,59 @@ export default function DashboardHome() {
            </Button>
         </div>
       </div>
+
+      {/* Billing Warnings & Actions */}
+      {(() => {
+        const needsWarning = isOwnerOrManager && (
+          ['trial', 'pending_payment', 'overdue', 'canceled'].includes(salonData.subscriptionStatus) ||
+          isPaymentDueInDays(salonData, 3) ||
+          isPaymentOverdue(salonData)
+        );
+
+        if (!needsWarning) return null;
+
+        let warningText = '';
+        let buttonText = 'Assinatura';
+        let isDanger = salonData.subscriptionStatus === 'canceled' || salonData.subscriptionStatus === 'overdue' || isPaymentOverdue(salonData);
+
+        if (salonData.subscriptionStatus === 'canceled') {
+          warningText = 'Assinatura cancelada. Regularize para manter o acesso.';
+          buttonText = 'Assinar Agora';
+        } else if (salonData.subscriptionStatus === 'overdue' || isPaymentOverdue(salonData)) {
+          warningText = 'Assinatura vencida. Regularize para manter o acesso.';
+          buttonText = 'Pagamento';
+        } else if (salonData.subscriptionStatus === 'pending_payment' || salonData.paymentStatus === 'reported') {
+          warningText = 'Pagamento pendente de confirmação.';
+          buttonText = 'Acompanhar';
+          isDanger = false;
+        } else if (isPaymentDueInDays(salonData, 3)) {
+          warningText = 'Seu plano vence em breve.';
+          buttonText = 'Renovar';
+          isDanger = false;
+        } else if (salonData.subscriptionStatus === 'trial') {
+          warningText = 'Período de teste em andamento.';
+          buttonText = 'Assinar Agora';
+          isDanger = false;
+        }
+
+        return (
+          <div className={`p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 border ${isDanger ? 'border-red-500/30 bg-red-500/10' : 'border-[#D4AF37]/30 bg-[#D4AF37]/10'}`}>
+            <div className="flex items-center gap-3">
+              <AlertCircle className={`w-5 h-5 ${isDanger ? 'text-red-400' : 'text-[#D4AF37]'}`} />
+              <p className={`text-sm font-medium ${isDanger ? 'text-red-200' : 'text-[#D4AF37]'}`}>
+                {warningText}
+              </p>
+            </div>
+            <Button
+              onClick={() => setIsPaymentDialogOpen(true)}
+              className={`shrink-0 rounded-lg h-9 px-4 text-xs font-semibold ${isDanger ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black'}`}
+            >
+              <CreditCard className="w-4 h-4 mr-2" />
+              {buttonText}
+            </Button>
+          </div>
+        );
+      })()}
 
       {/* Checklist Evaluated notification pending checklist (Owners / Managers) */}
       {isOwnerOrManager && evaluationTargets.filter(t => !findRunForTarget(t, checklistRuns)).length > 0 && (() => {
@@ -869,6 +926,12 @@ export default function DashboardHome() {
             </div>
          </DialogContent>
       </Dialog>
+
+      <PaymentDialog 
+        isOpen={isPaymentDialogOpen} 
+        onClose={() => setIsPaymentDialogOpen(false)} 
+        salonData={salonData} 
+      />
 
     </div>
   );
