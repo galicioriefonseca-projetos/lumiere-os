@@ -27,7 +27,7 @@ export default defineConfig(({mode}) => {
           background_color: '#050505',
           display: 'standalone',
           orientation: 'portrait',
-          start_url: '/',
+          start_url: '/login?source=pwa',
           scope: '/',
           categories: ['business', 'productivity'],
           icons: [

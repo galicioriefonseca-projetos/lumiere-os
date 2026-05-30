@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Scissors, CalendarCheck2, ArrowRight, ShieldCheck, CheckCircle2, RefreshCcw, FileText, TrendingUp, CalendarDays, Inbox } from 'lucide-react';
@@ -6,6 +7,15 @@ import PWAInstallButton from '../components/PWAInstallButton';
 
 export default function LandingPage() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+    if (isStandalone) {
+      navigate('/login?source=pwa', { replace: true });
+    }
+  }, [navigate]);
   const plans = [
     {
       name: "Start",

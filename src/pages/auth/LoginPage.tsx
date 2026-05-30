@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,10 +16,25 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/dashboard';
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, currentUser, userData, isPlatformAdmin } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  const queryParams = new URLSearchParams(location.search);
+  const isPwaSource = queryParams.get('source') === 'pwa';
+
+  useEffect(() => {
+    if (currentUser && userData) {
+      if (isPlatformAdmin || userData.role === 'platform_admin' || currentUser.email === 'galicioriefonseca@gmail.com') {
+        navigate('/master', { replace: true });
+      } else if (userData.role === 'professional') {
+        navigate('/dashboard/meu-painel', { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
+    }
+  }, [currentUser, userData, isPlatformAdmin, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,6 +186,11 @@ export default function LoginPage() {
         <h2 className="mt-6 text-center text-3xl font-light font-heading tracking-tight text-foreground">
           Acesse sua conta
         </h2>
+        {isPwaSource && (
+          <p className="mt-2 text-center text-xs text-primary font-mono tracking-wider animate-pulse">
+            ★ Bem-vindo ao LumiereOS App ★
+          </p>
+        )}
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">

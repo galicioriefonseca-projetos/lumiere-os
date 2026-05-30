@@ -2,7 +2,7 @@
   "name": "LumiereOS",
   "short_name": "LumiereOS",
   "description": "Sistema inteligente para gestão de salões",
-  "start_url": "/",
+  "start_url": "/login?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
