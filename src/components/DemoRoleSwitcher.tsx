@@ -7,7 +7,7 @@ export function DemoRoleSwitcher() {
   const { currentUser, salonData, userData, demoRole, setDemoRole } = useAuth();
 
   // ONLY visible under Leandro's demo/tutorial account
-  const isDemoActive = currentUser?.email === 'leandropfonseca20@gmail.com' && salonData?.isDemo === true;
+  const isDemoActive = currentUser?.email === import.meta.env.VITE_DEMO_USER_EMAIL && salonData?.isDemo === true;
 
   if (!isDemoActive || !setDemoRole) {
     return null;

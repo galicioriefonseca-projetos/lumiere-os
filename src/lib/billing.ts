@@ -1,12 +1,12 @@
-import { PLAN_PRICES, PLAN_LABELS } from '../config/billing';
+import { PLANS_CONFIG } from '../config/plans';
 import { PlanType, Salon } from '../types';
 
 export function getPlanAmount(plan: PlanType): number {
-  return PLAN_PRICES[plan] || 0;
+  return PLANS_CONFIG[plan]?.monthlyAmount || 0;
 }
 
 export function getPlanLabel(plan: PlanType): string {
-  return PLAN_LABELS[plan] || "Desconhecido";
+  return PLANS_CONFIG[plan]?.name || "Desconhecido";
 }
 
 export function formatCurrencyBRL(value: number): string {

@@ -118,10 +118,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const adminRef = doc(db, 'platformAdmins', uid);
       const adminSnap = await getDoc(adminRef);
-      const isPlatformAdminFromColl = adminSnap.exists() || currentUser?.email === 'galicioriefonseca@gmail.com';
+      const isPlatformAdminFromColl = adminSnap.exists() || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
       setIsPlatformAdmin(isPlatformAdminFromColl);
 
-      if (currentUser?.email === 'leandropfonseca20@gmail.com') {
+      if (currentUser?.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
         await runDemoBootstrapFallback(uid, currentUser.email, currentUser.displayName);
       }
 
@@ -131,15 +131,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userSnap.exists()) {
         uData = { id: userSnap.id, ...userSnap.data() } as User;
-        if (isPlatformAdminFromColl || uData.role === 'platform_admin' || currentUser?.email === 'galicioriefonseca@gmail.com') {
+        if (isPlatformAdminFromColl || uData.role === 'platform_admin' || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
           uData.role = 'platform_admin';
           uData.salonId = '';
         }
-      } else if (isPlatformAdminFromColl || currentUser?.email === 'galicioriefonseca@gmail.com') {
+      } else if (isPlatformAdminFromColl || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
         uData = {
           id: uid,
           fullName: currentUser?.displayName || 'Gali Ciório Fonseca',
-          email: currentUser?.email || 'galicioriefonseca@gmail.com',
+          email: currentUser?.email || import.meta.env.VITE_PLATFORM_ADMIN_EMAIL || '',
           phone: '',
           role: 'platform_admin',
           isActive: true,
@@ -273,19 +273,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const adminRef = doc(db, 'platformAdmins', user.uid);
           const adminSnap = await getDoc(adminRef);
-          isPlatformAdminFromColl = adminSnap.exists() || user.email === 'galicioriefonseca@gmail.com';
+          isPlatformAdminFromColl = adminSnap.exists() || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
           setIsPlatformAdmin(isPlatformAdminFromColl);
           console.log("[AuthInit] PlatformAdmin doc existe em platformAdmins/", user.uid, "?", isPlatformAdminFromColl);
         } catch (err) {
           console.error("[AuthInit] Erro ao buscar platformAdmins document:", err);
-          if (user.email === 'galicioriefonseca@gmail.com') {
+          if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
             isPlatformAdminFromColl = true;
             setIsPlatformAdmin(true);
           }
         }
 
         // TEMPORARY BOOTSTRAP FALLBACK para leandropfonseca20@gmail.com
-        if (user.email === 'leandropfonseca20@gmail.com') {
+        if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
           try {
             await runDemoBootstrapFallback(user.uid, user.email, user.displayName);
           } catch (err) {
@@ -308,16 +308,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               uData = { id: userSnap.id, ...userSnap.data() } as User;
               console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
               
-              if (isPlatformAdminFromColl || uData.role === 'platform_admin' || user.email === 'galicioriefonseca@gmail.com') {
+              if (isPlatformAdminFromColl || uData.role === 'platform_admin' || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
                 uData.role = 'platform_admin';
                 uData.salonId = '';
               }
-            } else if (isPlatformAdminFromColl || user.email === 'galicioriefonseca@gmail.com') {
+            } else if (isPlatformAdminFromColl || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
               console.log("[AuthInit] users doc não existe, mas platform admin. Gerando perfil virtual...");
               uData = {
                 id: user.uid,
                 fullName: user.displayName || 'Gali Ciório Fonseca',
-                email: user.email || 'galicioriefonseca@gmail.com',
+                email: user.email || import.meta.env.VITE_PLATFORM_ADMIN_EMAIL || '',
                 phone: '',
                 role: 'platform_admin',
                 isActive: true,
@@ -535,10 +535,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Check if user is platform admin in platformAdmins/{uid} OR if users/{uid}.role === 'platform_admin'
-    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin') || user.email === 'galicioriefonseca@gmail.com';
+    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin') || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
     console.log("[PlatformAuth] Usuário é platform_admin detectado?", isPlatformAdminExplicit);
 
-    const isDemoOwner = user.email === 'leandropfonseca20@gmail.com';
+    const isDemoOwner = user.email === import.meta.env.VITE_DEMO_USER_EMAIL;
 
     if (!userDocSnap || !userDocSnap.exists()) {
       if (isPlatformAdminExplicit) {
@@ -560,7 +560,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("[PlatformAuth] Erro ao gravar perfil users no Firestore:", writeErr);
         }
       } else if (isDemoOwner) {
-        console.log("[PlatformAuth] leandropfonseca20@gmail.com sem documento user. Criando perfil de owner de teste...");
+        console.log("[PlatformAuth] demo owner sem documento user. Criando perfil de owner de teste...");
         const demoSalonId = 'tutorial_lumiere_studio';
         const now = Date.now();
         const newProfile = {

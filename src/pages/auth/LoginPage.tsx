@@ -26,7 +26,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (currentUser && userData) {
-      if (isPlatformAdmin || userData.role === 'platform_admin' || currentUser.email === 'galicioriefonseca@gmail.com') {
+      if (isPlatformAdmin || userData.role === 'platform_admin' || currentUser.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
         navigate('/master', { replace: true });
       } else if (userData.role === 'professional') {
         navigate('/dashboard/meu-painel', { replace: true });
@@ -63,9 +63,9 @@ export default function LoginPage() {
 
         // TEMPORARY BOOTSTRAP FALLBACK: fallback por e-mail para configuração inicial caso o banco de dados esteja vazio
         if (!isPlatform && !isOwner) {
-          if (user.email === 'galicioriefonseca@gmail.com') {
+          if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
             isPlatform = true;
-          } else if (user.email === 'leandropfonseca20@gmail.com') {
+          } else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
             isOwner = true;
           }
         }
@@ -125,9 +125,9 @@ export default function LoginPage() {
 
         // TEMPORARY BOOTSTRAP FALLBACK: fallback por e-mail para configuração inicial caso o banco de dados esteja vazio
         if (!isPlatform && !isOwner) {
-          if (user.email === 'galicioriefonseca@gmail.com') {
+          if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
             isPlatform = true;
-          } else if (user.email === 'leandropfonseca20@gmail.com') {
+          } else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
             isOwner = true;
           }
         }

@@ -35,6 +35,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Appointment, Goal, ChecklistRun, Professional } from '../../types';
 import { PaymentDialog } from '../../components/billing/PaymentDialog';
 import { isPaymentDueInDays, isPaymentOverdue } from '../../lib/billing';
+import { GeminiInsightCard } from '../../components/GeminiInsightCard';
 
 import {
   ResponsiveContainer,
@@ -566,6 +567,15 @@ export default function DashboardHome() {
         )}
 
       </div>
+
+      {isOwnerOrManager && (
+        <GeminiInsightCard
+          checklistPct={stats.checklistPct}
+          goalCurrent={stats.goalCurrent}
+          goalTarget={stats.goalTarget}
+          professionalsCount={professionals.length}
+        />
+      )}
 
       {/* Main Grid: Agenda de Hoje (Left Col) & Sidebar indicators (Right Col) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

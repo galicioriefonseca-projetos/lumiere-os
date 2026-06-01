@@ -3,7 +3,7 @@ import { Role } from '../types';
 export const ROLES: Role[] = ['owner', 'admin', 'manager', 'receptionist', 'attendant', 'professional', 'platform_admin'];
 
 export function isPlatformAdmin(role: Role | string | undefined): boolean {
-  return role === 'platform_admin' || role === 'admin';
+  return role === 'platform_admin';
 }
 
 export function isOwner(role: Role | string | undefined): boolean {

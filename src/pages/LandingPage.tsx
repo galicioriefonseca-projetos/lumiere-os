@@ -21,7 +21,7 @@ export default function LandingPage() {
       name: "Start",
       price: "197",
       description: "Para profissionais independentes e pequenos espaços.",
-      features: ["Até 3 profissionais", "Gestão de clientes e serviços", "Agendamentos básicos", "Checklist diário", "Metas mensais", "App Instalável (PWA)"],
+      features: ["Até 5 profissionais", "Gestão de clientes e serviços", "Agendamentos básicos", "Checklist diário", "Metas mensais", "App Instalável (PWA)"],
       planValue: "start"
     },
     {

@@ -45,7 +45,7 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
   performance: {
     planValue: 'performance',
     name: 'Performance',
-    monthlyAmount: 597,
+    monthlyAmount: 697,
     accessLevel: 'advanced',
     includesFutureUpdates: false,
     maxProfessionals: 20,
@@ -60,7 +60,7 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
   network: {
     planValue: 'network',
     name: 'Network',
-    monthlyAmount: 997,
+    monthlyAmount: 1497,
     accessLevel: 'full',
     includesFutureUpdates: true,
     maxProfessionals: 999, // unlimited
