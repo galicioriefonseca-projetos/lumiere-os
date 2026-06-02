@@ -160,24 +160,10 @@ export interface Goal {
   id: string;
   title?: string;
   month: string; // YYYY-MM
-  targetAmount: number; // for backwards compatibility
-  currentAmount: number; // for backwards compatibility
+  targetAmount: number;
+  currentAmount: number;
   createdAt: number;
   updatedAt: number;
-
-  // New advanced fields
-  goalScope?: 'global' | 'professional' | 'team';
-  periodType?: 'daily' | 'weekly' | 'monthly';
-  targetType?: 'revenue' | 'appointments' | 'services' | 'products' | 'checklist' | 'custom';
-  targetValue?: number;
-  currentValue?: number;
-  professionalId?: string;
-  professionalName?: string;
-  targetFunction?: string; // targets specific role/function (e.g. Barber, Manicure)
-  startDate?: string; // YYYY-MM-DD
-  endDate?: string; // YYYY-MM-DD
-  status?: 'active' | 'completed' | 'failed';
-  trackingMode?: 'auto' | 'manual';
 }
 
 export interface ProfessionalGoal {
@@ -186,8 +172,12 @@ export interface ProfessionalGoal {
   professionalName: string;
   month: string; // YYYY-MM
   targetAmount: number;
+  currentValue?: number;
+  lastProgressUpdateAt?: number;
+  lastProgressUpdatedBy?: string;
   createdAt: number;
   updatedAt: number;
+  [key: string]: any; // Allow indexing dynamically for fallbacks
 }
 
 export interface ChecklistItemTemplate {

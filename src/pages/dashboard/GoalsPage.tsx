@@ -8,8 +8,6 @@ import {
   doc,
   setDoc,
   updateDoc,
-  deleteDoc,
-  serverTimestamp,
 } from "firebase/firestore";
 import { Goal, Professional, Service, Appointment, ProfessionalGoal } from "../../types";
 import { Button } from "@/components/ui/button";
@@ -18,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { normalizeGoal, calculateGoalProgress, GoalProgress, getDaysCount } from "../../lib/goals";
 import {
   Loader2,
   Plus,
@@ -31,188 +30,66 @@ import {
   User,
   Calendar,
   Clock,
-  Trash2,
-  ShieldCheck,
-  Sparkles,
-  ShoppingBag,
-  CheckSquare,
-  Briefcase,
-  Layers,
-  CheckCircle2,
-  Info,
-  ChevronRight,
 } from "lucide-react";
 import { formatBRL } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
-// Helper function to calculate real-time goal progress
-export function calculateGoalProgress(
-  goal: Goal,
-  appointments: Appointment[],
-  services: Service[],
-  professionals: Professional[],
-  checklistRuns: any[]
-): number {
-  if (goal.status === "completed") {
-    return goal.targetValue || goal.targetAmount || 0;
-  }
-
-  // 1. Determine date range
-  const start = goal.startDate || (goal.month ? `${goal.month}-01` : "");
-  // Simple end-of-month fallback
-  const end = goal.endDate || (goal.month ? `${goal.month}-31` : "");
-
-  const isInRange = (dateStr: string) => {
-    if (!dateStr) return false;
-    if (goal.month && dateStr.substring(0, 7) === goal.month) return true;
-    if (start && dateStr < start) return false;
-    if (end && dateStr > end) return false;
-    return true;
-  };
-
-  // 2. Filter matching professionals if targetFunction is defined (role-based)
-  const matchedProfIds = new Set<string>();
-  if (goal.targetFunction) {
-    professionals.forEach((p) => {
-      if (p.role?.toLowerCase() === goal.targetFunction?.toLowerCase()) {
-        matchedProfIds.add(p.id);
-      }
-    });
-  }
-
-  // 3. Filter Appointments (only completed status counts for metrics)
-  const filteredApps = appointments.filter((app) => {
-    if (app.status !== "completed") return false;
-    if (!isInRange(app.date)) return false;
-
-    // Filter by professional scope
-    if (goal.goalScope === "professional") {
-      if (goal.professionalId && app.professionalId !== goal.professionalId) return false;
-    }
-
-    // Filter by team role
-    if (goal.goalScope === "team" && goal.targetFunction) {
-      if (!matchedProfIds.has(app.professionalId)) return false;
-    }
-
-    return true;
-  });
-
-  // 4. Filter Checklist evaluation runs
-  const filteredRuns = checklistRuns.filter((run) => {
-    const runDate = run.date || run.evaluationDate || "";
-    if (!isInRange(runDate)) return false;
-
-    if (goal.goalScope === "professional" && goal.professionalId) {
-      if (run.evaluatedProfessionalId !== goal.professionalId) return false;
-    }
-
-    if (goal.goalScope === "team" && goal.targetFunction) {
-      if (run.evaluatedProfessionalId && !matchedProfIds.has(run.evaluatedProfessionalId)) return false;
-    }
-
-    return true;
-  });
-
-  // 5. Calculate metric based on type
-  const targetType = goal.targetType || "revenue";
-
-  switch (targetType) {
-    case "revenue":
-      return filteredApps.reduce((sum, app) => {
-        const srv = services.find((s) => s.id === app.serviceId);
-        return sum + (srv ? srv.price : 0);
-      }, 0);
-
-    case "appointments":
-      return filteredApps.length;
-
-    case "services":
-      return filteredApps.length;
-
-    case "products":
-      // Fallback to manual value tracker for products
-      return goal.currentValue || 0;
-
-    case "checklist":
-      if (filteredRuns.length === 0) return 0;
-      const totalPct = filteredRuns.reduce(
-        (sum, r) => sum + (r.percentage || r.completionPercentage || 0),
-        0
-      );
-      return Math.round(totalPct / filteredRuns.length);
-
-    case "custom":
-    default:
-      return goal.currentValue || 0;
-  }
-}
-
 export default function GoalsPage() {
-  const { salonData, userData, isPlatformAdmin } = useAuth();
-
-  // Role permissions helpers
-  const isOwnerOrManager =
-    userData?.role === "owner" ||
-    userData?.role === "manager" ||
-    userData?.role === "admin" ||
-    isPlatformAdmin;
-
-  const isProf = userData?.role === "professional";
-
-  // Navigation state / Tabs
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "monthly" | "weekly" | "daily" | "professionals"
-  >("overview");
-
-  // Selected date references for dynamic scoping
+  const { salonData, userData } = useAuth();
+  
+  // Tabs state
+  const [activeTab, setActiveTab] = useState<"salon" | "professionals">("salon");
+  const [subTab, setSubTab] = useState<"overview" | "monthly" | "weekly" | "daily" | "by_professional">("overview");
+  const [useBusinessDays, setUseBusinessDays] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().substring(0, 7)
   );
-  const [selectedDateFilter, setSelectedDateFilter] = useState(
-    new Date().toISOString().substring(0, 10)
-  );
 
-  // States fetched from Firestore
+  // States for manual progress updates
+  const [selectedProfForProgress, setSelectedProfForProgress] = useState<Professional | null>(null);
+  const [selectedGoalForProgress, setSelectedGoalForProgress] = useState<ProfessionalGoal | null>(null);
+  const [isProgressDialogOpen, setIsProgressDialogOpen] = useState(false);
+  const [progressUpdateMode, setProgressUpdateMode] = useState<"set" | "add">("set");
+  const [manualProgressValue, setManualProgressValue] = useState("");
+
+  // States for general goals
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [formData, setFormData] = useState({
+    title: "",
+    month: new Date().toISOString().substring(0, 7), // YYYY-MM
+    targetAmount: "",
+    currentAmount: "0",
+  });
+
+  // States for professional goals
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [checklistRuns, setChecklistRuns] = useState<any[]>([]);
+  const [professionalGoals, setProfessionalGoals] = useState<ProfessionalGoal[]>([]);
+  const [selectedProf, setSelectedProf] = useState<Professional | null>(null);
+  const [profGoalTargetAmount, setProfGoalTargetAmount] = useState("");
+  const [isProfGoalDialogOpen, setIsProfGoalDialogOpen] = useState(false);
+
   const [loading, setLoading] = useState(true);
 
-  // Dialog & goal configuration state
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-
-  const [formData, setFormData] = useState({
-    title: "",
-    goalScope: "global" as "global" | "professional" | "team",
-    periodType: "monthly" as "daily" | "weekly" | "monthly",
-    targetType: "revenue" as "revenue" | "appointments" | "services" | "products" | "checklist" | "custom",
-    targetValue: "",
-    currentValue: "0",
-    professionalId: "",
-    targetFunction: "",
-    startDate: new Date().toISOString().substring(0, 10),
-    endDate: new Date().toISOString().substring(0, 10),
-    trackingMode: "auto" as "auto" | "manual",
-    monthRef: new Date().toISOString().substring(0, 7), // YYYY-MM helper
-  });
-
-  // Feed active lists in snapshot
+  // Load all required collections in a single hook
   useEffect(() => {
     if (!salonData) return;
 
     const unsubs: (() => void)[] = [];
 
-    // 1. Fetch ALL Goals (backward-compatible and advanced)
+    // 1. General Salon Goals
     const qg = query(collection(db, `salons/${salonData.id}/goals`));
     unsubs.push(
       onSnapshot(qg, (snapshot) => {
         const arr: Goal[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Goal));
-        setGoals(arr.sort((a, b) => b.createdAt - a.createdAt));
+        setGoals(arr.sort((a, b) => b.month.localeCompare(a.month)));
+      }, (error) => {
+        console.error("Erro ao carregar metas gerais:", error);
+        setLoading(false);
       })
     );
 
@@ -223,6 +100,9 @@ export default function GoalsPage() {
         const arr: Professional[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Professional));
         setProfessionals(arr.filter((p) => p.isActive));
+      }, (error) => {
+        console.error("Erro ao carregar profissionais:", error);
+        setLoading(false);
       })
     );
 
@@ -233,6 +113,9 @@ export default function GoalsPage() {
         const arr: Service[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Service));
         setServices(arr);
+      }, (error) => {
+        console.error("Erro ao carregar serviço:", error);
+        setLoading(false);
       })
     );
 
@@ -243,19 +126,22 @@ export default function GoalsPage() {
         const arr: Appointment[] = [];
         snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as Appointment));
         setAppointments(arr);
+      }, (error) => {
+        console.error("Erro ao carregar agendamentos:", error);
+        setLoading(false);
       })
     );
 
-    // 5. Checklist Runs
-    const qcr = query(collection(db, `salons/${salonData.id}/checklistRuns`));
+    // 5. Professional Goals
+    const qpg = query(collection(db, `salons/${salonData.id}/professionalGoals`));
     unsubs.push(
-      onSnapshot(qcr, (snapshot) => {
-        const arr: any[] = [];
-        snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() }));
-        setChecklistRuns(arr);
+      onSnapshot(qpg, (snapshot) => {
+        const arr: ProfessionalGoal[] = [];
+        snapshot.forEach((doc) => arr.push({ id: doc.id, ...doc.data() } as ProfessionalGoal));
+        setProfessionalGoals(arr);
         setLoading(false);
       }, (err) => {
-        console.error("Erro ao carregar checklist runs:", err);
+        console.error("Error fetching professional goals:", err);
         setLoading(false);
       })
     );
@@ -263,144 +149,27 @@ export default function GoalsPage() {
     return () => unsubs.forEach((unsub) => unsub());
   }, [salonData]);
 
-  // Handle Form changes to align targets beautifully
-  useEffect(() => {
-    // Automatically set default periods to simplify UX
-    if (formData.periodType === "daily") {
-      setFormData((prev) => ({
-        ...prev,
-        startDate: selectedDateFilter,
-        endDate: selectedDateFilter,
-      }));
-    } else if (formData.periodType === "monthly") {
-      const year = formData.monthRef.substring(0, 4);
-      const month = formData.monthRef.substring(5, 7);
-      setFormData((prev) => ({
-        ...prev,
-        startDate: `${year}-${month}-01`,
-        endDate: `${year}-${month}-31`,
-      }));
-    } else if (formData.periodType === "weekly") {
-      // Set to current week (Monday to Sunday)
-      const now = new Date();
-      const currentDay = now.getDay();
-      const distanceToMon = currentDay === 0 ? -6 : 1 - currentDay;
-      const monday = new Date(now.setDate(now.getDate() + distanceToMon));
-      const sunday = new Date(now.setDate(monday.getDate() + 6));
-      
-      setFormData((prev) => ({
-        ...prev,
-        startDate: monday.toISOString().substring(0, 10),
-        endDate: sunday.toISOString().substring(0, 10),
-      }));
-    }
-  }, [formData.periodType, formData.monthRef, selectedDateFilter]);
-
-  // Master List representation of roles inside professionals
-  const uniqueProfessionalRoles = Array.from(
-    new Set(professionals.map((p) => p.role).filter(Boolean))
-  );
-
-  // Dynamic progress fetcher
-  const getGoalLiveValue = (g: Goal) => {
-    if (g.trackingMode === "manual" || g.targetType === "products" || g.targetType === "custom") {
-      return g.currentValue ?? g.currentAmount ?? 0;
-    }
-    return calculateGoalProgress(g, appointments, services, professionals, checklistRuns);
-  };
-
-  const getGoalProgressPct = (g: Goal) => {
-    const target = g.targetValue || g.targetAmount || 1;
-    const current = getGoalLiveValue(g);
-    return Math.min(Math.round((current / target) * 100), 100);
-  };
-
-  // Create or update Advanced goals
-  const handleSaveGoal = async (e: React.FormEvent) => {
+  // Salon-level Goals Handlers
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!salonData) return;
 
     try {
-      const targetVal = parseFloat(formData.targetValue.replace(",", "."));
-      const currentVal = parseFloat(formData.currentValue.replace(",", "."));
+      const target = parseFloat(formData.targetAmount.replace(",", "."));
+      const current = parseFloat(formData.currentAmount.replace(",", "."));
 
-      if (isNaN(targetVal) || targetVal <= 0) {
-        toast.error("Insira um valor alvo válido maior que zero.");
-        return;
-      }
-
-      // Automatically construct descriptive title if empty
-      let titleConstructed = formData.title.trim();
-      const scopeLabel =
-        formData.goalScope === "global"
-          ? "Global"
-          : formData.goalScope === "professional"
-          ? `Esp. ${professionals.find((p) => p.id === formData.professionalId)?.name || ""}`
-          : `Cargo: ${formData.targetFunction}`;
-
-      const typeLabel =
-        formData.targetType === "revenue"
-          ? "Faturamento"
-          : formData.targetType === "appointments"
-          ? "Atendimentos"
-          : formData.targetType === "services"
-          ? "Serviços"
-          : formData.targetType === "products"
-          ? "Produtos"
-          : formData.targetType === "checklist"
-          ? "Auditoria/Checklist"
-          : "Meta Extra";
-
-      const frequencyName =
-        formData.periodType === "daily"
-          ? "Diária"
-          : formData.periodType === "weekly"
-          ? "Semanal"
-          : "Mensal";
-
-      if (!titleConstructed) {
-        titleConstructed = `Meta ${frequencyName} de ${typeLabel} - ${scopeLabel}`;
-      }
-
-      const payload: any = {
-        title: titleConstructed,
-        goalScope: formData.goalScope,
-        periodType: formData.periodType,
-        targetType: formData.targetType,
-        targetValue: targetVal,
-        currentValue: formData.trackingMode === "manual" ? currentVal : 0,
-        // For backwards compatibility
-        targetAmount: targetVal,
-        currentAmount: formData.trackingMode === "manual" ? currentVal : 0,
-        month: formData.startDate.substring(0, 7), // helper compatibility month
-
-        trackingMode: formData.trackingMode,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
+      const payload = {
+        title: formData.title,
+        month: formData.month,
+        targetAmount: target,
+        currentAmount: current,
         updatedAt: Date.now(),
-        status: "active",
       };
-
-      if (formData.goalScope === "professional") {
-        if (!formData.professionalId) {
-          toast.error("Por favor, selecione o profissional.");
-          return;
-        }
-        const p = professionals.find((item) => item.id === formData.professionalId);
-        payload.professionalId = formData.professionalId;
-        payload.professionalName = p?.name || "";
-      } else if (formData.goalScope === "team") {
-        if (!formData.targetFunction) {
-          toast.error("Por favor, selecione ou insira um cargo.");
-          return;
-        }
-        payload.targetFunction = formData.targetFunction;
-      }
 
       if (editingGoal) {
         const ref = doc(db, `salons/${salonData.id}/goals`, editingGoal.id);
         await updateDoc(ref, payload);
-        toast.success("Meta atualizada com sucesso!");
+        toast.success("Meta do salão atualizada com sucesso!");
       } else {
         const ref = doc(collection(db, `salons/${salonData.id}/goals`));
         await setDoc(ref, {
@@ -408,13 +177,13 @@ export default function GoalsPage() {
           ...payload,
           createdAt: Date.now(),
         });
-        toast.success("Nova meta criada com sucesso!");
+        toast.success("Meta do salão criada com sucesso!");
       }
       setIsDialogOpen(false);
       resetForm();
-    } catch (e: any) {
-      console.error(e);
-      toast.error("Erro ao salvar meta.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao salvar meta do salão.");
     }
   };
 
@@ -422,200 +191,134 @@ export default function GoalsPage() {
     setEditingGoal(null);
     setFormData({
       title: "",
-      goalScope: "global",
-      periodType: "monthly",
-      targetType: "revenue",
-      targetValue: "",
-      currentValue: "0",
-      professionalId: "",
-      targetFunction: "",
-      startDate: new Date().toISOString().substring(0, 10),
-      endDate: new Date().toISOString().substring(0, 10),
-      trackingMode: "auto",
-      monthRef: new Date().toISOString().substring(0, 7),
+      month: new Date().toISOString().substring(0, 7),
+      targetAmount: "",
+      currentAmount: "0",
     });
   };
 
-  const openCreateDialog = () => {
-    resetForm();
-    setIsDialogOpen(true);
-  };
-
-  const openEditDialog = (g: Goal) => {
+  const openEdit = (g: Goal) => {
     setEditingGoal(g);
     setFormData({
       title: g.title || "",
-      goalScope: g.goalScope || "global",
-      periodType: g.periodType || "monthly",
-      targetType: g.targetType || "revenue",
-      targetValue: (g.targetValue || g.targetAmount || 0).toString(),
-      currentValue: (g.currentValue || g.currentAmount || 0).toString(),
-      professionalId: g.professionalId || "",
-      targetFunction: g.targetFunction || "",
-      startDate: g.startDate || `${g.month}-01`,
-      endDate: g.endDate || `${g.month}-31`,
-      trackingMode: g.trackingMode || "auto",
-      monthRef: g.month || new Date().toISOString().substring(0, 7),
+      month: g.month,
+      targetAmount: g.targetAmount.toString(),
+      currentAmount: g.currentAmount.toString(),
     });
     setIsDialogOpen(true);
   };
 
-  const handleDeleteGoal = async (id: string) => {
-    if (!salonData) return;
-    if (!window.confirm("Deseja realmente excluir permanentemente esta meta?")) return;
+  // Professional-level Goals Handlers
+  const openProfGoalEdit = (prof: Professional, currentTarget: number) => {
+    setSelectedProf(prof);
+    setProfGoalTargetAmount(currentTarget > 0 ? currentTarget.toString() : "");
+    setIsProfGoalDialogOpen(true);
+  };
+
+  const handleSaveProfGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData || !selectedProf) return;
+
     try {
-      await deleteDoc(doc(db, `salons/${salonData.id}/goals`, id));
-      toast.success("Meta excluída com sucesso.");
+      const target = parseFloat(profGoalTargetAmount.replace(",", "."));
+      if (isNaN(target) || target < 0) {
+        toast.error("Por favor, digite um valor de faturamento válido.");
+        return;
+      }
+
+      const docId = `${selectedProf.id}_${selectedMonth}`;
+      const existingGoal = professionalGoals.find(
+        (g) => g.professionalId === selectedProf.id && g.month === selectedMonth
+      );
+
+      if (existingGoal && existingGoal.targetAmount !== target) {
+        const confirmed = window.confirm(
+          `Você está alterando a meta definida para este profissional (${selectedProf.name}).\n\nMeta Anterior: ${formatBRL(existingGoal.targetAmount)}\nNova Meta: ${formatBRL(target)}\n\nDeseja realmente prosseguir?`
+        );
+        if (!confirmed) return;
+      }
+
+      const payload = {
+        id: docId,
+        professionalId: selectedProf.id,
+        professionalName: selectedProf.name,
+        month: selectedMonth,
+        targetAmount: target,
+        updatedAt: Date.now(),
+        createdAt: existingGoal?.createdAt || Date.now(),
+      };
+
+      const ref = doc(db, `salons/${salonData.id}/professionalGoals`, docId);
+      await setDoc(ref, payload, { merge: true });
+
+      toast.success(`Meta para ${selectedProf.name} definida com sucesso!`);
+      setIsProfGoalDialogOpen(false);
+      setSelectedProf(null);
+      setProfGoalTargetAmount("");
     } catch (err) {
-      console.error(err);
-      toast.error("Erro ao excluir meta.");
+      console.error("Error setting professional goal:", err);
+      toast.error("Erro ao salvar meta para o profissional.");
     }
   };
 
-  // Calculate dynamic stats for current month
-  const currentMonthFilter = selectedMonth; // ex: 2026-06
-
-  const activeGoalsThisMonth = goals.filter((g) => {
-    const m = g.month || g.startDate?.substring(0, 7);
-    return m === currentMonthFilter;
-  });
-
-  // KPI Calculations
-  const totalMonthlyTargetsObj = activeGoalsThisMonth
-    .filter((g) => (g.targetType || "revenue") === "revenue" && g.goalScope === "global")
-    .reduce((sum, g) => sum + (g.targetValue || g.targetAmount || 0), 0);
-
-  // Fallback to average or fallback sum if no global goal defined
-  const totalFinancialGoal = totalMonthlyTargetsObj > 0 ? totalMonthlyTargetsObj : 15000;
-
-  // Realized revenue this month
-  const totalCompletedMonthRevenue = appointments
-    .filter(
-      (app) => app.status === "completed" && app.date.substring(0, 7) === currentMonthFilter
-    )
-    .reduce((total, app) => {
-      const srv = services.find((s) => s.id === app.serviceId);
-      return total + (srv ? srv.price : 0);
-    }, 0);
-
-  const monthProgressPct = Math.min(
-    Math.round((totalCompletedMonthRevenue / totalFinancialGoal) * 100),
-    100
-  );
-  const remainingBRL = Math.max(totalFinancialGoal - totalCompletedMonthRevenue, 0);
-
-  // Best Professional this month
-  const getProfRevenue = (pId: string) => {
-    return appointments
-      .filter(
-        (app) =>
-          app.status === "completed" &&
-          app.professionalId === pId &&
-          app.date.substring(0, 7) === currentMonthFilter
-      )
-      .reduce((t, app) => {
-        const s = services.find((srv) => srv.id === app.serviceId);
-        return t + (s ? s.price : 0);
-      }, 0);
+  const openUpdateProgress = (prof: Professional, goalObj?: ProfessionalGoal) => {
+    setSelectedProfForProgress(prof);
+    setSelectedGoalForProgress(goalObj || null);
+    setProgressUpdateMode("set");
+    setManualProgressValue("");
+    setIsProgressDialogOpen(true);
   };
 
-  const sortedProfsWithRevenue = [...professionals]
-    .map((p) => ({ p, rev: getProfRevenue(p.id) }))
-    .sort((a, b) => b.rev - a.rev);
+  const handleSaveProgress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData || !selectedProfForProgress) return;
 
-  const bestProfessional = sortedProfsWithRevenue[0]?.rev > 0 ? sortedProfsWithRevenue[0] : null;
+    try {
+      const value = parseFloat(manualProgressValue.replace(",", "."));
+      if (isNaN(value) || value < 0) {
+        toast.error("Por favor, insira um valor numérico válido.");
+        return;
+      }
 
-  // Filter goals depending on selected view/tab
-  const listGoalsByTab = () => {
-    // If professional logged in, only show their own goals
-    let filtered = goals;
-    if (isProf) {
-      filtered = goals.filter((g) => g.professionalId === userData?.id || g.goalScope === "global");
-    }
+      const docId = `${selectedProfForProgress.id}_${selectedMonth}`;
+      const autoRevenue = calculateRevenue(selectedProfForProgress.id);
+      
+      const currentManualVal = selectedGoalForProgress ? (
+        selectedGoalForProgress.currentValue ?? 
+        selectedGoalForProgress.realizedValue ?? 
+        selectedGoalForProgress.achievedValue ?? 
+        0
+      ) : 0;
 
-    switch (activeTab) {
-      case "monthly":
-        return filtered.filter((g) => g.periodType === "monthly" || !g.periodType);
-      case "weekly":
-        return filtered.filter((g) => g.periodType === "weekly");
-      case "daily":
-        return filtered.filter((g) => g.periodType === "daily");
-      case "professionals":
-        return filtered.filter((g) => g.goalScope === "professional");
-      case "overview":
-      default:
-        return filtered;
-    }
-  };
+      let newValue = value;
+      if (progressUpdateMode === "add") {
+        newValue = currentManualVal + value;
+      }
 
-  const getMetricSymbol = (type: string) => {
-    switch (type) {
-      case "revenue":
-        return "R$";
-      case "appointments":
-        return "Atendimentos";
-      case "services":
-        return "Serviços";
-      case "products":
-        return "Itens";
-      case "checklist":
-        return "%";
-      case "custom":
-      default:
-        return "Meta";
-    }
-  };
+      const payload: any = {
+        id: docId,
+        professionalId: selectedProfForProgress.id,
+        professionalName: selectedProfForProgress.name,
+        month: selectedMonth,
+        currentValue: newValue,
+        lastProgressUpdateAt: Date.now(),
+        lastProgressUpdatedBy: userData?.fullName || userData?.email || "Manager",
+        updatedAt: Date.now(),
+      };
 
-  const renderMetricBadgeType = (type: string) => {
-    switch (type) {
-      case "revenue":
-        return <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Faturamento</span>;
-      case "appointments":
-        return <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Agendamentos</span>;
-      case "services":
-        return <span className="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Serviços</span>;
-      case "products":
-        return <span className="text-[10px] bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Venda Produtos</span>;
-      case "checklist":
-        return <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Auditoria</span>;
-      case "custom":
-      default:
-        return <span className="text-[10px] bg-zinc-500/10 text-zinc-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">Personalizado</span>;
+      const ref = doc(db, `salons/${salonData.id}/professionalGoals`, docId);
+      await setDoc(ref, payload, { merge: true });
+
+      toast.success(`Faturamento de ${selectedProfForProgress.name} atualizado para ${formatBRL(newValue)}!`);
+      setIsProgressDialogOpen(false);
+      setManualProgressValue("");
+      setSelectedProfForProgress(null);
+      setSelectedGoalForProgress(null);
+    } catch (err) {
+      console.error("Error saving manual progress:", err);
+      toast.error("Erro ao salvar realizado.");
     }
   };
-
-  const formatTargetValue = (g: Goal) => {
-    const val = g.targetValue || g.targetAmount || 0;
-    if (g.targetType === "revenue") {
-      return formatBRL(val);
-    }
-    if (g.targetType === "checklist") {
-      return `${val}% de Conformidade`;
-    }
-    return `${val} ${getMetricSymbol(g.targetType || "revenue")}`;
-  };
-
-  const formatCurrentValue = (g: Goal) => {
-    const val = getGoalLiveValue(g);
-    if (g.targetType === "revenue") {
-      return formatBRL(val);
-    }
-    if (g.targetType === "checklist") {
-      return `${val}%`;
-    }
-    return `${val}`;
-  };
-
-  // Find out professionals who are below their monthly targets
-  const professionalsBelowTarget = sortedProfsWithRevenue.filter(({ p, rev }) => {
-    // find a goal for that professional this month
-    const profGoal = goals.find(
-      (g) => g.professionalId === p.id && g.periodType === "monthly" && (g.month || g.startDate?.substring(0, 7)) === currentMonthFilter
-    );
-    if (!profGoal) return false;
-    const target = profGoal.targetValue || profGoal.targetAmount || 0;
-    return rev < target;
-  });
 
   if (loading) {
     return (
@@ -625,653 +328,1152 @@ export default function GoalsPage() {
     );
   }
 
+  // Calculate dynamic stats for currently completed appointments for professionals
+  const calculateRevenue = (profId: string) => {
+    return appointments
+      .filter(
+        (app) =>
+          app.professionalId === profId &&
+          app.status === "completed" &&
+          app.date.substring(0, 7) === selectedMonth
+      )
+      .reduce((total, app) => {
+        const srv = services.find((s) => s.id === app.serviceId);
+        return total + (srv ? srv.price : 0);
+      }, 0);
+  };
+
+  // Cumulative sums for Summary Header in professional section
+  const totalCompletedProfRevenue = professionals.reduce(
+    (sum, p) => sum + calculateRevenue(p.id),
+    0
+  );
+
+  const totalDefinedProfGoals = professionals.reduce((sum, p) => {
+    const goalObj = professionalGoals.find(
+      (g) => g.professionalId === p.id && g.month === selectedMonth
+    );
+    return sum + (goalObj ? goalObj.targetAmount : 0);
+  }, 0);
+
+  const totalGoalsCount = professionals.filter((p) => {
+    const goalObj = professionalGoals.find(
+      (g) => g.professionalId === p.id && g.month === selectedMonth
+    );
+    return goalObj && goalObj.targetAmount > 0;
+  }).length;
+
+  const totalCompletedPct =
+    totalDefinedProfGoals > 0
+      ? Math.min(
+          Math.round((totalCompletedProfRevenue / totalDefinedProfGoals) * 100),
+          105
+        )
+      : 0;
+
+  // HIGH-FIDELITY CALCULATIONS FOR THE UPGRADED PROGRESSION DASHBOARD
+  const normalizedProfGoals = professionals.map((p) => {
+    const rawGoal = professionalGoals.find(
+      (g) => g.professionalId === p.id && g.month === selectedMonth
+    );
+    const autoRevenue = calculateRevenue(p.id);
+    const goalObj = rawGoal ? normalizeGoal(rawGoal, autoRevenue) : {
+      id: `${p.id}_${selectedMonth}`,
+      professionalId: p.id,
+      professionalName: p.name,
+      month: selectedMonth,
+      targetAmount: 0,
+      currentValue: autoRevenue,
+      lastProgressUpdateAt: 0,
+      lastProgressUpdatedBy: "",
+    };
+    
+    // Check if progress contains manually added fields
+    const hasManualProgress = rawGoal && (
+      rawGoal.currentValue !== undefined || 
+      rawGoal.realizedValue !== undefined || 
+      rawGoal.achievedValue !== undefined
+    );
+
+    const progress = calculateGoalProgress(goalObj, useBusinessDays);
+    return {
+      professional: p,
+      goalObj,
+      progress,
+      autoRevenue,
+      hasManualProgress: !!hasManualProgress,
+    };
+  });
+
+  const activeGoalsCount = normalizedProfGoals.filter(i => i.progress.targetValue > 0).length;
+  const totalDefinedGoalsSum = normalizedProfGoals.reduce((sum, i) => sum + i.progress.targetValue, 0);
+  const totalRealizedSum = normalizedProfGoals.reduce((sum, i) => sum + i.progress.currentValue, 0);
+  const totalRemainingSum = normalizedProfGoals.reduce((sum, i) => sum + i.progress.remainingValue, 0);
+  const teamProgressPct = totalDefinedGoalsSum > 0 
+    ? Math.min(Math.round((totalRealizedSum / totalDefinedGoalsSum) * 100), 100)
+    : 0;
+
+  const professionalsBehind = normalizedProfGoals.filter(
+    i => i.progress.targetValue > 0 && (i.progress.status === "behind" || i.progress.status === "attention")
+  );
+  
+  const professionalsOnTrack = normalizedProfGoals.filter(
+    i => i.progress.targetValue > 0 && (i.progress.status === "on_track" || i.progress.status === "completed")
+  );
+
   return (
-    <div className="space-y-6 font-sans pb-10">
-      {/* Banner & Title with commercial highlights */}
+    <div className="space-y-6">
+      {/* Banner & Tab Switcher */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 flex-wrap pb-4 border-b border-white/5">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-heading font-light tracking-tight text-white leading-tight">
-              Metas de Performance da Equipe
-            </h2>
-            <span className="bg-primary/15 text-primary border border-primary/20 text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider font-mono">
-              v1.4.6
-            </span>
-          </div>
-          <p className="text-zinc-400 text-xs mt-1 max-w-2xl font-light">
-            Monitore objetivos financeiros e de produtividade no salão. Defina metas gerais, diárias, semanais por especialista ou categoria, impulsionando a eficiência integrada do estabelecimento.
+          <h2 className="text-2xl font-heading font-light tracking-tight text-white">
+            Painel de Metas
+          </h2>
+          <p className="text-muted-foreground text-xs mt-0.5">
+            Defina e monitore objetivos financeiros para o salão e para sua equipe de especialistas.
           </p>
         </div>
 
-        {/* Action Button for Managers / Owners */}
-        {isOwnerOrManager && (
-          <Button
-            onClick={openCreateDialog}
-            className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs h-9.5 px-4.5 flex items-center gap-1.5 transition-all w-full sm:w-auto shrink-0 shadow-lg cursor-pointer"
+        {/* Tab selector switcher */}
+        <div className="flex p-1 bg-white/5 rounded-2xl border border-white/10 w-full sm:w-auto">
+          <button
+            onClick={() => setActiveTab("salon")}
+            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+              activeTab === "salon"
+                ? "bg-primary text-black font-bold shadow-lg"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+            }`}
           >
-            <Plus className="w-4 h-4 text-black" /> Criar Nova Meta
-          </Button>
-        )}
-      </div>
-
-      {isProf && (
-        <div className="bg-[#121214] border border-[#D4AF37]/20 p-4 rounded-xl flex items-center gap-3 text-xs text-[#D4AF37] font-light">
-          <Info className="w-5 h-5 text-[#D4AF37] shrink-0" />
-          <span>
-            <strong>Visualização Restrita ao Colaborador:</strong> Você pode acompanhar suas próprias metas diárias, semanais e mensais atribuídas pelo gestor, além do painel global do salão. Alterações e edições estão protegidas administrativamente.
-          </span>
+            Metas Gerais do Salão
+          </button>
+          <button
+            onClick={() => setActiveTab("professionals")}
+            className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+              activeTab === "professionals"
+                ? "bg-primary text-black font-bold shadow-lg"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+            }`}
+          >
+            Metas de Profissionais
+          </button>
         </div>
-      )}
-
-      {/* PARTE 6 — KPI Cards at the top */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Monthly Goal */}
-        <Card className="border border-white/5 bg-[#121214]/40 rounded-2xl p-4.5 space-y-2">
-          <p className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
-            Meta Faturamento Mês
-          </p>
-          <div className="flex items-baseline justify-between">
-            <p className="text-xl font-light text-white select-all">
-              {formatBRL(totalFinancialGoal)}
-            </p>
-            <span className="text-[10px] bg-white/5 text-zinc-400 border border-white/10 px-1.5 py-0.5 rounded font-mono">
-              {currentMonthFilter}
-            </span>
-          </div>
-          <div className="text-[10px] text-zinc-400 font-light">
-            Alvo de faturamento principal do salão
-          </div>
-        </Card>
-
-        {/* KPI 2: Current Realized */}
-        <Card className="border border-white/5 bg-[#121214]/40 rounded-2xl p-4.5 space-y-2">
-          <p className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
-            Faturamento Realizado
-          </p>
-          <div className="flex items-baseline justify-between">
-            <p className="text-xl font-medium text-emerald-400 select-all">
-              {formatBRL(totalCompletedMonthRevenue)}
-            </p>
-            <span className="text-xs text-emerald-400 font-bold flex items-center gap-0.5">
-              <TrendingUp className="w-3.5 h-3.5" /> {monthProgressPct}%
-            </span>
-          </div>
-          <Progress value={monthProgressPct} className="h-1 bg-white/15 rounded-full" />
-        </Card>
-
-        {/* KPI 3: Remaining BRL */}
-        <Card className="border border-white/5 bg-[#121214]/40 rounded-2xl p-4.5 space-y-2">
-          <p className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
-            Falta para Bater
-          </p>
-          <div className="flex items-baseline justify-between">
-            <p className="text-xl font-light text-zinc-200 select-all">
-              {remainingBRL > 0 ? formatBRL(remainingBRL) : "Metas Batidas!"}
-            </p>
-            {remainingBRL === 0 && (
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold font-mono">
-                100% OK
-              </span>
-            )}
-          </div>
-          <p className="text-[10px] text-zinc-400 font-light">
-            {remainingBRL > 0 ? "Faturamento restante acordado" : "Parabéns, saldo atingido!"}
-          </p>
-        </Card>
-
-        {/* KPI 4: Best Professional */}
-        <Card className="border border-[#D4AF37]/15 bg-[#121214]/40 rounded-2xl p-4.5 space-y-2 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-1 bg-primary/10 rounded-bl-xl border-l border-b border-[#D4AF37]/20">
-            <Award className="w-3.5 h-3.5 text-primary" />
-          </div>
-          <p className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
-            Destaque do Mês
-          </p>
-          <div className="space-y-0.5">
-            <p className="text-sm font-semibold text-white truncate">
-              {bestProfessional ? bestProfessional.p.name : "Nenhum no momento"}
-            </p>
-            <p className="text-xs text-primary font-bold font-mono">
-              {bestProfessional ? formatBRL(bestProfessional.rev) : "R$ 0,00"}
-            </p>
-          </div>
-          <p className="text-[10px] text-zinc-400 font-light truncate">
-            {bestProfessional ? `Função: ${bestProfessional.p.role || "Especialista"}` : "Sem faturamento registrado"}
-          </p>
-        </Card>
       </div>
 
-      {/* FILTER & TAB BAR SELECTOR */}
-      <div className="bg-[#121214]/60 border border-white/5 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Responsive tabs */}
-        <div className="flex flex-wrap p-1 bg-white/[0.02] border border-white/5 rounded-xl gap-0.5 min-w-0">
-          {[
-            { id: "overview", label: "Visão Geral" },
-            { id: "monthly", label: "Metas Mensais" },
-            { id: "weekly", label: "Metas Semanais" },
-            { id: "daily", label: "Metas Diárias" },
-            { id: "professionals", label: "Por Profissional" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
-                activeTab === tab.id
-                  ? "bg-primary text-black font-bold shadow-md"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5"
-              }`}
+      {activeTab === "salon" ? (
+        // SALON TAB
+        <div className="space-y-6">
+          <div className="flex justify-end">
+            <Dialog
+              open={isDialogOpen}
+              onOpenChange={(open) => {
+                setIsDialogOpen(open);
+                if (!open) resetForm();
+              }}
             >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Interactive Filter Scopes */}
-        <div className="flex items-center gap-3.5 shrink-0 ml-auto md:ml-0">
-          <div className="flex items-center gap-2 text-xs font-light text-zinc-400">
-            <span>Período Ref:</span>
-            <div className="flex items-center gap-1.5 bg-black/40 px-3 py-1.5 border border-white/10 rounded-xl">
-              <Calendar className="w-3.5 h-3.5 text-primary" />
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-transparent text-xs text-white border-none focus:outline-none cursor-pointer outline-none w-[100px] font-mono"
-              />
-            </div>
+              <DialogTrigger asChild>
+                <Button className="bg-primary hover:bg-gold-400 text-black font-semibold rounded-xl text-xs h-9 px-4">
+                  <Plus className="w-4 h-4 mr-1.5" /> Nova Meta do Salão
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px] bg-card border border-white/15 rounded-3xl p-6 shadow-2xl">
+                <DialogHeader>
+                  <DialogTitle className="font-heading text-lg font-semibold text-foreground">
+                    {editingGoal ? "Editar Meta do Salão" : "Nova Meta do Salão"}
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Título (Opcional)</Label>
+                    <Input
+                      value={formData.title}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, title: e.target.value }))
+                      }
+                      className="bg-background border-white/10"
+                      placeholder="Ex: Faturamento do Mês"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Mês Referência</Label>
+                    <Input
+                      required
+                      type="month"
+                      value={formData.month}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, month: e.target.value }))
+                      }
+                      className="bg-background border-white/10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Valor da Meta (R$)</Label>
+                    <Input
+                      required
+                      type="number"
+                      step="0.01"
+                      value={formData.targetAmount}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, targetAmount: e.target.value }))
+                      }
+                      className="bg-background border-white/10"
+                    />
+                  </div>
+                  {editingGoal && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Valor Realizado Até Agora (R$)
+                      </Label>
+                      <Input
+                        required
+                        type="number"
+                        step="0.01"
+                        value={formData.currentAmount}
+                        onChange={(e) =>
+                          setFormData((p) => ({ ...p, currentAmount: e.target.value }))
+                        }
+                        className="bg-background border-white/10"
+                      />
+                    </div>
+                  )}
+                  <Button
+                    type="submit"
+                    className="w-full bg-primary hover:bg-gold-400 text-black font-semibold h-11 rounded-xl transition-all"
+                  >
+                    {editingGoal ? "Salvar Alterações" : "Criar Meta"}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
-        </div>
-      </div>
 
-      {/* GOALS PERFORMANCE & ACTION LIST */}
-      <div>
-        {listGoalsByTab().length === 0 ? (
-          <Card className="border border-white/5 bg-[#121214]/25 rounded-2xl py-14 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
-              <Target className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="text-sm font-semibold text-white">Nenhuma meta ativa encontrada</h3>
-            <p className="text-zinc-500 text-xs mt-1 max-w-sm mx-auto font-light">
-              Não existem metas registradas ou programadas para o filtro selecionado. Use o painel para cadastrar novos alvos de crescimento.
-            </p>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {listGoalsByTab().map((g) => {
-              const liveValue = getGoalLiveValue(g);
-              const progressPct = getGoalProgressPct(g);
-              const isOver = progressPct >= 100;
-              const targetVal = g.targetValue || g.targetAmount || 1;
-              const remainingVal = Math.max(targetVal - liveValue, 0);
+          {goals.length === 0 ? (
+            <Card className="border-white/10 bg-card/40 rounded-2xl shadow-xl">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                  <Target className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground">
+                  Sem metas gerais hoje
+                </h3>
+                <p className="text-muted-foreground text-xs mt-1 max-w-sm">
+                  Defina os objetivos globais de faturamento do salão para acompanhar o progresso total.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {goals.map((g) => {
+                const pct = Math.min(
+                  Math.round((g.currentAmount / g.targetAmount) * 100),
+                  100
+                );
+                const remaining = Math.max(g.targetAmount - g.currentAmount, 0);
 
-              // Date translation descriptions
-              const startFormatted = g.startDate
-                ? new Date(g.startDate + "T12:00:00").toLocaleDateString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                  })
-                : "";
+                return (
+                  <Card key={g.id} className="border-white/10 bg-card/35 rounded-2xl shadow-xl relative overflow-hidden">
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-xs font-semibold text-primary uppercase tracking-wider">
+                            {g.month}
+                          </p>
+                          <CardTitle className="text-base font-semibold mt-1">
+                            {g.title || "Faturamento Mensal"}
+                          </CardTitle>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEdit(g)}
+                          className="-mt-2 -mr-2 h-8 w-8 text-muted-foreground hover:text-primary"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex justify-between items-end">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-0.5">Realizado</p>
+                          <p className="text-2xl font-light text-foreground select-all">
+                            {formatBRL(g.currentAmount)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground mb-0.5">Meta</p>
+                          <p className="text-sm text-muted-foreground font-medium select-all">
+                            {formatBRL(g.targetAmount)}
+                          </p>
+                        </div>
+                      </div>
 
-              const endFormatted = g.endDate
-                ? new Date(g.endDate + "T12:00:00").toLocaleDateString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                  })
-                : "";
-
-              return (
-                <Card
-                  key={g.id}
-                  className="bg-[#121214]/50 border border-white/5 rounded-2xl hover:border-[#D4AF37]/30 transition-all duration-300 p-5 flex flex-col justify-between gap-4.5 overflow-hidden relative group"
-                >
-                  {/* Subtle color highlight depending on target type */}
-                  <div
-                    className={`absolute left-0 top-0 bottom-0 w-1 transition-all ${
-                      isOver ? "bg-emerald-500" : "bg-[#D4AF37]/35"
-                    }`}
-                  />
-
-                  {/* Header info */}
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-1.5">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {renderMetricBadgeType(g.targetType || "revenue")}
-                          {g.periodType && (
-                            <span className="text-[9px] font-mono uppercase bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded font-bold">
-                              {g.periodType === "daily"
-                                ? "Diária"
-                                : g.periodType === "weekly"
-                                ? "Semanal"
-                                : "Mensal"}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs font-medium">
+                          <span className="text-primary">{pct}%</span>
+                          {remaining > 0 ? (
+                            <span className="text-muted-foreground font-light">
+                              Falta {formatBRL(remaining)}
+                            </span>
+                          ) : (
+                            <span className="text-green-400 font-semibold flex items-center">
+                              <TrendingUp className="w-3.5 h-3.5 mr-1" /> Meta Batida!
                             </span>
                           )}
                         </div>
-                        <h4 className="font-semibold text-xs text-white pt-1 line-clamp-1 leading-snug">
-                          {g.title || "Meta Geral de Fluxo"}
-                        </h4>
+                        <Progress value={pct} className="h-2 bg-white/5" />
                       </div>
-
-                      {/* Edit controls if Manager */}
-                      {isOwnerOrManager && (
-                        <div className="flex items-center gap-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEditDialog(g)}
-                            className="h-7 w-7 text-zinc-400 hover:text-primary rounded-lg hover:bg-white/5 cursor-pointer"
-                            title="Editar"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteGoal(g.id)}
-                            className="h-7 w-7 text-zinc-400 hover:text-red-400 rounded-lg hover:bg-white/5 cursor-pointer"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Scope specificity labels */}
-                    {g.goalScope === "professional" && (
-                      <div className="flex items-center gap-1 text-[10px] text-[#D4AF37] font-mono leading-tight">
-                        <User className="w-3 h-3 text-[#D4AF37]" />
-                        <span>Esp. Vinculado: {g.professionalName || "Profissional"}</span>
-                      </div>
-                    )}
-
-                    {g.goalScope === "team" && g.targetFunction && (
-                      <div className="flex items-center gap-1 text-[10px] text-blue-400 font-mono leading-tight">
-                        <Briefcase className="w-3 h-3 text-blue-400" />
-                        <span>Cargo Coletivo: {g.targetFunction}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Mid Values Tracking */}
-                  <div className="grid grid-cols-2 gap-2 bg-black/20 p-2.5 rounded-xl border border-white/5">
-                    <div>
-                      <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono">
-                        Realizado
-                      </span>
-                      <p className="text-sm font-semibold text-white truncate">
-                        {formatCurrentValue(g)}
-                      </p>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-[9px] uppercase font-bold text-zinc-500 font-mono">
-                        Alvo Estimado
-                      </span>
-                      <p className="text-sm font-bold text-[#D4AF37] truncate">
-                        {formatTargetValue(g)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Bottom Progress details */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex justify-between items-center text-[10px] leading-tight">
-                      <span className={`font-mono font-bold ${isOver ? "text-emerald-400" : "text-primary"}`}>
-                        {progressPct}% COMPLETO
-                      </span>
-
-                      {remainingVal > 0 ? (
-                        <span className="text-zinc-500 font-light truncate">
-                          Falta {g.targetType === "revenue" ? formatBRL(remainingVal) : `${Math.round(remainingVal)} un.`}
-                        </span>
-                      ) : (
-                        <span className="text-emerald-400 font-bold flex items-center gap-0.5 text-[9px] uppercase font-mono tracking-wider animate-pulse">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Bateu a meta
-                        </span>
-                      )}
-                    </div>
-                    <Progress value={progressPct} className={`h-1.5 ${isOver ? "bg-emerald-500/10" : "bg-white/5"}`} />
-
-                    {/* Date limits */}
-                    {(startFormatted || endFormatted) && (
-                      <div className="flex justify-between text-[9px] text-zinc-500 font-mono font-light pt-0.5">
-                        <span>Início: {startFormatted || "-"}</span>
-                        <span>Fim: {endFormatted || "-"}</span>
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* SPECIAL INTERACTIVE TAB SECTION FOR COLLABORATOR LISTS */}
-      {activeTab === "overview" && isOwnerOrManager && (
-        <Card className="border border-white/5 bg-[#121214]/25 rounded-2xl p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-primary" />
-            <h3 className="text-sm font-heading font-semibold text-white">Análise Regional de Ativos de Profissionais</h3>
-          </div>
-          <p className="text-zinc-400 text-xs font-light leading-snug">
-            Abaixo estão os profissionais ativos e seus respectivos saldos de faturamento e auditoria gerados neste mês. Aproveite para planejar incentivos por performance.
-          </p>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-zinc-400 p-0 border-collapse">
-              <thead>
-                <tr className="border-b border-white/5 text-[10px] uppercase font-mono tracking-wider text-zinc-500 h-9">
-                  <th className="pb-2">Colaborador</th>
-                  <th className="pb-2">Vínculo / Cargo</th>
-                  <th className="pb-2">Faturado no Mês</th>
-                  <th className="pb-2">Auditorias Realizadas</th>
-                  <th className="pb-2 text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {professionals.map((p) => {
-                  const revenue = getProfRevenue(p.id);
-                  // count checklistRuns for professional
-                  const runsCount = checklistRuns.filter(
-                    (r) => r.evaluatedProfessionalId === p.id && (r.date || r.evaluationDate || "").substring(0, 7) === currentMonthFilter
-                  ).length;
-
-                  return (
-                    <tr key={p.id} className="hover:bg-white/[0.01] transition-colors h-12">
-                      <td className="font-semibold text-white py-2 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded bg-primary/15 text-primary font-bold flex items-center justify-center text-[10px]">
-                          {p.name.charAt(0).toUpperCase()}
-                        </div>
-                        {p.name}
-                      </td>
-                      <td>
-                        <span className="bg-zinc-800 text-zinc-300 text-[10px] px-2 py-0.5 rounded font-medium">
-                          {p.role || "Especialista"}
-                        </span>
-                      </td>
-                      <td className="font-mono text-zinc-300 font-semibold">{formatBRL(revenue)}</td>
-                      <td className="text-zinc-400 font-mono">{runsCount} avaliações</td>
-                      <td className="text-right py-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setActiveTab("professionals");
-                          }}
-                          className="h-8 rounded-lg text-[10px] hover:text-primary hover:bg-white/5 flex items-center gap-1 px-2.5 ml-auto cursor-pointer"
-                        >
-                          Ver Detalhes <ChevronRight className="w-3 h-3" />
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* PARTE 6 — DIALOG FOR CREATING / EDITING GOALS */}
-      <Dialog
-        open={isDialogOpen}
-        onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) resetForm();
-        }}
-      >
-        <DialogContent className="max-w-2xl bg-[#09090b] border border-white/10 text-white rounded-2xl shadow-2xl p-0 font-sans max-h-[95vh] overflow-y-auto">
-          <DialogHeader className="border-b border-white/5 p-6 pb-4 flex items-start gap-1">
-            <DialogTitle className="text-lg md:text-xl font-light tracking-tight text-white flex items-center gap-2">
-              <Target className="w-5.5 h-5.5 text-primary" /> {editingGoal ? "Configurar e Atualizar Meta" : "Cadastrar Nova Meta Operacional"}
-            </DialogTitle>
-            <p className="text-zinc-400 text-xs font-light mt-1">
-              Combine escopo, periodicidade e tipo de rastreamento para criar alinhamentos inteligentes de equipe.
-            </p>
-          </DialogHeader>
-
-          <form onSubmit={handleSaveGoal} className="p-6 space-y-5 font-sans">
-            {/* Optional Title */}
-            <div className="space-y-1.5">
-              <Label className="text-zinc-300 text-xs font-semibold">Título Personalizado (Opcional)</Label>
-              <Input
-                value={formData.title}
-                onChange={(e) => setFormData((p) => ({ ...p, title: e.target.value }))}
-                placeholder="Ex de preenchimento automático se deixado vazio"
-                className="bg-black/40 border-white/10 text-white text-xs rounded-xl h-9.5 placeholder:text-zinc-650"
-              />
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-
-            {/* Scope selection & Period types */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs font-semibold">Público / Escopo da Meta</Label>
-                <select
-                  value={formData.goalScope}
-                  onChange={(e: any) =>
-                    setFormData((p) => ({ ...p, goalScope: e.target.value, professionalId: "", targetFunction: "" }))
-                  }
-                  className="w-full bg-[#121214] border border-white/10 text-white rounded-xl text-xs px-3 py-2 h-9.5 cursor-pointer outline-none font-sans"
-                >
-                  <option value="global">Global (Todo o Salão)</option>
-                  <option value="professional">Profissional Específico</option>
-                  <option value="team">Por Cargo / Função Coletiva</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs font-semibold">Frequência da Meta</Label>
-                <select
-                  value={formData.periodType}
-                  onChange={(e: any) => setFormData((p) => ({ ...p, periodType: e.target.value }))}
-                  className="w-full bg-[#121214] border border-white/10 text-white rounded-xl text-xs px-3 py-2 h-9.5 cursor-pointer outline-none font-sans"
-                >
-                  <option value="monthly">Mensal</option>
-                  <option value="weekly">Semanal</option>
-                  <option value="daily">Diária</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Dynamic scope settings (Professional or Category inputs) */}
-            {formData.goalScope === "professional" && (
-              <div className="space-y-1.5 bg-[#D4AF37]/5 border border-[#D4AF37]/15 p-3.5 rounded-xl">
-                <Label className="text-[#D4AF37] text-xs font-semibold">Escolha o Especialista Vinculado</Label>
-                <select
-                  required
-                  value={formData.professionalId}
-                  onChange={(e) => setFormData((p) => ({ ...p, professionalId: e.target.value }))}
-                  className="w-full bg-[#121214] border border-white/10 text-white rounded-xl text-xs px-3 py-2 h-9.5 cursor-pointer outline-none font-sans"
-                >
-                  <option value="" disabled>-- Selecione --</option>
-                  {professionals.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.role || "Especialista"})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {formData.goalScope === "team" && (
-              <div className="space-y-1.5 bg-blue-500/5 border border-blue-500/15 p-3.5 rounded-xl">
-                <Label className="text-blue-400 text-xs font-semibold flex items-center gap-1">
-                  Selecione a Função / Cargo Especializado
-                </Label>
-                <p className="text-[10px] text-zinc-400 font-light mt-0.5 mb-2">
-                  PARTE 7: Atribui de forma concomitante. Todos os membros desempenhando este cargo compartilharão a meta e progredirão em equipe.
+          )}
+        </div>
+      ) : (
+        // INDIVIDUAL REPRESENTATIVES GOALS TAB (PROFESSIONALS)
+        <div className="space-y-6">
+          {/* Header Filtering, Calulator Mode & Global Target Cumulative Panel */}
+          <Card className="border border-white/10 bg-card/65 rounded-2xl shadow-md p-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-white">Indicador Mensal & Configurações de Progressão</p>
+                <p className="text-xs text-muted-foreground">
+                  Selecione o mês e o método de cálculo de dias úteis para faturamento da equipe.
                 </p>
-                <div className="flex gap-2">
-                  <select
-                    value={formData.targetFunction}
-                    onChange={(e) => setFormData((p) => ({ ...p, targetFunction: e.target.value }))}
-                    className="w-full bg-[#121214] border border-white/10 text-white rounded-xl text-xs px-3 py-2 h-9.5 cursor-pointer outline-none font-sans"
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Mode toggle */}
+                <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setUseBusinessDays(false)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-wider transition-all/all ${
+                      !useBusinessDays
+                        ? "bg-primary text-black font-extrabold"
+                        : "text-muted-foreground hover:text-white"
+                    }`}
                   >
-                    <option value="">-- Selecione ou digite abaixo --</option>
-                    {uniqueProfessionalRoles.map((role) => (
-                      <option key={role} value={role}>{role}</option>
-                    ))}
-                  </select>
-                  <Input
-                    placeholder="Outro cargo"
-                    value={formData.targetFunction}
-                    onChange={(e) => setFormData((p) => ({ ...p, targetFunction: e.target.value }))}
-                    className="bg-black/40 border-white/10 text-white text-xs rounded-xl h-9.5 w-1/2 placeholder:text-zinc-650"
+                    Dias Corridos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseBusinessDays(true)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-wider transition-all/all ${
+                      useBusinessDays
+                        ? "bg-primary text-black font-extrabold"
+                        : "text-muted-foreground hover:text-white"
+                    }`}
+                  >
+                    Dias Úteis
+                  </button>
+                </div>
+
+                {/* Month filter trigger */}
+                <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/10 min-w-[150px]">
+                  <Calendar className="w-4 h-4 text-primary shrink-0" />
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="bg-transparent border-none text-xs text-foreground focus:outline-none font-medium text-white cursor-pointer w-full"
                   />
                 </div>
               </div>
-            )}
-
-            {/* Target type selection & Value input */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs font-semibold">Tipo de Métrica</Label>
-                <select
-                  value={formData.targetType}
-                  onChange={(e: any) =>
-                    setFormData((p) => ({
-                      ...p,
-                      targetType: e.target.value,
-                      trackingMode: (e.target.value === "products" || e.target.value === "custom") ? "manual" : "auto",
-                    }))
-                  }
-                  className="w-full bg-[#121214] border border-white/10 text-white rounded-xl text-xs px-3 py-2 h-9.5 cursor-pointer outline-none font-sans"
-                >
-                  <option value="revenue">Faturamento (R$)</option>
-                  <option value="appointments">Atendimentos (Quant.)</option>
-                  <option value="services">Serviços executados (Quant.)</option>
-                  <option value="products">Venda de produtos (Faturamento R$)</option>
-                  <option value="checklist">Avaliação Auditoria (% Conformidade)</option>
-                  <option value="custom">Métrica Customizada (Manual)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs font-semibold">Valor Alvo (Atingir)</Label>
-                <Input
-                  required
-                  type="number"
-                  step="0.01"
-                  value={formData.targetValue}
-                  onChange={(e) => setFormData((p) => ({ ...p, targetValue: e.target.value }))}
-                  placeholder={formData.targetType === "revenue" ? "Ex: 5000" : "Ex: 20"}
-                  className="bg-black/40 border-white/10 text-white text-xs rounded-xl h-9.5 placeholder:text-zinc-600"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-zinc-300 text-xs font-semibold">Rastreamento</Label>
-                <select
-                  value={formData.trackingMode}
-                  disabled={formData.targetType === "products" || formData.targetType === "custom"}
-                  onChange={(e: any) => setFormData((p) => ({ ...p, trackingMode: e.target.value }))}
-                  className="w-full bg-[#121214] border border-white/10 text-white rounded-xl text-xs px-3 py-2 h-9.5 cursor-pointer outline-none font-sans disabled:opacity-45"
-                >
-                  <option value="auto">Automático (Puxar Dados)</option>
-                  <option value="manual">Manual (Informar Valor)</option>
-                </select>
-              </div>
             </div>
 
-            {/* Date settings and Month Ref selection based on frequency */}
-            <div className="bg-[#121214]/40 p-4 rounded-xl border border-white/5 space-y-3.5">
-              <h5 className="text-[10px] uppercase font-bold text-primary font-mono tracking-wider flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" /> Definição do Período de Validade
-              </h5>
-              
-              {formData.periodType === "monthly" ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-zinc-400">Mês de Referência</Label>
-                    <Input
-                      type="month"
-                      value={formData.monthRef}
-                      onChange={(e) => setFormData((p) => ({ ...p, monthRef: e.target.value }))}
-                      className="bg-[#09090b] border-white/10 rounded-xl h-9.5"
-                    />
-                  </div>
-                  <div className="space-y-1 text-xs text-zinc-400 font-light pt-6 pl-1.5 flex items-center justify-start leading-tight">
-                    Validade automática do dia 1 ao dia 31 deste mês.
+            {/* Consolidate Analytics Row */}
+            {totalDefinedGoalsSum > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-5 border-t border-white/5">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Metas Definidas
+                  </p>
+                  <p className="text-base font-semibold text-primary">
+                    {activeGoalsCount} de {professionals.length} pros
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Total das Metas
+                  </p>
+                  <p className="text-base font-semibold text-foreground select-all">
+                    {formatBRL(totalDefinedGoalsSum)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Realizado Equipe
+                  </p>
+                  <p className="text-base font-semibold text-green-400 select-all font-mono">
+                    {formatBRL(totalRealizedSum)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-muted-foreground">
+                    Progresso Geral
+                  </p>
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <span className="text-sm font-bold text-white">
+                      {teamProgressPct}%
+                    </span>
+                    <Progress value={teamProgressPct} className="h-1.5 w-16 bg-white/10" />
                   </div>
                 </div>
-              ) : formData.periodType === "daily" ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-zinc-400">Dia de Referência</Label>
-                    <Input
-                      type="date"
-                      value={selectedDateFilter}
-                      onChange={(e) => setSelectedDateFilter(e.target.value)}
-                      className="bg-[#09090b] border-white/10 rounded-xl h-9.5"
-                    />
-                  </div>
-                  <div className="space-y-1 text-xs text-zinc-400 font-light pt-6 pl-1.5 flex items-center justify-start leading-tight animate-pulse font-mono">
-                    Data: {selectedDateFilter}
-                  </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Sub-tabs indicators */}
+          <div className="flex flex-wrap gap-1.5 border-b border-white/5 pb-2">
+            <button
+              onClick={() => setSubTab("overview")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all/all flex items-center gap-1.5 ${
+                subTab === "overview"
+                  ? "bg-white/10 text-white font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Target className="w-3.5 h-3.5" /> Visão Geral
+            </button>
+            <button
+              onClick={() => setSubTab("monthly")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all/all flex items-center gap-1.5 ${
+                subTab === "monthly"
+                  ? "bg-white/10 text-white font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" /> Metas Mensais
+            </button>
+            <button
+              onClick={() => setSubTab("weekly")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all/all flex items-center gap-1.5 ${
+                subTab === "weekly"
+                  ? "bg-white/10 text-white font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" /> Ref. Semanais Derivadas
+            </button>
+            <button
+              onClick={() => setSubTab("daily")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all/all flex items-center gap-1.5 ${
+                subTab === "daily"
+                  ? "bg-white/10 text-white font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" /> Ref. Diárias Derivadas
+            </button>
+            <button
+              onClick={() => setSubTab("by_professional")}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all/all flex items-center gap-1.5 ${
+                subTab === "by_professional"
+                  ? "bg-white/10 text-white font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <User className="w-3.5 h-3.5" /> Por Profissional
+            </button>
+          </div>
+
+          {professionals.length === 0 ? (
+            <Card className="border-white/10 bg-card/45 rounded-2xl shadow-xl">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                  <Users className="w-6 h-6 text-primary" />
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] text-zinc-400">Data de Início</Label>
-                    <Input
-                      required
-                      type="date"
-                      value={formData.startDate}
-                      onChange={(e) => setFormData((p) => ({ ...p, startDate: e.target.value }))}
-                      className="bg-[#09090b] border-white/10 rounded-xl h-9.5 text-xs text-white"
-                    />
+                <h3 className="text-base font-semibold text-foreground">
+                  Sem profissionais ativos
+                </h3>
+                <p className="text-muted-foreground text-xs mt-1 max-w-sm">
+                  Cadastre profissionais na aba de equipe antes de poder definir metas individuais.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* SUBTAB: OVERVIEW */}
+              {subTab === "overview" && (
+                <div className="space-y-6">
+                  {/* General Summary Stats Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="border-white/5 bg-[#121217] p-5 rounded-2xl space-y-2">
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider mr-1 block">Metas Coletivas</span>
+                      <p className="text-2xl font-bold font-mono text-white select-all">{formatBRL(totalDefinedGoalsSum)}</p>
+                      <p className="text-xs text-muted-foreground">Soma das metas individuais</p>
+                    </Card>
+                    <Card className="border-white/5 bg-[#121217] p-5 rounded-2xl space-y-2">
+                      <span className="text-[10px] text-[#A3E635] uppercase font-bold tracking-wider mr-1 block font-sans">Produção Acumulada</span>
+                      <p className="text-2xl font-bold font-mono text-[#A3E635] select-all">{formatBRL(totalRealizedSum)}</p>
+                      <p className="text-xs text-muted-foreground">Faturado até o momento</p>
+                    </Card>
+                    <Card className="border-white/5 bg-[#121217] p-5 rounded-2xl space-y-2">
+                      <span className="text-[10px] text-amber-500 uppercase font-bold tracking-wider mr-1 block font-sans">Falta Atingir</span>
+                      <p className="text-2xl font-bold font-mono text-amber-400 select-all">{formatBRL(totalRemainingSum)}</p>
+                      <p className="text-xs text-muted-foreground">Valor restante para faturar</p>
+                    </Card>
+                    <Card className="border-white/5 bg-[#121217] p-5 rounded-2xl space-y-2">
+                      <span className="text-[10px] text-primary uppercase font-bold tracking-wider mr-1 block font-sans">Média Diária Coletiva</span>
+                      {(() => {
+                        const anyProgress = normalizedProfGoals.find(i => i.progress.totalDays > 0)?.progress;
+                        const totalDays = anyProgress?.totalDays || 30;
+                        const elapsedDays = anyProgress?.elapsedDays || 0;
+                        const remDays = Math.max(totalDays - elapsedDays, 0);
+                        const dailyNeeded = remDays > 0 ? totalRemainingSum / remDays : 0;
+                        return (
+                          <>
+                            <p className="text-2xl font-bold font-mono text-primary select-all">{formatBRL(dailyNeeded)}</p>
+                            <p className="text-xs text-muted-foreground border-t border-white/5 pt-1 mt-1">Para os {remDays} dias restantes</p>
+                          </>
+                        );
+                      })()}
+                    </Card>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] text-zinc-400">Data de Término</Label>
-                    <Input
-                      required
-                      type="date"
-                      value={formData.endDate}
-                      onChange={(e) => setFormData((p) => ({ ...p, endDate: e.target.value }))}
-                      className="bg-[#09090b] border-white/10 rounded-xl h-9.5 text-xs text-white"
-                    />
+
+                  {/* Pacing lists */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Column 1: Below Pacing */}
+                    <Card className="border-white/5 bg-[#15151b] p-5 rounded-2xl space-y-4">
+                      <div className="flex items-center gap-2 border-b border-white/5 pb-2.5">
+                        <TrendingDown className="w-4 h-4 text-rose-500" />
+                        <h4 className="text-sm font-semibold text-rose-400 uppercase tracking-wider font-heading">Abaixo do Ritmo Esperado</h4>
+                      </div>
+                      {professionalsBehind.length === 0 ? (
+                        <p className="text-xs text-zinc-400 py-6 text-center italic font-light">Nenhum profissional abaixo do ritmo. Excelente!</p>
+                      ) : (
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                          {professionalsBehind.map(({ professional, progress }) => (
+                            <div key={professional.id} className="bg-black/30 p-3.5 rounded-xl border border-white/5 space-y-2 flex flex-col justify-between">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="text-xs font-bold text-white">{professional.name}</p>
+                                  <p className="text-[10px] text-muted-foreground">{professional.role || "Especialista"}</p>
+                                </div>
+                                <span className="text-[10px] bg-red-500/10 text-red-400 font-bold px-2 py-0.5 rounded-md font-mono">
+                                  {progress.progressPercent}%
+                                </span>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[10px] font-mono text-zinc-400">
+                                  <span>Falta: {formatBRL(progress.remainingValue)}</span>
+                                  <span>Meta: {formatBRL(progress.targetValue)}</span>
+                                </div>
+                                <Progress value={progress.progressPercent} className="h-1 bg-white/5" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+
+                    {/* Column 2: On Track / Success */}
+                    <Card className="border-white/5 bg-[#15151b] p-5 rounded-2xl space-y-4">
+                      <div className="flex items-center gap-2 border-b border-white/5 pb-2.5">
+                        <Award className="w-4 h-4 text-emerald-400" />
+                        <h4 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider font-heading">No Ritmo ou Meta Batida</h4>
+                      </div>
+                      {professionalsOnTrack.length === 0 ? (
+                        <p className="text-xs text-zinc-400 py-6 text-center italic font-light">Nenhum profissional no ritmo ideal ainda.</p>
+                      ) : (
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                          {professionalsOnTrack.map(({ professional, progress }) => (
+                            <div key={professional.id} className="bg-black/30 p-3.5 rounded-xl border border-white/5 space-y-2 flex flex-col justify-between">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="text-xs font-bold text-white">{professional.name}</p>
+                                  <p className="text-[10px] text-muted-foreground">{professional.role || "Especialista"}</p>
+                                </div>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md font-mono ${
+                                  progress.status === "completed" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-400/10 text-amber-350"
+                                }`}>
+                                  {progress.progressPercent}%
+                                </span>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[10px] font-mono text-zinc-400">
+                                  <span>Realizado: {formatBRL(progress.currentValue)}</span>
+                                  <span>Meta: {formatBRL(progress.targetValue)}</span>
+                                </div>
+                                <Progress value={progress.progressPercent} className="h-1 bg-white/5" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
                   </div>
                 </div>
               )}
-            </div>
 
-            {formData.trackingMode === "manual" && (
-              <div className="space-y-1.5 bg-[#D4AF37]/5 border border-[#D4AF37]/25 p-4 rounded-xl">
-                <Label className="text-[#D4AF37] text-xs font-bold">Progresso Realizado Manual (Atual)</Label>
+              {/* SUBTAB: MONTHLY */}
+              {subTab === "monthly" && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {normalizedProfGoals.map(({ professional: p, goalObj, progress, autoRevenue, hasManualProgress }) => {
+                    const isSet = progress.targetValue > 0;
+
+                    return (
+                      <Card key={p.id} className="border-white/10 bg-card/35 rounded-2xl shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[300px]">
+                        <CardHeader className="pb-2">
+                          <div className="flex justify-between items-start">
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-semibold text-primary uppercase tracking-wider">
+                                {selectedMonth}
+                              </p>
+                              <CardTitle className="text-base font-bold mt-1 text-white">
+                                {p.name}
+                              </CardTitle>
+                              <span className="inline-block text-[9px] bg-white/5 border border-white/5 text-muted-foreground rounded-full px-2 py-0.5 font-medium">
+                                {p.role || "Especialista"}
+                              </span>
+                            </div>
+
+                            {/* Status Badge */}
+                            {isSet && (
+                              <div className="space-y-1 text-right">
+                                <span className={`inline-block text-[10px] font-bold tracking-wider rounded-md px-2.5 py-1 ${
+                                  progress.status === "completed" 
+                                    ? "bg-green-500/10 text-green-400 border border-green-500/20" 
+                                    : progress.status === "on_track"
+                                    ? "bg-amber-400/10 text-amber-300 border border-amber-400/20"
+                                    : progress.status === "attention"
+                                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
+                                }`}>
+                                  {progress.status === "completed" 
+                                    ? "META BATIDA" 
+                                    : progress.status === "on_track"
+                                    ? "EM DIA"
+                                    : progress.status === "attention"
+                                    ? "ATENÇÃO"
+                                    : "ATRASADO"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </CardHeader>
+
+                        <CardContent className="space-y-4 pt-1 flex-1 flex flex-col justify-between">
+                          {isSet ? (
+                            <>
+                              {/* Numbers Row */}
+                              <div className="grid grid-cols-2 gap-4 bg-white/5 p-4 rounded-xl border border-white/5 mt-2">
+                                <div className="space-y-0.5">
+                                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Realizado</p>
+                                  <p className="text-lg font-bold text-white font-mono">{formatBRL(progress.currentValue)}</p>
+                                  <p className="text-[9px] text-muted-foreground font-light text-zinc-400 border-t border-white/5 pt-0.5 mt-0.5">
+                                    {hasManualProgress ? "🔒 Lançamento manual" : "⚙️ Dinâmico da agenda"}
+                                  </p>
+                                </div>
+                                <div className="space-y-0.5 text-right">
+                                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Meta</p>
+                                  <p className="text-lg font-bold text-[#D4AF37] font-mono">{formatBRL(progress.targetValue)}</p>
+                                  <p className="text-[9px] text-muted-foreground font-light text-zinc-400 border-t border-white/5 pt-0.5 mt-0.5">Definido pela gerência</p>
+                                </div>
+                              </div>
+
+                              {/* Progress bar and details */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-xs">
+                                  <span className="font-semibold text-primary">{progress.progressPercent}%</span>
+                                  {progress.remainingValue > 0 ? (
+                                    <span className="text-muted-foreground font-light text-zinc-300">
+                                      Falta {formatBRL(progress.remainingValue)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-green-400 font-semibold">
+                                      Excedeu {formatBRL(Math.abs(progress.remainingValue))}!
+                                    </span>
+                                  )}
+                                </div>
+                                <Progress value={progress.progressPercent} className="h-2 bg-white/5" />
+                              </div>
+
+                              {/* Required daily metrics */}
+                              <div className="bg-white/5 p-3 rounded-xl space-y-1 border border-white/5 text-xs text-zinc-300">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-muted-foreground">Dias úteis calculados:</span>
+                                  <span className="font-mono text-white font-medium">{useBusinessDays ? "Sim (Dias Úteis)" : "Não (Corridos)"}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-muted-foreground">Dias Restantes:</span>
+                                  <span className="font-semibold text-white">{progress.totalDays - progress.elapsedDays} de {progress.totalDays} dias</span>
+                                </div>
+                                <div className="flex justify-between items-center pt-1 border-t border-white/5 mt-0.5">
+                                  <span className="text-primary font-bold">Média p/ Dia Necessária:</span>
+                                  <span className="font-bold text-primary text-sm font-mono">{progress.remainingValue > 0 ? formatBRL(progress.dailyAverageRequired) : "R$ 0,00"}</span>
+                                </div>
+                              </div>
+
+                              {/* Actions Block */}
+                              <div className="mt-2 pt-2 border-t border-white/5 flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  onClick={() => openUpdateProgress(p, goalObj)}
+                                  className="flex-1 bg-white/5 border-white/10 hover:bg-white/10 text-xs h-9 rounded-xl font-medium text-white transition-all/all"
+                                >
+                                  Atualizar Realizado
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => openProfGoalEdit(p, progress.targetValue)}
+                                  className="h-9 w-9 p-0 text-muted-foreground hover:text-primary rounded-xl flex items-center justify-center border border-white/5"
+                                  title="Ajustar meta contratada"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center py-6 text-center h-full">
+                              <Target className="w-8 h-8 text-muted-foreground mb-2 opacity-50" />
+                              <p className="text-xs text-muted-foreground max-w-xs mb-4">
+                                Nenhuma meta contratual definida para este profissional.
+                              </p>
+                              <Button
+                                variant="outline"
+                                onClick={() => openProfGoalEdit(p, 0)}
+                                className="w-full border-dashed border-white/15 hover:border-primary/45 hover:bg-primary/5 text-xs h-9 font-semibold rounded-xl text-muted-foreground hover:text-primary transition-all/all"
+                              >
+                                Definir uma meta para {p.name.split(" ")[0]}
+                              </Button>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SUBTAB: WEEKLY */}
+              {subTab === "weekly" && (
+                <div className="space-y-4">
+                  <div className="bg-[#121217] border border-white/5 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-white font-heading">Referências Semanais Derivadas</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Metas sugeridas semanais baseadas estritamente na meta mensal do profissional calculadas proporcionalmente de maneira segura.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {normalizedProfGoals.map(({ professional: p, progress }) => {
+                      if (progress.targetValue === 0) return null;
+
+                      // Derived weekly is roughly proportional to the total count of days, considering a 7 day span
+                      const weekRatio = 7 / progress.totalDays;
+                      const weeklyRefTarget = progress.targetValue * weekRatio;
+                      const weeklyRefRealized = progress.currentValue * weekRatio;
+                      
+                      return (
+                        <Card key={p.id} className="border-white/5 bg-[#15151b] p-5 rounded-2xl space-y-4 flex flex-col justify-between">
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-start border-b border-white/5 pb-2.5">
+                              <div>
+                                <p className="text-xs font-bold text-white">{p.name}</p>
+                                <p className="text-[10px] text-muted-foreground">Faturamento contratual: {formatBRL(progress.targetValue)}</p>
+                              </div>
+                              <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full font-mono">
+                                7 Dias Estimado
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                              <div className="space-y-1">
+                                <span className="text-zinc-400 font-sans block">Realizado Semanal (Pacing):</span>
+                                <p className="text-sm font-bold text-zinc-200 font-mono">{formatBRL(weeklyRefRealized)}</p>
+                              </div>
+                              <div className="space-y-1 text-right">
+                                <span className="text-primary font-bold font-sans block">Ref. Semanal Sugerida:</span>
+                                <p className="text-sm font-bold text-primary font-mono">{formatBRL(weeklyRefTarget)}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              toast.success(`Referência semanal de ${formatBRL(weeklyRefTarget)} simulada! Nenhuma alteração foi gravada em banco.`);
+                            }}
+                            className="w-full bg-white/5 border-white/10 hover:bg-white/10 text-xs h-9 rounded-xl font-medium text-white transition-all/all mt-4"
+                          >
+                            Criar meta semanal a partir da mensal (Simular)
+                          </Button>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SUBTAB: DAILY */}
+              {subTab === "daily" && (
+                <div className="space-y-4">
+                  <div className="bg-[#121217] border border-white/5 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-white font-heading">Referências Diárias Derivadas</h4>
+                      <p className="text-xs text-muted-foreground">
+                        Faturamento mínimo ideal por dia útil ou corrido de trabalho necessário para faturar 100% da meta.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {normalizedProfGoals.map(({ professional: p, progress }) => {
+                      if (progress.targetValue === 0) return null;
+
+                      const dailyRefTarget = progress.targetValue / progress.totalDays;
+                      const dailyRefRealized = progress.currentValue / Math.max(progress.elapsedDays, 1);
+
+                      return (
+                        <Card key={p.id} className="border-white/5 bg-[#15151b] p-5 rounded-2xl space-y-4 flex flex-col justify-between">
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-start border-b border-white/5 pb-2.5">
+                              <div>
+                                <p className="text-xs font-bold text-white">{p.name}</p>
+                                <p className="text-[10px] text-muted-foreground font-light">Soma de dias: {progress.totalDays} ({useBusinessDays ? "Dias Úteis" : "Dias Corridos"})</p>
+                              </div>
+                              <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full font-mono">
+                                Pacing Diário
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                              <div className="space-y-1">
+                                <span className="text-zinc-400 font-sans block">Média Faturada Diária:</span>
+                                <p className="text-sm font-bold text-green-400 font-mono">{formatBRL(dailyRefRealized)}</p>
+                              </div>
+                              <div className="space-y-1 text-right">
+                                <span className="text-primary font-bold font-sans block">Média Sugerida por Dia:</span>
+                                <p className="text-sm font-bold text-primary font-mono">{formatBRL(dailyRefTarget)}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              toast.success(`Meta diária de ${formatBRL(dailyRefTarget)} simulada para ${p.name}!`);
+                            }}
+                            className="w-full bg-white/5 border-white/10 hover:bg-white/10 text-xs h-9 rounded-xl font-medium text-white transition-all/all mt-4"
+                          >
+                            Criar meta diária a partir da mensal (Simular)
+                          </Button>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SUBTAB: BY PROFESSIONAL */}
+              {subTab === "by_professional" && (
+                <div className="space-y-6">
+                  {/* Combobox or select professional */}
+                  <div className="flex items-center gap-3 bg-[#121217] p-4 rounded-3xl border border-white/5 max-w-sm">
+                    <User className="w-4 h-4 text-primary shrink-0" />
+                    <select
+                      value={selectedProf?.id || ""}
+                      onChange={(e) => {
+                        const found = professionals.find(p => p.id === e.target.value);
+                        setSelectedProf(found || null);
+                      }}
+                      className="bg-transparent border-none text-xs text-white focus:outline-none font-medium cursor-pointer w-full"
+                    >
+                      <option value="" className="bg-[#121217] text-zinc-300">Selecione um Profissional...</option>
+                      {professionals.map(p => (
+                        <option key={p.id} value={p.id} className="bg-[#121217] text-white font-sans text-xs">
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedProf ? (() => {
+                    const matchedItem = normalizedProfGoals.find(i => i.professional.id === selectedProf.id);
+                    if (!matchedItem || matchedItem.progress.targetValue === 0) {
+                      return (
+                        <div className="bg-[#15151b] p-8 rounded-3xl border border-white/5 text-center text-zinc-400 select-none max-w-sm">
+                          <Target className="w-10 h-10 mx-auto mb-3 opacity-30 text-primary" />
+                          <p className="text-sm font-medium">Nenhuma meta ativa definida para {selectedProf.name} em {selectedMonth}</p>
+                          <Button
+                            onClick={() => openProfGoalEdit(selectedProf, 0)}
+                            className="mt-4 bg-primary text-black font-bold text-xs h-9 rounded-xl font-sans"
+                          >
+                            Definir Meta Agora
+                          </Button>
+                        </div>
+                      );
+                    }
+
+                    const { progress, hasManualProgress } = matchedItem;
+
+                    return (
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Summary Column */}
+                        <Card className="lg:col-span-1 border-white/5 bg-[#15151b] p-5 rounded-3xl space-y-6 flex flex-col justify-between">
+                          <div className="space-y-4">
+                            <div className="space-y-1.5 flex flex-col">
+                              <span className="inline-block self-start text-[10px] bg-primary/10 text-primary uppercase font-extrabold tracking-wider px-3 py-1 rounded-full">Meta Individual Ativa</span>
+                              <h3 className="text-xl font-extrabold text-white pt-2">{selectedProf.name}</h3>
+                              <p className="text-xs text-muted-foreground font-sans">{selectedProf.role || "Especialista"}</p>
+                            </div>
+
+                            <div className="space-y-1 border-t border-white/5 pt-4">
+                              <span className="text-xs text-zinc-400">Total Faturado</span>
+                              <p className="text-3xl font-bold text-white select-all font-mono">{formatBRL(progress.currentValue)}</p>
+                              <p className="text-[10px] text-zinc-500 font-sans font-light mt-1 leading-relaxed">{hasManualProgress ? "🔒 Lançado manualmente pelo gestor" : "⚙️ Calculado dinamicamente através da agenda"}</p>
+                            </div>
+
+                            <div className="space-y-1 pt-1">
+                              <span className="text-zinc-400 text-xs block">Objetivo Contratado</span>
+                              <p className="text-lg font-bold text-primary select-all font-mono">{formatBRL(progress.targetValue)}</p>
+                            </div>
+
+                            <div className="space-y-1.5 pt-2">
+                              <div className="flex justify-between text-xs text-zinc-300">
+                                <span className="font-sans">Aderência</span>
+                                <span className="font-bold font-mono">{progress.progressPercent}%</span>
+                              </div>
+                              <Progress value={progress.progressPercent} className="h-2.5 bg-black/50" />
+                            </div>
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            onClick={() => openUpdateProgress(selectedProf, matchedItem.goalObj)}
+                            className="w-full bg-[#121217] border border-white/10 hover:bg-white/5 text-xs font-semibold h-10 rounded-xl mt-4"
+                          >
+                            Ajustar Faturamento Manual
+                          </Button>
+                        </Card>
+
+                        {/* Calculations & Timeline details Column */}
+                        <Card className="lg:col-span-2 border-white/5 bg-[#15151b] p-6 rounded-3xl space-y-6">
+                          <h4 className="text-sm font-semibold text-white border-b border-white/5 pb-2.5 font-heading">Projeções & Plano de Ação</h4>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="bg-black/35 p-4 rounded-2xl border border-white/5 space-y-1.5 flex flex-col justify-between">
+                              <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Restante p/ Atingir</span>
+                              <p className="text-xl font-bold font-mono text-white mt-1">{formatBRL(progress.remainingValue)}</p>
+                              <p className="text-xs text-muted-foreground border-t border-white/5 pt-1 mt-1 font-sans">
+                                {progress.remainingValue > 0 ? "Faltante para atingimento pleno do objetivo." : "Meta 100% batida! Parabéns!"}
+                              </p>
+                            </div>
+
+                            <div className="bg-black/35 p-4 rounded-2xl border border-white/5 space-y-1.5 flex flex-col justify-between">
+                              <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Média Diária Necessária</span>
+                              <p className="text-xl font-bold font-mono text-primary mt-1">{formatBRL(progress.dailyAverageRequired)}</p>
+                              <p className="text-xs text-muted-foreground border-t border-white/5 pt-1 mt-1 font-sans">
+                                Nos próximos {progress.totalDays - progress.elapsedDays} dias ({useBusinessDays ? "úteis" : "corridos"}).
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 bg-black/20 p-4 rounded-2xl border border-white/5 text-xs text-zinc-200">
+                            <div className="flex justify-between">
+                              <span className="text-zinc-400 font-sans">Total de dias do período de referência:</span>
+                              <span className="font-semibold text-white font-mono">{progress.totalDays} dias ({useBusinessDays ? "Sem Finais de Semana" : "Dias Corridos"})</span>
+                            </div>
+                            <div className="flex justify-between border-t border-white/5 pt-2">
+                              <span className="text-zinc-400 font-sans block">Dias já transcorridos do mês:</span>
+                              <span className="font-semibold text-white font-mono">{progress.elapsedDays} dias</span>
+                            </div>
+                            <div className="flex justify-between border-t border-white/5 pt-2">
+                              <span className="text-zinc-400 font-sans block">Última alteração de progresso:</span>
+                              <span className="font-semibold text-zinc-300 font-sans">
+                                {matchedItem.goalObj?.lastProgressUpdateAt 
+                                  ? `${new Date(matchedItem.goalObj.lastProgressUpdateAt).toLocaleDateString()} por ${matchedItem.goalObj.lastProgressUpdatedBy || "Gerente"}`
+                                  : "Nenhuma modificação manual feita nesta meta"}
+                              </span>
+                            </div>
+                          </div>
+
+                          {progress.progressPercent >= 100 && (
+                            <div className="flex gap-3 bg-green-500/10 border border-green-500/20 p-4 rounded-2xl items-center text-xs text-green-400 mt-2">
+                              <Award className="w-5 h-5 text-green-400 shrink-0" />
+                              <p className="leading-relaxed font-sans">Este profissional já excedeu o faturamento contratado para {selectedMonth}. Excelente performance registrada!</p>
+                            </div>
+                          )}
+                        </Card>
+                      </div>
+                    );
+                  })() : (
+                    <div className="text-center py-12 text-muted-foreground border border-dashed border-white/5 rounded-3xl">
+                      <p className="text-xs italic font-sans font-light">Nenhum profissional selecionado para faturamento analítico.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Manual progress override / update Dialog */}
+      <Dialog
+        open={isProgressDialogOpen}
+        onOpenChange={(open) => {
+          setIsProgressDialogOpen(open);
+          if (!open) {
+            setSelectedProfForProgress(null);
+            setSelectedGoalForProgress(null);
+            setManualProgressValue("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px] bg-card border border-white/15 rounded-3xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg font-semibold text-white flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" />
+              Atualizar Realizado Manualmente
+            </DialogTitle>
+          </DialogHeader>
+          {selectedProfForProgress && (
+            <form onSubmit={handleSaveProgress} className="space-y-5 pt-3">
+              <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/10 text-xs">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider mr-1 block">Profissional</span>
+                <p className="text-sm font-bold text-white mt-1 leading-none">{selectedProfForProgress.name}</p>
+                <p className="text-xs text-primary font-medium mt-1 select-none">{selectedProfForProgress.role || "Especialista"}</p>
+              </div>
+
+              {/* Modes of update */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground font-semibold">Tipo de Atualização</Label>
+                <div className="grid grid-cols-2 gap-2 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setProgressUpdateMode("set")}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all/all ${
+                      progressUpdateMode === "set"
+                        ? "bg-primary text-black font-extrabold shadow-md"
+                        : "text-muted-foreground hover:text-white"
+                    }`}
+                  >
+                    Definir Total
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProgressUpdateMode("add")}
+                    className={`py-2 rounded-lg text-xs font-bold transition-all/all ${
+                      progressUpdateMode === "add"
+                        ? "bg-primary text-black font-extrabold shadow-md"
+                        : "text-muted-foreground hover:text-white"
+                    }`}
+                  >
+                    Somar Valor
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground italic px-1 pt-1 leading-snug">
+                  {progressUpdateMode === "set" 
+                    ? "Substitui o faturamento atual pelo novo valor digitado." 
+                    : "Soma o novo valor digitado diretamente ao faturamento acumulado atualmente."}
+                </p>
+              </div>
+
+              {/* Input */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground font-semibold">
+                  Valor em Reais (R$)
+                </Label>
+                <Input
+                  required
+                  type="text"
+                  value={manualProgressValue}
+                  onChange={(e) => setManualProgressValue(e.target.value)}
+                  className="bg-background border-white/10 rounded-xl font-mono text-zinc-100"
+                  placeholder="Ex: 1250,50 ou 1250"
+                  autoFocus
+                />
+              </div>
+
+              <div className="mt-4 pt-2 border-t border-white/5 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsProgressDialogOpen(false)}
+                  className="flex-1 text-xs h-11 rounded-xl"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1 bg-primary text-black font-bold text-xs h-11 rounded-xl shadow-md hover:bg-yellow-450"
+                >
+                  Gravar Progresso
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog for setting professional goals */}
+      <Dialog
+        open={isProfGoalDialogOpen}
+        onOpenChange={(open) => {
+          setIsProfGoalDialogOpen(open);
+          if (!open) {
+            setSelectedProf(null);
+            setProfGoalTargetAmount("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px] bg-card border border-white/15 rounded-3xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg font-semibold text-white flex items-center gap-2">
+              <Target className="w-5 h-5 text-primary" />
+              Meta de Faturamento Contratual
+            </DialogTitle>
+          </DialogHeader>
+          {selectedProf && (
+            <form onSubmit={handleSaveProfGoal} className="space-y-5 pt-3">
+              <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/10">
+                <p className="text-[10px] uppercase font-extrabold text-muted-foreground tracking-wider leading-none">
+                  Profissional
+                </p>
+                <p className="text-sm font-bold text-white mt-1 border-b border-white/5 pb-1 select-none">{selectedProf.name}</p>
+                <p className="text-xs text-primary font-medium mt-1 leading-relaxed select-none">{selectedProf.role}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground font-medium">
+                  Mês de Referência
+                </Label>
+                <Input
+                  disabled
+                  value={selectedMonth}
+                  className="bg-white/5 border-white/10 text-xs text-muted-foreground rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground font-medium">
+                  Meta de Faturamento (R$)
+                </Label>
                 <Input
                   required
                   type="number"
                   step="0.01"
-                  value={formData.currentValue}
-                  onChange={(e) => setFormData((p) => ({ ...p, currentValue: e.target.value }))}
-                  placeholder="Ex: 15"
-                  className="bg-black/40 border-white/10 text-white rounded-xl text-xs h-9.5"
+                  value={profGoalTargetAmount}
+                  onChange={(e) => setProfGoalTargetAmount(e.target.value)}
+                  className="bg-background border-white/10 rounded-xl"
+                  placeholder="Ex: 8500"
+                  autoFocus
                 />
-                <p className="text-[10px] text-zinc-500 font-light leading-snug pt-0.5">
-                  Insira o andamento atualizado. Você poderá alterar este valor a qualquer momento editando este formulário.
-                </p>
               </div>
-            )}
 
-            <div className="flex gap-3 pt-4 border-t border-white/5 select-none font-sans">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-                className="w-1/2 border-white/10 hover:bg-white/5 text-zinc-300 rounded-xl font-semibold text-xs h-10.5 cursor-pointer"
-              >
-                Cancelar
-              </Button>
               <Button
                 type="submit"
-                className="w-1/2 bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs h-10.5 transition-all cursor-pointer shadow-lg"
+                className="w-full bg-primary hover:bg-gold-400 text-black font-semibold h-11 rounded-xl transition-all shadow-md mt-2"
               >
-                {editingGoal ? "Salvar Alterações" : "Ativar Nova Meta"}
+                Salvar Meta de Equipe
               </Button>
-            </div>
-          </form>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

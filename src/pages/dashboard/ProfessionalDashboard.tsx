@@ -33,6 +33,8 @@ import {
   Info,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
+import { calculateGoalProgress, normalizeGoal } from "../../lib/goals";
+
 
 export default function ProfessionalDashboard() {
   const { userData, salonData } = useAuth();
@@ -344,10 +346,12 @@ export default function ProfessionalDashboard() {
   const displayAppointments = agendaTab === "today" ? todayAppointments : myAppointments;
 
   // Active Goal for current month
-  const currentGoal = myGoals.find(g => g.month === currentMonthStr);
-  const goalProgressPct = currentGoal && currentGoal.targetAmount > 0 
-    ? Math.min(Math.round((currentMonthEarnings / currentGoal.targetAmount) * 100), 100)
-    : 0;
+  const [useBusinessDays, setUseBusinessDays] = useState(false);
+  const currentGoalRaw = myGoals.find(g => g.month === currentMonthStr);
+  const currentGoal = currentGoalRaw ? normalizeGoal(currentGoalRaw, currentMonthEarnings) : undefined;
+  
+  const goalProgress = currentGoal ? calculateGoalProgress(currentGoal, useBusinessDays) : null;
+  const goalProgressPct = goalProgress ? goalProgress.progressPercent : 0;
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -939,46 +943,138 @@ export default function ProfessionalDashboard() {
       {/* ==================== SCREEN: MINHAS METAS ==================== */}
       {activeTab === 'metas' && (
         <Card className="border-border bg-card/50">
-          <CardHeader>
-            <CardTitle className="text-base font-medium">Metas Individuais Registradas</CardTitle>
-            <CardDescription className="text-xs">Acompanhamento de faturamento do mês atual vs alvo contratual estabelecido.</CardDescription>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-base font-medium">Painel de Metas & Acompanhamento</CardTitle>
+              <CardDescription className="text-xs">Visualize suas metas contratuais de faturamento, aderência em tempo real e projeção diária.</CardDescription>
+            </div>
+
+            {/* Business days configuration selector */}
+            {currentGoal && (
+              <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 self-start sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => setUseBusinessDays(false)}
+                  className={`px-3 py-1 rounded-lg text-[9px] uppercase font-bold tracking-wider transition-all ${
+                    !useBusinessDays
+                      ? "bg-primary text-black font-extrabold"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  Dias Corridos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseBusinessDays(true)}
+                  className={`px-3 py-1 rounded-lg text-[9px] uppercase font-bold tracking-wider transition-all ${
+                    useBusinessDays
+                      ? "bg-primary text-black font-extrabold"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  Dias Úteis
+                </button>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="p-4 md:p-6 space-y-6">
-            {!currentGoal ? (
+            {!currentGoal || !goalProgress ? (
               <div className="text-center py-10 text-muted-foreground">
-                <Target className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="font-heading font-medium text-sm">Nenhuma meta ativa para {currentMonthStr}</p>
+                <Target className="w-10 h-10 mx-auto mb-3 opacity-30 text-primary animate-pulse" />
+                <p className="font-heading font-medium text-sm text-foreground">Nenhuma meta ativa para {currentMonthStr}</p>
                 <p className="text-xs mt-1">A gerência estabelecerá metas de faturamento e comissionamento para você aqui.</p>
               </div>
             ) : (
-              <div className="max-w-xl mx-auto space-y-6">
-                <div className="bg-[#121217] p-6 rounded-3xl border border-white/5 text-center space-y-2">
-                  <span className="text-[10px] bg-primary/10 text-primary uppercase font-bold tracking-widest px-3 py-1 rounded-full">Meta Individual • {currentGoal.month}</span>
-                  <p className="text-muted-foreground text-sm font-light pt-2">Progresso Faturado</p>
-                  <p className="text-4xl font-heading font-light text-white">{formatBRL(currentMonthEarnings)}</p>
-                  <p className="text-xs text-muted-foreground">de um alvo de <span className="text-primary font-bold">{formatBRL(currentGoal.targetAmount)}</span></p>
-                </div>
+              <div className="max-w-2xl mx-auto space-y-6">
+                {/* Header status block */}
+                <div className="bg-[#121217] p-6 rounded-3xl border border-white/5 space-y-4 text-center">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] bg-primary/10 text-primary uppercase font-extrabold tracking-widest px-3 py-1 rounded-full">
+                      Objetivo Individual • {currentGoal.month}
+                    </span>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-mono">
-                    <span>Aderência à Meta</span>
-                    <span>{goalProgressPct}%</span>
+                    <span className={`text-[10px] font-bold tracking-wider rounded-md px-2.5 py-1 ${
+                      goalProgress.status === "completed" 
+                        ? "bg-green-500/10 text-green-400 border border-green-500/20" 
+                        : goalProgress.status === "on_track"
+                        ? "bg-amber-400/10 text-amber-300 border border-amber-400/20"
+                        : goalProgress.status === "attention"
+                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        : "bg-red-500/10 text-red-400 border border-red-500/20"
+                    }`}>
+                      {goalProgress.status === "completed" 
+                        ? "META BATIDA" 
+                        : goalProgress.status === "on_track"
+                        ? "EM DIA"
+                        : goalProgress.status === "attention"
+                        ? "ATENÇÃO"
+                        : "ATRASADO"}
+                    </span>
                   </div>
-                  <Progress value={goalProgressPct} className="h-3 rounded-full bg-black/60" />
+
+                  <div className="pt-2">
+                    <p className="text-muted-foreground text-xs font-light">Seu Faturamento Realizado</p>
+                    <p className="text-4xl font-heading font-bold text-white tracking-tight font-mono select-all mt-1">{formatBRL(goalProgress.currentValue)}</p>
+                    
+                    <p className="text-xs text-muted-foreground mt-2">
+                      De um alvo contratado de <span className="text-[#D4AF37] font-semibold font-mono">{formatBRL(goalProgress.targetValue)}</span>
+                    </p>
+                  </div>
                 </div>
 
-                {goalProgressPct >= 100 ? (
+                {/* Progress Visualizer */}
+                <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/5">
+                  <div className="flex justify-between text-xs font-medium">
+                    <span className="text-primary font-bold">{goalProgress.progressPercent}% Concluído</span>
+                    {goalProgress.remainingValue > 0 ? (
+                      <span className="text-zinc-300">
+                        Falta faturar <span className="font-bold text-white font-mono">{formatBRL(goalProgress.remainingValue)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-semibold text-green-400 flex items-center">
+                        <Award className="w-3.5 h-3.5 mr-1" /> Você ultrapassou a meta em {formatBRL(Math.abs(goalProgress.remainingValue))}!
+                      </span>
+                    )}
+                  </div>
+                  <Progress value={goalProgress.progressPercent} className="h-3 rounded-xl bg-black/60" />
+                </div>
+
+                {/* Grid stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-1">
+                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-sans">Média Diária Necessária</span>
+                    <p className="text-xl font-bold font-mono text-primary pt-1">
+                      {goalProgress.remainingValue > 0 ? formatBRL(goalProgress.dailyAverageRequired) : "R$ 0,00"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Meta diária para os próximos {goalProgress.totalDays - goalProgress.elapsedDays} dias.</p>
+                  </div>
+
+                  <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-1">
+                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-sans">Calendário do Período</span>
+                    <p className="text-xl font-bold text-white pt-1">
+                      {goalProgress.totalDays - goalProgress.elapsedDays} dias restantes
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">De um ciclo de {goalProgress.totalDays} dias ({useBusinessDays ? "Dias Úteis" : "Corridos"}).</p>
+                  </div>
+                </div>
+
+                {/* Guidance Tip of progress */}
+                {goalProgress.status === "completed" ? (
                   <div className="flex gap-3 bg-green-500/10 border border-green-500/20 p-4 rounded-2xl items-center text-xs text-green-400">
                     <Award className="w-6 h-6 text-green-400 shrink-0" />
                     <div>
-                      <p className="font-bold">Parabéns! Meta 100% Batida</p>
-                      <p className="opacity-80">Você atingiu o faturamento estipulado para a equipe Essenza este mês. Mantenha os feedbacks em dia!</p>
+                      <p className="font-bold">Espetacular! Você bateu seu objetivo!</p>
+                      <p className="opacity-80">Seu desempenho faturado estipulado para {currentGoal.month} foi atingido com sucesso. Parabéns!</p>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground text-center font-light leading-relaxed">
-                    Completar os agendamentos agendados e fidelizar novos clientes ajudam você a bater a meta mais rápido!
-                  </p>
+                  <div className="flex gap-2.5 bg-yellow-500/5 border border-yellow-500/10 p-4.5 rounded-2xl text-xs text-zinc-350 leading-relaxed font-sans">
+                    <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                    <p>
+                      O cálculo de dias baseia-se em <strong>{useBusinessDays ? "dias de semana normais de faturamento (Seg à Sex)" : "dias corridos normais da folha mensal"}</strong>. 
+                      Defina o método preferencial acima para monitorar e projetar os faturamentos de agendamentos diários adequadamente!
+                    </p>
+                  </div>
                 )}
               </div>
             )}

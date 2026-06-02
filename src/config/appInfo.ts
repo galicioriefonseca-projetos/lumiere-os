@@ -1,6 +1,6 @@
 export const APP_INFO = {
   name: 'LumiereOS',
-  version: '1.4.5-founder',
+  version: '1.4.7-founder',
   company: 'Galiciori e Fonseca Estratégia Digital',
   website: 'https://galicioriefonseca.com.br',
   supportEmail: 'suporte@lumiereos.com.br',

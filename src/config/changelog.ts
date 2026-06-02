@@ -9,16 +9,16 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
-    version: '1.4.6-founder',
+    version: '1.4.7-founder',
     date: 'Junho de 2026',
-    title: 'Metas Avançadas e Rotinas Personalizáveis',
-    description: 'Sistema completo e flexível de gerenciamento de metas diárias, semanais e mensais por profissional, função ou global, integrado a rotinas personalizáveis.',
+    title: 'Painel de acompanhamento de metas',
+    description: 'Evolução do painel de metas para acompanhamento detalhado de progresso faturado, com médias diárias necessárias e derivações temporais seguras.',
     highlights: [
-      'Implementadas Metas de Salão e Metas de Equipe por cargo específico (Ex: Barbeiros, Manicures).',
-      'Novos tipos de meta com cálculo automatizado: faturamento (revenue), atendimentos (appointments), serviços, checklists operacionais e personalizados.',
-      'Suporte para metas diárias, semanais e mensais integradas na interface com abas de filtros de visualização flexíveis.',
-      'Dashboard analógico com progressão em tempo real e rastreamento automático do saldo por colaborador.',
-      'Controle de limites por nível de permissão (Owner, Manager e Atendentes gerenciam; profissionais visualizam de forma restrita e leitura apenas).'
+      'Metas existentes agora exibem progresso, realizado, falta e média diária necessária.',
+      'As metas já cadastradas foram preservadas operando com fallbacks robustos de leitura.',
+      'Acompanhamento mensal, semanal e diário integrado de forma fluida.',
+      'Aba de visualização analítica por profissional e painel de progresso coletivo.',
+      'Atualização manual do realizado sem alterar ou afetar a meta definida pela liderança.'
     ],
     isNew: true
   },
