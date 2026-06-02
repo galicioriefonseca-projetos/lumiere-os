@@ -9,6 +9,20 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.4.6-founder',
+    date: 'Junho de 2026',
+    title: 'Metas Avançadas e Rotinas Personalizáveis',
+    description: 'Sistema completo e flexível de gerenciamento de metas diárias, semanais e mensais por profissional, função ou global, integrado a rotinas personalizáveis.',
+    highlights: [
+      'Implementadas Metas de Salão e Metas de Equipe por cargo específico (Ex: Barbeiros, Manicures).',
+      'Novos tipos de meta com cálculo automatizado: faturamento (revenue), atendimentos (appointments), serviços, checklists operacionais e personalizados.',
+      'Suporte para metas diárias, semanais e mensais integradas na interface com abas de filtros de visualização flexíveis.',
+      'Dashboard analógico com progressão em tempo real e rastreamento automático do saldo por colaborador.',
+      'Controle de limites por nível de permissão (Owner, Manager e Atendentes gerenciam; profissionais visualizam de forma restrita e leitura apenas).'
+    ],
+    isNew: true
+  },
+  {
     version: '1.4.5-founder',
     date: 'Junho de 2026',
     title: 'Assinatura Recorrente via Stripe',
@@ -20,7 +34,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Avisos e painéis informativos de faturamento dinâmicos no DashboardHome.',
       'Painel Master estendido com visualização de IDs e status de transação vinculados diretamente à conta administrativa do Stripe.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.4.4-founder',

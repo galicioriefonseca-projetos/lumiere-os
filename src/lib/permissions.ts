@@ -74,7 +74,10 @@ export function canAccessRoute(role: Role | undefined, route: string): boolean {
 
   // Professional sub-route restrictions
   if (isProfessional(role)) {
-    return cleanRoute === '/dashboard' || cleanRoute === '/dashboard/meu-painel' || cleanRoute === '/dashboard/profissional';
+    return cleanRoute === '/dashboard' || 
+           cleanRoute === '/dashboard/meu-painel' || 
+           cleanRoute === '/dashboard/profissional' ||
+           cleanRoute === '/dashboard/metas';
   }
 
   // Dashboard root is accessible to anyone logged in
@@ -104,7 +107,7 @@ export function canAccessRoute(role: Role | undefined, route: string): boolean {
     case '/dashboard/equipe':
       return canManageTeam(role);
     case '/dashboard/metas':
-      return canManageGoals(role);
+      return canManageGoals(role) || isProfessional(role);
     case '/dashboard/checklist':
       return canAccessOperationalChecklist(role);
     case '/dashboard/servicos':

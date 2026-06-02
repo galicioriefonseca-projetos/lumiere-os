@@ -58,6 +58,7 @@ import {
   PredefinedTemplate,
 } from "../../data/checklistTemplates";
 import jsPDF from "jspdf";
+import ManageRotinasDialog from "../../components/checklist/ManageRotinasDialog";
 import autoTable from "jspdf-autotable";
 
 function removeUndefinedDeep(obj: any): any {
@@ -2115,135 +2116,12 @@ export default function ChecklistPage() {
       </div>
 
       {/* MODAL CONFIGURACAO ROTINAS OPERACIONAIS */}
-      <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
-        <DialogContent className="max-w-2xl bg-[#09090b]/95 border border-white/10 text-white rounded-2xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto w-[94vw] sm:w-[550px] md:w-[650px] p-0 text-white font-sans">
-          <DialogHeader className="border-b border-white/5 p-6 pb-4 shrink-0">
-            <DialogTitle className="text-xl font-heading font-light tracking-tight text-white flex items-center gap-2">
-              <ListTodo className="w-5.5 h-5.5 text-primary" /> Configuração de Checklist Operacional
-            </DialogTitle>
-            <p className="text-[#a1a1aa] text-xs font-light mt-1 font-sans">
-              Ative ou desative a exibição no painel diário e importe novos modelos recomendados para as suas rotinas.
-            </p>
-          </DialogHeader>
-
-          <div className="p-6 space-y-6 pt-4">
-            
-            {/* Seção 1: Rotinas Cadastradas (Checklists no Banco) */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-1.5 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary" /> Rotinas Cadastradas no Estabelecimento
-              </h4>
-
-              {allChecklists.filter(c => c.type !== "professional_daily_evaluation" && c.checklistGroup !== "professional_evaluation").length === 0 ? (
-                <div className="p-4 bg-white/5 border border-white/5 rounded-xl text-center text-xs text-muted-foreground font-light font-sans">
-                  Nenhum checklist operacional cadastrado. Importe um modelo abaixo para começar!
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-                  {allChecklists
-                    .filter(c => c.type !== "professional_daily_evaluation" && c.checklistGroup !== "professional_evaluation")
-                    .map((chk) => {
-                      const isCurrentlyActive = chk.isActive !== false;
-                      return (
-                        <div
-                          key={chk.id}
-                          className="bg-white/[0.03] border border-white/5 rounded-xl p-3.5 flex items-center justify-between gap-4 hover:bg-white/[0.05] transition-all font-sans"
-                        >
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-xs text-white truncate block">
-                                {chk.title}
-                              </span>
-                              <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0 ${
-                                isCurrentlyActive 
-                                  ? "bg-primary/10 text-primary border border-primary/20" 
-                                  : "bg-white/5 text-[#a1a1aa] border border-white/10"
-                              }`}>
-                                {isCurrentlyActive ? "Ativo" : "Inativo"}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-zinc-400 line-clamp-1 font-light">
-                              {chk.description || "Sem descrição"} • {chk.items?.length || 0} itens
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              size="sm"
-                              variant={isCurrentlyActive ? "outline" : "default"}
-                              onClick={() => handleToggleChecklistActive(chk.id, isCurrentlyActive)}
-                              className={`h-8 rounded-lg text-xs font-semibold px-3 transition-all cursor-pointer ${
-                                isCurrentlyActive
-                                  ? "border-white/10 text-zinc-400 hover:text-white hover:bg-white/5"
-                                  : "bg-primary hover:bg-gold-500 text-black border-transparent"
-                              }`}
-                            >
-                              {isCurrentlyActive ? "Desativar" : "Ativar"}
-                            </Button>
-
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handleDeleteChecklist(chk.id)}
-                              className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-white/5 rounded-lg cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-
-            {/* Seção 2: Adicionar Novos Modelos */}
-            <div className="space-y-3 pt-4 border-t border-white/5">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-1.5 font-mono">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary" /> Modelos Disponíveis para Importação
-              </h4>
-
-              <div className="grid sm:grid-cols-2 gap-3 max-h-[250px] overflow-y-auto pr-1 select-none font-sans">
-                {predefinedTemplates
-                  .filter(t => t.checklistGroup === "operational")
-                  .map((tpl) => {
-                    const alreadyExists = allChecklists.some(c => c.title === tpl.title);
-                    return (
-                      <div
-                        key={tpl.title}
-                        className="bg-white/[0.02] border border-[#ffffff0a] rounded-xl p-3 flex flex-col justify-between gap-3 hover:border-white/15 transition-all text-white"
-                      >
-                        <div>
-                          <span className="font-semibold text-xs text-white block">
-                            {tpl.title}
-                          </span>
-                          <span className="text-[10px] text-zinc-400 block leading-tight mt-1 line-clamp-2 font-light">
-                            {tpl.description}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/[0.03]">
-                          <span className="text-[9px] text-[#a1a1aa] font-mono">
-                            {tpl.items.length} itens
-                          </span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleCreatePredefinedOperationalChecklist(tpl.title)}
-                            className="h-7 rounded-lg text-[10px] font-semibold px-2.5 border-white/10 hover:bg-primary hover:text-black hover:border-primary shrink-0 transition-colors cursor-pointer"
-                          >
-                            {alreadyExists ? "Importar Cópia" : "Ativar"}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ManageRotinasDialog
+        open={isManageDialogOpen}
+        onOpenChange={setIsManageDialogOpen}
+        allChecklists={allChecklists}
+        salonId={salonData?.id || ""}
+      />
 
       {/* Diálogo Como Usar Checklist */}
       <Dialog open={isHowToUseOpen} onOpenChange={setIsHowToUseOpen}>

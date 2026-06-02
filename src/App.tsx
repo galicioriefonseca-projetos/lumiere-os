@@ -18,6 +18,7 @@ import ClientsPage from './pages/dashboard/ClientsPage';
 import AppointmentsPage from './pages/dashboard/AppointmentsPage';
 import GoalsPage from './pages/dashboard/GoalsPage';
 import ChecklistPage from './pages/dashboard/ChecklistPage';
+import BillingPage from './pages/dashboard/BillingPage';
 import MasterPanel from './pages/MasterPanel';
 import OnboardingLayout from './components/layouts/OnboardingLayout';
 import OnboardingTeam from './pages/onboarding/OnboardingTeam';
@@ -54,6 +55,7 @@ function App() {
             <Route path="agendamentos" element={<AppointmentsPage />} />
             <Route path="metas" element={<GoalsPage />} />
             <Route path="checklist" element={<ChecklistPage />} />
+            <Route path="assinatura" element={<BillingPage />} />
           </Route>
 
           <Route path="/master" element={<ProtectedRoute requireAdmin><MasterPanel /></ProtectedRoute>} />

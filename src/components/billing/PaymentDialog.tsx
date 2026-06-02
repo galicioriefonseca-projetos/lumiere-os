@@ -144,16 +144,8 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
         stripeWindow.focus();
         toast.success("O checkout seguro do Stripe foi aberto em uma nova aba.");
       } else {
-        // Fallback de redirecionamento na aba atual se o popup for bloqueado pelo browser
-        try {
-          if (window.top) {
-            window.top.location.href = checkoutUrl;
-          } else {
-            window.location.href = checkoutUrl;
-          }
-        } catch {
-          window.location.href = checkoutUrl;
-        }
+        // Alerta o usuario de que o popup foi bloqueado em vez de redirecionar o iframe (que causaria bloqueio e looping de HMR)
+        toast.warning("Link pronto! Por favor, clique no link oficial do Stripe exibido abaixo na tela para concluir.");
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
@@ -220,15 +212,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
         portalWindow.focus();
         toast.success("O portal financeiro do Stripe foi aberto em uma nova aba.");
       } else {
-        try {
-          if (window.top) {
-            window.top.location.href = portalUrl;
-          } else {
-            window.location.href = portalUrl;
-          }
-        } catch {
-          window.location.href = portalUrl;
-        }
+        toast.warning("[Bloqueio de Pop-up] Por favor, clique no botão de acesso direto seguro exibido abaixo.");
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
