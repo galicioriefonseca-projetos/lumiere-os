@@ -170,13 +170,6 @@ export default function DashboardHome() {
     unsubs.push(onSnapshot(qg, snap => {
        const arr = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }) as any) as Goal[];
        setGoals(arr);
-       
-       const currentGoal = arr.find(g => g.month === currentMonthStr);
-       if (currentGoal) {
-         setStats(p => ({...p, goalTarget: currentGoal.targetAmount, goalCurrent: currentGoal.currentAmount}));
-       } else {
-         setStats(p => ({...p, goalTarget: 0, goalCurrent: 0}));
-       }
      }, err => {
         console.error("Erro no onSnapshot de metas:", err);
         setLoading(false);
@@ -187,25 +180,42 @@ export default function DashboardHome() {
     unsubs.push(onSnapshot(qk, snap => {
        const runs = snap.docs.map(doc => ({id: doc.id, ...doc.data()}) as any) as ChecklistRun[];
        setChecklistRuns(runs);
-       
-       let isProfessionalEval = false;
-       runs.forEach(r => { if (r.evaluatedProfessionalId) isProfessionalEval = true; });
-       
-       if (isProfessionalEval) {
-         const evaluatedPros = runs.filter(r => r.evaluatedProfessionalId).length;
-         const pct = professionals.length > 0 ? Math.round((evaluatedPros / professionals.length) * 100) : 0;
-         setStats(p => ({...p, checklistPct: pct}));
-       } else {
-         setStats(p => ({...p, checklistPct: runs.length > 0 ? runs[0].completionPercentage || 0 : 0}));
-       }
        setLoading(false);
-    }, err => {
+     }, err => {
         console.error("Erro no onSnapshot de checklistRuns:", err);
         setLoading(false);
-    }));
+     }));
 
     return () => unsubs.forEach(u => u());
-  }, [salonData, professionals.length, userData?.role]);
+  }, [salonData, userData?.role]);
+
+  // Efeito derivado para calcular estatísticas compostas sem gerar dependência circular
+  useEffect(() => {
+    if (!salonData) return;
+    
+    // 1. Calcular estatísticas de metas baseadas em goals
+    const currentGoal = goals.find(g => g.month === currentMonthStr);
+    const goalTarget = currentGoal ? currentGoal.targetAmount : 0;
+    const goalCurrent = currentGoal ? currentGoal.currentAmount : 0;
+
+    // 2. Calcular porcentagem do checklist baseada em checklistRuns e professionals
+    let checklistPct = 0;
+    const isProfessionalEval = checklistRuns.some(r => r.evaluatedProfessionalId);
+    
+    if (isProfessionalEval) {
+      const evaluatedPros = checklistRuns.filter(r => r.evaluatedProfessionalId).length;
+      checklistPct = professionals.length > 0 ? Math.round((evaluatedPros / professionals.length) * 100) : 0;
+    } else if (checklistRuns.length > 0) {
+      checklistPct = checklistRuns[0].completionPercentage || 0;
+    }
+
+    setStats(p => ({
+      ...p,
+      goalTarget,
+      goalCurrent,
+      checklistPct
+    }));
+  }, [goals, checklistRuns, professionals, salonData, currentMonthStr]);
 
   if (isPlatformAdmin) {
     return (

@@ -98,14 +98,20 @@ export function isRecurringCardEnabled(): boolean {
   return !!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 }
 
+// Esta função só pode ser usada no servidor (api/stripe/*)
+// No frontend, o plano é enviado como string e o servidor resolve o priceId
 export function getPlanStripePriceId(plan: PlanType): string {
-  // Conversão para import.meta.env para as variáveis expostas pelo Vite no client
+  // Nunca chame isso no browser — variáveis STRIPE_PRICE_* não são expostas ao Vite
+  if (typeof window !== 'undefined') {
+    console.error('[billing] getPlanStripePriceId chamado no browser — isso é um bug');
+    return '';
+  }
   switch (plan) {
-    case 'start': return import.meta.env.VITE_STRIPE_PRICE_START || '';
-    case 'studio': return import.meta.env.VITE_STRIPE_PRICE_STUDIO || '';
-    case 'performance': return import.meta.env.VITE_STRIPE_PRICE_PERFORMANCE || '';
-    case 'network': return import.meta.env.VITE_STRIPE_PRICE_NETWORK || '';
-    case 'founder': return import.meta.env.VITE_STRIPE_PRICE_FOUNDER || '';
-    default: return '';
+    case 'start':       return process.env.STRIPE_PRICE_START || '';
+    case 'studio':      return process.env.STRIPE_PRICE_STUDIO || '';
+    case 'performance': return process.env.STRIPE_PRICE_PERFORMANCE || '';
+    case 'network':     return process.env.STRIPE_PRICE_NETWORK || '';
+    case 'founder':     return process.env.STRIPE_PRICE_FOUNDER || '';
+    default:            return '';
   }
 }

@@ -1,8 +1,10 @@
-import { getFirebaseAdmin, getAdminDb, getStripe } from './_utils';
+import { getAdminAuth, getAdminDb, getStripe } from './_utils';
 
 export default async function handler(req: any, res: any) {
   // Configuração para habilitar requisições do frontend de forma fluida
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const allowedOrigin = process.env.APP_URL || req.headers.origin || 'http://localhost:3000';
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  res.setHeader('Vary', 'Origin');
   res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   if (req.method === "OPTIONS") {
@@ -33,10 +35,10 @@ export default async function handler(req: any, res: any) {
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const idToken = authHeader.split("Bearer ")[1];
       try {
-        const adminAppInstance = getFirebaseAdmin();
-        decodedToken = await adminAppInstance.auth().verifyIdToken(idToken);
+        const adminAuth = getAdminAuth();
+        decodedToken = await adminAuth.verifyIdToken(idToken);
       } catch (err) {
-        console.warn("[Stripe API] Token de autenticação Bearer expirado ou inválido, usando ID alternativo.");
+        console.warn("[Stripe API] Token de autenticação Bearer expirado ou inválido, usando ID alternativo: ", err);
       }
     }
 

@@ -56,6 +56,7 @@ export default async function handler(req: any, res: any) {
 
         if (salonId) {
           const updateFields: any = {
+            plan: plan || "",
             stripeCustomerId: stripeCustomerId || "",
             stripeSubscriptionId: stripeSubscriptionId || "",
             billingProvider: "stripe",
@@ -64,11 +65,6 @@ export default async function handler(req: any, res: any) {
             paymentStatus: "paid",
             updatedAt: Date.now(),
           };
-
-          // Gravar o plano de faturamento no Firestore, caso enviado via Stripe Metadata
-          if (plan) {
-            updateFields.plan = plan;
-          }
 
           await adminDb.collection("salons").doc(salonId).update(updateFields);
           console.log(`[Lumiere Webhook Sync] Setup de faturamento completo no salão '${salonId}' para plano '${plan}'`);

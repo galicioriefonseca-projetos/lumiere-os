@@ -29,6 +29,8 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
   const [isStagingCheckout, setIsStagingCheckout] = useState(false);
   const [isStagingPortal, setIsStagingPortal] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
+  const [stripePortalUrl, setStripePortalUrl] = useState<string | null>(null);
 
   if (!salonData) return null;
 
@@ -96,6 +98,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
     }
     setIsStagingCheckout(true);
     setCheckoutError(null);
+    setStripeCheckoutUrl(null);
     
     // Safety Timeout controller (15 seconds)
     const controller = new AbortController();
@@ -133,7 +136,25 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
         throw new Error("Checkout não retornou uma URL válida de redirecionamento.");
       }
 
-      window.location.href = checkoutUrl;
+      setStripeCheckoutUrl(checkoutUrl);
+
+      // Tenta abrir em nova aba para contornar restrições de iFrame do Stripe
+      const stripeWindow = window.open(checkoutUrl, '_blank');
+      if (stripeWindow) {
+        stripeWindow.focus();
+        toast.success("O checkout seguro do Stripe foi aberto em uma nova aba.");
+      } else {
+        // Fallback de redirecionamento na aba atual se o popup for bloqueado pelo browser
+        try {
+          if (window.top) {
+            window.top.location.href = checkoutUrl;
+          } else {
+            window.location.href = checkoutUrl;
+          }
+        } catch {
+          window.location.href = checkoutUrl;
+        }
+      }
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.error('[Stripe Checkout Erro]:', err.message || err);
@@ -155,6 +176,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
       return;
     }
     setIsStagingPortal(true);
+    setStripePortalUrl(null);
     
     // Safety Timeout controller (15 seconds)
     const controller = new AbortController();
@@ -191,7 +213,23 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
         throw new Error("Portal não retornou uma URL válida.");
       }
 
-      window.location.href = portalUrl;
+      setStripePortalUrl(portalUrl);
+
+      const portalWindow = window.open(portalUrl, '_blank');
+      if (portalWindow) {
+        portalWindow.focus();
+        toast.success("O portal financeiro do Stripe foi aberto em uma nova aba.");
+      } else {
+        try {
+          if (window.top) {
+            window.top.location.href = portalUrl;
+          } else {
+            window.location.href = portalUrl;
+          }
+        } catch {
+          window.location.href = portalUrl;
+        }
+      }
     } catch (err: any) {
       clearTimeout(timeoutId);
       console.error('[Stripe Portal Erro]:', err.message || err);
@@ -365,25 +403,61 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
 
               <div className="space-y-3 pt-1">
                 {salonData.billingProvider === 'stripe' && salonData.stripeCustomerId ? (
-                  <Button
-                    className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide"
-                    onClick={handleStripePortal}
-                    disabled={isStagingPortal}
-                  >
-                    {isStagingPortal ? 'Direcionando para o Portal...' : 'Gerenciar Cartão / Assinatura'}
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide"
+                      onClick={handleStripePortal}
+                      disabled={isStagingPortal}
+                    >
+                      {isStagingPortal ? 'Direcionando para o Portal...' : 'Gerenciar Cartão / Assinatura'}
+                    </Button>
+                    
+                    {stripePortalUrl && (
+                      <div className="text-center p-2.5 bg-zinc-900/30 border border-zinc-800/80 rounded-xl">
+                        <p className="text-[11px] text-zinc-400 font-light">
+                          Se o portal da Stripe não abriu automaticamente, clique no link seguro:
+                        </p>
+                        <a
+                          href={stripePortalUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-[#D4AF37] hover:text-amber-400 hover:underline font-semibold block mt-1"
+                        >
+                          Acesssar de Forma Direta e Segura →
+                        </a>
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <Button
-                    className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide animate-pulse"
-                    onClick={handleStripeCheckout}
-                    disabled={isStagingCheckout}
-                  >
-                    {isStagingCheckout 
-                      ? 'Preparando Link de Pagamento...' 
-                      : checkoutError 
-                        ? 'Tentar novamente' 
-                        : 'Ativar Cartão Recorrente'}
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide animate-pulse"
+                      onClick={handleStripeCheckout}
+                      disabled={isStagingCheckout}
+                    >
+                      {isStagingCheckout 
+                        ? 'Preparando Link de Pagamento...' 
+                        : checkoutError 
+                          ? 'Tentar novamente' 
+                          : 'Ativar Cartão Recorrente'}
+                    </Button>
+
+                    {stripeCheckoutUrl && (
+                      <div className="text-center p-3 bg-zinc-900/30 border border-[#D4AF37]/15 rounded-xl">
+                        <p className="text-[11px] text-zinc-400 font-light">
+                          Se o link de faturamento seguro não abriu automaticamente:
+                        </p>
+                        <a
+                          href={stripeCheckoutUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-[#D4AF37] hover:text-amber-400 hover:underline font-semibold block mt-1.5"
+                        >
+                          Ir para o Checkout Oficial da Stripe →
+                        </a>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <Button
