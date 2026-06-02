@@ -9,6 +9,20 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.4.5-founder',
+    date: 'Junho de 2026',
+    title: 'Assinatura Recorrente via Stripe',
+    description: 'Integração de pagamento recorrente automatizado por cartão de crédito e conciliação eletrônica via webhooks seguros.',
+    highlights: [
+      'Implementado Stripe Checkout oficial para registro de cartão sem trânsito de dados sensíveis.',
+      'Configurado Stripe Customer Portal para autogestão de assinaturas e histórico de faturas.',
+      'Fluxo de webhook automatizado para criação de assinaturas, processamento mensal de cobranças e cancelamentos.',
+      'Avisos e painéis informativos de faturamento dinâmicos no DashboardHome.',
+      'Painel Master estendido com visualização de IDs e status de transação vinculados diretamente à conta administrativa do Stripe.'
+    ],
+    isNew: true
+  },
+  {
     version: '1.4.4-founder',
     date: 'Maio de 2026',
     title: 'Fluxo de Pagamentos Manuais',
@@ -19,7 +33,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Painel Master agora permite confirmar pagamentos e controlar vencimentos.',
       'Preparação para futura integração com gateway.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.4.3-founder',

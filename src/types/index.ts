@@ -51,6 +51,13 @@ export interface Salon {
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
+  // Stripe & Billing properties
+  billingProvider?: 'manual_pix' | 'stripe' | 'asaas';
+  billingMode?: 'manual_pix' | 'recurring_card';
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripeCheckoutSessionId?: string;
+  stripePriceId?: string;
 }
 
 export interface Payment {
@@ -58,7 +65,7 @@ export interface Payment {
   salonId: string;
   plan: PlanType;
   amount: number;
-  method: 'pix';
+  method: 'pix' | 'credit_card';
   status: 'reported' | 'paid' | 'rejected' | 'canceled';
   reportedByUserId: string;
   reportedByEmail: string;
@@ -72,6 +79,13 @@ export interface Payment {
   notes?: string;
   createdAt: number;
   updatedAt: number;
+  // Stripe details
+  provider?: 'manual_pix' | 'stripe' | 'asaas';
+  stripePaymentIntentId?: string;
+  stripeInvoiceId?: string;
+  stripeSubscriptionId?: string;
+  stripeCustomerId?: string;
+  currency?: string;
 }
 
 export interface Professional {

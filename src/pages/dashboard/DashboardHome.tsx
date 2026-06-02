@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { getEvaluableFunctions, sanitizeFunctionSlug } from '../../lib/evaluation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -51,8 +52,24 @@ import {
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   const [loading, setLoading] = useState(true);
+
+  // Efeito para monitorar e validar status de faturamento/checkout da Stripe
+  useEffect(() => {
+    const checkout = searchParams.get('checkout');
+    if (checkout === 'success') {
+      toast.success('Assinatura configurada com sucesso. Estamos confirmando seu pagamento.');
+      // Limpa os parâmetros da URL de forma segura
+      searchParams.delete('checkout');
+      setSearchParams(searchParams);
+    } else if (checkout === 'cancel') {
+      toast.error('Configuração de faturamento cancelada pelo usuário.');
+      searchParams.delete('checkout');
+      setSearchParams(searchParams);
+    }
+  }, [searchParams, setSearchParams]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [checklistRuns, setChecklistRuns] = useState<ChecklistRun[]>([]);                
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -275,6 +292,20 @@ export default function DashboardHome() {
                  <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
               </span>
             )}
+            {salonData?.billingProvider === 'stripe' && (
+              <span className={`text-[10px] uppercase font-bold tracking-widest px-2.5 py-1.5 rounded-full flex items-center gap-1 leading-none shadow-[0_2px_10px_rgba(0,0,0,0.25)] ${
+                salonData.subscriptionStatus === 'active'
+                  ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/25'
+                  : salonData.subscriptionStatus === 'canceled'
+                  ? 'text-zinc-400 bg-zinc-900 border border-zinc-800'
+                  : 'text-red-400 bg-red-500/10 border border-red-500/25'
+              }`}>
+                💳 Cartão Recorrente • {
+                  salonData.subscriptionStatus === 'active' ? 'Ativo' :
+                  salonData.subscriptionStatus === 'canceled' ? 'Cancelado' : 'Pagamento Recusado'
+                }
+              </span>
+            )}
           </div>
           <h1 className="text-2xl md:text-3xl font-light tracking-tight text-white font-heading">
             <span className="font-semibold text-white">{salonData.name}</span>
@@ -311,14 +342,20 @@ export default function DashboardHome() {
         let isDanger = salonData.subscriptionStatus === 'canceled' || salonData.subscriptionStatus === 'overdue' || isPaymentOverdue(salonData);
 
         if (salonData.subscriptionStatus === 'canceled') {
-          warningText = 'Assinatura cancelada. Regularize para manter o acesso.';
-          buttonText = 'Assinar Agora';
+          warningText = salonData.billingProvider === 'stripe' 
+            ? 'Assinatura recorrente Stripe cancelada. Regularize para reativar.'
+            : 'Assinatura cancelada. Regularize para manter o acesso.';
+          buttonText = salonData.billingProvider === 'stripe' ? 'Gerenciar Cartão' : 'Assinar Agora';
         } else if (salonData.subscriptionStatus === 'overdue' || isPaymentOverdue(salonData)) {
-          warningText = 'Assinatura vencida. Regularize para manter o acesso.';
-          buttonText = 'Pagamento';
+          warningText = salonData.billingProvider === 'stripe'
+            ? 'Sua mensalidade recorrente Stripe falhou ou está atrasada.'
+            : 'Assinatura vencida. Regularize para manter o acesso.';
+          buttonText = salonData.billingProvider === 'stripe' ? 'Regularizar Cartão' : 'Pagamento';
         } else if (salonData.subscriptionStatus === 'pending_payment' || salonData.paymentStatus === 'reported') {
-          warningText = 'Pagamento pendente de confirmação.';
-          buttonText = 'Acompanhar';
+          warningText = salonData.billingProvider === 'stripe'
+            ? 'Seu pagamento Stripe está sendo processado na rede.'
+            : 'Pagamento pendente de confirmação.';
+          buttonText = salonData.billingProvider === 'stripe' ? 'Gerenciar Cartão' : 'Acompanhar';
           isDanger = false;
         } else if (isPaymentDueInDays(salonData, 3)) {
           warningText = 'Seu plano vence em breve.';

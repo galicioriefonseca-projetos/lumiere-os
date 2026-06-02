@@ -76,3 +76,36 @@ export function getPaymentStatusLabel(status: string | undefined): string {
     default: return 'Sem informações';
   }
 }
+
+export function getBillingProviderLabel(provider?: string): string {
+  switch (provider) {
+    case 'manual_pix': return 'PIX Manual';
+    case 'stripe': return 'Stripe';
+    case 'asaas': return 'Asaas';
+    default: return 'PIX Manual';
+  }
+}
+
+export function getBillingModeLabel(mode?: string): string {
+  switch (mode) {
+    case 'manual_pix': return 'PIX Manual';
+    case 'recurring_card': return 'Cartão de Crédito Recorrente';
+    default: return 'PIX Manual';
+  }
+}
+
+export function isRecurringCardEnabled(): boolean {
+  return !!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+}
+
+export function getPlanStripePriceId(plan: PlanType): string {
+  // Conversão para import.meta.env para as variáveis expostas pelo Vite no client
+  switch (plan) {
+    case 'start': return import.meta.env.VITE_STRIPE_PRICE_START || '';
+    case 'studio': return import.meta.env.VITE_STRIPE_PRICE_STUDIO || '';
+    case 'performance': return import.meta.env.VITE_STRIPE_PRICE_PERFORMANCE || '';
+    case 'network': return import.meta.env.VITE_STRIPE_PRICE_NETWORK || '';
+    case 'founder': return import.meta.env.VITE_STRIPE_PRICE_FOUNDER || '';
+    default: return '';
+  }
+}
