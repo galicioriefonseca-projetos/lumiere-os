@@ -275,6 +275,14 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Institutional Message */}
+      <div className="bg-[#D4AF37]/10 border border-[#D4AF37]/25 p-4 rounded-2xl flex items-start gap-3">
+        <Info className="w-5 h-5 text-[#D4AF37] shrink-0 mt-0.5 filter drop-shadow-[0_0_4px_rgba(212,175,55,0.4)]" />
+        <p className="text-xs md:text-sm text-zinc-300 leading-relaxed font-sans">
+          Esta área reúne informações da sua assinatura. No momento, a cobrança é acompanhada diretamente pela equipe <b>Galiciori e Fonseca Estratégia Digital</b>.
+        </p>
+      </div>
+
       {/* Main Grid split */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
@@ -372,66 +380,20 @@ export default function BillingPage() {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Option A: Stripe Credit Card */}
-              <div className={`p-5 rounded-2xl border bg-zinc-900/40 space-y-4 flex flex-col justify-between transition-all ${isStripeActive ? 'border-[#D4AF37] shadow-[0_0_15px_rgba(212,175,55,0.03)]' : 'border-white/5 opacity-80'}`}>
+              <div className="p-5 rounded-2xl border bg-zinc-900/40 space-y-4 flex flex-col justify-between transition-all border-white/5 opacity-80">
                 <div>
                   <div className="flex justify-between items-start">
                     <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Cartão Recorrente</span>
-                    {isStripeActive && (
-                      <span className="text-[9px] uppercase font-bold text-[#D4AF37] px-2 py-0.5 bg-[#D4AF37]/10 border border-[#D4AF37]/20 rounded-md">
-                        Ativo
-                      </span>
-                    )}
                   </div>
                   <h4 className="text-sm font-semibold text-white mt-2.5">Pagamento Integrado Stripe</h4>
                   <p className="text-xs text-zinc-400 mt-1 lines-2 font-light">Renovação mensal eletrônica por cartão com total confidencialidade e segurança.</p>
                 </div>
 
-                <div className="pt-3 space-y-2">
-                  <Button 
-                    onClick={handleStripeCheckout} 
-                    disabled={isStagingCheckout}
-                    className="w-full text-xs h-9 bg-white text-black hover:bg-zinc-200 rounded-xl font-medium cursor-pointer"
-                  >
-                    {isStagingCheckout ? 'Buscando checkout...' : 'Ativar Cartão Recorrente'}
-                  </Button>
-                  
-                  {isStripeActive && (
-                    <Button 
-                      onClick={handleStripePortal} 
-                      disabled={isStagingPortal}
-                      variant="outline" 
-                      className="w-full text-xs h-9 border-white/10 text-zinc-300 hover:bg-white/5 rounded-xl cursor-pointer"
-                    >
-                      {isStagingPortal ? 'Carregando...' : 'Gerenciar Cartão (Stripe)'}
-                    </Button>
-                  )}
+                <div className="pt-3">
+                  <span className="text-xs text-zinc-400 bg-zinc-950/80 border border-white/5 rounded-xl px-3 py-2.5 block text-center font-light leading-relaxed">
+                    Pagamento recorrente em cartão será disponibilizado em breve.
+                  </span>
                 </div>
-
-                {stripeCheckoutUrl && (
-                  <div className="mt-2 text-center">
-                    <a 
-                      href={stripeCheckoutUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="text-xs text-[#D4AF37] hover:underline inline-flex items-center gap-1 font-semibold"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> Abrir checkout manualmente
-                    </a>
-                  </div>
-                )}
-                
-                {stripePortalUrl && (
-                  <div className="mt-2 text-center">
-                    <a 
-                      href={stripePortalUrl} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="text-xs text-[#D4AF37] hover:underline inline-flex items-center gap-1 font-semibold"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> Abrir portal financeiro Stripe
-                    </a>
-                  </div>
-                )}
               </div>
 
               {/* Option B: PIX manual */}

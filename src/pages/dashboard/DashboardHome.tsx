@@ -339,11 +339,7 @@ export default function DashboardHome() {
 
       {/* Billing Warnings & Actions */}
       {(() => {
-        const needsWarning = isOwnerOrManager && (
-          ['trial', 'pending_payment', 'overdue', 'canceled'].includes(salonData.subscriptionStatus) ||
-          isPaymentDueInDays(salonData, 3) ||
-          isPaymentOverdue(salonData)
-        );
+        const needsWarning = false; // Desativado para o MVP
 
         if (!needsWarning) return null;
 

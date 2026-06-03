@@ -107,11 +107,7 @@ export default function DashboardLayout() {
   const now = Date.now();
   const timeLeftMs = trialEndsAt - now;
   const daysLeftDecimal = timeLeftMs / (1000 * 60 * 60 * 24);
-  const isTrialEndingSoon = 
-    salonData?.subscriptionStatus === 'trial' && 
-    !isPlatformAdmin && 
-    trialEndsAt > 0 && 
-    daysLeftDecimal <= 3;
+  const isTrialEndingSoon = false; // Desativado para o MVP
 
   // Text representation of time left
   const getTrialDaysMessage = () => {
@@ -379,14 +375,16 @@ export default function DashboardLayout() {
                         <span>Minha Conta</span>
                       </Link>
 
-                      <Link 
-                        to="/dashboard/assinatura" 
-                        onClick={() => setIsUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 w-full px-2.5 py-2 text-xs rounded-lg text-[#D4AF37] hover:bg-[#D4AF37]/5 transition-all"
-                      >
-                        <CreditCard className="w-3.5 h-3.5 text-[#D4AF37]" />
-                        <span>Minha Assinatura</span>
-                      </Link>
+                      {['owner', 'manager', 'platform_admin', 'admin'].includes(userData?.role || '') && (
+                        <Link 
+                          to="/dashboard/assinatura" 
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 w-full px-2.5 py-2 text-xs rounded-lg text-[#D4AF37] hover:bg-[#D4AF37]/5 transition-all"
+                        >
+                          <CreditCard className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          <span>Minha Assinatura</span>
+                        </Link>
+                      )}
 
                       <button 
                         onClick={() => { setIsUserMenuOpen(false); setIsUpdatesDialogOpen(true); }}
@@ -482,7 +480,7 @@ export default function DashboardLayout() {
         )}
 
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          {salonData?.subscriptionStatus === 'trial' && !isPlatformAdmin && (
+          {false && salonData?.subscriptionStatus === 'trial' && !isPlatformAdmin && (
              <div className={cn(
                "mb-6 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all duration-300",
                isTrialEndingSoon 
