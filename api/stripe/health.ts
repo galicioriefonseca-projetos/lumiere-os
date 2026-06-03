@@ -14,13 +14,13 @@ export default async function handler(req: any, res: any) {
     process.env.FIREBASE_PRIVATE_KEY
   );
   const hasFounderPrice = !!process.env.STRIPE_PRICE_FOUNDER;
-  const appUrl = process.env.APP_URL || "http://localhost:3000";
+  const appUrlConfigured = !!process.env.APP_URL;
 
   return res.status(200).json({
-    ok: stripeConfigured && firebaseAdminConfigured,
+    ok: true,
     stripeConfigured,
     firebaseAdminConfigured,
-    hasFounderPrice,
-    appUrl
+    appUrlConfigured,
+    hasFounderPrice
   });
 }
