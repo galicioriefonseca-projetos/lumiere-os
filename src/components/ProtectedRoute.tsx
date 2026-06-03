@@ -8,7 +8,7 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export function ProtectedRoute({ children, requireAdmin = false }: { children: React.ReactNode; requireAdmin?: boolean }) {
-  const { currentUser, userData, isPlatformAdmin, loading, syncError, logout } = useAuth();
+  const { currentUser, userData, isPlatformAdmin, loading, syncError, logout, diagnostics } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [correcting, setCorrecting] = useState(false);
@@ -22,6 +22,8 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
   }
 
   if (syncError) {
+    const showDiagnostics = isPlatformAdmin || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+
     return (
       <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
@@ -60,6 +62,50 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
               Sair da Conta
             </Button>
           </div>
+
+          {showDiagnostics && diagnostics && (
+            <div className="mt-6 border-t border-white/5 pt-4 text-left font-mono text-[10px] space-y-1.5 text-zinc-400">
+              <p className="text-zinc-500 font-bold uppercase tracking-wider text-[9px] mb-2 text-[#D4AF37]">
+                🔍 Diagnóstico Master
+              </p>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>ProjectId:</span>
+                <span className="text-white select-all">{diagnostics.firebaseProjectId}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>AuthDomain:</span>
+                <span className="text-white select-all">{diagnostics.firebaseAuthDomain}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>UID:</span>
+                <span className="text-white select-all">{diagnostics.authUid || 'Nenhum'}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>E-mail:</span>
+                <span className="text-white select-all">{diagnostics.authEmail || 'Nenhum'}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>users/&#123;uid&#125; encontrado:</span>
+                <span className={diagnostics.userDocExists === 'sim' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                  {diagnostics.userDocExists}
+                </span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>salonId encontrado:</span>
+                <span className="text-white select-all">{diagnostics.salonIdFound}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1">
+                <span>Salons na coleção:</span>
+                <span className="text-white">{diagnostics.salonsCount}</span>
+              </div>
+              <div className="flex flex-col border-b border-white/5 pb-1">
+                <span>Erro Firestore:</span>
+                <span className={diagnostics.firestoreError === 'Sem erro' ? 'text-green-400 font-medium break-all' : 'text-red-400 font-bold break-all'}>
+                  {diagnostics.firestoreError}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

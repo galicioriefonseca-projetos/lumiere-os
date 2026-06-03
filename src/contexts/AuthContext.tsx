@@ -33,6 +33,16 @@ interface AuthContextType {
     optionalFullName?: string,
     choices?: { primaryFunction?: string; additionalFunctions?: string[] }
   ) => Promise<AuthUser>;
+  diagnostics?: {
+    firebaseProjectId: string;
+    firebaseAuthDomain: string;
+    authUid: string | null;
+    authEmail: string | null;
+    userDocExists: string;
+    salonIdFound: string;
+    salonsCount: number;
+    firestoreError: string;
+  };
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -47,6 +57,16 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogle: async () => { throw new Error('Not implemented'); },
   signInWithGoogleForRegister: async () => { throw new Error('Not implemented'); },
   signInWithGoogleForInvite: async () => { throw new Error('Not implemented'); },
+  diagnostics: {
+    firebaseProjectId: 'Não informada',
+    firebaseAuthDomain: 'Não informada',
+    authUid: null,
+    authEmail: null,
+    userDocExists: 'não',
+    salonIdFound: 'Nenhum',
+    salonsCount: 0,
+    firestoreError: 'Sem erro'
+  }
 });
 
 const isOfflineError = (error: any): boolean => {
@@ -68,6 +88,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  const [diagnostics, setDiagnostics] = useState({
+    firebaseProjectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'Não informada',
+    firebaseAuthDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'Não informada',
+    authUid: null as string | null,
+    authEmail: null as string | null,
+    userDocExists: 'não',
+    salonIdFound: 'Nenhum',
+    salonsCount: 0,
+    firestoreError: 'Sem erro'
+  });
+
+  const updateDiagnostics = (updates: Partial<typeof diagnostics>) => {
+    setDiagnostics(prev => ({ ...prev, ...updates }));
+  };
+
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const countSalons = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'salons'));
+        updateDiagnostics({ salonsCount: snap.size });
+      } catch (err: any) {
+        console.log("diagnostics debug salons count fail:", err);
+      }
+    };
+    
+    countSalons();
+  }, [currentUser]);
 
 
   if (!auth || !db) {
@@ -202,8 +252,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userSnap = await getDoc(doc(db, 'users', uid));
         userDocExists = userSnap.exists();
         userDocCheck = 'success';
+        updateDiagnostics({
+          userDocExists: userSnap.exists() ? 'sim' : 'não',
+          salonIdFound: userSnap.exists() ? (userSnap.data()?.salonId || 'Nenhum') : 'Nenhum',
+          firestoreError: 'Sem erro'
+        });
       } catch (err: any) {
         userDocCheck = 'error';
+        updateDiagnostics({
+          userDocExists: 'não',
+          firestoreError: err.message || String(err)
+        });
         if (isOfflineError(err)) {
           offlineError = true;
         }
@@ -516,6 +575,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     } catch (error: any) {
       console.error('Error fetching user data manually:', error);
+      updateDiagnostics({
+        firestoreError: error.message || String(error)
+      });
       if (isOfflineError(error)) {
         offlineError = true;
         setSyncError("Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.");
@@ -561,6 +623,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
         setSyncError(null);
         console.log("[AuthInit] Usuário autenticado no Firebase Auth. UID:", user.uid, "Email:", user.email);
+        updateDiagnostics({
+          authUid: user.uid,
+          authEmail: user.email,
+        });
 
         let isPlatformAdminFromColl = false;
         try {
@@ -590,6 +656,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         unsubscribeUserSnapshot = onSnapshot(doc(db, 'users', user.uid), async (userSnap) => {
           let uData: User | null = null;
           let userDocExists = userSnap.exists();
+          updateDiagnostics({
+            userDocExists: userSnap.exists() ? 'sim' : 'não',
+            salonIdFound: userSnap.exists() ? (userSnap.data()?.salonId || 'Nenhum') : 'Nenhum',
+            firestoreError: 'Sem erro'
+          });
           let platformAdminDocExists = isPlatformAdminFromColl;
           let finalRole: string | null = null;
           let finalSalonId: string | null = null;
@@ -952,6 +1023,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }, (err) => {
               console.error("[AuthInit] Erro ao ouvir salons doc:", err);
+              updateDiagnostics({
+                firestoreError: err.message || String(err)
+              });
               setSalonData(null);
               const isOffline = isOfflineError(err);
               if (isOffline) {
@@ -1004,6 +1078,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }, (err) => {
           console.error("[AuthInit] Erro ao escutar users doc snapshot:", err);
+          updateDiagnostics({
+            firestoreError: err.message || String(err)
+          });
           let offlineError = isOfflineError(err);
           
           if (offlineError) {
@@ -1054,6 +1131,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsPlatformAdmin(false);
         setSyncError(null);
         setLoading(false);
+        updateDiagnostics({
+          authUid: null,
+          authEmail: null,
+          userDocExists: 'não',
+          salonIdFound: 'Nenhum',
+          salonsCount: 0,
+          firestoreError: 'Sem erro'
+        });
       }
     });
 
@@ -1456,7 +1541,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshUserData,
       signInWithGoogle,
       signInWithGoogleForRegister,
-      signInWithGoogleForInvite
+      signInWithGoogleForInvite,
+      diagnostics
     }}>
       {!loading && children}
     </AuthContext.Provider>

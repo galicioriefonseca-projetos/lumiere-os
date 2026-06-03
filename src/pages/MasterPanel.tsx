@@ -15,7 +15,7 @@ import { createDemoSalon, deleteDemoSalon } from '@/lib/seedDemoSalon';
 import { APP_INFO } from '../config/appInfo';
 
 export default function MasterPanel() {
-  const { logout, isPlatformAdmin, userData } = useAuth();
+  const { logout, isPlatformAdmin, userData, diagnostics } = useAuth();
   const [salons, setSalons] = useState<Salon[]>([]);
   const [bugReports, setBugReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,6 +259,61 @@ export default function MasterPanel() {
             </Button>
           </div>
         </div>
+
+        {diagnostics && (
+          <Card className="border-border bg-black/40">
+             <CardHeader>
+               <CardTitle className="text-lg flex items-center gap-2 text-[#D4AF37]">
+                 <RefreshCcw className="w-5 h-5 text-[#D4AF37] animate-pulse" />
+                 Diagnóstico Avançado do Firebase & Firestore (Apenas Platform Admin)
+               </CardTitle>
+             </CardHeader>
+             <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-mono">
+                   <div className="space-y-2">
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">VITE_FIREBASE_PROJECT_ID:</span>
+                         <span className="text-white text-right select-all font-medium">{diagnostics.firebaseProjectId}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">VITE_FIREBASE_AUTH_DOMAIN:</span>
+                         <span className="text-white text-right select-all font-medium">{diagnostics.firebaseAuthDomain}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">UID Autenticado:</span>
+                         <span className="text-white text-right select-all font-medium">{diagnostics.authUid || 'Nenhum'}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">E-mail Autenticado:</span>
+                         <span className="text-white text-right select-all font-medium">{diagnostics.authEmail || 'Nenhum'}</span>
+                      </div>
+                   </div>
+                   <div className="space-y-2">
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">users/&#123;uid&#125; encontrado:</span>
+                         <span className={diagnostics.userDocExists === 'sim' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                            {diagnostics.userDocExists}
+                         </span>
+                      </div>
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">salonId encontrado:</span>
+                         <span className="text-white text-right select-all font-medium">{diagnostics.salonIdFound}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground">Documentos em salons:</span>
+                         <span className="text-white text-right font-medium">{diagnostics.salonsCount}</span>
+                      </div>
+                      <div className="flex flex-col border-b border-border/40 pb-1.5">
+                         <span className="text-muted-foreground mb-1">Erro Firestore detectado:</span>
+                         <span className={diagnostics.firestoreError === 'Sem erro' ? 'text-green-400 font-medium' : 'text-red-400 font-bold break-all'}>
+                            {diagnostics.firestoreError}
+                         </span>
+                      </div>
+                   </div>
+                </div>
+             </CardContent>
+          </Card>
+        )}
 
         <Card className="border-border bg-black/40">
            <CardHeader>
