@@ -36,11 +36,11 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
             <Button 
               onClick={() => {
                 sessionStorage.clear();
-                // Clear any non-persistent localStorage properties
+                // Clear all localStorage properties related to LumiereOS
                 const toRemove = [];
                 for (let i = 0; i < localStorage.length; i++) {
                   const key = localStorage.key(i);
-                  if (key && key.startsWith('lumiere_') && !['lumiere_last_seen_version', 'lumiere_pwa_prompt_dismissed', 'lumiere_pwa_collapsed'].includes(key)) {
+                  if (key && key.startsWith('lumiere_')) {
                     toRemove.push(key);
                   }
                 }

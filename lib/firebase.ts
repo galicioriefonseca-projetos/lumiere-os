@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -14,4 +14,6 @@ const firebaseConfig = {
 
 export const app = firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null as any;
-export const db = app ? getFirestore(app) : null as any;
+export const db = app ? initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+}) : null as any;

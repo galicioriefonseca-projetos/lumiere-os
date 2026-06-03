@@ -49,6 +49,18 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogleForInvite: async () => { throw new Error('Not implemented'); },
 });
 
+const isOfflineError = (error: any): boolean => {
+  if (!error) return false;
+  const errMsg = error.message || '';
+  const errCode = error.code || '';
+  return (
+    errCode === 'unavailable' ||
+    errCode === 'failed-precondition' ||
+    errMsg.toLowerCase().includes('offline') ||
+    errMsg.toLowerCase().includes('failed to get document')
+  );
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [userData, setUserData] = useState<User | null>(null);
@@ -97,6 +109,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 - erro final: ${details.error || 'Nenhum'}`);
   };
 
+  const logAuthDebug = (info: {
+    authUid: string | null;
+    authEmail: string | null;
+    userDocCheck: 'success' | 'error';
+    userDocExists: boolean;
+    userSalonId: string | null;
+    salonDocCheck: 'success' | 'error' | 'none';
+    salonDocExists: boolean;
+    offlineError: boolean;
+  }) => {
+    const firebaseProjectId = db?.app?.options?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || 'unknown';
+    const userDocPath = info.authUid ? `users/${info.authUid}` : 'none';
+    console.log(`[AuthDebug]
+- firebaseProjectId: ${firebaseProjectId}
+- authUid: ${info.authUid}
+- authEmail: ${info.authEmail}
+- userDocPath: ${userDocPath}
+- userDocCheck: ${info.userDocCheck}
+- userDocExists: ${info.userDocExists}
+- userSalonId: ${info.userSalonId || 'none'}
+- salonDocCheck: ${info.salonDocCheck}
+- salonDocExists: ${info.salonDocExists}
+- offlineError: ${info.offlineError}`);
+  };
+
   const runDemoBootstrapFallback = async (uid: string, email: string, displayName: string | null) => {
     console.log("[TEMPORARY BOOTSTRAP FALLBACK] Iniciando para", email, "UID:", uid);
     const demoSalonId = 'tutorial_lumiere_studio';
@@ -141,6 +178,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchUserData = async (uid: string) => {
+    let userDocCheck: 'success' | 'error' = 'success';
+    let userDocExists = false;
+    let userSalonId: string | null = null;
+    let salonDocCheck: 'success' | 'error' | 'none' = 'none';
+    let salonDocExists = false;
+    let offlineError = false;
+
     try {
       setSyncError(null);
       
@@ -153,15 +197,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await runDemoBootstrapFallback(uid, currentUser.email, currentUser.displayName);
       }
 
-      const userSnap = await getDoc(doc(db, 'users', uid));
-      let uData: User | null = null;
-      let userDocExists = userSnap.exists();
+      let userSnap;
+      try {
+        userSnap = await getDoc(doc(db, 'users', uid));
+        userDocExists = userSnap.exists();
+        userDocCheck = 'success';
+      } catch (err: any) {
+        userDocCheck = 'error';
+        if (isOfflineError(err)) {
+          offlineError = true;
+        }
+        throw err;
+      }
 
-      if (userSnap.exists()) {
+      let uData: User | null = null;
+
+      if (userDocExists) {
         uData = { id: userSnap.id, ...userSnap.data() } as User;
+        userSalonId = uData.salonId || null;
         
-        // Active status filtering (Task 2)
-        if (uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted') {
+        // Active status filtering (Task 2 / Compatibilidade com usuários antigos Requirement 5)
+        const isBlocked = uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted';
+        if (isBlocked) {
           setUserData(null);
           setSalonData(null);
           setSyncError("Sua conta está inativa. Fale com o administrador.");
@@ -175,12 +232,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             salonDataLoaded: false,
             error: `Conta de usuário inativa/bloqueada (status: ${uData.status}, isActive: ${uData.isActive})`,
           });
+          logAuthDebug({
+            authUid: uid,
+            authEmail: currentUser?.email || null,
+            userDocCheck,
+            userDocExists,
+            userSalonId,
+            salonDocCheck,
+            salonDocExists,
+            offlineError,
+          });
           return;
         }
 
         if (isPlatformAdminFromColl || uData.role === 'platform_admin' || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
           uData.role = 'platform_admin';
           uData.salonId = '';
+          userSalonId = '';
         }
       } else if (isPlatformAdminFromColl || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
         uData = {
@@ -196,6 +264,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } as User;
         await setDoc(doc(db, 'users', uid), uData);
         userDocExists = true;
+        userSalonId = '';
+      }
+
+      if (!uData) {
+        // Se users/{uid} não existe e Firestore está online, tentar buscar salão por fallback (Requirement 4)
+        const foundSalonDoc = await trySalonFallback(uid, currentUser?.email || null);
+        if (foundSalonDoc) {
+          console.log("[AuthFallback] Recuperação manual bem sucedida para novo/órfão usuário. Vinculando salão", foundSalonDoc.id, "ao usuário", uid);
+          const foundSalonId = foundSalonDoc.id;
+          const uRef = doc(db, 'users', uid);
+          
+          // Verify email and potential duplicate account (Requirement 7)
+          const sDataForCheck = foundSalonDoc.data();
+          if (currentUser?.email && sDataForCheck?.ownerEmail && currentUser.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
+            console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+          }
+
+          uData = {
+            id: uid,
+            fullName: currentUser?.displayName || sDataForCheck?.ownerName || 'Proprietário',
+            email: currentUser?.email || sDataForCheck?.ownerEmail || '',
+            phone: currentUser?.phoneNumber || sDataForCheck?.phone || '',
+            salonId: foundSalonId,
+            role: 'owner',
+            isActive: true,
+            status: 'active',
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          } as User;
+
+          await setDoc(uRef, uData);
+          userDocExists = true;
+          userSalonId = foundSalonId;
+        }
       }
 
       if (!uData) {
@@ -211,6 +313,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           finalSalonId: null,
           salonDataLoaded: false,
           error: "Usuário sem registro users/{uid}",
+        });
+        logAuthDebug({
+          authUid: uid,
+          authEmail: currentUser?.email || null,
+          userDocCheck,
+          userDocExists,
+          userSalonId,
+          salonDocCheck,
+          salonDocExists,
+          offlineError,
         });
         return;
       }
@@ -229,14 +341,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           salonDataLoaded: false,
           error: null,
         });
+        logAuthDebug({
+          authUid: uid,
+          authEmail: currentUser?.email || null,
+          userDocCheck,
+          userDocExists,
+          userSalonId,
+          salonDocCheck,
+          salonDocExists,
+          offlineError,
+        });
         return;
       }
 
       let salonDocToLoad = null;
       if (uData.salonId) {
-        const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
-        if (salonSnap.exists()) {
-          salonDocToLoad = salonSnap;
+        try {
+          salonDocCheck = 'success';
+          const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
+          if (salonSnap.exists()) {
+            salonDocToLoad = salonSnap;
+            salonDocExists = true;
+          }
+        } catch (err: any) {
+          salonDocCheck = 'error';
+          if (isOfflineError(err)) {
+            offlineError = true;
+          }
+          throw err;
         }
       }
 
@@ -247,15 +379,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("[AuthFallback] Recuperação manual bem sucedida. Vinculando salão", foundSalonDoc.id, "ao usuário", uid);
           const foundSalonId = foundSalonDoc.id;
           const uRef = doc(db, 'users', uid);
+          
+          // Verify email and potential duplicate account (Requirement 7)
+          const sDataForCheck = foundSalonDoc.data();
+          if (currentUser?.email && sDataForCheck?.ownerEmail && currentUser.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
+            console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+          }
+
           await setDoc(uRef, {
+            fullName: currentUser?.displayName || sDataForCheck?.ownerName || 'Proprietário',
+            email: currentUser?.email || sDataForCheck?.ownerEmail || '',
+            phone: currentUser?.phoneNumber || sDataForCheck?.phone || '',
             salonId: foundSalonId,
             role: 'owner',
+            isActive: true,
+            status: 'active',
             updatedAt: Date.now()
           }, { merge: true });
 
           uData.salonId = foundSalonId;
           uData.role = 'owner';
           salonDocToLoad = foundSalonDoc;
+          salonDocExists = true;
+          userSalonId = foundSalonId;
         }
       }
 
@@ -272,6 +418,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           finalSalonId: null,
           salonDataLoaded: false,
           error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback (ownerId/ownerEmail)",
+        });
+        logAuthDebug({
+          authUid: uid,
+          authEmail: currentUser?.email || null,
+          userDocCheck,
+          userDocExists,
+          userSalonId,
+          salonDocCheck,
+          salonDocExists,
+          offlineError,
         });
         return;
       }
@@ -290,13 +446,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           salonDataLoaded: false,
           error: `ID de salão ${uData.salonId} inexistente ou excluído no Firestore`,
         });
+        logAuthDebug({
+          authUid: uid,
+          authEmail: currentUser?.email || null,
+          userDocCheck,
+          userDocExists,
+          userSalonId,
+          salonDocCheck,
+          salonDocExists,
+          offlineError,
+        });
         return;
       }
 
       const sData = { id: salonDocToLoad.id, ...salonDocToLoad.data() } as Salon;
 
       // Check salon status (Task 2)
-      if (sData.isActive === false || sData.activationStatus === 'blocked' || sData.activationStatus === 'canceled') {
+      const isSalonSuspended = sData.isActive === false || sData.activationStatus === 'blocked' || sData.activationStatus === 'canceled';
+      if (isSalonSuspended) {
         setSalonData(null);
         setSyncError("Seu salão está suspenso ou inativo. Em caso de dúvidas, fale com o suporte.");
         setUserData(uData);
@@ -309,6 +476,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           finalSalonId: uData.salonId,
           salonDataLoaded: false,
           error: `Salão suspenso ou inativo (activationStatus: ${sData.activationStatus}, isActive: ${sData.isActive})`,
+        });
+        logAuthDebug({
+          authUid: uid,
+          authEmail: currentUser?.email || null,
+          userDocCheck,
+          userDocExists,
+          userSalonId,
+          salonDocCheck,
+          salonDocExists,
+          offlineError,
         });
         return;
       }
@@ -326,10 +503,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         salonDataLoaded: true,
         error: null,
       });
+      logAuthDebug({
+        authUid: uid,
+        authEmail: currentUser?.email || null,
+        userDocCheck,
+        userDocExists,
+        userSalonId,
+        salonDocCheck,
+        salonDocExists,
+        offlineError,
+      });
 
     } catch (error: any) {
       console.error('Error fetching user data manually:', error);
-      setSyncError(error.message || "Erro ao recuperar dados.");
+      if (isOfflineError(error)) {
+        offlineError = true;
+        setSyncError("Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.");
+      } else {
+        setSyncError(error.message || "Erro ao recuperar dados.");
+      }
+      logAuthDebug({
+        authUid: uid,
+        authEmail: currentUser?.email || null,
+        userDocCheck,
+        userDocExists,
+        userSalonId,
+        salonDocCheck,
+        salonDocExists,
+        offlineError,
+      });
     }
   };
 
@@ -392,15 +594,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           let finalRole: string | null = null;
           let finalSalonId: string | null = null;
           let salonDataLoaded = false;
-          let currentErr: string | null = null;
+
+          let userDocCheck: 'success' | 'error' = 'success';
+          let userSalonId: string | null = null;
+          let salonDocCheck: 'success' | 'error' | 'none' = 'none';
+          let salonDocExists = false;
+          let offlineError = false;
 
           try {
             if (userSnap.exists()) {
               uData = { id: userSnap.id, ...userSnap.data() } as User;
+              userSalonId = uData.salonId || null;
               console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
               
-              // Active status filtering (Task 2)
-              if (uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted') {
+              // Active status filtering (Task 2 / Compatibilidade com usuários antigos Requirement 5)
+              const isBlocked = uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted';
+              if (isBlocked) {
                 setUserData(null);
                 setSalonData(null);
                 setSyncError("Sua conta está inativa. Fale com o administrador.");
@@ -415,12 +624,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   salonDataLoaded: false,
                   error: `Conta de usuário inativa/bloqueada (status: ${uData.status}, isActive: ${uData.isActive})`,
                 });
+                logAuthDebug({
+                  authUid: user.uid,
+                  authEmail: user.email,
+                  userDocCheck,
+                  userDocExists,
+                  userSalonId,
+                  salonDocCheck,
+                  salonDocExists,
+                  offlineError,
+                });
                 return;
               }
 
               if (isPlatformAdminFromColl || uData.role === 'platform_admin' || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
                 uData.role = 'platform_admin';
                 uData.salonId = '';
+                userSalonId = '';
               }
             } else if (isPlatformAdminFromColl || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
               console.log("[AuthInit] users doc não existe, mas platform admin. Gerando perfil virtual...");
@@ -438,8 +658,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               try {
                 await setDoc(doc(db, 'users', user.uid), uData);
                 userDocExists = true;
-              } catch (e) {
+                userSalonId = '';
+                userDocCheck = 'success';
+              } catch (e: any) {
                 console.error("Error saving virtual platform admin doc:", e);
+                if (isOfflineError(e)) {
+                  offlineError = true;
+                }
+              }
+            }
+
+            if (!uData) {
+              // Se o Firestore estiver online, buscar salão por fallback
+              const foundSalonDoc = await trySalonFallback(user.uid, user.email);
+              if (foundSalonDoc) {
+                console.log("[AuthFallback] Reativo: Salão correspondente localizado por fallback:", foundSalonDoc.id, ". Atualizando usuário...");
+                const foundSalonId = foundSalonDoc.id;
+                const uRef = doc(db, 'users', user.uid);
+                
+                // Verify email and potential duplicate account (Requirement 7)
+                const sDataForCheck = foundSalonDoc.data();
+                if (user.email && sDataForCheck?.ownerEmail && user.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
+                  console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+                }
+
+                uData = {
+                  id: user.uid,
+                  fullName: user.displayName || sDataForCheck?.ownerName || 'Proprietário',
+                  email: user.email || sDataForCheck?.ownerEmail || '',
+                  phone: user.phoneNumber || sDataForCheck?.phone || '',
+                  salonId: foundSalonId,
+                  role: 'owner',
+                  isActive: true,
+                  status: 'active',
+                  createdAt: Date.now(),
+                  updatedAt: Date.now()
+                } as User;
+
+                await setDoc(uRef, uData);
+                userDocExists = true;
+                userSalonId = foundSalonId;
               }
             }
 
@@ -457,6 +715,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 finalSalonId: null,
                 salonDataLoaded: false,
                 error: "Usuário sem registro users/{uid}",
+              });
+              logAuthDebug({
+                authUid: user.uid,
+                authEmail: user.email,
+                userDocCheck,
+                userDocExists,
+                userSalonId,
+                salonDocCheck,
+                salonDocExists,
+                offlineError,
               });
               return;
             }
@@ -479,14 +747,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 salonDataLoaded: false,
                 error: null,
               });
+              logAuthDebug({
+                authUid: user.uid,
+                authEmail: user.email,
+                userDocCheck,
+                userDocExists,
+                userSalonId,
+                salonDocCheck,
+                salonDocExists,
+                offlineError,
+              });
               return;
             }
 
             let salonDocToLoad = null;
             if (uData.salonId) {
-              const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
-              if (salonSnap.exists()) {
-                salonDocToLoad = salonSnap;
+              try {
+                salonDocCheck = 'success';
+                const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
+                if (salonSnap.exists()) {
+                  salonDocToLoad = salonSnap;
+                  salonDocExists = true;
+                }
+              } catch (err: any) {
+                salonDocCheck = 'error';
+                if (isOfflineError(err)) {
+                  offlineError = true;
+                }
+                throw err;
               }
             }
 
@@ -497,9 +785,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 console.log("[AuthFallback] Reativo: Salão correspondente localizado por fallback:", foundSalonDoc.id, ". Atualizando usuário...");
                 const foundSalonId = foundSalonDoc.id;
                 const uRef = doc(db, 'users', user.uid);
+                
+                // Verify email and potential duplicate account (Requirement 7)
+                const sDataForCheck = foundSalonDoc.data();
+                if (user.email && sDataForCheck?.ownerEmail && user.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
+                  console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+                }
+
                 await setDoc(uRef, {
+                  fullName: user.displayName || sDataForCheck?.ownerName || 'Proprietário',
+                  email: user.email || sDataForCheck?.ownerEmail || '',
+                  phone: user.phoneNumber || sDataForCheck?.phone || '',
                   salonId: foundSalonId,
                   role: 'owner',
+                  isActive: true,
+                  status: 'active',
                   updatedAt: Date.now()
                 }, { merge: true });
                 // Return early; Firestore update will automatically trigger this snapshot listener again.
@@ -522,6 +822,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 salonDataLoaded: false,
                 error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback (ownerId/ownerEmail)",
               });
+              logAuthDebug({
+                authUid: user.uid,
+                authEmail: user.email,
+                userDocCheck,
+                userDocExists,
+                userSalonId,
+                salonDocCheck,
+                salonDocExists,
+                offlineError,
+              });
               return;
             }
 
@@ -540,6 +850,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 salonDataLoaded: false,
                 error: `ID de salão ${uData.salonId} inexistente ou excluído no Firestore`,
               });
+              logAuthDebug({
+                authUid: user.uid,
+                authEmail: user.email,
+                userDocCheck,
+                userDocExists,
+                userSalonId,
+                salonDocCheck,
+                salonDocExists,
+                offlineError,
+              });
               return;
             }
 
@@ -551,7 +871,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const sData = { id: salonSnap.id, ...salonSnap.data() } as Salon;
 
                 // Check salon status (Task 2)
-                if (sData.isActive === false || sData.activationStatus === 'blocked' || sData.activationStatus === 'canceled') {
+                const isSalonSuspended = sData.isActive === false || sData.activationStatus === 'blocked' || sData.activationStatus === 'canceled';
+                if (isSalonSuspended) {
                   setSalonData(null);
                   setSyncError("Seu salão está suspenso ou inativo. Em caso de dúvidas, fale com o suporte.");
                   setUserData(uData!);
@@ -565,6 +886,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     finalSalonId: uData!.salonId,
                     salonDataLoaded: false,
                     error: `Salão suspenso ou inativo (activationStatus: ${sData.activationStatus}, isActive: ${sData.isActive})`,
+                  });
+                  logAuthDebug({
+                    authUid: user.uid,
+                    authEmail: user.email,
+                    userDocCheck,
+                    userDocExists,
+                    userSalonId,
+                    salonDocCheck: 'success',
+                    salonDocExists: true,
+                    offlineError: false,
                   });
                   return;
                 }
@@ -583,6 +914,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   salonDataLoaded: true,
                   error: null,
                 });
+                logAuthDebug({
+                  authUid: user.uid,
+                  authEmail: user.email,
+                  userDocCheck,
+                  userDocExists,
+                  userSalonId,
+                  salonDocCheck: 'success',
+                  salonDocExists: true,
+                  offlineError: false,
+                });
               } else {
                 setSalonData(null);
                 setSyncError(`Erro: Salão não encontrado. O salão vinculado a esta conta no Firestore (ID: ${uData!.salonId}) não foi localizado ou foi excluído.`);
@@ -598,11 +939,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   salonDataLoaded: false,
                   error: `ID de salão ${uData!.salonId} inexistente ou excluído no Firestore`,
                 });
+                logAuthDebug({
+                  authUid: user.uid,
+                  authEmail: user.email,
+                  userDocCheck,
+                  userDocExists,
+                  userSalonId,
+                  salonDocCheck: 'error',
+                  salonDocExists: false,
+                  offlineError: false,
+                });
               }
             }, (err) => {
               console.error("[AuthInit] Erro ao ouvir salons doc:", err);
               setSalonData(null);
-              setSyncError("Erro: Dados do salão falharam ao carregar (Firestore). Se o problema persistir, fale com o suporte técnico.");
+              const isOffline = isOfflineError(err);
+              if (isOffline) {
+                setSyncError("Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.");
+              } else {
+                setSyncError("Erro: Dados do salão falharam ao carregar (Firestore). Se o problema persistir, fale com o suporte técnico.");
+              }
               setLoading(false);
               logSecurityState({
                 uid: user.uid,
@@ -614,17 +970,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 salonDataLoaded: false,
                 error: err.message,
               });
+              logAuthDebug({
+                authUid: user.uid,
+                authEmail: user.email,
+                userDocCheck,
+                userDocExists,
+                userSalonId,
+                salonDocCheck: 'error',
+                salonDocExists: false,
+                offlineError: isOffline,
+              });
             });
 
           } catch (syncErr: any) {
             console.error("[AuthInit] Erro no fluxo de sincronização de snapshot:", syncErr);
-            setSyncError(syncErr.message || "Erro de sincronização");
+            const isOffline = isOfflineError(syncErr);
+            if (isOffline) {
+              setSyncError("Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.");
+            } else {
+              setSyncError(syncErr.message || "Erro de sincronização");
+            }
             setLoading(false);
+            logAuthDebug({
+              authUid: user.uid,
+              authEmail: user.email,
+              userDocCheck,
+              userDocExists,
+              userSalonId,
+              salonDocCheck,
+              salonDocExists,
+              offlineError: isOffline,
+            });
           }
         }, (err) => {
           console.error("[AuthInit] Erro ao escutar users doc snapshot:", err);
+          let offlineError = isOfflineError(err);
           
-          if (isPlatformAdminFromColl) {
+          if (offlineError) {
+            setSyncError("Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.");
+          } else if (isPlatformAdminFromColl) {
             console.log("[AuthInit] Ativando perfil virtual de platform_admin sob erro de permissão.");
             setIsPlatformAdmin(true);
             setUserData({
@@ -651,6 +1035,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             finalSalonId: null,
             salonDataLoaded: false,
             error: err.message,
+          });
+          logAuthDebug({
+            authUid: user.uid,
+            authEmail: user.email,
+            userDocCheck: 'error',
+            userDocExists: false,
+            userSalonId: null,
+            salonDocCheck: 'none',
+            salonDocExists: false,
+            offlineError,
           });
         });
 
