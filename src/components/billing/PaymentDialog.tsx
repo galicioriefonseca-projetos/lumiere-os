@@ -121,7 +121,15 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
       });
       
       clearTimeout(timeoutId);
-      const data = await response.json().catch(() => null);
+      
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Server returned non-JSON:", responseText);
+        throw new Error(`O servidor retornou um erro inesperado (Status ${response.status}). Falha ao processar checkout.`);
+      }
 
       if (!response.ok) {
         throw new Error(data?.message || data?.error || "Não foi possível iniciar o checkout.");
@@ -155,7 +163,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
         ? "Tempo limite de resposta excedido. O servidor demorou muito para responder." 
         : (err.message || "Erro interno ao processar link de checkout.");
         
-      setCheckoutError("Não foi possível abrir o checkout do cartão. Tente novamente ou use PIX manual.");
+      setCheckoutError(errMsg);
       toast.error(errMsg);
     } finally {
       setIsStagingCheckout(false);
@@ -190,7 +198,15 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
       });
       
       clearTimeout(timeoutId);
-      const data = await response.json().catch(() => null);
+      
+      const responseText = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Server returned non-JSON:", responseText);
+        throw new Error(`O servidor retornou um erro inesperado (Status ${response.status}). Portal indisponível.`);
+      }
 
       if (!response.ok) {
         throw new Error(data?.message || data?.error || "Erro ao carregar o portal do cliente.");
@@ -222,6 +238,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
         ? "Tempo limite de conexão excedido ao abrir portal de faturamento." 
         : (err.message || "Erro de conexão ao carregar portal de gerenciamento.");
         
+      setCheckoutError(errMsg);
       toast.error(errMsg);
     } finally {
       setIsStagingPortal(false);

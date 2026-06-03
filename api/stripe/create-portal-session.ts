@@ -1,21 +1,21 @@
 import { getAdminAuth, getAdminDb, getStripe } from './_utils';
 
 export default async function handler(req: any, res: any) {
-  // Configurar CORS de forma nativa e segura
-  const allowedOrigin = process.env.APP_URL || req.headers.origin || 'http://localhost:3000';
-  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Método não permitido. Utilize o método POST." });
-  }
-
   try {
+    // Configurar CORS de forma nativa e segura
+    const allowedOrigin = process.env.APP_URL || req.headers.origin || 'http://localhost:3000';
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Método não permitido. Utilize o método POST." });
+    }
+
     const { salonId } = req.body;
     if (!salonId) {
       return res.status(400).json({ error: "ID do salão é obrigatório." });
