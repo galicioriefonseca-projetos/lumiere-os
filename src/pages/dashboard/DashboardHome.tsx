@@ -302,20 +302,6 @@ export default function DashboardHome() {
                  <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
               </span>
             )}
-            {salonData?.billingProvider === 'stripe' && (
-              <span className={`text-[10px] uppercase font-bold tracking-widest px-2.5 py-1.5 rounded-full flex items-center gap-1 leading-none shadow-[0_2px_10px_rgba(0,0,0,0.25)] ${
-                salonData.subscriptionStatus === 'active'
-                  ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/25'
-                  : salonData.subscriptionStatus === 'canceled'
-                  ? 'text-zinc-400 bg-zinc-900 border border-zinc-800'
-                  : 'text-red-400 bg-red-500/10 border border-red-500/25'
-              }`}>
-                💳 Cartão Recorrente • {
-                  salonData.subscriptionStatus === 'active' ? 'Ativo' :
-                  salonData.subscriptionStatus === 'canceled' ? 'Cancelado' : 'Pagamento Recusado'
-                }
-              </span>
-            )}
           </div>
           <h1 className="text-2xl md:text-3xl font-light tracking-tight text-white font-heading">
             <span className="font-semibold text-white">{salonData.name}</span>
@@ -338,59 +324,7 @@ export default function DashboardHome() {
       </div>
 
       {/* Billing Warnings & Actions */}
-      {(() => {
-        const needsWarning = false; // Desativado para o MVP
-
-        if (!needsWarning) return null;
-
-        let warningText = '';
-        let buttonText = 'Assinatura';
-        let isDanger = salonData.subscriptionStatus === 'canceled' || salonData.subscriptionStatus === 'overdue' || isPaymentOverdue(salonData);
-
-        if (salonData.subscriptionStatus === 'canceled') {
-          warningText = salonData.billingProvider === 'stripe' 
-            ? 'Assinatura recorrente Stripe cancelada. Regularize para reativar.'
-            : 'Assinatura cancelada. Regularize para manter o acesso.';
-          buttonText = salonData.billingProvider === 'stripe' ? 'Gerenciar Cartão' : 'Assinar Agora';
-        } else if (salonData.subscriptionStatus === 'overdue' || isPaymentOverdue(salonData)) {
-          warningText = salonData.billingProvider === 'stripe'
-            ? 'Sua mensalidade recorrente Stripe falhou ou está atrasada.'
-            : 'Assinatura vencida. Regularize para manter o acesso.';
-          buttonText = salonData.billingProvider === 'stripe' ? 'Regularizar Cartão' : 'Pagamento';
-        } else if (salonData.subscriptionStatus === 'pending_payment' || salonData.paymentStatus === 'reported') {
-          warningText = salonData.billingProvider === 'stripe'
-            ? 'Seu pagamento Stripe está sendo processado na rede.'
-            : 'Pagamento pendente de confirmação.';
-          buttonText = salonData.billingProvider === 'stripe' ? 'Gerenciar Cartão' : 'Acompanhar';
-          isDanger = false;
-        } else if (isPaymentDueInDays(salonData, 3)) {
-          warningText = 'Seu plano vence em breve.';
-          buttonText = 'Renovar';
-          isDanger = false;
-        } else if (salonData.subscriptionStatus === 'trial') {
-          warningText = 'Período de teste em andamento.';
-          buttonText = 'Assinar Agora';
-          isDanger = false;
-        }
-
-        return (
-          <div className={`p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 border ${isDanger ? 'border-red-500/30 bg-red-500/10' : 'border-[#D4AF37]/30 bg-[#D4AF37]/10'}`}>
-            <div className="flex items-center gap-3">
-              <AlertCircle className={`w-5 h-5 ${isDanger ? 'text-red-400' : 'text-[#D4AF37]'}`} />
-              <p className={`text-sm font-medium ${isDanger ? 'text-red-200' : 'text-[#D4AF37]'}`}>
-                {warningText}
-              </p>
-            </div>
-            <Button
-              onClick={() => setIsPaymentDialogOpen(true)}
-              className={`shrink-0 rounded-lg h-9 px-4 text-xs font-semibold ${isDanger ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black'}`}
-            >
-              <CreditCard className="w-4 h-4 mr-2" />
-              {buttonText}
-            </Button>
-          </div>
-        );
-      })()}
+      {null}
 
       {/* Checklist Evaluated notification pending checklist (Owners / Managers) */}
       {isOwnerOrManager && evaluationTargets.filter(t => !findRunForTarget(t, checklistRuns)).length > 0 && (() => {

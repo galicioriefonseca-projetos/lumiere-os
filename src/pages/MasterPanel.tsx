@@ -305,29 +305,9 @@ export default function MasterPanel() {
                         <td className="px-4 py-3">
                            <div className="flex flex-col gap-1 items-start">
                               <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold">{salon.plan}</span>
-                              {salon.billingProvider === 'stripe' ? (
-                                <div className="text-[10px] text-zinc-400 mt-2 space-y-0.5 font-mono bg-zinc-950/65 p-2 rounded-lg border border-zinc-800/80 w-full min-w-[170px] text-left">
-                                  <div className="text-[#D4AF37] font-semibold flex items-center gap-1 mb-1">
-                                    💳 Stripe ({salon.billingMode || 'recorrente'})
-                                  </div>
-                                  {salon.stripeCustomerId && (
-                                    <div className="truncate">Cust: <a href={`https://dashboard.stripe.com/customers/${salon.stripeCustomerId}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{salon.stripeCustomerId}</a></div>
-                                  )}
-                                  {salon.stripeSubscriptionId && (
-                                    <div className="truncate">Sub: <a href={`https://dashboard.stripe.com/subscriptions/${salon.stripeSubscriptionId}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{salon.stripeSubscriptionId}</a></div>
-                                  )}
-                                  {salon.nextBillingDate && (
-                                    <div>Próx: <span className="text-zinc-200">{new Date(salon.nextBillingDate).toLocaleDateString('pt-BR')}</span></div>
-                                  )}
-                                  {salon.lastPaymentAt && (
-                                     <div>Últ: <span className="text-zinc-200">{new Date(salon.lastPaymentAt).toLocaleDateString('pt-BR')}</span></div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-[10px] text-zinc-500 mt-1 font-mono text-left">
-                                  💸 PIX Manual / Off-line
-                                </div>
-                              )}
+                              <div className="text-[10px] text-zinc-500 mt-1 font-mono text-left">
+                                💸 PIX Manual / Off-line
+                              </div>
                               <div className="flex gap-1">
                                 <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getStatusColor(salon.activationStatus)}`}>
                                    {getStatusLabel(salon.activationStatus)}

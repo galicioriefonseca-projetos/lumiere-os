@@ -16,6 +16,8 @@ export interface User {
   specialty?: string;
   professionalFunction?: string;
   professionalCategory?: string;
+  status?: string;
+  isActive?: boolean;
   createdAt: number;
   updatedAt: number;
 }

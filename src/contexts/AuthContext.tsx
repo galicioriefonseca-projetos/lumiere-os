@@ -112,6 +112,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const trySalonFallback = async (uid: string, email: string | null): Promise<any> => {
+    console.log("[AuthFallback] Buscando salão via ownerId ou ownerEmail para resolver conta órfã...", uid, email);
+    try {
+      const salonsColl = collection(db, 'salons');
+      
+      // 1. Query by ownerId == uid
+      const q1 = query(salonsColl, where('ownerId', '==', uid));
+      const snap1 = await getDocs(q1);
+      if (!snap1.empty) {
+        console.log("[AuthFallback] Salão encontrado por ownerId:", snap1.docs[0].id);
+        return snap1.docs[0];
+      }
+
+      // 2. Query by ownerEmail == email
+      if (email) {
+        const q2 = query(salonsColl, where('ownerEmail', '==', email));
+        const snap2 = await getDocs(q2);
+        if (!snap2.empty) {
+          console.log("[AuthFallback] Salão encontrado por ownerEmail:", snap2.docs[0].id);
+          return snap2.docs[0];
+        }
+      }
+    } catch (err) {
+      console.error("[AuthFallback] Erro ao buscar salão por fallback:", err);
+    }
+    return null;
+  };
+
   const fetchUserData = async (uid: string) => {
     try {
       setSyncError(null);
@@ -131,6 +159,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userSnap.exists()) {
         uData = { id: userSnap.id, ...userSnap.data() } as User;
+        
+        // Active status filtering (Task 2)
+        if (uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted') {
+          setUserData(null);
+          setSalonData(null);
+          setSyncError("Sua conta está inativa. Fale com o administrador.");
+          logSecurityState({
+            uid,
+            email: currentUser?.email || null,
+            userDocExists: true,
+            platformAdminDocExists: isPlatformAdminFromColl,
+            finalRole: uData.role,
+            finalSalonId: uData.salonId || null,
+            salonDataLoaded: false,
+            error: `Conta de usuário inativa/bloqueada (status: ${uData.status}, isActive: ${uData.isActive})`,
+          });
+          return;
+        }
+
         if (isPlatformAdminFromColl || uData.role === 'platform_admin' || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
           uData.role = 'platform_admin';
           uData.salonId = '';
@@ -185,14 +232,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      let salonDocToLoad = null;
+      if (uData.salonId) {
+        const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
+        if (salonSnap.exists()) {
+          salonDocToLoad = salonSnap;
+        }
+      }
+
+      // Try fallback (Task 3)
+      if (!salonDocToLoad) {
+        const foundSalonDoc = await trySalonFallback(uid, currentUser?.email || null);
+        if (foundSalonDoc) {
+          console.log("[AuthFallback] Recuperação manual bem sucedida. Vinculando salão", foundSalonDoc.id, "ao usuário", uid);
+          const foundSalonId = foundSalonDoc.id;
+          const uRef = doc(db, 'users', uid);
+          await setDoc(uRef, {
+            salonId: foundSalonId,
+            role: 'owner',
+            updatedAt: Date.now()
+          }, { merge: true });
+
+          uData.salonId = foundSalonId;
+          uData.role = 'owner';
+          salonDocToLoad = foundSalonDoc;
+        }
+      }
+
       if (!uData.salonId) {
         setUserData(uData);
         setSalonData(null);
-        if (uData.role === 'owner') {
-          setSyncError("Sua conta de proprietário ainda não está vinculada a um salão.");
-        } else {
-          setSyncError("Sua conta de colaborador ainda não está vinculada a um salão.");
-        }
+        setSyncError("Erro: Salão não vinculado. Sua conta precisa estar associada a um salão operacional para acessar o painel.");
         logSecurityState({
           uid,
           email: currentUser?.email || null,
@@ -201,16 +271,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           finalRole: uData.role,
           finalSalonId: null,
           salonDataLoaded: false,
-          error: "User sem salonId",
+          error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback (ownerId/ownerEmail)",
         });
         return;
       }
 
-      const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
-      if (salonSnap.exists()) {
-        setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
-        setSyncError(null);
+      if (!salonDocToLoad) {
         setUserData(uData);
+        setSalonData(null);
+        setSyncError(`Erro: Salão não encontrado. O salão vinculado a esta conta no Firestore (ID: ${uData.salonId}) não foi localizado ou foi excluído.`);
         logSecurityState({
           uid,
           email: currentUser?.email || null,
@@ -218,12 +287,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           platformAdminDocExists: isPlatformAdminFromColl,
           finalRole: uData.role,
           finalSalonId: uData.salonId,
-          salonDataLoaded: true,
-          error: null,
+          salonDataLoaded: false,
+          error: `ID de salão ${uData.salonId} inexistente ou excluído no Firestore`,
         });
-      } else {
+        return;
+      }
+
+      const sData = { id: salonDocToLoad.id, ...salonDocToLoad.data() } as Salon;
+
+      // Check salon status (Task 2)
+      if (sData.isActive === false || sData.activationStatus === 'blocked' || sData.activationStatus === 'canceled') {
         setSalonData(null);
-        setSyncError("Não foi possível localizar o salão vinculado a esta conta.");
+        setSyncError("Seu salão está suspenso ou inativo. Em caso de dúvidas, fale com o suporte.");
         setUserData(uData);
         logSecurityState({
           uid,
@@ -233,9 +308,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           finalRole: uData.role,
           finalSalonId: uData.salonId,
           salonDataLoaded: false,
-          error: "Salão ID inexistente no Firestore",
+          error: `Salão suspenso ou inativo (activationStatus: ${sData.activationStatus}, isActive: ${sData.isActive})`,
         });
+        return;
       }
+
+      setSalonData(sData);
+      setSyncError(null);
+      setUserData(uData);
+      logSecurityState({
+        uid,
+        email: currentUser?.email || null,
+        userDocExists: true,
+        platformAdminDocExists: isPlatformAdminFromColl,
+        finalRole: uData.role,
+        finalSalonId: uData.salonId,
+        salonDataLoaded: true,
+        error: null,
+      });
+
     } catch (error: any) {
       console.error('Error fetching user data manually:', error);
       setSyncError(error.message || "Erro ao recuperar dados.");
@@ -308,6 +399,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               uData = { id: userSnap.id, ...userSnap.data() } as User;
               console.log("[AuthInit] users doc existe. Role:", uData.role, "SalonId:", uData.salonId);
               
+              // Active status filtering (Task 2)
+              if (uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted') {
+                setUserData(null);
+                setSalonData(null);
+                setSyncError("Sua conta está inativa. Fale com o administrador.");
+                setLoading(false);
+                logSecurityState({
+                  uid: user.uid,
+                  email: user.email,
+                  userDocExists: true,
+                  platformAdminDocExists: isPlatformAdminFromColl,
+                  finalRole: uData.role,
+                  finalSalonId: uData.salonId || null,
+                  salonDataLoaded: false,
+                  error: `Conta de usuário inativa/bloqueada (status: ${uData.status}, isActive: ${uData.isActive})`,
+                });
+                return;
+              }
+
               if (isPlatformAdminFromColl || uData.role === 'platform_admin' || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
                 uData.role = 'platform_admin';
                 uData.salonId = '';
@@ -372,16 +482,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return;
             }
 
+            let salonDocToLoad = null;
+            if (uData.salonId) {
+              const salonSnap = await getDoc(doc(db, 'salons', uData.salonId));
+              if (salonSnap.exists()) {
+                salonDocToLoad = salonSnap;
+              }
+            }
+
+            // Try fallback (Task 3)
+            if (!salonDocToLoad) {
+              const foundSalonDoc = await trySalonFallback(user.uid, user.email);
+              if (foundSalonDoc) {
+                console.log("[AuthFallback] Reativo: Salão correspondente localizado por fallback:", foundSalonDoc.id, ". Atualizando usuário...");
+                const foundSalonId = foundSalonDoc.id;
+                const uRef = doc(db, 'users', user.uid);
+                await setDoc(uRef, {
+                  salonId: foundSalonId,
+                  role: 'owner',
+                  updatedAt: Date.now()
+                }, { merge: true });
+                // Return early; Firestore update will automatically trigger this snapshot listener again.
+                return;
+              }
+            }
+
             if (!uData.salonId) {
               setUserData(uData);
               setSalonData(null);
-              if (uData.role === 'owner') {
-                setSyncError("Sua conta de proprietário ainda não está vinculada a um salão.");
-                currentErr = "Owner sem salonId";
-              } else {
-                setSyncError("Sua conta de colaborador ainda não está vinculada a um salão.");
-                currentErr = "User sem salonId";
-              }
+              setSyncError("Erro: Salão não vinculado. Sua conta precisa estar associada a um salão operacional para acessar o painel.");
               setLoading(false);
               logSecurityState({
                 uid: user.uid,
@@ -391,7 +520,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 finalRole: uData.role,
                 finalSalonId: null,
                 salonDataLoaded: false,
-                error: currentErr,
+                error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback (ownerId/ownerEmail)",
+              });
+              return;
+            }
+
+            if (!salonDocToLoad) {
+              setUserData(uData);
+              setSalonData(null);
+              setSyncError(`Erro: Salão não encontrado. O salão vinculado a esta conta no Firestore (ID: ${uData.salonId}) não foi localizado ou foi excluído.`);
+              setLoading(false);
+              logSecurityState({
+                uid: user.uid,
+                email: user.email,
+                userDocExists: userDocExists,
+                platformAdminDocExists: isPlatformAdminFromColl,
+                finalRole: uData.role,
+                finalSalonId: uData.salonId,
+                salonDataLoaded: false,
+                error: `ID de salão ${uData.salonId} inexistente ou excluído no Firestore`,
               });
               return;
             }
@@ -401,7 +548,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
             unsubscribeSalonSnapshot = onSnapshot(doc(db, 'salons', uData.salonId), (salonSnap) => {
               if (salonSnap.exists()) {
-                setSalonData({ id: salonSnap.id, ...salonSnap.data() } as Salon);
+                const sData = { id: salonSnap.id, ...salonSnap.data() } as Salon;
+
+                // Check salon status (Task 2)
+                if (sData.isActive === false || sData.activationStatus === 'blocked' || sData.activationStatus === 'canceled') {
+                  setSalonData(null);
+                  setSyncError("Seu salão está suspenso ou inativo. Em caso de dúvidas, fale com o suporte.");
+                  setUserData(uData!);
+                  setLoading(false);
+                  logSecurityState({
+                    uid: user.uid,
+                    email: user.email,
+                    userDocExists: userDocExists,
+                    platformAdminDocExists: isPlatformAdminFromColl,
+                    finalRole: uData!.role,
+                    finalSalonId: uData!.salonId,
+                    salonDataLoaded: false,
+                    error: `Salão suspenso ou inativo (activationStatus: ${sData.activationStatus}, isActive: ${sData.isActive})`,
+                  });
+                  return;
+                }
+
+                setSalonData(sData);
                 setSyncError(null);
                 setUserData(uData!);
                 setLoading(false);
@@ -417,7 +585,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 });
               } else {
                 setSalonData(null);
-                setSyncError("Não foi possível localizar o salão vinculado a esta conta.");
+                setSyncError(`Erro: Salão não encontrado. O salão vinculado a esta conta no Firestore (ID: ${uData!.salonId}) não foi localizado ou foi excluído.`);
                 setUserData(uData!);
                 setLoading(false);
                 logSecurityState({
@@ -428,13 +596,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   finalRole: uData!.role,
                   finalSalonId: uData!.salonId,
                   salonDataLoaded: false,
-                  error: "Salão ID inexistente no Firestore",
+                  error: `ID de salão ${uData!.salonId} inexistente ou excluído no Firestore`,
                 });
               }
             }, (err) => {
               console.error("[AuthInit] Erro ao ouvir salons doc:", err);
               setSalonData(null);
-              setSyncError("Erro de acesso aos dados do salão.");
+              setSyncError("Erro: Dados do salão falharam ao carregar (Firestore). Se o problema persistir, fale com o suporte técnico.");
               setLoading(false);
               logSecurityState({
                 uid: user.uid,

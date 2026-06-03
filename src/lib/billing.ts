@@ -78,40 +78,17 @@ export function getPaymentStatusLabel(status: string | undefined): string {
 }
 
 export function getBillingProviderLabel(provider?: string): string {
-  switch (provider) {
-    case 'manual_pix': return 'PIX Manual';
-    case 'stripe': return 'Stripe';
-    case 'asaas': return 'Asaas';
-    default: return 'PIX Manual';
-  }
+  return 'PIX Manual';
 }
 
 export function getBillingModeLabel(mode?: string): string {
-  switch (mode) {
-    case 'manual_pix': return 'PIX Manual';
-    case 'recurring_card': return 'Cartão de Crédito Recorrente';
-    default: return 'PIX Manual';
-  }
+  return 'PIX Manual';
 }
 
 export function isRecurringCardEnabled(): boolean {
-  return !!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  return false;
 }
 
-// Esta função só pode ser usada no servidor (api/stripe/*)
-// No frontend, o plano é enviado como string e o servidor resolve o priceId
 export function getPlanStripePriceId(plan: PlanType): string {
-  // Nunca chame isso no browser — variáveis STRIPE_PRICE_* não são expostas ao Vite
-  if (typeof window !== 'undefined') {
-    console.error('[billing] getPlanStripePriceId chamado no browser — isso é um bug');
-    return '';
-  }
-  switch (plan) {
-    case 'start':       return process.env.STRIPE_PRICE_START || '';
-    case 'studio':      return process.env.STRIPE_PRICE_STUDIO || '';
-    case 'performance': return process.env.STRIPE_PRICE_PERFORMANCE || '';
-    case 'network':     return process.env.STRIPE_PRICE_NETWORK || '';
-    case 'founder':     return process.env.STRIPE_PRICE_FOUNDER || '';
-    default:            return '';
-  }
+  return '';
 }

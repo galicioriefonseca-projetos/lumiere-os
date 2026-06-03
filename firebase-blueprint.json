@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Perfil do usuário integrado com o Firebase Auth.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID exclusivo (UID) do usuário." },
+        "fullName": { "type": "string", "description": "Nome completo do usuário." },
+        "email": { "type": "string", "description": "E-mail cadastrado." },
+        "phone": { "type": "string", "description": "Telefone de contato." },
+        "role": { "type": "string", "enum": ["owner", "admin", "manager", "receptionist", "attendant", "professional", "platform_admin"], "description": "Função/Cargo do usuário dentro do salão." },
+        "salonId": { "type": "string", "description": "ID do salão de beleza a que o usuário pertence." },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "fullName", "email", "role", "salonId", "createdAt", "updatedAt"]
+    },
+    "Salon": {
+      "title": "Salon",
+      "description": "Estabelecimento principal gerenciado pelo LumiereOS.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "phone": { "type": "string" },
+        "businessType": { "type": "string", "enum": ["salon", "clinic", "barbershop", "studio", "other"] },
+        "plan": { "type": "string", "enum": ["start", "studio", "performance", "network", "founder"] },
+        "subscriptionStatus": { "type": "string", "enum": ["trial", "active", "pending_payment", "overdue", "canceled"] },
+        "activationStatus": { "type": "string", "enum": ["active", "pending", "blocked", "canceled"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "name", "ownerId", "ownerEmail", "plan", "subscriptionStatus", "activationStatus", "isActive", "createdAt", "updatedAt"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Histórico e relatórios de faturamento do salão.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "plan": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["pix", "credit_card"] },
+        "status": { "type": "string", "enum": ["reported", "paid", "rejected", "canceled"] },
+        "reportedByUserId": { "type": "string" },
+        "reportedAt": { "type": "integer" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "plan", "amount", "method", "status", "reportedByUserId", "reportedAt", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Coleção global de perfis de usuários."
+    },
+    "/salons/{salonId}": {
+      "schema": "Salon",
+      "description": "Coleção central de estabelecimentos/parceiros."
+    },
+    "/salons/{salonId}/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Subcoleção de registros de pagamentos do salão."
+    }
+  }
+}

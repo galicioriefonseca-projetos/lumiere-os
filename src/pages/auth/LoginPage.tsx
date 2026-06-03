@@ -6,7 +6,7 @@ import { Sparkles, ArrowLeft, Chrome } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { toast } from 'sonner';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import PWAInstallButton from '../../components/PWAInstallButton';
 
@@ -78,8 +78,8 @@ export default function LoginPage() {
 
         if (userSnap.exists()) {
           const uData = userSnap.data();
-          // Check for inactive user account status
-          if (uData?.status === 'inactive' || uData?.status === 'deleted' || uData?.isActive === false) {
+          // Check for inactive user account status (Task 2 status validations)
+          if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
             toast.error("Sua conta está inativa. Fale com o administrador.");
             await auth.signOut();
             setLoading(false);
@@ -87,10 +87,37 @@ export default function LoginPage() {
           }
           // Error check for missing salonId on non-platform_admin users
           if (!isPlatform && !uData?.salonId) {
-            toast.error("Não foi possível localizar o salão vinculado a esta conta. Entre em contato com o suporte.");
-            await auth.signOut();
-            setLoading(false);
-            return;
+            // Run fallback (Task 3)
+            const salonsColl = collection(db, 'salons');
+            const q1 = query(salonsColl, where('ownerId', '==', user.uid));
+            const snap1 = await getDocs(q1);
+            let foundSalonId = null;
+            if (!snap1.empty) {
+              foundSalonId = snap1.docs[0].id;
+            } else if (user.email) {
+              const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
+              const snap2 = await getDocs(q2);
+              if (!snap2.empty) {
+                foundSalonId = snap2.docs[0].id;
+              }
+            }
+
+            if (foundSalonId) {
+              console.log("[AuthLoginFallback] Salvando salonId auto-resolvido por login: ", foundSalonId);
+              await updateDoc(doc(db, 'users', user.uid), {
+                salonId: foundSalonId,
+                role: 'owner',
+                updatedAt: Date.now()
+              });
+              uData.salonId = foundSalonId;
+              uData.role = 'owner';
+              isOwner = true;
+            } else {
+              toast.error("Sua conta foi autenticada, mas ainda não está associada a nenhum salão operacional.");
+              await auth.signOut();
+              setLoading(false);
+              return;
+            }
           }
         }
         
@@ -165,8 +192,8 @@ export default function LoginPage() {
 
         if (userSnap.exists()) {
           const uData = userSnap.data();
-          // Check for inactive user account status
-          if (uData?.status === 'inactive' || uData?.status === 'deleted' || uData?.isActive === false) {
+          // Check for inactive user account status (Task 2 status validations)
+          if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
             toast.error("Sua conta está inativa. Fale com o administrador.");
             await auth.signOut();
             setLoading(false);
@@ -174,10 +201,37 @@ export default function LoginPage() {
           }
           // Error check for missing salonId on non-platform_admin users
           if (!isPlatform && !uData?.salonId) {
-            toast.error("Não foi possível localizar o salão vinculado a esta conta. Entre em contato com o suporte.");
-            await auth.signOut();
-            setLoading(false);
-            return;
+            // Run fallback (Task 3)
+            const salonsColl = collection(db, 'salons');
+            const q1 = query(salonsColl, where('ownerId', '==', user.uid));
+            const snap1 = await getDocs(q1);
+            let foundSalonId = null;
+            if (!snap1.empty) {
+              foundSalonId = snap1.docs[0].id;
+            } else if (user.email) {
+              const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
+              const snap2 = await getDocs(q2);
+              if (!snap2.empty) {
+                foundSalonId = snap2.docs[0].id;
+              }
+            }
+
+            if (foundSalonId) {
+              console.log("[AuthLoginFallback] Salvando salonId auto-resolvido por Google login: ", foundSalonId);
+              await updateDoc(doc(db, 'users', user.uid), {
+                salonId: foundSalonId,
+                role: 'owner',
+                updatedAt: Date.now()
+              });
+              uData.salonId = foundSalonId;
+              uData.role = 'owner';
+              isOwner = true;
+            } else {
+              toast.error("Sua conta foi autenticada, mas ainda não está associada a nenhum salão operacional.");
+              await auth.signOut();
+              setLoading(false);
+              return;
+            }
           }
         }
         

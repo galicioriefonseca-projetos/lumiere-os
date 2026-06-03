@@ -45,11 +45,6 @@ export default function BillingPage() {
   
   // Local state for actions
   const [isReportingPay, setIsReportingPay] = useState(false);
-  const [isStagingCheckout, setIsStagingCheckout] = useState(false);
-  const [isStagingPortal, setIsStagingPortal] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
-  const [stripePortalUrl, setStripePortalUrl] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
 
   useEffect(() => {
@@ -86,7 +81,7 @@ export default function BillingPage() {
 
   const currentPlanConfig = PLANS_CONFIG[salonData.plan as PlanType] || PLANS_CONFIG.start;
   const currentPlanAmount = getPlanAmount(salonData.plan as PlanType);
-  const isStripeActive = salonData.billingMode === 'recurring_card' || salonData.billingProvider === 'stripe';
+  const isStripeActive = false;
 
   const handleCopyPIX = () => {
     navigator.clipboard.writeText(BILLING_CONFIG.pixKey);
@@ -141,117 +136,7 @@ export default function BillingPage() {
     }
   };
 
-  const handleStripeCheckout = async () => {
-    if (!currentUser) return;
-    setIsStagingCheckout(true);
-    setCheckoutError(null);
-    setStripeCheckoutUrl(null);
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          salonId: salonData.id,
-          plan: salonData.plan,
-          userId: currentUser.uid,
-        })
-      });
-
-      clearTimeout(timeoutId);
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || "Não foi possível criar link do Stripe.");
-      }
-
-      if (!data) {
-        throw new Error("Resposta inválida do servidor.");
-      }
-
-      const checkoutUrl = data.checkoutUrl || data.url;
-      if (!checkoutUrl) {
-        throw new Error("URL de checkout não localizada.");
-      }
-
-      setStripeCheckoutUrl(checkoutUrl);
-      const stripeWindow = window.open(checkoutUrl, '_blank');
-      if (stripeWindow) {
-        stripeWindow.focus();
-        toast.success("O checkout seguro do Stripe foi aberto em uma nova aba.");
-      } else {
-        toast.warning("Link criado! Por favor, clique no link de pagamento oficial destacado abaixo.");
-      }
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.error('[Stripe Checkout Billing Error]:', err);
-      const msg = err.name === 'AbortError' ? 'Tempo de requisição esgotado.' : (err.message || 'Erro de comunicação backend.');
-      toast.error(msg);
-      setCheckoutError("Erro de Checkout Estágio. Regularize com PIX ou tente o botão de Gerenciar abaixo.");
-    } finally {
-      setIsStagingCheckout(false);
-    }
-  };
-
-  const handleStripePortal = async () => {
-    if (!currentUser) return;
-    setIsStagingPortal(true);
-    setStripePortalUrl(null);
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch('/api/stripe/create-portal-session', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          salonId: salonData.id,
-          userId: currentUser.uid,
-        })
-      });
-
-      clearTimeout(timeoutId);
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || "Não foi possível acessar dados do portal.");
-      }
-
-      const portalUrl = data.portalUrl || data.url;
-      if (!portalUrl) {
-        throw new Error("URL de portal inválida.");
-      }
-
-      setStripePortalUrl(portalUrl);
-      const portalWindow = window.open(portalUrl, '_blank');
-      if (portalWindow) {
-        portalWindow.focus();
-        toast.success("Portal de faturamento Stripe aberto numa nova aba.");
-      } else {
-        toast.warning("Link do portal pronto! Clique no botão abaixo para abrir com segurança.");
-      }
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.error('[Stripe Portal Billing Error]:', err);
-      toast.error(err.message || "Não foi possível acessar o portal do cliente no Stripe.");
-    } finally {
-      setIsStagingPortal(false);
-    }
-  };
+  // Stripe integration handlers removed for complete offline manual PIX faturamento system
 
   // Human date formatting helpers
   const formatDate = (ms: number | undefined | null) => {
@@ -375,43 +260,24 @@ export default function BillingPage() {
           <div id="billing-gateways-container" className="space-y-4">
             <h3 className="text-base font-semibold text-white font-heading flex items-center gap-2">
               <CreditCard className="w-4.5 h-4.5 text-[#D4AF37]" />
-              Método de Faturamento Ativo
+              Método de faturamento
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Option A: Stripe Credit Card */}
-              <div className="p-5 rounded-2xl border bg-zinc-900/40 space-y-4 flex flex-col justify-between transition-all border-white/5 opacity-80">
-                <div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground">Cartão Recorrente</span>
-                  </div>
-                  <h4 className="text-sm font-semibold text-white mt-2.5">Pagamento Integrado Stripe</h4>
-                  <p className="text-xs text-zinc-400 mt-1 lines-2 font-light">Renovação mensal eletrônica por cartão com total confidencialidade e segurança.</p>
-                </div>
-
-                <div className="pt-3">
-                  <span className="text-xs text-zinc-400 bg-zinc-950/80 border border-white/5 rounded-xl px-3 py-2.5 block text-center font-light leading-relaxed">
-                    Pagamento recorrente em cartão será disponibilizado em breve.
-                  </span>
-                </div>
-              </div>
-
-              {/* Option B: PIX manual */}
-              <div className={`p-5 rounded-2xl border bg-zinc-900/40 space-y-4 flex flex-col justify-between transition-all ${!isStripeActive ? 'border-[#D4AF37] shadow-[0_0_15px_rgba(212,175,55,0.03)]' : 'border-white/5 opacity-80'}`}>
+            <div className="grid grid-cols-1 gap-5">
+              {/* Option: PIX manual */}
+              <div className="p-6 rounded-2xl border border-[#D4AF37] bg-zinc-900/40 space-y-4 flex flex-col justify-between transition-all shadow-[0_0_15px_rgba(212,175,55,0.03)]">
                 <div>
                   <div className="flex justify-between items-start">
                     <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground font-sans">PIX Direto</span>
-                    {!isStripeActive && (
-                      <span className="text-[9px] uppercase font-bold text-[#D4AF37] px-2 py-0.5 bg-[#D4AF37]/10 border border-[#D4AF37]/20 rounded-md">
-                        Ativo
-                      </span>
-                    )}
+                    <span className="text-[9px] uppercase font-bold text-[#D4AF37] px-2 py-0.5 bg-[#D4AF37]/10 border border-[#D4AF37]/20 rounded-md">
+                      Ativo
+                    </span>
                   </div>
                   <h4 className="text-sm font-semibold text-white mt-2.5">Pagamento Manual PIX</h4>
-                  <p className="text-xs text-zinc-400 mt-1 lines-2 font-light">Chave PIX e confirmação manual eletrônica processada por nossos operadores.</p>
+                  <p className="text-xs text-zinc-400 mt-1 font-light">Chave PIX e confirmação manual eletrônica processada por nossos operadores.</p>
                 </div>
 
-                <div className="pt-3 space-y-2">
+                <div className="pt-3 space-y-3">
                   <div className="flex items-center gap-2 bg-black/40 p-2.5 rounded-xl border border-white/5 text-xs text-zinc-300">
                     <span className="truncate font-mono font-medium flex-1">{BILLING_CONFIG.pixKey}</span>
                     <button 

@@ -23,14 +23,8 @@ interface PaymentDialogProps {
 
 export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps) {
   const { currentUser, userData } = useAuth();
-  const [activeTab, setActiveTab] = useState<'pix' | 'card'>('pix');
   const [isReporting, setIsReporting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [isStagingCheckout, setIsStagingCheckout] = useState(false);
-  const [isStagingPortal, setIsStagingPortal] = useState(false);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
-  const [stripePortalUrl, setStripePortalUrl] = useState<string | null>(null);
 
   if (!salonData) return null;
 
@@ -91,142 +85,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
     }
   };
 
-  const handleStripeCheckout = async () => {
-    if (!currentUser || !salonData) {
-      toast.error("Para iniciar o pagamento, você precisar estar autenticado e com os dados do salão carregados.");
-      return;
-    }
-    setIsStagingCheckout(true);
-    setCheckoutError(null);
-    setStripeCheckoutUrl(null);
-    
-    // Safety Timeout controller (15 seconds)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          salonId: salonData.id,
-          plan: salonData.plan,
-          userId: currentUser.uid,
-        })
-      });
-      
-      clearTimeout(timeoutId);
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || "Não foi possível iniciar o checkout.");
-      }
-
-      if (!data) {
-        throw new Error("Não foi possível processar a resposta do servidor de pagamento.");
-      }
-
-      const checkoutUrl = data.checkoutUrl || data.url;
-      if (!checkoutUrl) {
-        throw new Error("Checkout não retornou uma URL válida de redirecionamento.");
-      }
-
-      setStripeCheckoutUrl(checkoutUrl);
-
-      // Tenta abrir em nova aba para contornar restrições de iFrame do Stripe
-      const stripeWindow = window.open(checkoutUrl, '_blank');
-      if (stripeWindow) {
-        stripeWindow.focus();
-        toast.success("O checkout seguro do Stripe foi aberto em uma nova aba.");
-      } else {
-        // Alerta o usuario de que o popup foi bloqueado em vez de redirecionar o iframe (que causaria bloqueio e looping de HMR)
-        toast.warning("Link pronto! Por favor, clique no link oficial do Stripe exibido abaixo na tela para concluir.");
-      }
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.error('[Stripe Checkout Erro]:', err.message || err);
-      
-      const errMsg = err.name === 'AbortError' 
-        ? "Tempo limite de resposta excedido. O servidor demorou muito para responder." 
-        : (err.message || "Erro interno ao processar link de checkout.");
-        
-      setCheckoutError("Não foi possível abrir o checkout do cartão. Tente novamente ou use PIX manual.");
-      toast.error(errMsg);
-    } finally {
-      setIsStagingCheckout(false);
-    }
-  };
-
-  const handleStripePortal = async () => {
-    if (!currentUser || !salonData) {
-      toast.error("Para acessar o portal, você precisa estar autenticado e com os dados do salão carregados.");
-      return;
-    }
-    setIsStagingPortal(true);
-    setStripePortalUrl(null);
-    
-    // Safety Timeout controller (15 seconds)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch('/api/stripe/create-portal-session', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          salonId: salonData.id,
-          userId: currentUser.uid
-        })
-      });
-      
-      clearTimeout(timeoutId);
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || "Erro ao carregar o portal do cliente.");
-      }
-
-      if (!data) {
-        throw new Error("Não foi possível processar a resposta do portal.");
-      }
-
-      const portalUrl = data.url || data.portalUrl || data.checkoutUrl;
-      if (!portalUrl) {
-        throw new Error("Portal não retornou uma URL válida.");
-      }
-
-      setStripePortalUrl(portalUrl);
-
-      const portalWindow = window.open(portalUrl, '_blank');
-      if (portalWindow) {
-        portalWindow.focus();
-        toast.success("O portal financeiro do Stripe foi aberto em uma nova aba.");
-      } else {
-        toast.warning("[Bloqueio de Pop-up] Por favor, clique no botão de acesso direto seguro exibido abaixo.");
-      }
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.error('[Stripe Portal Erro]:', err.message || err);
-      
-      const errMsg = err.name === 'AbortError' 
-        ? "Tempo limite de conexão excedido ao abrir portal de faturamento." 
-        : (err.message || "Erro de conexão ao carregar portal de gerenciamento.");
-        
-      toast.error(errMsg);
-    } finally {
-      setIsStagingPortal(false);
-    }
-  };
+  // Stripe integration handlers removed for complete offline manual PIX faturamento system
 
   const isAlreadyReported = salonData.paymentStatus === 'reported';
 
@@ -238,7 +97,7 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
             Pagamento da Assinatura
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
-            Mantenha seu acesso ativo utilizando PIX ou Cartão automático.
+            Mantenha seu acesso ativo utilizando PIX Manual.
           </DialogDescription>
         </DialogHeader>
 
@@ -264,197 +123,67 @@ export function PaymentDialog({ isOpen, onClose, salonData }: PaymentDialogProps
             </div>
           )}
 
-          {/* Premium Selector Tabs */}
-          <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-850">
-            <button
-              onClick={() => setActiveTab('pix')}
-              className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer ${
-                activeTab === 'pix'
-                  ? 'bg-zinc-900 text-[#D4AF37] shadow-sm font-semibold'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              PIX Manual
-            </button>
-            <button
-              onClick={() => setActiveTab('card')}
-              className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all duration-200 cursor-pointer ${
-                activeTab === 'card'
-                  ? 'bg-zinc-900 text-[#D4AF37] shadow-sm font-semibold'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Cartão Recorrente
-            </button>
-          </div>
-
-          {/* Tab Contents: PIX */}
-          {activeTab === 'pix' && (
-            <div className="space-y-4">
-              <p className="text-xs text-zinc-400">
-                Transfira para as coordenadas pix abaixo e informe o pagamento para validação:
-              </p>
+          {/* PIX Flow Content */}
+          <div className="space-y-4">
+            <p className="text-xs text-zinc-400">
+              Transfira para as coordenadas PIX abaixo e informe o pagamento para validação de sua assinatura:
+            </p>
+            
+            <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 relative overflow-hidden space-y-3">
+              <div className="absolute inset-y-0 left-0 w-0.5 bg-[#D4AF37]"></div>
               
-              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 relative overflow-hidden space-y-3">
-                <div className="absolute inset-y-0 left-0 w-0.5 bg-[#D4AF37]"></div>
-                
-                <div className="grid grid-cols-2 gap-3 pl-1.5 text-xs">
-                  <div>
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono block">Chave</span>
-                    <span className="font-semibold text-white uppercase text-xs">{BILLING_CONFIG.pixKeyType}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono block">Beneficiário</span>
-                    <span className="font-semibold text-white text-xs block truncate">{BILLING_CONFIG.receiverName}</span>
-                  </div>
+              <div className="grid grid-cols-2 gap-3 pl-1.5 text-xs">
+                <div>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono block">Chave</span>
+                  <span className="font-semibold text-white uppercase text-xs">{BILLING_CONFIG.pixKeyType}</span>
                 </div>
-
-                <div className="space-y-1 pl-1.5">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono block">Chave PIX</span>
-                  <div className="flex items-center gap-2">
-                    <code className="bg-black px-2 py-1.5 rounded text-xs text-[#D4AF37] font-mono select-all flex-1 border border-zinc-850 break-all leading-normal">
-                      {BILLING_CONFIG.pixKey}
-                    </code>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={handleCopyPIX}
-                      className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-zinc-850 shrink-0"
-                    >
-                      {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                  </div>
+                <div>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono block">Beneficiário</span>
+                  <span className="font-semibold text-white text-xs block truncate">{BILLING_CONFIG.receiverName}</span>
                 </div>
               </div>
 
-              <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
-                {BILLING_CONFIG.paymentInstructions}
-              </p>
-
-              <div className="space-y-3 pt-1">
-                <Button
-                  className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide"
-                  onClick={handleReportPayment}
-                  disabled={isReporting || isAlreadyReported}
-                >
-                  {isReporting ? 'Informando...' : isAlreadyReported ? 'Pagamento Informado' : 'Informar Pagamento'}
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  className="w-full h-11 border-zinc-800 bg-transparent hover:bg-zinc-900 text-zinc-300 hover:text-white group text-xs font-semibold"
-                  onClick={handleWhatsApp}
-                >
-                  <MessageCircle className="w-4 h-4 mr-2 text-zinc-500 group-hover:text-green-500" />
-                  Falar com o Suporte
-                </Button>
+              <div className="space-y-1 pl-1.5">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono block">Chave PIX</span>
+                <div className="flex items-center gap-2">
+                  <code className="bg-black px-2 py-1.5 rounded text-xs text-[#D4AF37] font-mono select-all flex-1 border border-zinc-850 break-all leading-normal">
+                    {BILLING_CONFIG.pixKey}
+                  </code>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={handleCopyPIX}
+                    className="h-8 w-8 text-zinc-400 hover:text-white hover:bg-zinc-850 shrink-0"
+                  >
+                    {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* Tab Contents: Stripe Credit Card */}
-          {activeTab === 'card' && (
-            <div className="space-y-4">
-              <p className="text-xs text-zinc-400">
-                Cadastre seu cartão uma vez e a cobrança mensal da mensalidade ocorrerá de forma 100% automatizada.
-              </p>
+            <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
+              {BILLING_CONFIG.paymentInstructions}
+            </p>
 
-              {checkoutError && (
-                <div className="bg-red-500/10 text-red-400 text-xs p-3 rounded-lg border border-red-500/20 leading-relaxed font-sans">
-                  {checkoutError}
-                </div>
-              )}
-
-              {salonData.billingProvider === 'stripe' && salonData.billingMode === 'recurring_card' ? (
-                <div className="bg-emerald-500/10 text-emerald-400 text-xs p-4 rounded-xl border border-emerald-500/20 flex items-start gap-3">
-                  <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold text-white">Assinatura no Cartão Ativa</p>
-                    <p className="text-xs text-emerald-400/80 mt-1 leading-relaxed">
-                      Seu salão está associado ao plano recorrente integrado via Stripe. Seus acessos estão garantidos!
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 flex items-start gap-3 text-xs leading-relaxed text-zinc-400">
-                  <CreditCard className="w-5 h-5 text-[#D4AF37] shrink-0 mt-0.5" />
-                  <div>
-                    <span className="text-zinc-200 font-medium block">Autogerenciável e Seguro</span>
-                    <span>Nenhum dado sensível de cartão transita pelo LumiereOS. Você será direcionado à página oficial de checkout da Stripe.</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3 pt-1">
-                {salonData.billingProvider === 'stripe' && salonData.stripeCustomerId ? (
-                  <>
-                    <Button
-                      className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide"
-                      onClick={handleStripePortal}
-                      disabled={isStagingPortal}
-                    >
-                      {isStagingPortal ? 'Direcionando para o Portal...' : 'Gerenciar Cartão / Assinatura'}
-                    </Button>
-                    
-                    {stripePortalUrl && (
-                      <div className="text-center p-2.5 bg-zinc-900/30 border border-zinc-800/80 rounded-xl">
-                        <p className="text-[11px] text-zinc-400 font-light">
-                          Se o portal da Stripe não abriu automaticamente, clique no link seguro:
-                        </p>
-                        <a
-                          href={stripePortalUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-[#D4AF37] hover:text-amber-400 hover:underline font-semibold block mt-1"
-                        >
-                          Acesssar de Forma Direta e Segura →
-                        </a>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide animate-pulse"
-                      onClick={handleStripeCheckout}
-                      disabled={isStagingCheckout}
-                    >
-                      {isStagingCheckout 
-                        ? 'Preparando Link de Pagamento...' 
-                        : checkoutError 
-                          ? 'Tentar novamente' 
-                          : 'Ativar Cartão Recorrente'}
-                    </Button>
-
-                    {stripeCheckoutUrl && (
-                      <div className="text-center p-3 bg-zinc-900/30 border border-[#D4AF37]/15 rounded-xl">
-                        <p className="text-[11px] text-zinc-400 font-light">
-                          Se o link de faturamento seguro não abriu automaticamente:
-                        </p>
-                        <a
-                          href={stripeCheckoutUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-[#D4AF37] hover:text-amber-400 hover:underline font-semibold block mt-1.5"
-                        >
-                          Ir para o Checkout Oficial da Stripe →
-                        </a>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                <Button
-                  variant="outline"
-                  className="w-full h-11 border-zinc-800 bg-transparent hover:bg-zinc-900 text-zinc-300 hover:text-white group text-xs font-semibold"
-                  onClick={handleWhatsApp}
-                >
-                  <MessageCircle className="w-4 h-4 mr-2 text-zinc-500 group-hover:text-green-500" />
-                  Falar com o Suporte
-                </Button>
-              </div>
+            <div className="space-y-3 pt-1">
+              <Button
+                className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-11 text-xs font-bold tracking-wide"
+                onClick={handleReportPayment}
+                disabled={isReporting || isAlreadyReported}
+              >
+                {isReporting ? 'Informando...' : isAlreadyReported ? 'Pagamento Informado' : 'Informar Pagamento'}
+              </Button>
+              
+              <Button
+                variant="outline"
+                className="w-full h-11 border-zinc-800 bg-transparent hover:bg-zinc-900 text-zinc-300 hover:text-white group text-xs font-semibold"
+                onClick={handleWhatsApp}
+              >
+                <MessageCircle className="w-4 h-4 mr-2 text-zinc-500 group-hover:text-green-500" />
+                Falar com o Suporte
+              </Button>
             </div>
-          )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

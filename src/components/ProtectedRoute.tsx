@@ -34,7 +34,19 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button 
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                sessionStorage.clear();
+                // Clear any non-persistent localStorage properties
+                const toRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  const key = localStorage.key(i);
+                  if (key && key.startsWith('lumiere_') && !['lumiere_last_seen_version', 'lumiere_pwa_prompt_dismissed', 'lumiere_pwa_collapsed'].includes(key)) {
+                    toRemove.push(key);
+                  }
+                }
+                toRemove.forEach(k => localStorage.removeItem(k));
+                window.location.reload();
+              }}
               className="bg-[#D4AF37] hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"
             >
               Recarregar
