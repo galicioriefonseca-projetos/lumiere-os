@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sparkles, ArrowLeft, Chrome } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
@@ -38,9 +37,16 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // Guard for double or premature submissions
+
+    if (!email.trim() || !password) {
+      toast.error('Favor informar o e-mail e a senha.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
       const user = userCredential.user;
 
       // Clear any dev simulated role to prevent overriding logging user's role
@@ -69,6 +75,24 @@ export default function LoginPage() {
             isOwner = true;
           }
         }
+
+        if (userSnap.exists()) {
+          const uData = userSnap.data();
+          // Check for inactive user account status
+          if (uData?.status === 'inactive' || uData?.status === 'deleted' || uData?.isActive === false) {
+            toast.error("Sua conta está inativa. Fale com o administrador.");
+            await auth.signOut();
+            setLoading(false);
+            return;
+          }
+          // Error check for missing salonId on non-platform_admin users
+          if (!isPlatform && !uData?.salonId) {
+            toast.error("Não foi possível localizar o salão vinculado a esta conta. Entre em contato com o suporte.");
+            await auth.signOut();
+            setLoading(false);
+            return;
+          }
+        }
         
         if (isPlatform) {
           targetPath = '/master';
@@ -93,8 +117,14 @@ export default function LoginPage() {
       toast.success('Login efetuado com sucesso.');
       navigate(targetPath, { replace: true });
     } catch (error: any) {
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        toast.error('E-mail ou senha incorretos. Verifique suas credenciais.');
+      if (error.code === 'auth/invalid-credential') {
+        toast.error('E-mail ou senha incorretos.');
+      } else if (error.code === 'auth/user-not-found') {
+        toast.error('Conta não encontrada.');
+      } else if (error.code === 'auth/wrong-password') {
+        toast.error('Senha incorreta.');
+      } else if (error.code === 'auth/too-many-requests') {
+        toast.error('Muitas tentativas. Tente novamente em alguns minutos.');
       } else {
         console.error('Login error:', error);
         toast.error('Erro ao acessar: ' + (error.message || 'Verifique suas credenciais.'));
@@ -105,6 +135,7 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    if (loading) return; // Guard for double submissions
     setLoading(true);
     try {
       const user = await signInWithGoogle();
@@ -129,6 +160,24 @@ export default function LoginPage() {
             isPlatform = true;
           } else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
             isOwner = true;
+          }
+        }
+
+        if (userSnap.exists()) {
+          const uData = userSnap.data();
+          // Check for inactive user account status
+          if (uData?.status === 'inactive' || uData?.status === 'deleted' || uData?.isActive === false) {
+            toast.error("Sua conta está inativa. Fale com o administrador.");
+            await auth.signOut();
+            setLoading(false);
+            return;
+          }
+          // Error check for missing salonId on non-platform_admin users
+          if (!isPlatform && !uData?.salonId) {
+            toast.error("Não foi possível localizar o salão vinculado a esta conta. Entre em contato com o suporte.");
+            await auth.signOut();
+            setLoading(false);
+            return;
           }
         }
         
@@ -199,7 +248,7 @@ export default function LoginPage() {
             <div>
               <Label htmlFor="email">E-mail</Label>
               <div className="mt-2">
-                <Input
+                <input
                   id="email"
                   name="email"
                   type="email"
@@ -207,7 +256,7 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="bg-black/50 border-white/10 focus-visible:ring-primary"
+                  className="flex h-12 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
                   placeholder="admin@seusalao.com"
                 />
               </div>
@@ -216,7 +265,7 @@ export default function LoginPage() {
             <div>
               <Label htmlFor="password">Senha</Label>
               <div className="mt-2">
-                <Input
+                <input
                   id="password"
                   name="password"
                   type="password"
@@ -224,7 +273,7 @@ export default function LoginPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="bg-black/50 border-white/10 focus-visible:ring-primary"
+                  className="flex h-12 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-foreground outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
             </div>
