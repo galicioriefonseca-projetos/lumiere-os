@@ -9,6 +9,20 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.4.8-founder',
+    date: 'Junho de 2026',
+    title: 'Liberação operacional do MVP',
+    description: 'Ajuste de fluxo operacional liberando o sistema de bloqueios de assinatura obrigatória e cobranças automáticas para uso piloto sem fricção.',
+    highlights: [
+      'Sistema liberado para uso sem bloqueios automáticos de assinatura.',
+      'Área Minha Assinatura mantida apenas como consulta.',
+      'Botões de assinatura removidos do dashboard principal.',
+      'Cobrança passa a ser acompanhada manualmente nesta fase piloto.',
+      'Fluxo Stripe preservado no código para ativação futura.'
+    ],
+    isNew: true
+  },
+  {
     version: '1.4.7-founder',
     date: 'Junho de 2026',
     title: 'Painel de acompanhamento de metas',
@@ -20,7 +34,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Aba de visualização analítica por profissional e painel de progresso coletivo.',
       'Atualização manual do realizado sem alterar ou afetar a meta definida pela liderança.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.4.5-founder',
