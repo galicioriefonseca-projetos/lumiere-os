@@ -8,6 +8,9 @@ import * as admin from "firebase-admin";
 // Carregar variáveis de ambiente
 dotenv.config();
 
+console.log("[Lumière Server] Iniciando...");
+console.log("[Lumière Server] NODE_ENV:", process.env.NODE_ENV);
+
 // Inicialização Preguiçosa do Firebase Admin SDK para prevenir travamentos se ausente
 let adminApp: any = null;
 const getFirebaseAdmin = () => {

@@ -100,10 +100,18 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground tracking-wide overflow-x-hidden;
+    @apply bg-background text-foreground tracking-wide;
+    min-height: 100dvh;
+    overflow-x: hidden;
   }
   html {
-    @apply overflow-x-hidden;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading tracking-tight;
