@@ -15,8 +15,24 @@ const firebaseConfig = {
 };
 
 export const app = firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
-export const auth = app ? getAuth(app) : null as any;
-export const db = app ? initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-}) : null as any;
-export const analytics = typeof window !== 'undefined' && app ? getAnalytics(app) : null;
+export let auth: any = null;
+try {
+  auth = app ? getAuth(app) : null;
+} catch (e) {
+  console.error("Failed to initialize Firebase Auth:", e);
+}
+export let db: any = null;
+try {
+  db = app ? initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  }) : null;
+} catch (e) {
+  console.error("Failed to initialize Firestore:", e);
+}
+
+export let analytics: any = null;
+try {
+  analytics = typeof window !== 'undefined' && app ? getAnalytics(app) : null;
+} catch (e) {
+  console.warn("Analytics blocked or unsupported:", e);
+}
