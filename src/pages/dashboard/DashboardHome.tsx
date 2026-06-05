@@ -203,8 +203,12 @@ export default function DashboardHome() {
     const isProfessionalEval = checklistRuns.some(r => r.evaluatedProfessionalId);
     
     if (isProfessionalEval) {
-      const evaluatedPros = checklistRuns.filter(r => r.evaluatedProfessionalId).length;
-      checklistPct = professionals.length > 0 ? Math.round((evaluatedPros / professionals.length) * 100) : 0;
+      const uniqueEvaluatedPros = new Set(
+        checklistRuns
+          .filter((r) => r.evaluatedProfessionalId)
+          .map((r) => r.evaluatedProfessionalId)
+      ).size;
+      checklistPct = professionals.length > 0 ? Math.round((uniqueEvaluatedPros / professionals.length) * 100) : 0;
     } else if (checklistRuns.length > 0) {
       checklistPct = checklistRuns[0].completionPercentage || 0;
     }
@@ -327,10 +331,9 @@ export default function DashboardHome() {
       {null}
 
       {/* Checklist Evaluated notification pending checklist (Owners / Managers) */}
-      {isOwnerOrManager && evaluationTargets.filter(t => !findRunForTarget(t, checklistRuns)).length > 0 && (() => {
-        const pendingOnes = evaluationTargets.filter(t => !findRunForTarget(t, checklistRuns));
-        const uniqueNames = Array.from(new Set(pendingOnes.map(t => t.professionalName)));
-        const names = uniqueNames.join(", ");
+      {isOwnerOrManager && professionals.filter(p => !checklistRuns.some(r => r.evaluatedProfessionalId === p.id)).length > 0 && (() => {
+        const pendingOnes = professionals.filter(p => !checklistRuns.some(r => r.evaluatedProfessionalId === p.id));
+        const names = pendingOnes.map(p => p.name).join(", ");
         return (
           <div className="border border-[#D4AF37]/20 bg-[#D4AF37]/5 rounded-2xl shadow-lg relative overflow-hidden backdrop-blur-md">
              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-[#D4AF37]" />
@@ -341,10 +344,10 @@ export default function DashboardHome() {
                    </div>
                    <div>
                       <p className="font-semibold text-[#D4AF37] text-sm flex items-center gap-1.5 leading-none">
-                         Avaliação Diária Essenza: {pendingOnes.length} {pendingOnes.length === 1 ? 'Função Pendente' : 'Funções Pendentes'}
+                         Avaliação Diária Essenza: {pendingOnes.length} {pendingOnes.length === 1 ? 'Colaborador Pendente' : 'Colaboradores Pendentes'}
                       </p>
                       <p className="text-xs text-slate-300 font-light leading-relaxed mt-1.5">
-                         Colaboradores pendentes hoje: <span className="text-white font-medium">{names}</span>. Registre a presença ou feedback deles hoje por função para acompanhar os relatórios diários.
+                         Colaboradores pendentes hoje: <span className="text-white font-medium">{names}</span>. Registre a presença ou feedback deles hoje para acompanhar os relatórios diários.
                       </p>
                    </div>
                 </div>
@@ -698,30 +701,33 @@ export default function DashboardHome() {
                        <span className="text-[10px] text-muted-foreground font-light">{todayStr.split("-").reverse().join("/")}</span>
                     </div>
 
-                    {evaluationTargets.length === 0 ? (
+                    {professionals.length === 0 ? (
                        <p className="text-xs text-muted-foreground font-mono text-center py-4">Nenhum profissional com funções cadastrado.</p>
                     ) : (
                        <div className="space-y-2.5">
-                          {evaluationTargets.map((target) => {
-                             const pro = target.professional;
-                             const todayRun = findRunForTarget(target, checklistRuns);
+                          {professionals.map((pro) => {
+                             const runs = checklistRuns.filter(r => r.evaluatedProfessionalId === pro.id);
+                             const presentRun = runs.find(r => r.attendanceStatus === "present" || (!r.attendanceStatus && r.totalScore !== undefined));
+                             const absentRun = runs.find(r => r.attendanceStatus === "absent");
+                             const notPerformedRun = runs.find(r => r.attendanceStatus === "not_performed");
+
+                             const displayFunc = pro.primaryFunction || pro.professionalFunction || pro.specialty || "Profissional";
+
                              return (
-                                <div key={`${pro.id}_${sanitizeFunctionSlug(target.evaluationFunction)}`} className="flex justify-between items-center text-xs p-3 bg-black/20 border border-white/[0.03] rounded-xl hover:border-white/10 transition-all duration-150">
+                                <div key={pro.id} className="flex justify-between items-center text-xs p-3 bg-black/20 border border-white/[0.03] rounded-xl hover:border-white/10 transition-all duration-150">
                                    <div className="space-y-0.5 max-w-[65%]">
                                       <p className="font-semibold text-white truncate">{pro.name}</p>
-                                      <p className="text-[10px] text-primary uppercase font-mono tracking-wider truncate">{target.evaluationFunction}</p>
+                                      <p className="text-[10px] text-primary uppercase font-mono tracking-wider truncate">{displayFunc}</p>
                                    </div>
                                    <div className="text-right">
-                                      {todayRun ? (
-                                         todayRun.attendanceStatus === 'absent' ? (
-                                            <span className="text-[10px] font-semibold text-destructive uppercase font-mono bg-destructive/10 px-2 py-0.5 rounded border border-destructive/20 font-mono">Falta</span>
-                                         ) : todayRun.attendanceStatus === 'not_performed' ? (
-                                            <span className="text-[10px] font-semibold text-cyan-400 uppercase font-mono bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20 font-mono">Dispensa</span>
-                                         ) : (
-                                            <span className="text-[10px] font-semibold text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20 font-mono">
-                                               {todayRun.totalScore !== undefined ? `Nota ${todayRun.totalScore}pt` : "Presente"}
-                                            </span>
-                                         )
+                                      {presentRun ? (
+                                         <span className="text-[10px] font-semibold text-green-400 font-mono bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20 font-mono">
+                                            {presentRun.totalScore !== undefined ? `Nota ${presentRun.totalScore}pt` : "Presente"}
+                                         </span>
+                                      ) : absentRun ? (
+                                         <span className="text-[10px] font-semibold text-destructive uppercase font-mono bg-destructive/10 px-2 py-0.5 rounded border border-destructive/20 font-mono">Falta</span>
+                                      ) : notPerformedRun ? (
+                                         <span className="text-[10px] font-semibold text-cyan-400 uppercase font-mono bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20 font-mono">Dispensa</span>
                                       ) : (
                                          <span className="text-[10px] font-mono text-slate-500 font-medium">Não avaliado</span>
                                       )}

@@ -587,7 +587,7 @@ export default function ProfessionalDashboard() {
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-muted-foreground">{myEvaluations[0].date.split("-").reverse().join("/")}</span>
                       <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
-                        {myEvaluations[0].attendanceStatus === 'absent' ? 'Falta' : `Nota ${myEvaluations[0].totalScore}/${myEvaluations[0].maxScore}`}
+                        {myEvaluations[0].attendanceStatus === 'absent' ? 'Falta' : myEvaluations[0].attendanceStatus === 'not_attended' ? 'Prejudicado' : `Nota ${myEvaluations[0].totalScore}/${myEvaluations[0].maxScore}`}
                       </span>
                     </div>
                     {myEvaluations[0].observations ? (
@@ -834,13 +834,15 @@ export default function ProfessionalDashboard() {
                         <h4 className="text-sm font-medium mt-1">
                           {evalRun.attendanceStatus === 'absent' ? (
                             <span className="text-destructive font-semibold">Falta Registrada</span>
+                          ) : evalRun.attendanceStatus === 'not_attended' ? (
+                            <span className="text-purple-400 font-semibold">Prejudicado / Não Atendeu</span>
                           ) : evalRun.attendanceStatus === 'not_performed' ? (
                             <span className="text-cyan-400 font-semibold font-mono">Função não Executada / Dispensa</span>
                           ) : (
                             `Avaliação Diária: Nota ${evalRun.totalScore}/${evalRun.maxScore || 40}`
                           )}
                         </h4>
-                        {evalRun.classification && evalRun.attendanceStatus !== 'absent' && (
+                        {evalRun.classification && evalRun.attendanceStatus !== 'absent' && evalRun.attendanceStatus !== 'not_attended' && (
                           <p className="text-xs text-primary mt-1 font-light">{evalRun.classification}</p>
                         )}
                       </div>
@@ -860,9 +862,9 @@ export default function ProfessionalDashboard() {
                     <h3 className="text-base font-semibold text-primary">Avaliação de {selectedEval.date.split("-").reverse().join("/")}</h3>
                     <span className={cn(
                       "text-xs px-2.5 py-0.5 rounded-full font-bold",
-                      selectedEval.attendanceStatus === 'absent' ? "bg-destructive/15 text-destructive" : "bg-primary/15 text-primary"
+                      selectedEval.attendanceStatus === 'absent' ? "bg-destructive/15 text-destructive" : (selectedEval.attendanceStatus === 'not_attended' ? "bg-purple-500/15 text-purple-400" : "bg-primary/15 text-primary")
                     )}>
-                      {selectedEval.attendanceStatus === 'absent' ? 'Falta' : `${selectedEval.percentage ? Math.round(selectedEval.percentage) : 0}%`}
+                      {selectedEval.attendanceStatus === 'absent' ? 'Falta' : (selectedEval.attendanceStatus === 'not_attended' ? 'Prejudicado' : `${selectedEval.percentage ? Math.round(selectedEval.percentage) : 0}%`)}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">Avaliador: {selectedEval.evaluatorName || "Administrador"}</p>
@@ -875,6 +877,19 @@ export default function ProfessionalDashboard() {
                     <p className="text-xs text-muted-foreground p-3 border border-destructive/10 bg-destructive/5 rounded-xl italic mt-3">
                       Justificativa: "{selectedEval.absenceReason || "Nenhuma observação prestada"}"
                     </p>
+                  </div>
+                ) : selectedEval.attendanceStatus === 'not_attended' ? (
+                  <div className="text-center py-6 font-sans">
+                    <Info className="w-8 h-8 text-purple-400 mx-auto mb-2 animate-pulse" />
+                    <h4 className="font-semibold text-purple-400 uppercase tracking-widest text-xs font-mono">Prejudicado / Não atendeu</h4>
+                    <p className="text-xs text-zinc-400 mt-2 max-w-sm mx-auto font-light leading-relaxed">
+                      O profissional não realizou atendimentos neste dia devido a fatores alheios ao seu controle. Este registro operacional foi marcado como Prejudicado, não gerando nota ou falta.
+                    </p>
+                    {selectedEval.observations && (
+                      <p className="text-xs text-slate-300 p-3 border border-purple-500/10 bg-purple-500/5 rounded-xl italic mt-3">
+                        Justificativa: "{selectedEval.observations}"
+                      </p>
+                    )}
                   </div>
                 ) : selectedEval.attendanceStatus === 'not_performed' ? (
                   <div className="text-center py-6 font-sans">

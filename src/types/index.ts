@@ -230,7 +230,7 @@ export interface ChecklistRun {
   evaluatedProfessionalId?: string;
   evaluatedProfessionalName?: string;
   evaluatorName?: string;
-  attendanceStatus?: 'present' | 'absent' | 'not_performed';
+  attendanceStatus?: 'present' | 'absent' | 'not_performed' | 'not_attended';
   categoryScores?: Record<string, number>; // Maps category name or item id to a score (1-5)
   totalScore?: number;
   maxScore?: number;

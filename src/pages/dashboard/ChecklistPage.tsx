@@ -102,7 +102,7 @@ export default function ChecklistPage() {
   const [evalFunction, setEvalFunction] = useState<string>("");
   const [selectedFilterFunction, setSelectedFilterFunction] = useState<string>("");
   const [attendanceStatus, setAttendanceStatus] = useState<
-    "present" | "absent" | "not_performed" | ""
+    "present" | "absent" | "not_performed" | "not_attended" | ""
   >("");
   const [observations, setObservations] = useState("");
   const [categoryScores, setCategoryScores] = useState<Record<string, number>>(
@@ -167,47 +167,88 @@ export default function ChecklistPage() {
     });
   };
 
-  const distinctFunctions = React.useMemo(() => {
-    const funcs: string[] = [];
-    evaluationTargets.forEach((t) => {
-      if (!funcs.includes(t.evaluationFunction)) {
-        funcs.push(t.evaluationFunction);
+  const professionalStatuses = React.useMemo(() => {
+    const statuses: Record<string, {
+      status: "pendente" | "avaliado" | "falta" | "nao_executou" | "not_attended";
+      activeRun?: ChecklistRun;
+    }> = {};
+
+    professionals.forEach((p) => {
+      const runs = evaluationRuns.filter((r) => r.evaluatedProfessionalId === p.id);
+      
+      if (runs.length === 0) {
+        statuses[p.id] = { status: "pendente" };
+      } else {
+        const presentRun = runs.find(r => r.attendanceStatus === "present" || (!r.attendanceStatus && r.totalScore !== undefined));
+        const absentRun = runs.find(r => r.attendanceStatus === "absent");
+        const notPerformedRun = runs.find(r => r.attendanceStatus === "not_performed");
+        const notAttendedRun = runs.find(r => r.attendanceStatus === "not_attended");
+
+        if (presentRun) {
+          statuses[p.id] = { status: "avaliado", activeRun: presentRun };
+        } else if (absentRun) {
+          statuses[p.id] = { status: "falta", activeRun: absentRun };
+        } else if (notAttendedRun) {
+          statuses[p.id] = { status: "not_attended", activeRun: notAttendedRun };
+        } else if (notPerformedRun) {
+          statuses[p.id] = { status: "nao_executou", activeRun: notPerformedRun };
+        } else {
+          statuses[p.id] = { status: "pendente" };
+        }
       }
     });
+
+    return statuses;
+  }, [professionals, evaluationRuns]);
+
+  const distinctFunctions = React.useMemo(() => {
+    const funcs: string[] = [];
+    professionals.forEach((p) => {
+      const pFuncs = getEvaluableFunctions(p);
+      pFuncs.forEach((f) => {
+        if (!funcs.includes(f)) {
+          funcs.push(f);
+        }
+      });
+    });
     return funcs.sort();
-  }, [evaluationTargets]);
+  }, [professionals]);
 
   const stats = React.useMemo(() => {
-    const total = evaluationTargets.length;
+    const total = professionals.length;
     let avaliadas = 0;
     let faltas = 0;
     let naoExecutadas = 0;
+    let prejudicados = 0;
     
-    evaluationTargets.forEach((t) => {
-      const run = findRunForTarget(t, evaluationRuns);
-      if (run) {
-        if (run.attendanceStatus === "absent") {
-          faltas++;
-        } else if (run.attendanceStatus === "not_performed") {
-          naoExecutadas++;
-        } else {
+    professionals.forEach((p) => {
+      const state = professionalStatuses[p.id];
+      if (state) {
+        if (state.status === "avaliado") {
           avaliadas++;
+        } else if (state.status === "falta") {
+          faltas++;
+        } else if (state.status === "nao_executou") {
+          naoExecutadas++;
+        } else if (state.status === "not_attended") {
+          prejudicados++;
         }
       }
     });
     
-    const pendentes = Math.max(0, total - avaliadas - faltas - naoExecutadas);
-    const percentual = total > 0 ? Math.round(((avaliadas + faltas + naoExecutadas) / total) * 100) : 0;
+    const pendentes = Math.max(0, total - avaliadas - faltas - naoExecutadas - prejudicados);
+    const percentual = total > 0 ? Math.round(((avaliadas + faltas + naoExecutadas + prejudicados) / total) * 100) : 0;
     
     return {
       total,
       avaliadas,
       faltas,
       naoExecutadas,
+      prejudicados,
       pendentes,
       percentual,
     };
-  }, [evaluationTargets, evaluationRuns]);
+  }, [professionals, professionalStatuses]);
 
   const scrollEvaluationToTop = () => {
     const container = document.getElementById("evaluation-scroll-container");
@@ -598,6 +639,11 @@ export default function ChecklistPage() {
         toast.error("Motivo da falta é obrigatório / Justificativa é obrigatória.");
         return;
       }
+    } else if (attendanceStatus === "not_attended") {
+      if (!observations) {
+        toast.error("Justificativa para o status Prejudicado / Não atendeu é obrigatória.");
+        return;
+      }
     }
 
     setIncompleteValidationCategories([]);
@@ -611,13 +657,15 @@ export default function ChecklistPage() {
         ? getClassification(totalScore as number)
         : attendanceStatus === "absent"
           ? "Falta registrada"
-          : "Não executou a função";
+          : attendanceStatus === "not_attended"
+            ? "Sem pontuação"
+            : "Não executou a função";
     const maxScore = activeProfessionalEvaluationChecklist.maxScore || 40;
 
-    const runId = `${todayStr}_${evalProfessionalId}_${sanitizeFunctionSlug(evalFunction)}`;
     const existingRun = evaluationRuns.find(
-      (r) => r.id === runId || (r.evaluatedProfessionalId === evalProfessionalId && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(evalFunction))
+      (r) => r.evaluatedProfessionalId === evalProfessionalId && r.date === todayStr
     );
+    const runId = existingRun ? existingRun.id : `${todayStr}_${evalProfessionalId}`;
 
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
@@ -649,7 +697,7 @@ export default function ChecklistPage() {
           ? ((totalScore as number) / maxScore) * 100
           : undefined,
       classification: classification,
-      absenceReason: attendanceStatus === "absent" ? observations : undefined,
+      absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
       createdAt:
         existingRun && existingRun.createdAt
@@ -668,16 +716,43 @@ export default function ChecklistPage() {
         { ...runData, id: runId }
       ];
 
-      const pendingTargets = evaluationTargets.filter(
-        (t) => !findRunForTarget(t, updatedRuns as any)
-      );
+      // Local status state for determining next pending professional
+      const localStatuses: Record<string, string> = {};
+      professionals.forEach((p) => {
+        // Decide status based on updated runs
+        const runs = updatedRuns.filter((r: any) => r.evaluatedProfessionalId === p.id);
+        if (runs.length === 0) {
+          localStatuses[p.id] = "pendente";
+        } else {
+          const presentRun = runs.find((r: any) => r.attendanceStatus === "present" || (!r.attendanceStatus && r.totalScore !== undefined));
+          const absentRun = runs.find((r: any) => r.attendanceStatus === "absent");
+          const notAttendedRun = runs.find((r: any) => r.attendanceStatus === "not_attended");
+          const notPerformedRun = runs.find((r: any) => r.attendanceStatus === "not_performed");
 
-      if (pendingTargets.length > 0) {
-        const nextTarget = pendingTargets[0];
-        setEvalProfessionalId(nextTarget.professionalId);
-        setEvalFunction(nextTarget.evaluationFunction);
+          if (presentRun) {
+            localStatuses[p.id] = "avaliado";
+          } else if (absentRun) {
+            localStatuses[p.id] = "falta";
+          } else if (notAttendedRun) {
+            localStatuses[p.id] = "not_attended";
+          } else if (notPerformedRun) {
+            localStatuses[p.id] = "nao_executou";
+          } else {
+            localStatuses[p.id] = "pendente";
+          }
+        }
+      });
+
+      const nextPendingPro = professionals.find((p) => localStatuses[p.id] === "pendente");
+
+      if (nextPendingPro) {
+        const funcs = getEvaluableFunctions(nextPendingPro);
+        const nextFunc = funcs[0] || "Função não definida";
+
+        setEvalProfessionalId(nextPendingPro.id);
+        setEvalFunction(nextFunc);
         
-        const nextRun = findRunForTarget(nextTarget, evaluationRuns);
+        const nextRun = updatedRuns.find((r: any) => r.evaluatedProfessionalId === nextPendingPro.id);
         setAttendanceStatus(nextRun?.attendanceStatus || "present");
         setCategoryScores(nextRun?.categoryScores || {});
         setObservations(nextRun?.observations || nextRun?.absenceReason || "");
@@ -715,6 +790,11 @@ export default function ChecklistPage() {
         toast.error("Motivo da falta é obrigatório / Justificativa é obrigatória.");
         return;
       }
+    } else if (attendanceStatus === "not_attended") {
+      if (!observations) {
+        toast.error("Justificativa para o status Prejudicado / Não atendeu é obrigatória.");
+        return;
+      }
     }
 
     setIncompleteValidationCategories([]);
@@ -728,13 +808,15 @@ export default function ChecklistPage() {
         ? getClassification(totalScore as number)
         : attendanceStatus === "absent"
           ? "Falta registrada"
-          : "Não executou a função";
+          : attendanceStatus === "not_attended"
+            ? "Sem pontuação"
+            : "Não executou a função";
     const maxScore = activeProfessionalEvaluationChecklist.maxScore || 40;
 
-    const runId = `${todayStr}_${evalProfessionalId}_${sanitizeFunctionSlug(evalFunction)}`;
     const existingRun = evaluationRuns.find(
-      (r) => r.id === runId || (r.evaluatedProfessionalId === evalProfessionalId && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(evalFunction))
+      (r) => r.evaluatedProfessionalId === evalProfessionalId && r.date === todayStr
     );
+    const runId = existingRun ? existingRun.id : `${todayStr}_${evalProfessionalId}`;
 
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
@@ -766,7 +848,7 @@ export default function ChecklistPage() {
           ? ((totalScore as number) / maxScore) * 100
           : undefined,
       classification: classification,
-      absenceReason: attendanceStatus === "absent" ? observations : undefined,
+      absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
       createdAt:
         existingRun && existingRun.createdAt
@@ -788,21 +870,24 @@ export default function ChecklistPage() {
   };
 
   const continueNextPending = () => {
-    const pendingTargets = evaluationTargets.filter((t) => !findRunForTarget(t, evaluationRuns));
+    const pendingPros = professionals.filter((p) => professionalStatuses[p.id]?.status === "pendente");
 
-    if (pendingTargets.length > 0) {
-      const nextTarget = pendingTargets[0];
-      setEvalProfessionalId(nextTarget.professionalId);
-      setEvalFunction(nextTarget.evaluationFunction);
+    if (pendingPros.length > 0) {
+      const nextPro = pendingPros[0];
+      const funcs = getEvaluableFunctions(nextPro);
+      const nextFunc = funcs[0] || "Função não definida";
+
+      setEvalProfessionalId(nextPro.id);
+      setEvalFunction(nextFunc);
       
-      const nextRun = findRunForTarget(nextTarget, evaluationRuns);
+      const nextRun = evaluationRuns.find(r => r.evaluatedProfessionalId === nextPro.id && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(nextFunc));
       setAttendanceStatus(nextRun?.attendanceStatus || "present");
       setCategoryScores(nextRun?.categoryScores || {});
       setObservations(nextRun?.observations || nextRun?.absenceReason || "");
       setMobileStep("evaluation");
       setTimeout(scrollEvaluationToTop, 50);
     } else {
-      toast.info("Todos os profissionais e funções já foram avaliados hoje!");
+      toast.info("Todos os profissionais já foram avaliados hoje!");
     }
   };
 
@@ -974,44 +1059,43 @@ export default function ChecklistPage() {
   };
 
   const filteredProfessionals = React.useMemo(() => {
-    return evaluationTargets
-      .filter((target) => {
-        const run = findRunForTarget(target, evaluationRuns);
-        
+    return professionals
+      .filter((p) => {
+        const state = professionalStatuses[p.id];
         let targetFilterStatus: "pendentes" | "avaliados" | "faltas" = "pendentes";
-        if (run) {
-          if (run.attendanceStatus === "absent" || run.attendanceStatus === "not_performed") {
-            targetFilterStatus = "faltas";
-          } else {
+        if (state) {
+          if (state.status === "avaliado") {
             targetFilterStatus = "avaliados";
+          } else if (state.status === "falta" || state.status === "nao_executou") {
+            targetFilterStatus = "faltas";
           }
         }
 
-        const matchesSearch = target.professionalName
+        const matchesSearch = p.name
           .toLowerCase()
           .includes(searchTerm.toLowerCase());
           
         const matchesStatus = filter === "todos" || targetFilterStatus === filter;
 
-        // Target function filter
-        const matchesFunction = !selectedFilterFunction || target.evaluationFunction === selectedFilterFunction;
+        const funcs = getEvaluableFunctions(p);
+        const matchesFunction = !selectedFilterFunction || funcs.some(f => sanitizeFunctionSlug(f) === sanitizeFunctionSlug(selectedFilterFunction));
 
         return matchesSearch && matchesStatus && matchesFunction;
       })
       .sort((a, b) => {
-        const runA = findRunForTarget(a, evaluationRuns);
-        const runB = findRunForTarget(b, evaluationRuns);
+        const stateA = professionalStatuses[a.id];
+        const stateB = professionalStatuses[b.id];
         
-        const statusValA = runA ? (runA.attendanceStatus === "absent" ? 2 : runA.attendanceStatus === "not_performed" ? 3 : 4) : 1;
-        const statusValB = runB ? (runB.attendanceStatus === "absent" ? 2 : runB.attendanceStatus === "not_performed" ? 3 : 4) : 1;
+        const statusValA = stateA ? (stateA.status === "falta" ? 2 : stateA.status === "nao_executou" ? 3 : stateA.status === "avaliado" ? 4 : 1) : 1;
+        const statusValB = stateB ? (stateB.status === "falta" ? 2 : stateB.status === "nao_executou" ? 3 : stateB.status === "avaliado" ? 4 : 1) : 1;
         
         if (statusValA !== statusValB) {
           return statusValA - statusValB;
         }
         
-        return a.professionalName.localeCompare(b.professionalName);
+        return a.name.localeCompare(b.name);
       });
-  }, [evaluationTargets, evaluationRuns, searchTerm, filter, selectedFilterFunction]);
+  }, [professionals, professionalStatuses, searchTerm, filter, selectedFilterFunction]);
 
   const avaliados = stats.avaliadas;
   const faltas = stats.faltas;
@@ -1071,7 +1155,7 @@ export default function ChecklistPage() {
                 <div className="text-right hidden md:block">
                   <span className="text-[11px] text-zinc-400 font-light block">Progresso Geral</span>
                   <span className="text-xs font-semibold text-white">
-                    {percentual}% concluído ({avaliados + faltas}/{totalProsCount})
+                    {percentual}% concluído ({avaliados + faltas + (stats.prejudicados || 0)}/{totalProsCount})
                   </span>
                 </div>
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 shrink-0 cursor-pointer">
@@ -1095,7 +1179,7 @@ export default function ChecklistPage() {
                 ) : (
                   <div className="space-y-6">
                     {/* Compact layout representing total metrics */}
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                       <div className="bg-zinc-900/30 border border-white/5 p-3 rounded-xl text-center">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 block mb-0.5">Total de Equipe</span>
                         <span className="text-lg font-heading font-medium text-white">{totalProsCount}</span>
@@ -1107,6 +1191,10 @@ export default function ChecklistPage() {
                       <div className="bg-red-500/5 border border-red-500/10 p-3 rounded-xl text-center">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-red-500 block mb-0.5">Faltas</span>
                         <span className="text-lg font-heading font-bold text-red-400">{faltas}</span>
+                      </div>
+                      <div className="bg-purple-500/5 border border-purple-500/10 p-3 rounded-xl text-center">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400 block mb-0.5">Prejudicados</span>
+                        <span className="text-lg font-heading font-bold text-purple-400">{stats.prejudicados || 0}</span>
                       </div>
                       <div className="bg-yellow-500/5 border border-yellow-500/10 p-3 rounded-xl text-center">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-yellow-500 block mb-0.5">Pendentes</span>
@@ -1135,21 +1223,25 @@ export default function ChecklistPage() {
                           setSearchTerm("");
                           setSelectedFilterFunction("");
                           
-                          const pendingTargets = evaluationTargets.filter((t) => !findRunForTarget(t, evaluationRuns));
-                          if (pendingTargets.length > 0) {
-                            const first = pendingTargets[0];
-                            setEvalProfessionalId(first.professionalId);
-                            setEvalFunction(first.evaluationFunction);
-                            const run = findRunForTarget(first, evaluationRuns);
+                          const pendingPros = professionals.filter((p) => professionalStatuses[p.id]?.status === "pendente");
+                          if (pendingPros.length > 0) {
+                            const first = pendingPros[0];
+                            const funcs = getEvaluableFunctions(first);
+                            const firstFunc = funcs[0] || "Função não definida";
+                            setEvalProfessionalId(first.id);
+                            setEvalFunction(firstFunc);
+                            const run = evaluationRuns.find(r => r.evaluatedProfessionalId === first.id && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(firstFunc));
                             setAttendanceStatus(run?.attendanceStatus || "present");
                             setCategoryScores(run?.categoryScores || {});
                             setObservations(run?.observations || run?.absenceReason || "");
                             setMobileStep("evaluation");
-                          } else if (evaluationTargets.length > 0) {
-                            const first = evaluationTargets[0];
-                            setEvalProfessionalId(first.professionalId);
-                            setEvalFunction(first.evaluationFunction);
-                            const run = findRunForTarget(first, evaluationRuns);
+                          } else if (professionals.length > 0) {
+                            const first = professionals[0];
+                            const funcs = getEvaluableFunctions(first);
+                            const firstFunc = funcs[0] || "Função não definida";
+                            setEvalProfessionalId(first.id);
+                            setEvalFunction(firstFunc);
+                            const run = evaluationRuns.find(r => r.evaluatedProfessionalId === first.id && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(firstFunc));
                             setAttendanceStatus(run?.attendanceStatus || "present");
                             setCategoryScores(run?.categoryScores || {});
                             setObservations(run?.observations || run?.absenceReason || "");
@@ -1347,26 +1439,25 @@ export default function ChecklistPage() {
                                   Nenhum profissional encontrado.
                                 </div>
                               ) : (
-                                filteredProfessionals.map((target) => {
-                                  const p = target.professional;
-                                  const funcName = target.evaluationFunction;
-                                  const run = findRunForTarget(target, evaluationRuns);
-                                  const isSelected = evalProfessionalId === p.id && sanitizeFunctionSlug(evalFunction) === sanitizeFunctionSlug(funcName);
+                                filteredProfessionals.map((p) => {
+                                  const funcs = getEvaluableFunctions(p);
+                                  const activeTargetFunc = evalProfessionalId === p.id ? evalFunction : (funcs[0] || "Função não definida");
+                                  const run = evaluationRuns.find(r => r.evaluatedProfessionalId === p.id && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(activeTargetFunc));
+                                  const isSelected = evalProfessionalId === p.id;
                                   
-                                  const status = run
-                                    ? run.attendanceStatus === "absent"
-                                      ? "falta"
-                                      : run.attendanceStatus === "not_performed"
-                                        ? "nao_executou"
-                                        : "avaliado"
-                                    : "pendente";
+                                  const statusVal = professionalStatuses[p.id]?.status || "pendente";
+                                  const status = statusVal === "avaliado" ? "avaliado" : statusVal === "falta" ? "falta" : statusVal === "not_attended" ? "prejudicado" : statusVal === "nao_executou" ? "nao_executou" : "pendente";
+
+                                  const subTitle = funcs.length > 1 
+                                    ? `${activeTargetFunc} (+${funcs.length - 1} outr${funcs.length - 1 > 1 ? "as" : "a"})`
+                                    : activeTargetFunc;
 
                                   return (
                                     <div
-                                      key={`${p.id}_${sanitizeFunctionSlug(funcName)}`}
+                                      key={p.id}
                                       onClick={() => {
                                         setEvalProfessionalId(p.id);
-                                        setEvalFunction(funcName);
+                                        setEvalFunction(activeTargetFunc);
                                         setAttendanceStatus(run?.attendanceStatus || "present");
                                         setCategoryScores(run?.categoryScores || {});
                                         setObservations(run?.observations || run?.absenceReason || "");
@@ -1382,7 +1473,7 @@ export default function ChecklistPage() {
                                       <div className="flex items-center justify-between gap-2">
                                         <div className="min-w-0 flex-1">
                                           <p className="text-xs font-semibold text-white truncate">{p.name}</p>
-                                          <p className="text-[10px] text-primary truncate mt-0.5">{funcName}</p>
+                                          <p className="text-[10px] text-primary truncate mt-0.5" title={funcs.join(", ")}>{subTitle}</p>
                                         </div>
                                         
                                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${
@@ -1394,7 +1485,7 @@ export default function ChecklistPage() {
                                                 ? "bg-red-500/15 text-red-400 border border-red-500/10"
                                                 : "bg-cyan-500/15 text-cyan-400 border border-cyan-500/10"
                                         }`}>
-                                          {status === "pendente" ? "Pente" : status === "avaliado" ? "Avaliado" : status === "falta" ? "Falta" : "Não Exec"}
+                                          {status === "pendente" ? "Pendente" : status === "avaliado" ? "Avaliado" : status === "falta" ? "Falta" : status === "prejudicado" ? "Prejudicado" : "Não Exec"}
                                         </span>
                                       </div>
                                       
@@ -1404,9 +1495,9 @@ export default function ChecklistPage() {
                                           <span className="text-primary font-bold">{run.classification}</span>
                                         </div>
                                       )}
-                                      {run && (run.attendanceStatus === "absent" || run.attendanceStatus === "not_performed") && (
+                                      {run && (run.attendanceStatus === "absent" || run.attendanceStatus === "not_performed" || run.attendanceStatus === "not_attended") && (
                                         <p className="text-[10px] text-zinc-400 italic mt-2 text-right font-light truncate">
-                                          {run.observations || run.absenceReason || (run.attendanceStatus === "absent" ? "Falta registrada" : "Não executou função")}
+                                          {run.observations || run.absenceReason || (run.attendanceStatus === "absent" ? "Falta registrada" : run.attendanceStatus === "not_attended" ? "Prejudicado / Não atendeu" : "Não executou função")}
                                         </p>
                                       )}
                                     </div>
@@ -1430,22 +1521,26 @@ export default function ChecklistPage() {
                                         {professionals.find((p) => p.id === evalProfessionalId)?.name.charAt(0).toUpperCase()}
                                       </div>
                                       <div>
-                                        <p className="text-[9px] uppercase tracking-wider text-[#D4AF37] font-bold font-mono flex items-center gap-1 flex-wrap">
-                                          <span>Avaliação da Função:</span>
-                                          <span className="bg-primary/20 text-[#D4AF37] px-2 py-0.5 rounded text-[10px] border border-primary/30 uppercase font-semibold font-mono">
-                                            {evalFunction}
-                                          </span>
-                                        </p>
-                                        <h3 className="font-heading font-medium text-sm md:text-base text-white mt-1">
+                                        <h3 className="font-heading font-medium text-sm md:text-base text-white">
                                           {professionals.find((p) => p.id === evalProfessionalId)?.name}
                                         </h3>
-                                        <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                                          <span>Função Principal: <strong>{professionals.find((p) => p.id === evalProfessionalId)?.primaryFunction || professionals.find((p) => p.id === evalProfessionalId)?.professionalFunction || "Não definida"}</strong></span>
+                                        <div className="text-[10px] text-zinc-400 mt-1 flex flex-col gap-1">
+                                          <div>Função Principal: <strong className="text-white">{professionals.find((p) => p.id === evalProfessionalId)?.primaryFunction || professionals.find((p) => p.id === evalProfessionalId)?.professionalFunction || "Não definida"}</strong></div>
+                                          {(() => {
+                                            const evalPro = professionals.find((p) => p.id === evalProfessionalId);
+                                            const extras = evalPro?.additionalFunctions || [];
+                                            if (extras.length > 0) {
+                                              return (
+                                                <div>Funções Adicionais: <span className="text-zinc-350">{extras.join(", ")}</span></div>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
                                         </div>
                                       </div>
                                     </div>
 
-                                    {/* Present/Absent quick selector */}
+                                    {/* Present/Absent/Not Attended quick selector */}
                                     <div className="flex p-0.5 bg-zinc-950 border border-white/10 rounded-lg shrink-0">
                                       <button
                                         type="button"
@@ -1457,6 +1552,17 @@ export default function ChecklistPage() {
                                         }`}
                                       >
                                         Presença
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setAttendanceStatus("not_attended")}
+                                        className={`text-[10px] font-bold uppercase tracking-wider py-1.5 px-3 rounded select-none transition-all cursor-pointer ${
+                                          attendanceStatus === "not_attended"
+                                            ? "bg-purple-600 text-white font-semibold"
+                                            : "text-zinc-400 hover:text-[#c084fc]"
+                                        }`}
+                                      >
+                                        Prejudicado
                                       </button>
                                       <button
                                         type="button"
@@ -1688,6 +1794,17 @@ export default function ChecklistPage() {
                                     </div>
                                   )}
 
+                                  {attendanceStatus === "not_attended" && (
+                                    <div className="p-4 bg-purple-500/5 border border-purple-500/10 rounded-xl space-y-3 animate-fade-in font-sans">
+                                      <span className="text-xs font-bold text-purple-100 uppercase flex items-center gap-1.5 font-mono">
+                                        <Info className="w-4 h-4" /> Prejudicado / Não Atendeu
+                                      </span>
+                                      <p className="text-xs text-zinc-400 font-light">
+                                        O profissional esteve no salão na data de hoje, mas não realizou atendimentos (ex: agenda vazia, sem demandas ou ausência de agendamentos). Este registro não pontua, não conta como falta e é considerado como avaliação diária concluída. A justificativa abaixo é obrigatória.
+                                      </p>
+                                    </div>
+                                  )}
+
                                   {attendanceStatus === "not_performed" && (
                                     <div className="p-4 bg-cyan-500/5 border border-cyan-500/10 rounded-xl space-y-3 animate-fade-in font-sans">
                                       <span className="text-xs font-bold text-cyan-100 uppercase flex items-center gap-1.5 font-mono">
@@ -1702,15 +1819,17 @@ export default function ChecklistPage() {
                                   {/* Observations input block */}
                                   <div className="space-y-1.5 mt-6 font-sans">
                                     <Label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider block font-mono">
-                                      Observações / Justificativa {attendanceStatus === "absent" && <span className="text-red-400 font-bold">*</span>}
+                                      Observações / Justificativa {(attendanceStatus === "absent" || attendanceStatus === "not_attended") && <span className="text-red-400 font-bold">*</span>}
                                     </Label>
                                     <Input
                                       placeholder={
                                         attendanceStatus === "absent"
                                           ? "Preencha o motivo detalhado para justificar a falta..."
-                                          : attendanceStatus === "not_performed"
-                                            ? "Justificativa ou nota sobre a dispensa operacional..."
-                                            : "Notas complementares do colaborador para acompanhamento..."
+                                          : attendanceStatus === "not_attended"
+                                            ? "Preencha a justificativa detalhada para o status Prejudicado (Ex: Sem atendimento/demanda)..."
+                                            : attendanceStatus === "not_performed"
+                                              ? "Justificativa ou nota sobre a dispensa operacional..."
+                                              : "Notas complementares do colaborador para acompanhamento..."
                                       }
                                       value={observations}
                                       onChange={(e) => setObservations(e.target.value)}
@@ -1733,7 +1852,7 @@ export default function ChecklistPage() {
                                     (c) => categoryScores[c] !== undefined
                                   );
 
-                                  const canSave = isAllCategoriesFilled || attendanceStatus === "absent" || attendanceStatus === "not_performed";
+                                  const canSave = isAllCategoriesFilled || attendanceStatus === "absent" || attendanceStatus === "not_performed" || (attendanceStatus === "not_attended" && !!observations.trim());
 
                                   return (
                                     <div className="shrink-0 p-4 pb-6 bg-zinc-950 border-t border-[#D4AF37]/10 flex items-center justify-between gap-2 z-10 shadow-lg shadow-black/80 font-sans w-full">

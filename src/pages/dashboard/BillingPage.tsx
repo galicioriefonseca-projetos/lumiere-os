@@ -302,55 +302,50 @@ export default function BillingPage() {
               Método de faturamento
             </h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Option: Mercado Pago Assinatura */}
-              <div className="p-6 rounded-2xl border border-blue-500/30 bg-blue-500/5 space-y-4 flex flex-col justify-between transition-all shadow-[0_0_15px_rgba(59,130,246,0.03)] relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                  <CreditCard className="w-24 h-24 text-blue-500" />
-                </div>
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs uppercase font-bold tracking-wider text-blue-400 font-sans">Cobrança Recorrente</span>
-                    {salonData.billingProvider === 'mercadopago' && salonData.subscriptionStatus === 'active' ? (
-                       <span className="text-[9px] uppercase font-bold text-green-400 px-2 py-0.5 bg-green-400/10 border border-green-400/20 rounded-md">Ativo</span>
-                    ) : (
-                       <span className="text-[9px] uppercase font-bold text-blue-400 px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md">Recomendado</span>
-                    )}
+            <div className="bg-gradient-to-br from-[#0c0d12] to-[#040405] border border-[#D4AF37]/20 rounded-2xl p-6 space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-[#D4AF37] px-2 py-0.5 bg-[#D4AF37]/10 rounded-md border border-[#D4AF37]/20">
+                      PIX / Acompanhamento Manual
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-green-400 px-2 py-0.5 bg-green-400/10 border border-green-400/20 rounded-md">Ativo</span>
                   </div>
-                  <h4 className="text-sm font-semibold text-white mt-2.5">Mercado Pago</h4>
-                  <p className="text-xs text-blue-200 mt-1 font-light">
-                    Assinatura recorrente automática por cartão de crédito e outros meios via Mercado Pago.
+                  <h4 className="text-base font-heading font-semibold text-white mt-1.5">Pagamento registrado via PIX</h4>
+                  <p className="text-xs text-zinc-300 font-light font-sans">
+                    Sua assinatura está em acompanhamento administrativo.
                   </p>
                 </div>
-
-                <div className="pt-3 space-y-3 relative z-10">
+                <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
                   <Button 
-                    onClick={handleCreateMPSubscription} 
-                    disabled={isCreatingMP}
-                    className="w-full text-xs h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl cursor-pointer shadow-lg shadow-blue-500/20 transition-all font-semibold"
+                    onClick={handleWhatsAppSupport} 
+                    className="bg-green-600 hover:bg-green-700 text-white font-sans text-xs font-semibold px-4 py-2 h-9 rounded-xl flex items-center justify-center gap-1.5 shrink-0"
                   >
-                    {isCreatingMP ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processando...</>
-                    ) : salonData.billingProvider === 'mercadopago' && salonData.subscriptionStatus === 'active' ? (
-                      'Gerenciar Assinatura'
-                    ) : (
-                      'Ativar Assinatura Recorrente'
-                    )}
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Suporte Financeiro</span>
                   </Button>
                 </div>
               </div>
 
-              {/* Option: PIX manual */}
-              <div className="p-6 rounded-2xl border border-[#D4AF37]/30 bg-[#D4AF37]/5 space-y-4 flex flex-col justify-between transition-all shadow-[0_0_15px_rgba(212,175,55,0.03)]">
-                <div>
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs uppercase font-bold tracking-wider text-muted-foreground font-sans">PIX Direto</span>
-                  </div>
-                  <h4 className="text-sm font-semibold text-white mt-2.5">Pagamento Manual PIX</h4>
-                  <p className="text-xs text-zinc-400 mt-1 font-light">Chave PIX e confirmação eletrônica processada por nossos operadores.</p>
+              <div className="border-t border-white/5 pt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white/[0.02] p-3.5 rounded-xl border border-white/5">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Plano Atual</p>
+                  <p className="text-xs text-white font-bold mt-1.5 capitalize">{getPlanLabel(salonData.plan)}</p>
                 </div>
+                <div className="bg-white/[0.02] p-3.5 rounded-xl border border-white/5">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Status do Plano</p>
+                  <p className="text-xs text-green-400 font-bold mt-1.5">Ativo / Regular</p>
+                </div>
+                <div className="bg-white/[0.02] p-3.5 rounded-xl border border-white/5">
+                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Forma de Pagamento</p>
+                  <p className="text-xs text-[#D4AF37] font-bold mt-1.5">PIX / Acompanhamento Manual</p>
+                </div>
+              </div>
 
-                <div className="pt-3 space-y-3">
+              {/* PIX Details Copy & Confirm inside the same container */}
+              <div className="border-t border-white/5 pt-5 space-y-4">
+                <p className="text-xs font-semibold text-zinc-400">Deseja informar um novo pagamento via PIX?</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex items-center gap-2 bg-black/40 p-2.5 rounded-xl border border-white/5 text-xs text-zinc-300">
                     <span className="truncate font-mono font-medium flex-1">{BILLING_CONFIG.pixKey}</span>
                     <button 
@@ -366,9 +361,9 @@ export default function BillingPage() {
                     onClick={handleReportPayment} 
                     disabled={isReportingPay}
                     variant="outline" 
-                    className="w-full text-xs h-9 border-[#D4AF37]/25 hover:border-[#D4AF37]/45 text-[#D4AF37] hover:bg-[#D4AF37]/5 rounded-xl cursor-pointer"
+                    className="text-xs h-9 border-[#D4AF37]/25 hover:border-[#D4AF37]/45 text-[#D4AF37] hover:bg-[#D4AF37]/5 rounded-xl cursor-pointer font-semibold"
                   >
-                    {isReportingPay ? 'Registrando dados...' : 'Confirmar Pagamento PIX'}
+                    {isReportingPay ? 'Registrando dados...' : 'Confirmar Novo Pagamento PIX'}
                   </Button>
                 </div>
               </div>
