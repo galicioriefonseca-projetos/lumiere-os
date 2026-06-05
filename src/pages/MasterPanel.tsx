@@ -361,7 +361,7 @@ export default function MasterPanel() {
                            <div className="flex flex-col gap-1 items-start">
                               <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold">{salon.plan}</span>
                               <div className="text-[10px] text-zinc-500 mt-1 font-mono text-left">
-                                💸 PIX Manual / Off-line
+                                {salon.billingProvider === 'mercadopago' ? '💳 Mercado Pago' : salon.billingProvider === 'stripe' ? '💳 Stripe' : '💸 PIX Manual / Off-line'}
                               </div>
                               <div className="flex gap-1">
                                 <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getStatusColor(salon.activationStatus)}`}>
@@ -371,6 +371,12 @@ export default function MasterPanel() {
                                    Pgto: {salon.paymentStatus || 'none'}
                                 </span>
                               </div>
+                              {salon.mercadoPagoPreapprovalId && (
+                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.mercadoPagoPreapprovalId}>
+                                   <span className="truncate max-w-[120px]">MP: {salon.mercadoPagoPreapprovalId}</span>
+                                   <span className="uppercase text-blue-400">Assinatura: {salon.subscriptionStatus}</span>
+                                </div>
+                              )}
                            </div>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -394,7 +400,13 @@ export default function MasterPanel() {
                                 <RefreshCcw className="w-3 h-3 mr-1" /> Plano
                               </Button>
 
-                              <Select onValueChange={(val) => { setSelectedSalon(salon); setDialogAction(val); setIsDialogOpen(true); }}>
+                              {salon.mercadoPagoPreapprovalId && (
+                                <Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700 text-white mb-1" onClick={() => window.open(`https://www.mercadopago.com.br/subscriptions/detail/${salon.mercadoPagoPreapprovalId}`, '_blank')}>
+                                  Abrir no MP
+                                </Button>
+                              )}
+
+                              <Select onValueChange={(val) => { setSelectedSalon(salon); setDialogAction(val as string); setIsDialogOpen(true); }}>
                                 <SelectTrigger className="h-8 w-28 bg-black/20 border-border text-[10px] uppercase text-white">
                                   <SelectValue placeholder="Pagto" />
                                 </SelectTrigger>

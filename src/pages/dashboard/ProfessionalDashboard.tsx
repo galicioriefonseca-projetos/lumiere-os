@@ -350,7 +350,7 @@ export default function ProfessionalDashboard() {
   const currentGoalRaw = myGoals.find(g => g.month === currentMonthStr);
   const currentGoal = currentGoalRaw ? normalizeGoal(currentGoalRaw, currentMonthEarnings) : undefined;
   
-  const goalProgress = currentGoal ? calculateGoalProgress(currentGoal, useBusinessDays) : null;
+  const goalProgress = currentGoal ? calculateGoalProgress(currentGoal, { useBusinessDays }) : null;
   const goalProgressPct = goalProgress ? goalProgress.progressPercent : 0;
 
   const handleSaveProfile = async (e: React.FormEvent) => {

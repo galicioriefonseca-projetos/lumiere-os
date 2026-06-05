@@ -54,12 +54,13 @@ export interface Salon {
   updatedAt: number;
   deletedAt?: number;
   // Stripe & Billing properties
-  billingProvider?: 'manual_pix' | 'stripe' | 'asaas';
+  billingProvider?: 'manual_pix' | 'stripe' | 'asaas' | 'mercadopago';
   billingMode?: 'manual_pix' | 'recurring_card';
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   stripeCheckoutSessionId?: string;
   stripePriceId?: string;
+  mercadoPagoPreapprovalId?: string;
 }
 
 export interface Payment {
@@ -82,7 +83,7 @@ export interface Payment {
   createdAt: number;
   updatedAt: number;
   // Stripe details
-  provider?: 'manual_pix' | 'stripe' | 'asaas';
+  provider?: 'manual_pix' | 'stripe' | 'asaas' | 'mercadopago';
   stripePaymentIntentId?: string;
   stripeInvoiceId?: string;
   stripeSubscriptionId?: string;

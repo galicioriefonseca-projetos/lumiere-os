@@ -47,7 +47,7 @@ export default function GoalsPage() {
 
   // States for manual progress updates
   const [selectedProfForProgress, setSelectedProfForProgress] = useState<Professional | null>(null);
-  const [selectedGoalForProgress, setSelectedGoalForProgress] = useState<ProfessionalGoal | null>(null);
+  const [selectedGoalForProgress, setSelectedGoalForProgress] = useState<any | null>(null);
   const [isProgressDialogOpen, setIsProgressDialogOpen] = useState(false);
   const [progressUpdateMode, setProgressUpdateMode] = useState<"set" | "add">("set");
   const [manualProgressValue, setManualProgressValue] = useState("");
@@ -261,7 +261,7 @@ export default function GoalsPage() {
     }
   };
 
-  const openUpdateProgress = (prof: Professional, goalObj?: ProfessionalGoal) => {
+  const openUpdateProgress = (prof: Professional, goalObj?: any) => {
     setSelectedProfForProgress(prof);
     setSelectedGoalForProgress(goalObj || null);
     setProgressUpdateMode("set");
@@ -395,7 +395,7 @@ export default function GoalsPage() {
       rawGoal.achievedValue !== undefined
     );
 
-    const progress = calculateGoalProgress(goalObj, useBusinessDays);
+    const progress = calculateGoalProgress(goalObj, { useBusinessDays });
     return {
       professional: p,
       goalObj,

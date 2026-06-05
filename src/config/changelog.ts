@@ -9,6 +9,20 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.5.0-founder',
+    date: 'Junho de 2026',
+    title: 'Integração Mercado Pago Assinaturas',
+    description: 'Nova opção de assinatura recorrente via Mercado Pago, integrada de forma segura e progressiva.',
+    highlights: [
+      'Nova opção de assinatura recorrente via Mercado Pago.',
+      'Área Minha Assinatura preparada para ativação de cobrança recorrente.',
+      'Webhook Mercado Pago para atualização de status.',
+      'Sistema continua liberado sem bloqueio automático financeiro.',
+      'Stripe preservado no código para uso futuro, mas removido do fluxo visual principal.'
+    ],
+    isNew: true
+  },
+  {
     version: '1.4.8-founder',
     date: 'Junho de 2026',
     title: 'Liberação operacional do MVP',
@@ -20,7 +34,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Cobrança passa a ser acompanhada manualmente nesta fase piloto.',
       'Fluxo Stripe preservado no código para ativação futura.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.4.7-founder',

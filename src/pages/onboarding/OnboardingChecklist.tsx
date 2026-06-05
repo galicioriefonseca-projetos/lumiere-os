@@ -104,8 +104,8 @@ export default function OnboardingChecklist() {
       }, { merge: true });
 
       // 3. Mark onboardingCompleted in the user document
-      if (userData?.uid) {
-        const userRef = doc(db, 'users', userData.uid);
+      if (userData?.id) {
+        const userRef = doc(db, 'users', userData.id);
         await setDoc(userRef, { 
           onboardingCompleted: true,
           updatedAt: Date.now()

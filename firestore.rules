@@ -269,6 +269,17 @@ service cloud.firestore {
       allow update, delete: if isPlatformAdmin();
     }
 
+    // Subscriptions (Mercado Pago)
+    match /salons/{salonId}/subscriptions/{subscriptionId} {
+      allow read: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
+      );
+      allow write: if isPlatformAdmin();
+    }
+
     // 1. Professionals & Staff
     match /salons/{salonId}/professionals/{professionalId} {
       allow get: if canOperateFrontDesk(salonId) || (isSalonProfessional(salonId) && professionalId == request.auth.uid);

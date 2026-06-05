@@ -3,54 +3,16 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import * as admin from "firebase-admin";
+import { getFirebaseAdmin, getAdminDb } from "./firebaseAdmin";
+import createSubscription from "../api/mercadopago/create-subscription";
+import webhookMP from "../api/mercadopago/webhook";
+import healthMP from "../api/mercadopago/health";
 
 // Carregar variáveis de ambiente
 dotenv.config();
 
 console.log("[Lumière Server] Iniciando...");
 console.log("[Lumière Server] NODE_ENV:", process.env.NODE_ENV);
-
-// Inicialização Preguiçosa do Firebase Admin SDK para prevenir travamentos se ausente
-let adminApp: any = null;
-const getFirebaseAdmin = () => {
-  if (!adminApp) {
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-    if (!projectId || !clientEmail || !privateKey) {
-      console.warn("[Lumiere System] Aviso: Configurações do Firebase Admin SDK ausentes ou incompletas no .env do servidor.");
-      throw new Error("O Firebase Admin SDK não foi devidamente configurado nas variáveis de ambiente.");
-    }
-
-    try {
-      const firebaseAdmin = (admin as any).default || admin;
-      const apps = firebaseAdmin.apps || [];
-      if (apps.length > 0) {
-        adminApp = apps[0];
-      } else {
-        adminApp = firebaseAdmin.initializeApp({
-          credential: firebaseAdmin.credential.cert({
-            projectId,
-            clientEmail,
-            privateKey: privateKey.replace(/\\n/g, "\n"),
-          }),
-        });
-      }
-    } catch (err: any) {
-      console.error("Erro ao inicializar Firebase Admin:", err);
-      throw err;
-    }
-  }
-  return adminApp;
-};
-
-const getAdminDb = () => {
-  const appInstance = getFirebaseAdmin();
-  const firebaseAdmin = (admin as any).default || admin;
-  return firebaseAdmin.firestore(appInstance);
-};
 
 async function startServer() {
   const app = express();
@@ -74,6 +36,11 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });
   });
+
+  // Rotas Mercado Pago (montadas dinamicamente para compatibilidade local)
+  app.post("/api/mercadopago/create-subscription", createSubscription);
+  app.post("/api/mercadopago/webhook", webhookMP);
+  app.get("/api/mercadopago/health", healthMP);
 
   // API Route para o Gemini Insights (Mantendo funcionalidades existentes do LumièreOS)
   app.post("/api/gemini-insight", async (req, res) => {

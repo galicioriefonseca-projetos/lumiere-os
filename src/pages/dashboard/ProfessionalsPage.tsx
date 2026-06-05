@@ -1448,7 +1448,7 @@ export default function ProfessionalsPage() {
                             )}
 
                             {/* Deletion requested indicator badge */}
-                            {(prof.status === 'deletion_requested' || (prof as any).accountDeletionRequested) && (
+                            {(((prof as any).status === 'deletion_requested') || (prof as any).accountDeletionRequested) && (
                               <span className="mt-1 text-[9px] uppercase font-bold text-red-400 bg-red-950/40 border border-red-900/30 px-1.5 py-0.5 rounded leading-none select-none">
                                 Solicitou Exclusão
                               </span>

@@ -33,6 +33,8 @@ interface AuthContextType {
     optionalFullName?: string,
     choices?: { primaryFunction?: string; additionalFunctions?: string[] }
   ) => Promise<AuthUser>;
+  demoRole?: Role | null;
+  setDemoRole?: (role: Role | null) => void;
   diagnostics?: {
     firebaseProjectId: string;
     firebaseAuthDomain: string;
@@ -57,6 +59,8 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogle: async () => { throw new Error('Not implemented'); },
   signInWithGoogleForRegister: async () => { throw new Error('Not implemented'); },
   signInWithGoogleForInvite: async () => { throw new Error('Not implemented'); },
+  demoRole: null,
+  setDemoRole: () => {},
   diagnostics: {
     firebaseProjectId: 'Não informada',
     firebaseAuthDomain: 'Não informada',
@@ -88,6 +92,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  const [demoRole, setDemoRole] = useState<Role | null>(() => {
+    try {
+      return sessionStorage.getItem('demo_role') as Role | null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const handleSetDemoRole = (role: Role | null) => {
+    try {
+      if (role) {
+        sessionStorage.setItem('demo_role', role);
+      } else {
+        sessionStorage.removeItem('demo_role');
+      }
+    } catch (e) {
+      console.error('Failed to set demo role in session storage', e);
+    }
+    setDemoRole(role);
+  };
 
   const [diagnostics, setDiagnostics] = useState({
     firebaseProjectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'Não informada',
@@ -1529,10 +1554,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user;
   };
 
+  const isDemoActive = currentUser?.email === import.meta.env.VITE_DEMO_USER_EMAIL && salonData?.isDemo === true;
+  const simulatedUserData = (userData && isDemoActive && demoRole) ? {
+    ...userData,
+    role: demoRole
+  } : userData;
+
   return (
     <AuthContext.Provider value={{
       currentUser,
-      userData,
+      userData: simulatedUserData,
       salonData,
       isPlatformAdmin,
       loading,
@@ -1542,6 +1573,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithGoogle,
       signInWithGoogleForRegister,
       signInWithGoogleForInvite,
+      demoRole,
+      setDemoRole: handleSetDemoRole,
       diagnostics
     }}>
       {loading ? (
