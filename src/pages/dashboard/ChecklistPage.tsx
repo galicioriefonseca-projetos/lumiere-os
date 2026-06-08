@@ -15,7 +15,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Checklist, ChecklistRun, ChecklistItemTemplate } from "../../types";
-import { canEvaluateTeam } from "../../lib/permissions";
+import { canEvaluateTeam, canAccessOperationalChecklist } from "../../lib/permissions";
 import { getEvaluableFunctions, sanitizeFunctionSlug } from "../../lib/evaluation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +82,31 @@ function removeUndefinedDeep(obj: any): any {
 
 export default function ChecklistPage() {
   const { salonData, userData } = useAuth();
+
+  if (userData && !canAccessOperationalChecklist(userData.role)) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-4 font-sans">
+        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+          <div className="w-16 h-16 bg-red-600/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-red-500 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Acesso Restrito</h2>
+          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">
+            Seu perfil como <span className="text-primary font-medium">{userData.role === 'receptionist' ? 'Recepcionista' : (userData.role || 'Usuário')}</span> não possui autorização para acessar o Checklist.
+          </p>
+          <div className="flex justify-center">
+            <Button 
+              onClick={() => window.location.href = '/dashboard'}
+              className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10"
+            >
+              Voltar ao Meu Painel
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [activeOperationalChecklists, setActiveOperationalChecklists] =
     useState<Checklist[]>([]);
   const [operationalRuns, setOperationalRuns] = useState<ChecklistRun[]>([]);
@@ -136,15 +161,14 @@ export default function ChecklistPage() {
     }[] = [];
     professionals.forEach((p) => {
       const funcs = getEvaluableFunctions(p);
-      funcs.forEach((func) => {
-        targets.push({
-          professionalId: p.id,
-          professionalName: p.name,
-          evaluationFunction: func,
-          primaryFunction: p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida",
-          allFunctions: funcs,
-          professional: p,
-        });
+      const mainFunc = funcs[0] || p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
+      targets.push({
+        professionalId: p.id,
+        professionalName: p.name,
+        evaluationFunction: mainFunc,
+        primaryFunction: p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida",
+        allFunctions: funcs,
+        professional: p,
       });
     });
     return targets;
@@ -321,12 +345,22 @@ export default function ChecklistPage() {
         snapshot.forEach((doc) => {
           const data = doc.data();
           const isActive =
-            data.isActive === true ||
+            (data.isActive === true ||
             data.active === true ||
             data.status === "active" ||
             data.status === "ativo" ||
-            (data.status === undefined && data.isActive !== false);
-          if (isActive) pros.push({ id: doc.id, ...data });
+            (data.status === undefined && data.isActive !== false)) &&
+            data.status !== "inactive" &&
+            data.status !== "deleted" &&
+            !data.deletedAt;
+
+          if (isActive) {
+            const role = data.role || "professional";
+            const isEvaluable = ["professional", "manager", "receptionist", "attendant"].includes(role);
+            if (isEvaluable) {
+              pros.push({ id: doc.id, ...data });
+            }
+          }
         });
         setProfessionals(pros);
         setTotalPros(pros.length);
@@ -891,6 +925,56 @@ export default function ChecklistPage() {
     }
   };
 
+  const handleSkip = () => {
+    const curIndex = evaluationTargets.findIndex(
+      (t) => t.professionalId === evalProfessionalId && sanitizeFunctionSlug(t.evaluationFunction) === sanitizeFunctionSlug(evalFunction)
+    );
+    
+    let nextTarget = evaluationTargets.find((t, idx) => {
+      if (idx <= curIndex) return false;
+      return !findRunForTarget(t, evaluationRuns);
+    });
+    
+    if (!nextTarget) {
+      nextTarget = evaluationTargets.find((t, idx) => {
+        if (idx === curIndex) return false;
+        return !findRunForTarget(t, evaluationRuns);
+      });
+    }
+
+    if (nextTarget) {
+      const nextPro = professionals.find((p) => p.id === nextTarget.professionalId);
+      if (nextPro) {
+        setEvalProfessionalId(nextTarget.professionalId);
+        setEvalFunction(nextTarget.evaluationFunction);
+        
+        const nextRun = evaluationRuns.find(
+          (r) => r.evaluatedProfessionalId === nextTarget.professionalId && 
+                 sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(nextTarget.evaluationFunction)
+        );
+        
+        setAttendanceStatus(nextRun?.attendanceStatus || "present");
+        setCategoryScores(nextRun?.categoryScores || {});
+        setObservations(nextRun?.observations || nextRun?.absenceReason || "");
+        setMobileStep("evaluation");
+        setTimeout(scrollEvaluationToTop, 50);
+        toast.info("Avançou para o próximo colaborador.");
+      }
+    } else {
+      setIncompleteValidationCategories([]);
+      if (window.innerWidth < 768) {
+        setMobileStep("list");
+      } else {
+        setEvalProfessionalId("");
+        setEvalFunction("");
+        setAttendanceStatus("");
+        setCategoryScores({});
+        setObservations("");
+      }
+      toast.info("Nenhum outro pendente.");
+    }
+  };
+
   const handleViewReport = () => {
     setIsEvaluationOpen(false);
     setIsReportsExpanded(true);
@@ -934,15 +1018,20 @@ export default function ChecklistPage() {
     const docPdf = new jsPDF();
     docPdf.text(`Relatório de Avaliação Diária: ${reportDate}`, 10, 10);
 
-    // Build the targets list for reporting
+    // Build the targets list for reporting (one per active collaborator)
     const reportTargets: any[] = [];
     professionals.forEach((p) => {
       const funcs = getEvaluableFunctions(p);
-      funcs.forEach((func) => {
-        reportTargets.push({
-          professional: p,
-          function: func
-        });
+      const isTechnical = !p.role || p.role === "professional";
+      let displayFunc = "";
+      if (isTechnical) {
+        displayFunc = funcs[0] || p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
+      } else {
+        displayFunc = p.role === "manager" ? "Gerente" : p.role === "receptionist" ? "Recepcionista" : p.role === "attendant" ? "Atendente" : (p.role || "Cargo não definido");
+      }
+      reportTargets.push({
+        professional: p,
+        function: displayFunc
       });
     });
 
@@ -955,17 +1044,7 @@ export default function ChecklistPage() {
     reportTargets.forEach((item) => {
       const p = item.professional;
       const targetFunc = item.function;
-      const run = reportRuns.find((r) => {
-        const runFunc = r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction;
-        if (runFunc && r.evaluatedProfessionalId === p.id) {
-          return sanitizeFunctionSlug(runFunc) === sanitizeFunctionSlug(targetFunc);
-        }
-        if (!runFunc && r.evaluatedProfessionalId === p.id) {
-          const mainFunc = p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
-          return targetFunc === mainFunc;
-        }
-        return false;
-      });
+      const run = reportRuns.find((r) => r.evaluatedProfessionalId === p.id);
 
       if (run) {
         if (run.attendanceStatus === "absent") {
@@ -1006,17 +1085,7 @@ export default function ChecklistPage() {
     const tableData = reportTargets.map((item) => {
       const p = item.professional;
       const targetFunc = item.function;
-      const run = reportRuns.find((r) => {
-        const runFunc = r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction;
-        if (runFunc && r.evaluatedProfessionalId === p.id) {
-          return sanitizeFunctionSlug(runFunc) === sanitizeFunctionSlug(targetFunc);
-        }
-        if (!runFunc && r.evaluatedProfessionalId === p.id) {
-          const mainFunc = p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
-          return targetFunc === mainFunc;
-        }
-        return false;
-      });
+      const run = reportRuns.find((r) => r.evaluatedProfessionalId === p.id);
 
       let statusLabel = "Pendente";
       if (run) {
@@ -1448,9 +1517,24 @@ export default function ChecklistPage() {
                                   const statusVal = professionalStatuses[p.id]?.status || "pendente";
                                   const status = statusVal === "avaliado" ? "avaliado" : statusVal === "falta" ? "falta" : statusVal === "not_attended" ? "prejudicado" : statusVal === "nao_executou" ? "nao_executou" : "pendente";
 
-                                  const subTitle = funcs.length > 1 
-                                    ? `${activeTargetFunc} (+${funcs.length - 1} outr${funcs.length - 1 > 1 ? "as" : "a"})`
-                                    : activeTargetFunc;
+                                  const isTechnical = !p.role || p.role === "professional";
+                                  let subTitle = "";
+                                  if (isTechnical) {
+                                    const pFunc = p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
+                                    const additional = (Array.isArray(p.additionalFunctions) ? p.additionalFunctions : [])
+                                      .concat(Array.isArray(p.specialties) ? p.specialties : [])
+                                      .filter(f => f && f.trim() && f.trim() !== pFunc.trim());
+                                    const uniqueAdditional = [...new Set(additional)];
+
+                                    if (uniqueAdditional.length > 0) {
+                                      subTitle = `Principal: ${pFunc} | Extras: ${uniqueAdditional.join(", ")}`;
+                                    } else {
+                                      subTitle = `Principal: ${pFunc}`;
+                                    }
+                                  } else {
+                                    const roleTranslated = p.role === "manager" ? "Gerente" : p.role === "receptionist" ? "Recepcionista" : p.role === "attendant" ? "Atendente" : p.role;
+                                    subTitle = `Cargo: ${roleTranslated}`;
+                                  }
 
                                   return (
                                     <div
@@ -1882,6 +1966,16 @@ export default function ChecklistPage() {
 
                                       {/* Core Saving Actions */}
                                       <div className="flex gap-2 flex-1 justify-end">
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={handleSkip}
+                                          className="h-10 rounded-xl font-medium text-xs px-3.5 text-zinc-500 hover:text-zinc-200 hover:bg-white/5 shrink-0 cursor-pointer"
+                                        >
+                                          {hasNextPending ? "Pular e Próximo" : "Pular"}
+                                        </Button>
+
                                         <Button
                                           type="button"
                                           size="sm"

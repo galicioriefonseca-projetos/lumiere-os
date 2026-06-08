@@ -6,6 +6,9 @@ export function getEvaluableFunctions(professional: any): string[] {
   const pFunc = professional.primaryFunction || professional.professionalFunction || professional.specialty;
   if (pFunc && typeof pFunc === 'string' && pFunc.trim()) {
     mainFunctions.push(pFunc.trim());
+  } else if (professional.role && ["manager", "receptionist", "attendant"].includes(professional.role)) {
+    const roleCapitalized = professional.role === 'manager' ? 'Gerente' : professional.role === 'receptionist' ? 'Recepcionista' : 'Atendente';
+    mainFunctions.push(roleCapitalized);
   }
   
   const additional: string[] = [];

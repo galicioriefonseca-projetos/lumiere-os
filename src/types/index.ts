@@ -98,6 +98,9 @@ export interface Professional {
   phone: string;
   email?: string;
   isActive: boolean;
+  active?: boolean;
+  status?: string;
+  deletedAt?: any;
   specialty?: string;
   professionalFunction?: string;
   category?: string;

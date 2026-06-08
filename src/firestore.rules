@@ -145,16 +145,16 @@ service cloud.firestore {
         )
       );
       
-      // Updates allowed for platform_admin or owners, shielding sensitive pricing/billing/config fields
+      // Updates allowed for platform_admin, owners, or managers, shielding sensitive pricing/billing/config fields
       allow update: if isPlatformAdmin() || (
         isSignedIn() && 
         (
           resource.data.ownerId == request.auth.uid || 
-          (exists(userDoc()) && userSalonId() == salonId && userRole() == "owner") ||
+          (exists(userDoc()) && userSalonId() == salonId && (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")) ||
           canUseTutorialDemo(salonId)
         ) && 
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'professionalLimit', 'maxProfessionals', 'deletedAt', 'ownerId', 'ownerEmail', 'isDemo', 'isTutorial'
+          'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'professionalLimit', 'maxProfessionals', 'deletedAt', 'ownerId', 'ownerEmail', 'isDemo', 'isTutorial', 'platformAdmins', 'billingProvider', 'subscriptionId'
         ])
       );
                      
@@ -318,19 +318,19 @@ service cloud.firestore {
 
     // 3. Checklist Configurations (Templates)
     match /salons/{salonId}/checklists/{checklistId} {
-      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId && userRole() != "receptionist" && userRole() != "attendant";
       allow write: if canEvaluateTeam(salonId);
     }
 
     // 4. Checklist Daily Runs (Essenza Evaluations)
     match /salons/{salonId}/checklistRuns/{runId} {
-      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId && userRole() != "receptionist" && userRole() != "attendant";
       allow create, update, delete: if canEvaluateTeam(salonId);
     }
 
     // 5. Monthly Goals
     match /salons/{salonId}/goals/{goalId} {
-      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow read: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId && userRole() != "receptionist" && userRole() != "attendant";
       allow write: if canManageSalon(salonId);
     }
 

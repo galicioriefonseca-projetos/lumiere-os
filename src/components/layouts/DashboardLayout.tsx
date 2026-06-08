@@ -25,7 +25,8 @@ import {
   Inbox,
   UserX,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  User
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -129,52 +130,170 @@ export default function DashboardLayout() {
 
   const timeLeftFormatted = getTrialDaysMessage();
 
-  // Role based navigation rendering
-  const getNavigationByRole = (role: string | undefined) => {
+  interface NavigationItem {
+    name: string;
+    href: string;
+    icon: any;
+    exact?: boolean;
+  }
+
+  interface NavigationCategory {
+    category: string;
+    items: NavigationItem[];
+  }
+
+  // Role based navigation rendering with categories
+  const getNavigationByRole = (role: string | undefined): NavigationCategory[] => {
     if (role === 'professional') {
       return [
-        { name: 'Meu Painel', href: '/dashboard', icon: LayoutDashboard, exact: true },
-        { name: 'Minha Agenda', href: '/dashboard?tab=agenda', icon: CalendarDays },
-        { name: 'Meu Desempenho', href: '/dashboard?tab=desempenho', icon: TrendingUp },
-        { name: 'Minhas Avaliações', href: '/dashboard?tab=avaliacoes', icon: Star },
-        { name: 'Minhas Metas', href: '/dashboard?tab=metas', icon: Target },
+        {
+          category: 'Principal',
+          items: [
+            { name: 'Meu Painel', href: '/dashboard', icon: LayoutDashboard, exact: true },
+          ]
+        },
+        {
+          category: 'Meu Espaço',
+          items: [
+            { name: 'Minha Agenda', href: '/dashboard?tab=agenda', icon: CalendarDays },
+            { name: 'Meu Desempenho', href: '/dashboard?tab=desempenho', icon: TrendingUp },
+            { name: 'Minhas Avaliações', href: '/dashboard?tab=avaliacoes', icon: Star },
+            { name: 'Minhas Metas', href: '/dashboard?tab=metas', icon: Target },
+          ]
+        }
       ];
     }
     
     if (role === 'attendant' || role === 'receptionist') {
       return [
-        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-        { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-        { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-        { name: 'Serviços', href: '/dashboard/servicos', icon: Scissors },
+        {
+          category: 'Principal',
+          items: [
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+          ]
+        },
+        {
+          category: 'Atendimentos & Vendas',
+          items: [
+            { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+            { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+            { name: 'Registro de Produção', href: '/dashboard/agendamentos', icon: FileText },
+          ]
+        },
+        {
+          category: 'Serviços',
+          items: [
+            { name: 'Serviços do Salão', href: '/dashboard/servicos', icon: Scissors },
+          ]
+        }
       ];
     }
 
     if (role === 'platform_admin') {
       return [
-        { name: 'Painel Master', href: '/master', icon: Settings, exact: true },
-        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        {
+          category: 'Administração Global',
+          items: [
+            { name: 'Painel Master', href: '/master', icon: Settings, exact: true },
+          ]
+        },
+        {
+          category: 'Geral & Controles',
+          items: [
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+            { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+            { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+            { name: 'Equipe', href: '/dashboard/equipe', icon: Users },
+            { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
+            { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
+            { name: 'Metas', href: '/dashboard/metas', icon: Target },
+          ]
+        }
       ];
     }
 
-    // Default for Owner or Manager
+    if (role === 'manager') {
+      return [
+        {
+          category: 'Principal',
+          items: [
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+            { name: 'Meu Painel', href: '/dashboard/meu-painel', icon: TrendingUp },
+          ]
+        },
+        {
+          category: 'Operacional',
+          items: [
+            { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+            { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+            { name: 'Lançamentos / Produção', href: '/dashboard/agendamentos', icon: FileText },
+          ]
+        },
+        {
+          category: 'Supervisão de Equipe',
+          items: [
+            { name: 'Equipe', href: '/dashboard/equipe', icon: Users },
+            { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
+            { name: 'Metas', href: '/dashboard/metas', icon: Target },
+          ]
+        },
+        {
+          category: 'Serviços & Parcerias',
+          items: [
+            { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
+            { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
+          ]
+        }
+      ];
+    }
+
+    // Default for Owner
     return [
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-      { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-      { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-      { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
-      { name: 'Serviços', href: '/dashboard/servicos', icon: Scissors },
-      { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
-      { name: 'Metas', href: '/dashboard/metas', icon: Target },
+      {
+        category: 'Principal',
+        items: [
+          { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        ]
+      },
+      {
+        category: 'Atendimentos & Clientes',
+        items: [
+          { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+          { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+          { name: 'Lançamentos / Produção', href: '/dashboard/agendamentos', icon: FileText },
+        ]
+      },
+      {
+        category: 'Gestão de Equipe',
+        items: [
+          { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
+          { name: 'Checklist de Qualidade', href: '/dashboard/checklist', icon: CheckSquare },
+          { name: 'Definição de Metas', href: '/dashboard/metas', icon: Target },
+        ]
+      },
+      {
+        category: 'Serviços & Parcerias',
+        items: [
+          { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
+          { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
+        ]
+      },
+      {
+        category: 'Administração',
+        items: [
+          { name: 'Plano & Inscrição', href: '/dashboard/assinatura', icon: CreditCard },
+        ]
+      }
     ];
   };
 
   const navigation = getNavigationByRole(userData?.role);
+  const flatNavigation = navigation.flatMap(cat => cat.items);
 
   return (
     <div className="min-h-screen bg-[#050505] flex text-white font-sans antialiased">
       {/* Sidebar Desktop */}
-      <aside className="hidden md:flex flex-col w-64 border-r border-[#D4AF37]/10 bg-[#09090b] relative z-20">
+      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-[#D4AF37]/10 bg-[#09090b] z-20 shrink-0">
         <div className="h-20 flex items-center px-6 border-b border-white/5">
           <Link to="/dashboard" className="flex items-center gap-2.5 group">
             <div className="p-1.5 rounded-xl bg-gradient-to-br from-[#D4AF37]/20 to-[#D4AF37]/5 border border-[#D4AF37]/35 group-hover:border-[#D4AF37] transition-all duration-300">
@@ -187,28 +306,37 @@ export default function DashboardLayout() {
           </Link>
         </div>
         
-        <div className="flex-1 py-6 px-4 space-y-1.5 overflow-y-auto">
-          {navigation.map((item) => {
-            const isActive = item.exact 
-              ? location.pathname === item.href 
-              : location.pathname.startsWith(item.href);
-              
-            return (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all duration-200 border",
-                  isActive 
-                    ? "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20 shadow-[0_0_15px_rgba(212,175,55,0.03)]" 
-                    : "text-muted-foreground hover:text-white hover:bg-white/[0.03] border-transparent"
-                )}
-              >
-                <item.icon className={cn("w-4.5 h-4.5 transition-colors", isActive ? "text-[#D4AF37]" : "text-muted-foreground group-hover:text-white")} />
-                {item.name}
-              </Link>
-            )
-          })}
+        <div className="flex-1 py-6 px-4 space-y-6 overflow-y-auto">
+          {navigation.map((category) => (
+            <div key={category.category} className="space-y-2">
+              <span className="px-3 text-[9px] uppercase tracking-widest font-extrabold text-[#D4AF37]/85 block select-none">
+                {category.category}
+              </span>
+              <div className="space-y-1">
+                {category.items.map((item) => {
+                  const isActive = item.exact 
+                    ? location.pathname === item.href 
+                    : location.pathname.startsWith(item.href);
+                    
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      className={cn(
+                        "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 border",
+                        isActive 
+                          ? "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20 shadow-[0_0_15px_rgba(212,175,55,0.03)]" 
+                          : "text-[#a1a1aa] hover:text-white hover:bg-white/[0.03] border-transparent"
+                      )}
+                    >
+                      <item.icon className={cn("w-4.5 h-4.5 transition-colors shrink-0", isActive ? "text-[#D4AF37]" : "text-zinc-500 group-hover:text-zinc-300")} />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           
           {isPlatformAdmin && (
             <Link
@@ -295,7 +423,7 @@ export default function DashboardLayout() {
           <div className="hidden md:flex items-center">
             <h1 className="text-lg font-medium text-white flex items-center gap-2 font-heading">
               <div className="w-1.5 h-1.5 rounded-full bg-[#D4AF37]" />
-              {navigation.find(n => n.exact ? location.pathname === n.href : location.pathname.startsWith(n.href))?.name || 'Dashboard'}
+              {flatNavigation.find(n => n.exact ? location.pathname === n.href : location.pathname.startsWith(n.href))?.name || 'Dashboard'}
             </h1>
           </div>
           
@@ -305,7 +433,7 @@ export default function DashboardLayout() {
                size="sm"
                variant="outline"
                onClick={() => setIsGuideOpen(true)}
-               className="text-xs h-8.5 border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+               className="text-xs h-8.5 border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] hidden sm:flex items-center gap-1.5 shrink-0 px-3"
              >
                <HelpCircle className="w-4 h-4 text-[#D4AF37]" />
                <span className="hidden sm:inline">Guia do Sistema</span>
@@ -317,7 +445,7 @@ export default function DashboardLayout() {
                size="sm"
                variant="outline"
                onClick={() => setIsRoadmapOpen(true)}
-               className="text-xs h-8.5 border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+               className="text-xs h-8.5 border-[#D4AF37]/20 hover:border-[#D4AF37]/50 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] hidden sm:flex items-center gap-1.5 shrink-0 px-3"
              >
                <Sparkles className="w-4 h-4 text-[#D4AF37]" />
                <span className="hidden sm:inline">Próximas Atualizações</span>
@@ -367,15 +495,15 @@ export default function DashboardLayout() {
                       </div>
 
                       <Link 
-                        to="/dashboard" 
+                        to="/dashboard/minha-conta" 
                         onClick={() => setIsUserMenuOpen(false)}
                         className="flex items-center gap-2.5 w-full px-2.5 py-2 text-xs rounded-lg text-zinc-300 hover:text-white hover:bg-white/[0.03] transition-all"
                       >
-                        <LayoutDashboard className="w-3.5 h-3.5 text-zinc-400" />
+                        <User className="w-3.5 h-3.5 text-zinc-400" />
                         <span>Minha Conta</span>
                       </Link>
 
-                      {['owner', 'manager', 'platform_admin', 'admin'].includes(userData?.role || '') && (
+                      {['owner', 'platform_admin', 'admin'].includes(userData?.role || '') && (
                         <Link 
                           to="/dashboard/assinatura" 
                           onClick={() => setIsUserMenuOpen(false)}
@@ -579,27 +707,38 @@ export default function DashboardLayout() {
                  </Button>
               </div>
               
-              {navigation.map((item) => {
-                const isActive = item.exact 
-                  ? location.pathname === item.href 
-                  : location.pathname.startsWith(item.href);
-                  
-                return (
-                  <Link 
-                    key={item.name} 
-                    to={item.href} 
-                    onClick={() => setIsMobileMenuOpen(false)} 
-                    className={cn(
-                      "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all duration-200 border",
-                      isActive 
-                        ? "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20" 
-                        : "text-muted-foreground hover:text-white hover:bg-white/[0.02] border-transparent"
-                    )}
-                  >
-                    <item.icon className={cn("w-4.5 h-4.5", isActive ? "text-[#D4AF37]" : "text-muted-foreground")} /> {item.name}
-                  </Link>
-                );
-              })}
+              <div className="space-y-5">
+                {navigation.map((category) => (
+                  <div key={category.category} className="space-y-1.5">
+                    <span className="px-3 text-[9px] uppercase tracking-widest font-extrabold text-[#D4AF37]/85 block select-none">
+                      {category.category}
+                    </span>
+                    <div className="space-y-1">
+                      {category.items.map((item) => {
+                        const isActive = item.exact 
+                          ? location.pathname === item.href 
+                          : location.pathname.startsWith(item.href);
+                          
+                        return (
+                          <Link 
+                            key={item.name} 
+                            to={item.href} 
+                            onClick={() => setIsMobileMenuOpen(false)} 
+                            className={cn(
+                              "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 border",
+                              isActive 
+                                ? "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20 shadow-[0_0_15px_rgba(212,175,55,0.03)]" 
+                                : "text-[#a1a1aa] hover:text-white hover:bg-white/[0.02] border-transparent"
+                            )}
+                          >
+                            <item.icon className={cn("w-4 h-4 shrink-0", isActive ? "text-[#D4AF37]" : "text-zinc-500")} /> {item.name}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
               
               {isPlatformAdmin && (
                 <Link

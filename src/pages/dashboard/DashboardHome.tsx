@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { getEvaluableFunctions, sanitizeFunctionSlug } from '../../lib/evaluation';
@@ -53,6 +53,7 @@ export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
   
   const [loading, setLoading] = useState(true);
 
@@ -101,13 +102,12 @@ export default function DashboardHome() {
     }> = [];
     professionals.forEach((p) => {
       const funcs = getEvaluableFunctions(p);
-      funcs.forEach((func) => {
-        list.push({
-          professionalId: p.id,
-          professionalName: p.name,
-          evaluationFunction: func,
-          professional: p
-        });
+      const mainFunc = funcs[0] || p.primaryFunction || p.professionalFunction || p.specialty || "Função não definida";
+      list.push({
+        professionalId: p.id,
+        professionalName: p.name,
+        evaluationFunction: mainFunc,
+        professional: p
       });
     });
     return list;
@@ -136,10 +136,24 @@ export default function DashboardHome() {
     const unsubs: (() => void)[] = [];
 
     // Professionals
-    const qp = query(collection(db, `salons/${salonData.id}/professionals`), where('isActive', '==', true));
+    const qp = query(collection(db, `salons/${salonData.id}/professionals`));
     unsubs.push(onSnapshot(qp, snap => {
-        const pros = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Professional[];
-        setProfessionals(pros);
+        const allPros = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Professional[];
+        const filtered = allPros.filter(p => {
+          const isActive =
+            (p.isActive === true ||
+             p.active === true ||
+             p.status === "active" ||
+             p.status === "ativo" ||
+             (p.status === undefined && p.isActive !== false)) &&
+            p.status !== "inactive" &&
+            p.status !== "deleted" &&
+            !p.deletedAt;
+          if (!isActive) return false;
+          const role = p.role || "professional";
+          return ["professional", "manager", "receptionist", "attendant"].includes(role);
+        });
+        setProfessionals(filtered);
     }, err => {
         console.error("Erro no onSnapshot de profissionais:", err);
         setLoading(false);
@@ -243,7 +257,7 @@ export default function DashboardHome() {
     );
   }
 
-  if (userData?.role === 'professional') {
+  if (userData?.role === 'professional' || location.pathname.endsWith('/meu-painel') || location.pathname.endsWith('/profissional')) {
     return <ProfessionalDashboard />;
   }
 

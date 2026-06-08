@@ -10,11 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2, Plus, Calendar as CalendarIcon, Clock, Edit2 } from 'lucide-react';
+import { Loader2, Plus, Calendar as CalendarIcon, Clock, Edit2, ShoppingBag, Scissors, FileText } from 'lucide-react';
 import { formatBRL } from '@/lib/utils';
 
 export default function AppointmentsPage() {
-  const { salonData } = useAuth();
+  const { salonData, userData } = useAuth();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -22,6 +22,7 @@ export default function AppointmentsPage() {
   
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Appointment | null>(null);
 
   const [formData, setFormData] = useState({
@@ -33,6 +34,100 @@ export default function AppointmentsPage() {
     notes: '',
     status: 'scheduled' as Appointment['status']
   });
+
+  const [manualFormData, setManualFormData] = useState({
+    type: 'service' as 'service' | 'product',
+    professionalId: '',
+    serviceId: '',
+    customName: '',
+    price: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  const handleManualServiceChange = (serviceId: string) => {
+    if (serviceId === 'custom') {
+      setManualFormData(p => ({ ...p, serviceId, customName: '', price: '' }));
+    } else {
+      const srv = services.find(s => s.id === serviceId);
+      setManualFormData(p => ({
+        ...p,
+        serviceId,
+        customName: srv ? srv.name : '',
+        price: srv ? String(srv.price) : ''
+      }));
+    }
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData) return;
+    if (!manualFormData.professionalId) {
+      toast.error('Por favor, selecione um profissional.');
+      return;
+    }
+
+    try {
+      const professional = professionals.find(p => p.id === manualFormData.professionalId);
+      const professionalName = professional ? professional.name : '';
+
+      let finalServiceName = '';
+      let finalServiceId = '';
+      let finalPrice = 0;
+
+      if (manualFormData.serviceId === 'custom' || !manualFormData.serviceId) {
+        if (!manualFormData.customName.trim()) {
+          toast.error('Digite o nome do serviço ou produto.');
+          return;
+        }
+        finalServiceName = manualFormData.customName.trim();
+        finalServiceId = 'manual-item';
+        finalPrice = parseFloat(manualFormData.price) || 0;
+      } else {
+        const matchingService = services.find(s => s.id === manualFormData.serviceId);
+        finalServiceName = matchingService ? matchingService.name : 'Item avulso';
+        finalServiceId = manualFormData.serviceId;
+        finalPrice = manualFormData.price ? parseFloat(manualFormData.price) : (matchingService?.price || 0);
+      }
+
+      if (manualFormData.type === 'product' && !finalServiceName.toLowerCase().includes('produto')) {
+        finalServiceName = `Produto: ${finalServiceName}`;
+      }
+
+      const ref = doc(collection(db, `salons/${salonData.id}/appointments`));
+      await setDoc(ref, {
+        id: ref.id,
+        clientId: 'manual',
+        clientName: 'Consumidor Final',
+        professionalId: manualFormData.professionalId,
+        professionalName,
+        serviceId: finalServiceId,
+        serviceName: finalServiceName,
+        price: finalPrice,
+        isManualLaunch: true,
+        type: manualFormData.type,
+        date: manualFormData.date,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        status: 'completed',
+        notes: `Lançamento manual direto de ${manualFormData.type === 'service' ? 'serviço' : 'produto'}.`,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+
+      toast.success('Lançamento manual registrado com sucesso!');
+      setIsManualDialogOpen(false);
+      setManualFormData({
+        type: 'service',
+        professionalId: '',
+        serviceId: '',
+        customName: '',
+        price: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao realizar lançamento manual.');
+    }
+  };
 
   useEffect(() => {
     if (!salonData) return;
@@ -172,15 +267,133 @@ export default function AppointmentsPage() {
           <p className="text-muted-foreground text-sm">Gerencie a agenda do salão.</p>
         </div>
         
-        <Dialog open={isDialogOpen} onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) resetForm();
-        }}>
-          <DialogTrigger asChild>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
-              <Plus className="w-4 h-4 mr-2" /> Novo Agendamento
-            </Button>
-          </DialogTrigger>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          {/* Lançamento manual button (visible by manager, owner, receptionist) */}
+          {['owner', 'manager', 'receptionist', 'attendant', 'admin'].includes(userData?.role || '') && (
+            <Dialog open={isManualDialogOpen} onOpenChange={setIsManualDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="border-zinc-800 text-zinc-300 hover:text-white hover:bg-white/[0.02]">
+                  <FileText className="w-4 h-4 mr-2 text-[#D4AF37]" /> Lançar Avulso (Manual)
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px] bg-zinc-950 border-zinc-800 text-white max-h-[90vh] overflow-y-auto w-full">
+                <DialogHeader>
+                  <DialogTitle className="font-heading text-white text-lg flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-[#D4AF37]" /> Lançamento de Produção
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleManualSubmit} className="space-y-4 pt-4 text-xs">
+                  
+                  {/* Toggle para tipo */}
+                  <div className="space-y-2">
+                    <Label className="text-zinc-400">Tipo de Lançamento</Label>
+                    <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 p-1 rounded-xl border border-zinc-900">
+                      <button
+                        type="button"
+                        onClick={() => setManualFormData(p => ({ ...p, type: 'service' }))}
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg font-semibold transition-all ${
+                          manualFormData.type === 'service'
+                            ? 'bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37]'
+                            : 'text-zinc-400 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <Scissors className="w-3.5 h-3.5" /> Serviço
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => setManualFormData(p => ({ ...p, type: 'product' }))}
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg font-semibold transition-all ${
+                          manualFormData.type === 'product'
+                            ? 'bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37]'
+                            : 'text-zinc-400 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5" /> Produto
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Profissional Selection */}
+                  <div className="space-y-2">
+                    <Label className="text-zinc-400">Profissional Relacionado</Label>
+                    <Select required value={manualFormData.professionalId} onValueChange={(v) => setManualFormData(p => ({ ...p, professionalId: v }))}>
+                      <SelectTrigger className="bg-zinc-900 border-zinc-800"><SelectValue placeholder="Escolha quem executou/vendeu" /></SelectTrigger>
+                      <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                        {professionals.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Item (Service/Product selection) */}
+                  <div className="space-y-2">
+                    <Label className="text-zinc-400">Modelo ou Item de Base (Opcional)</Label>
+                    <Select value={manualFormData.serviceId} onValueChange={handleManualServiceChange}>
+                      <SelectTrigger className="bg-zinc-900 border-zinc-800"><SelectValue placeholder="Deixe avulso ou selecione" /></SelectTrigger>
+                      <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                        <SelectItem value="custom">-- Digitar Manual (Avulso) --</SelectItem>
+                        {services.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Custom fields (enabled if custom selected) */}
+                  {(manualFormData.serviceId === 'custom' || !manualFormData.serviceId) && (
+                    <div className="space-y-2">
+                      <Label className="text-zinc-400">Nome do {manualFormData.type === 'service' ? 'Serviço' : 'Produto'}</Label>
+                      <Input
+                        required
+                        value={manualFormData.customName}
+                        onChange={e => setManualFormData(p => ({ ...p, customName: e.target.value }))}
+                        className="bg-zinc-900 border-zinc-800 text-white"
+                        placeholder={`Ex: ${manualFormData.type === 'service' ? 'Penteado Clássico' : 'Defrizante Absolut'}`}
+                      />
+                    </div>
+                  )}
+
+                  {/* Price Field */}
+                  <div className="space-y-2">
+                    <Label className="text-zinc-400">Preço R$</Label>
+                    <Input
+                      required
+                      type="number"
+                      step="0.01"
+                      value={manualFormData.price}
+                      onChange={e => setManualFormData(p => ({ ...p, price: e.target.value }))}
+                      className="bg-zinc-900 border-zinc-800 text-white"
+                      placeholder="Ex: 50.00"
+                    />
+                  </div>
+
+                  {/* Date Field */}
+                  <div className="space-y-2">
+                    <Label className="text-zinc-400">Data do Lançamento</Label>
+                    <Input
+                      required
+                      type="date"
+                      value={manualFormData.date}
+                      onChange={e => setManualFormData(p => ({ ...p, date: e.target.value }))}
+                      className="bg-zinc-900 border-zinc-800 text-white"
+                    />
+                  </div>
+
+                  <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-xl">
+                    Salvar Lançamento Direto
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) resetForm();
+          }}>
+            <DialogTrigger asChild>
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                <Plus className="w-4 h-4 mr-2" /> Novo Agendamento
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[425px] bg-card border-border max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-heading">{editingItem ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
@@ -240,6 +453,7 @@ export default function AppointmentsPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {appointments.length === 0 ? (

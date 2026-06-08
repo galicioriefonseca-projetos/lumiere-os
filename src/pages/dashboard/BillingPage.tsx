@@ -72,6 +72,21 @@ export default function BillingPage() {
     return () => unsubscribe();
   }, [salonData]);
 
+  const isAuthorized = userData?.role === 'owner' || isPlatformAdmin || userData?.role === 'admin';
+  if (!isAuthorized) {
+    return (
+      <div className="flex flex-col items-center justify-center p-24 text-center text-zinc-400">
+        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-6">
+          <ShieldCheck className="w-8 h-8 text-red-500 animate-pulse" />
+        </div>
+        <h3 className="text-xl font-heading mb-2 text-white">Acesso Reservado</h3>
+        <p className="text-sm text-zinc-500 leading-relaxed max-w-sm">
+          Operação não autorizada. Essa seção com gestão de cobranças de assinatura do LumièreOS é reservada exclusivamente para a proprietária (owner) ou administradores do sistema.
+        </p>
+      </div>
+    );
+  }
+
   if (!salonData) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center text-zinc-400">

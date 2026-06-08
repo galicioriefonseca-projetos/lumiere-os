@@ -26,6 +26,14 @@ export function canManageTeam(role: Role | string | undefined): boolean {
   return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
 }
 
+export function canManageSalonOperations(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canManageChecklist(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
 export function canEvaluateTeam(role: Role | string | undefined): boolean {
   return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
 }
@@ -42,8 +50,72 @@ export function canAccessMaster(role: Role | string | undefined): boolean {
   return role === 'platform_admin';
 }
 
-export function canAccessOperationalChecklist(role: Role | string | undefined): boolean {
+export function canAccessChecklist(role: Role | string | undefined): boolean {
   return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canAccessGoals(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canAccessProduction(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canManageProduction(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canAccessClients(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canManageClients(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canAccessAgenda(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canManageAgenda(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canManageServices(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canManageBilling(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'platform_admin';
+}
+
+export function canTransferOwnership(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'platform_admin';
+}
+
+export function canCreateProductionEntry(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin' || role === 'receptionist' || role === 'attendant';
+}
+
+export function canViewCommissions(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canManageCommissions(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canEditCommissionRules(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canAccessStrategicReports(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'admin';
+}
+
+export function canAccessOperationalChecklist(role: Role | string | undefined): boolean {
+  return canAccessChecklist(role);
 }
 
 export function canAccessProfessionalDashboard(role: Role | string | undefined): boolean {
@@ -101,6 +173,12 @@ export function canAccessRoute(role: Role | undefined, route: string): boolean {
 
   // Route-specific checks
   switch (cleanRoute) {
+    case '/dashboard/assinatura':
+      return isOwner(role) || isPlatformAdmin(role) || role === 'admin';
+    case '/dashboard/comissoes':
+      return canViewCommissions(role);
+    case '/dashboard/minha-conta':
+      return true; // All signed-in roles can see their relevant My Account view
     case '/dashboard/equipe':
       return canManageTeam(role);
     case '/dashboard/metas':

@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.5.7-founder (2026-06-08)
+### Gerente como braço direito operacional
+
+- **Gerente com acesso operacional ampliado**: A role `manager` agora possui poderes equivalentes aos da proprietária (`owner`) para quase todas as ações diárias do salão, promovendo máxima agilidade em operações compartilhadas.
+- **Operação Completo de Checklist, Metas, Produção, Clientes e Agenda**: Gerente pode gerenciar checklists operacionais, estipular e acompanhar metas, registrar lançamentos e produções de atendimentos, consultar comissões e operar a agenda completa com agendamentos de serviços e produtos.
+- **Bloqueio de Chaves e Ações de Propriedade**: Decisões de nível de plataforma e administração de faturamento — incluindo alteração do plano ou faturamento de assinatura do LumièreOS, exclusão permanente ou transferência de propriedade do salão — permanecem estritamente blindadas e exclusivas da proprietária (`owner`) e do `platform_admin`.
+- **Painel Pessoal da Gerente Isolado e Integrado**: O painel pessoal (`Meu Painel`) permanece disponível para que o gestor também consulte suas próprias metas estipuladas, histórico de avaliações, produções e comissões individuais caso cadastrado na equipe.
+
+## v1.5.4-founder (2026-06-08)
+### Avaliações unificadas, metas para novos papéis e função de pular nota
+
+- **Inclusão de papéis administrativos**: Gerentes (`manager`) e recepcionistas (`receptionist`) agora também são incluídas ativamente na rotina de Avaliações Diárias e podem possuir Metas individuais no sistema, garantindo um acompanhamento integral.
+- **Função unificada de pular notas**: Implementado o botão "Pular e Próximo / Pular" na interface de avaliações, permitindo avançar opcionalmente sem registrar pontuação temporária, mantendo o colaborador com o status pendente original e sem remover alertas de pendência.
+- **Avaliação única diária por pessoa**: Unificação das avaliações por colaborador físico (não por função), utilizando o identificador único `{date}_{collaboratorId}` de forma a evitar qualquer duplicidade na listagem, contadores ou nos relatórios analíticos e exportações de PDF.
+- **Ajuste visual de listagem**: Listagem de colaboradores agora diferencia visualmente entre cargos técnicos (mostrando função Principal e Extras) e administrativos (mostrando Cargo corporativo).
+
+## v1.5.3-founder (2026-06-08)
+### Permissões operacionais da recepcionista
+
+- **Lançamento operacional liberado**: Recepcionista agora mantém acesso operacional a clientes, agenda e lançamentos de atendimentos e serviços.
+- **Bloqueio de recursos administrativos**: Checklist e Metas ficam bloqueados para a função de recepcionista e atendente, tanto na interface quanto nas rotas do sistema.
+- **Matriz de permissões estrita**: Rotas sensíveis e acessos diretos por URL agora respeitam rigorosamente a matriz de permissões por função.
+- **Isolamento de dados estratégicos**: Lançamento de serviços e produtos pode ser feito pela recepção mantendo total confidencialidade de relatórios analíticos, comissões estratégicas e dados financeiros corporativos.
+
 ## v1.4.8-founder (2026-06-03)
 ### Liberação operacional do MVP
 
