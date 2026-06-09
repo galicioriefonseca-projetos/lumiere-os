@@ -17,6 +17,9 @@ export default defineConfig(({mode}) => {
           enabled: true
         },
         workbox: {
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {
@@ -111,6 +114,9 @@ export default defineConfig(({mode}) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    build: {
+      sourcemap: true,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

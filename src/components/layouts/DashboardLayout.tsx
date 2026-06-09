@@ -26,7 +26,8 @@ import {
   UserX,
   Loader2,
   ChevronDown,
-  User
+  User,
+  Play
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { APP_INFO } from '../../config/appInfo';
 import SystemUpdatesDialog from '../SystemUpdatesDialog';
 import { useEffect } from 'react';
+import { LumiereChatbot } from '../LumiereChatbot';
+import { InteractiveTour } from '../InteractiveTour';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
@@ -293,7 +296,7 @@ export default function DashboardLayout() {
   return (
     <div className="min-h-screen bg-[#050505] flex text-white font-sans antialiased">
       {/* Sidebar Desktop */}
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-[#D4AF37]/10 bg-[#09090b] z-20 shrink-0">
+      <aside id="lumiere-desktop-sidebar" className="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-[#D4AF37]/10 bg-[#09090b] z-20 shrink-0">
         <div className="h-20 flex items-center px-6 border-b border-white/5">
           <Link to="/dashboard" className="flex items-center gap-2.5 group">
             <div className="p-1.5 rounded-xl bg-gradient-to-br from-[#D4AF37]/20 to-[#D4AF37]/5 border border-[#D4AF37]/35 group-hover:border-[#D4AF37] transition-all duration-300">
@@ -430,6 +433,7 @@ export default function DashboardLayout() {
           <div className="flex items-center gap-3">
              {/* Guia do Sistema Button */}
              <Button
+               id="lumiere-guide-trigger"
                size="sm"
                variant="outline"
                onClick={() => setIsGuideOpen(true)}
@@ -513,6 +517,17 @@ export default function DashboardLayout() {
                           <span>Minha Assinatura</span>
                         </Link>
                       )}
+
+                      <button 
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          window.dispatchEvent(new CustomEvent('lumiere-start-interactive-tour'));
+                        }}
+                        className="flex items-center gap-2.5 w-full px-2.5 py-2 text-xs rounded-lg text-[#D4AF37] hover:bg-[#D4AF37]/5 transition-all cursor-pointer text-left w-full"
+                      >
+                        <Play className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        <span>Tour Interativo</span>
+                      </button>
 
                       <button 
                         onClick={() => { setIsUserMenuOpen(false); setIsUpdatesDialogOpen(true); }}
@@ -1346,6 +1361,12 @@ export default function DashboardLayout() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Lumière AI Global Chatbot */}
+      <LumiereChatbot />
+
+      {/* Interactive Guided Tour */}
+      <InteractiveTour />
     </div>
   );
 }

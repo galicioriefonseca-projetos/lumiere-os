@@ -9,6 +9,34 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.5.9-founder',
+    date: 'Junho de 2026',
+    title: 'Atualização automática e cache seguro',
+    description: 'Estratégia avançada de controle PWA, permitindo atualizações automáticas silenciosas e detecção dinâmica de bundles em cache antigo.',
+    highlights: [
+      'PWA agora detecta nova versão e limpa cache antigo de forma silenciosa.',
+      'Reduzido significativamente o risco de erro por bundle antigo no celular.',
+      'Botão Limpar Cache e Recarregar agora executa limpeza real de caches e Service Workers antigos.',
+      'Service Worker ajustado para atualização automática.',
+      'Fallback preventivo para erros de carregamento de chunk (ChunkLoadError) e arquivos antigos.'
+    ],
+    isNew: true
+  },
+  {
+    version: '1.5.8-founder',
+    date: 'Junho de 2026',
+    title: 'Correções Críticas de Estabilidade e PWA',
+    description: 'Atualização crítica para resolver a tela de erro (Ops! Algo deu errado) em dispositivos móveis, além de recursos adicionais de debug e suporte para profissionais.',
+    highlights: [
+      'Correção do erro crítico React #310 de acesso pelo celular (iPhone/PWA).',
+      'Proteção contra renderização incorreta para usuários e recepcionistas.',
+      'Melhoria na exibição do ErrorBoundary em modo de produção (com recurso ?debug=true).',
+      'Gerenciamento robusto de cache persistente PWA (Service Workers, Limpeza Automática).',
+      'Habilitação temporária de debug com sourcemaps para rastreabilidade de código.'
+    ],
+    isNew: false
+  },
+  {
     version: '1.5.0-founder',
     date: 'Junho de 2026',
     title: 'Integração Mercado Pago Assinaturas',
@@ -20,7 +48,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Sistema continua liberado sem bloqueio automático financeiro.',
       'Stripe preservado no código para uso futuro, mas removido do fluxo visual principal.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.4.8-founder',

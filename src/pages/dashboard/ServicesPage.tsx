@@ -14,6 +14,7 @@ import { Service, Category } from "../../types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchBar } from "@/components/ui/search-bar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -650,15 +651,14 @@ export default function ServicesPage() {
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row gap-3.5">
           {/* Search bar */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-            <Input
-              placeholder="Pesquisar serviço por nome ou detalhes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10 bg-[#0c0c0f] border border-white/5 rounded-xl text-sm focus:border-[#D4AF37]/30"
-            />
-          </div>
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Pesquisar serviço por nome ou detalhes..."
+            containerClassName="flex-1"
+            className="h-10 bg-[#0c0c0f] border-white/5 rounded-xl text-sm focus:border-[#D4AF37]/30"
+            showClearText={true}
+          />
 
           {/* Categories tag ribbon */}
           <div className="flex items-center gap-1.5 bg-[#0c0c0f]/80 p-1 border border-white/5 rounded-xl md:max-w-md overflow-x-auto shrink-0 select-none">
@@ -901,15 +901,13 @@ export default function ServicesPage() {
 
           {/* Quick filter block in modal */}
           <div className="py-3 flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-zinc-500" />
-              <Input
-                placeholder="Filtrar por nome ou categoria na biblioteca..."
-                value={importSearch}
-                onChange={(e) => setImportSearch(e.target.value)}
-                className="pl-9 h-9 bg-black/40 border border-white/5 rounded-xl text-xs focus:border-[#D4AF37]/30"
-              />
-            </div>
+            <SearchBar
+              value={importSearch}
+              onChange={setImportSearch}
+              placeholder="Filtrar por nome ou categoria na biblioteca..."
+              containerClassName="flex-1"
+              className="h-9 bg-black/40 border-white/5 rounded-xl text-xs focus:border-[#D4AF37]/30"
+            />
             
             <Button
               variant="outline"

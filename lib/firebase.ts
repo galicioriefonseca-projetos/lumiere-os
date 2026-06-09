@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 
 const firebaseConfig = {
@@ -26,6 +26,15 @@ try {
   db = app ? initializeFirestore(app, {
     experimentalAutoDetectLongPolling: true,
   }) : null;
+  if (db && typeof window !== 'undefined') {
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code == 'failed-precondition') {
+        console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
+      } else if (err.code == 'unimplemented') {
+        console.warn('The current browser does not support all of the features required to enable persistence');
+      }
+    });
+  }
 } catch (e) {
   console.error("Failed to initialize Firestore:", e);
 }

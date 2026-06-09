@@ -1,4 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { executeManualCachePurge } from '../lib/cacheControl';
+import { APP_INFO } from '../config/appInfo';
 
 interface Props {
   children?: ReactNode;
@@ -23,7 +25,16 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    const route = typeof window !== 'undefined' ? window.location.pathname + window.location.search : 'N/A';
+    const appVersion = APP_INFO.version;
+    
+    // We attempt to get the role if it was saved somewhere else, otherwise 'unknown'
+    // Since AuthContext doesn't save it directly in localStorage by default, we'll just log 'unknown' 
+    // unless you want to try reading a cookie or local storage if existed.
+    let role = 'unknown';
+
+    console.error(`[ErrorBoundary] ${error.message}\n${error.stack}\nroute: ${route}\nrole: ${role}\nappVersion: ${appVersion}`);
+    console.error('Uncaught error details:', error, errorInfo);
     
     try {
       sessionStorage.setItem('lumiere_last_error', JSON.stringify({
@@ -31,6 +42,8 @@ export class ErrorBoundary extends Component<Props, State> {
         stack: error.stack,
         componentStack: errorInfo.componentStack,
         userAgent: navigator.userAgent,
+        route,
+        appVersion,
         timestamp: new Date().toISOString()
       }));
     } catch (e) {
@@ -44,27 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private clearCacheAndReload = async () => {
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map(key => caches.delete(key)));
-      }
-
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const registration of registrations) {
-          await registration.unregister();
-        }
-      }
-
-      window.location.href = `/?fresh=${Date.now()}`;
-    } catch (err) {
-      console.error('Failed to clear cache', err);
-      window.location.replace('/');
-    }
+    await executeManualCachePurge();
   };
 
   public render() {
@@ -101,10 +94,11 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {/* Debug info */}
-            {process.env.NODE_ENV === 'development' || true ? (
+            {process.env.NODE_ENV === 'development' || (typeof window !== 'undefined' && window.location.search.includes('debug=true')) ? (
               <div className="mt-8 text-left bg-neutral-950 p-4 rounded-lg overflow-auto text-xs text-neutral-500 max-h-48 border border-neutral-800">
                 <p className="font-semibold text-red-400 mb-2">Detalhes Técnicos (Para Suporte):</p>
                 <p><strong>Erro:</strong> {this.state.error?.message}</p>
+                <p><strong>Caminho:</strong> {typeof window !== 'undefined' ? window.location.pathname + window.location.search : 'N/A'}</p>
                 <p><strong>Device:</strong> {typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'N/A'}</p>
                 <p className="truncate"><strong>User Agent:</strong> {typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'}</p>
                 {this.state.errorInfo?.componentStack && (
@@ -113,7 +107,11 @@ export class ErrorBoundary extends Component<Props, State> {
                   </pre>
                 )}
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-4 text-xs text-neutral-600">
+                 <p>Um relatório de erros foi gerado. Para exibir detalhes técnicos, adicione <code className="text-neutral-500">?debug=true</code> na URL.</p>
+              </div>
+            )}
           </div>
         </div>
       );

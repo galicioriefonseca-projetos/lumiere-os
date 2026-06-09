@@ -61,6 +61,7 @@ export interface Salon {
   stripeCheckoutSessionId?: string;
   stripePriceId?: string;
   mercadoPagoPreapprovalId?: string;
+  onboardingCompleted?: boolean;
 }
 
 export interface Payment {

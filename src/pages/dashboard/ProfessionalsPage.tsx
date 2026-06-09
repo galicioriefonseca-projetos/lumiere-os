@@ -6,6 +6,7 @@ import { Professional } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchBar } from '@/components/ui/search-bar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -14,6 +15,7 @@ import {
   ChevronDown, ChevronUp, Search, Filter, Mail, Phone, Calendar, Sparkles
 } from 'lucide-react';
 import { PROFESSIONAL_SPECIALTIES } from '../../data/professionalSpecialties';
+import { TeamInsightsCard } from '../../components/TeamInsightsCard';
 
 const roleTranslations: Record<string, string> = {
   manager: 'Gerente',
@@ -581,6 +583,8 @@ export default function ProfessionalsPage() {
 
   return (
     <div className="space-y-6">
+      <TeamInsightsCard professionals={professionals} />
+
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-heading font-light">Equipe</h2>
@@ -1231,24 +1235,14 @@ export default function ProfessionalsPage() {
 
       {/* Filtros e Busca */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-zinc-950/40 p-4 border border-white/5 rounded-2xl">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-          <Input
-            type="text"
-            placeholder="Buscar por nome, e-mail ou especialidade..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-10 bg-black/40 border-white/10 focus:border-[#D4AF37]/50 rounded-xl text-xs text-white"
-          />
-          {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400 hover:text-white"
-            >
-              Limpar
-            </button>
-          )}
-        </div>
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Buscar por nome, e-mail ou especialidade..."
+          containerClassName="flex-1 max-w-md"
+          className="h-10 bg-black/40 border-white/10 focus:border-[#D4AF37]/50 rounded-xl text-xs text-white"
+          showClearText={true}
+        />
 
         <div className="flex flex-wrap gap-1.5 overflow-x-auto pb-1 md:pb-0">
           <button

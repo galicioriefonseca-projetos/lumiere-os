@@ -47,6 +47,10 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
 } from 'recharts';
 
 export default function DashboardHome() {
@@ -75,6 +79,7 @@ export default function DashboardHome() {
   const [checklistRuns, setChecklistRuns] = useState<ChecklistRun[]>([]);                
   const [goals, setGoals] = useState<Goal[]>([]);
   const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
+  const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
   const [isFinanceDialogOpen, setIsFinanceDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -177,6 +182,15 @@ export default function DashboardHome() {
     }, err => {
         console.error("Erro no onSnapshot de agendamentos:", err);
         setLoading(false);
+    }));
+
+    // All Appointments (for historical charts mapping)
+    const qaAll = query(collection(db, `salons/${salonData.id}/appointments`));
+    unsubs.push(onSnapshot(qaAll, snap => {
+       const list = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as Appointment[];
+       setAllAppointments(list);
+    }, err => {
+        console.error("Erro no onSnapshot de todos agendamentos:", err);
     }));
 
     // General Salon Goals
@@ -296,10 +310,13 @@ export default function DashboardHome() {
   // Map and merge goals
   const chartData = last6Months.map(m => {
     const existingGoal = goals.find((g: any) => g.month === m);
+    const monthAppointments = allAppointments.filter(appt => appt.date.startsWith(m));
+    const completedAppointmentsCount = monthAppointments.filter(appt => appt.status === 'completed' || appt.status === 'scheduled').length;
     return {
       name: formatMonthLabel(m),
       Faturamento: existingGoal ? existingGoal.currentAmount : 0,
       Meta: existingGoal ? existingGoal.targetAmount : 0,
+      Agendamentos: completedAppointmentsCount,
     };
   });
 
@@ -441,7 +458,7 @@ export default function DashboardHome() {
       </div>
 
       {/* Stats Cards Dashboard Indicators */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      <div id="dashboard-stats-grid" className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         
         {/* Today's appointments */}
         <Card className="border-[#D4AF37]/10 bg-[#0c0c0f] hover:border-[#D4AF37]/20 transition-all duration-200 rounded-2xl shadow-xl overflow-hidden relative">
@@ -772,95 +789,170 @@ export default function DashboardHome() {
              <TrendingUp className="w-4 h-4 text-[#D4AF37]" />
              <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Histórico e Tendência Anual</span>
           </div>
-          <Card className="border-white/5 bg-[#0c0c0f] shadow-xl rounded-2xl overflow-hidden">
-            <CardHeader className="border-b border-white/5 pb-4 bg-white/[0.01]">
-               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div>
-                     <CardTitle className="text-sm font-heading font-semibold text-white">
-                        Curva Comparativa de Faturamento
-                     </CardTitle>
-                     <p className="text-[11px] text-muted-foreground mt-1">
-                        Acompanhe graficamente a relação entre faturamentos realizados e metas mensais estipuladas.
-                     </p>
-                  </div>
-                  <div className="flex gap-2">
-                     <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/metas')} className="text-xs border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] text-[#D4AF37]">
-                        Definir Metas
-                     </Button>
-                     <Button variant="outline" size="sm" onClick={() => setIsFinanceDialogOpen(true)} className="text-xs border-white/15 hover:bg-white/5 text-white">
-                        Finanças Avançadas
-                     </Button>
-                  </div>
-               </div>
-            </CardHeader>
-            <CardContent className="pt-6">
-               <div className="h-80 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                     <AreaChart
-                        data={chartData}
-                        margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                     >
-                        <defs>
-                           <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#d4af37" stopOpacity={0.25}/>
-                              <stop offset="95%" stopColor="#d4af37" stopOpacity={0}/>
-                           </linearGradient>
-                           <linearGradient id="colorMeta" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0.05}/>
-                              <stop offset="95%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0}/>
-                           </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
-                        <XAxis 
-                           dataKey="name" 
-                           stroke="#71717a" 
-                           fontSize={11} 
-                           tickLine={false} 
-                           axisLine={false} 
-                        />
-                        <YAxis 
-                           stroke="#71717a" 
-                           fontSize={11} 
-                           tickLine={false} 
-                           axisLine={false}
-                           tickFormatter={(value) => `R$ ${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
-                        />
-                        <Tooltip 
-                           contentStyle={{ 
-                              backgroundColor: '#121214', 
-                              borderRadius: '12px', 
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
-                              fontFamily: 'sans-serif'
-                           }}
-                           labelStyle={{ color: '#d4af37', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}
-                           itemStyle={{ color: '#e4e4e7', fontSize: '12px' }}
-                           formatter={(value: any) => [formatBRL(value)]}
-                        />
-                        <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} />
-                        <Area 
-                           type="monotone" 
-                           dataKey="Faturamento" 
-                           name="Faturamento Real"
-                           stroke="#d4af37" 
-                           strokeWidth={2}
-                           fillOpacity={1} 
-                           fill="url(#colorFaturamento)" 
-                        />
-                        <Area 
-                           type="monotone" 
-                           dataKey="Meta" 
-                           name="Meta de Faturamento"
-                           stroke="rgba(255, 255, 255, 0.4)" 
-                           strokeWidth={1.5}
-                           strokeDasharray="4 4"
-                           fillOpacity={1} 
-                           fill="url(#colorMeta)" 
-                        />
-                     </AreaChart>
-                  </ResponsiveContainer>
-               </div>
-            </CardContent>
-          </Card>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* Currency Performance Chart */}
+            <Card className="border-white/5 bg-[#0c0c0f] shadow-xl rounded-2xl overflow-hidden">
+              <CardHeader className="border-b border-white/5 pb-4 bg-white/[0.01]">
+                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                       <CardTitle className="text-sm font-heading font-semibold text-white">
+                          Curva Comparativa de Faturamento
+                       </CardTitle>
+                       <p className="text-[11px] text-muted-foreground mt-1">
+                          Acompanhe graficamente a relação entre faturamentos realizados e metas mensais estipuladas.
+                       </p>
+                    </div>
+                    <div className="flex gap-2">
+                       <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/metas')} className="text-xs border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] text-[#D4AF37] h-8 rounded-xl cursor-pointer">
+                          Definir Metas
+                       </Button>
+                       <Button variant="outline" size="sm" onClick={() => setIsFinanceDialogOpen(true)} className="text-xs border-white/15 hover:bg-white/5 text-white h-8 rounded-xl cursor-pointer">
+                          Finanças
+                       </Button>
+                    </div>
+                 </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                 <div className="h-80 w-full animate-fade-in">
+                    <ResponsiveContainer width="100%" height="100%">
+                       <AreaChart
+                          data={chartData}
+                          margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                       >
+                          <defs>
+                             <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#d4af37" stopOpacity={0.25}/>
+                                <stop offset="95%" stopColor="#d4af37" stopOpacity={0}/>
+                             </linearGradient>
+                             <linearGradient id="colorMeta" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0.05}/>
+                                <stop offset="95%" stopColor="rgba(255, 255, 255, 0.4)" stopOpacity={0}/>
+                             </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                          <XAxis 
+                             dataKey="name" 
+                             stroke="#71717a" 
+                             fontSize={11} 
+                             tickLine={false} 
+                             axisLine={false} 
+                          />
+                          <YAxis 
+                             stroke="#71717a" 
+                             fontSize={11} 
+                             tickLine={false} 
+                             axisLine={false}
+                             tickFormatter={(value) => `R$ ${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+                          />
+                          <Tooltip 
+                             contentStyle={{ 
+                                backgroundColor: '#121214', 
+                                borderRadius: '12px', 
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                fontFamily: 'sans-serif'
+                             }}
+                             labelStyle={{ color: '#d4af37', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}
+                             itemStyle={{ color: '#e4e4e7', fontSize: '12px' }}
+                             formatter={(value: any) => [formatBRL(value)]}
+                          />
+                          <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} />
+                          <Area 
+                             type="monotone" 
+                             dataKey="Faturamento" 
+                             name="Faturamento Real"
+                             stroke="#d4af37" 
+                             strokeWidth={2}
+                             fillOpacity={1} 
+                             fill="url(#colorFaturamento)" 
+                          />
+                          <Area 
+                             type="monotone" 
+                             dataKey="Meta" 
+                             name="Meta de Faturamento"
+                             stroke="rgba(255, 255, 255, 0.4)" 
+                             strokeWidth={1.5}
+                             strokeDasharray="4 4"
+                             fillOpacity={1} 
+                             fill="url(#colorMeta)" 
+                          />
+                       </AreaChart>
+                    </ResponsiveContainer>
+                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Volume of Appointments Chart */}
+            <Card className="border-white/5 bg-[#0c0c0f] shadow-xl rounded-2xl overflow-hidden">
+              <CardHeader className="border-b border-white/5 pb-4 bg-white/[0.01]">
+                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                       <CardTitle className="text-sm font-heading font-semibold text-white">
+                          Volume de Atendimentos Realizados
+                       </CardTitle>
+                       <p className="text-[11px] text-muted-foreground mt-1">
+                          Monitore graficamente o total de atendimentos concluídos e agendados no decorrer de cada mês.
+                       </p>
+                    </div>
+                    <div className="flex gap-2">
+                       <Button variant="outline" size="sm" onClick={() => navigate('/dashboard/agendamentos')} className="text-xs border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] text-[#D4AF37] h-8 rounded-xl cursor-pointer">
+                          Ver Agenda
+                       </Button>
+                    </div>
+                 </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                 <div className="h-80 w-full animate-fade-in">
+                    <ResponsiveContainer width="100%" height="100%">
+                       <BarChart
+                          data={chartData}
+                          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                       >
+                          <defs>
+                             <linearGradient id="colorAgendamentos" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#d4af37" stopOpacity={0.8}/>
+                                <stop offset="95%" stopColor="#d4af37" stopOpacity={0.15}/>
+                             </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                          <XAxis 
+                             dataKey="name" 
+                             stroke="#71717a" 
+                             fontSize={11} 
+                             tickLine={false} 
+                             axisLine={false} 
+                          />
+                          <YAxis 
+                             stroke="#71717a" 
+                             fontSize={11} 
+                             tickLine={false} 
+                             axisLine={false}
+                             allowDecimals={false}
+                          />
+                          <Tooltip 
+                             contentStyle={{ 
+                                backgroundColor: '#121214', 
+                                borderRadius: '12px', 
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                fontFamily: 'sans-serif'
+                             }}
+                             labelStyle={{ color: '#d4af37', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}
+                             itemStyle={{ color: '#e4e4e7', fontSize: '12px' }}
+                             formatter={(value: any) => [`${value} agendamentos`]}
+                          />
+                          <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} />
+                          <Bar 
+                             dataKey="Agendamentos" 
+                             name="Agendamentos Realizados"
+                             fill="url(#colorAgendamentos)"
+                             radius={[6, 6, 0, 0]}
+                          />
+                       </BarChart>
+                    </ResponsiveContainer>
+                 </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 

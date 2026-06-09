@@ -83,30 +83,6 @@ function removeUndefinedDeep(obj: any): any {
 export default function ChecklistPage() {
   const { salonData, userData } = useAuth();
 
-  if (userData && !canAccessOperationalChecklist(userData.role)) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center p-4 font-sans">
-        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
-          <div className="w-16 h-16 bg-red-600/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertCircle className="w-8 h-8 text-red-500 animate-pulse" />
-          </div>
-          <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Acesso Restrito</h2>
-          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">
-            Seu perfil como <span className="text-primary font-medium">{userData.role === 'receptionist' ? 'Recepcionista' : (userData.role || 'Usuário')}</span> não possui autorização para acessar o Checklist.
-          </p>
-          <div className="flex justify-center">
-            <Button 
-              onClick={() => window.location.href = '/dashboard'}
-              className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10"
-            >
-              Voltar ao Meu Painel
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const [activeOperationalChecklists, setActiveOperationalChecklists] =
     useState<Checklist[]>([]);
   const [operationalRuns, setOperationalRuns] = useState<ChecklistRun[]>([]);
@@ -148,6 +124,30 @@ export default function ChecklistPage() {
 
   const [mobileStep, setMobileStep] = useState<"list" | "evaluation" | "completed">("list");
   const [incompleteValidationCategories, setIncompleteValidationCategories] = useState<string[]>([]);
+
+  if (userData && !canAccessOperationalChecklist(userData.role)) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-4 font-sans">
+        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+          <div className="w-16 h-16 bg-red-600/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <AlertCircle className="w-8 h-8 text-red-500 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Acesso Restrito</h2>
+          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">
+            Seu perfil como <span className="text-primary font-medium">{userData.role === 'receptionist' ? 'Recepcionista' : (userData.role || 'Usuário')}</span> não possui autorização para acessar o Checklist.
+          </p>
+          <div className="flex justify-center">
+            <Button 
+              onClick={() => window.location.href = '/dashboard'}
+              className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10"
+            >
+              Voltar ao Meu Painel
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Memo representing all unique professional + evaluable function targets
   const evaluationTargets = React.useMemo(() => {

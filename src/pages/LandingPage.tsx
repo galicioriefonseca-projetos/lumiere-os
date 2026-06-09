@@ -16,38 +16,6 @@ export default function LandingPage() {
       navigate('/login?source=pwa', { replace: true });
     }
   }, [navigate]);
-  const plans = [
-    {
-      name: "Start",
-      price: "197",
-      description: "Para profissionais independentes e pequenos espaços.",
-      features: ["Até 5 profissionais", "Gestão de clientes e serviços", "Agendamentos básicos", "Checklist diário", "Metas mensais", "App Instalável (PWA)"],
-      planValue: "start"
-    },
-    {
-      name: "Studio",
-      price: "397",
-      description: "O padrão ouro para salões e clínicas em crescimento.",
-      features: ["Até 10 profissionais", "Tudo do plano Start", "Gestão de Categorias", "Histórico de checklists", "Metas por equipe", "Agendamentos completos"],
-      planValue: "studio",
-      popular: true
-    },
-    {
-      name: "Performance",
-      price: "697",
-      description: "Operações robustas com foco em comissionamento e dados.",
-      features: ["Até 20 profissionais", "Tudo do plano Studio", "Gestão de Comissões", "Avaliações", "Gamificação", "Insights IA e Relatórios avançados"],
-      planValue: "performance"
-    },
-    {
-      name: "Network",
-      price: "1497",
-      description: "Redes, franquias e multiunidades.",
-      features: ["Profissionais Ilimitados", "Tudo do plano Performance", "Gestão Multiunidade", "Painel Master de Rede", "Relatórios Executivos", "Suporte prioritário"],
-      planValue: "network"
-    }
-  ];
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b border-white/5 backdrop-blur-md sticky top-0 md:relative z-50">
@@ -99,11 +67,8 @@ export default function LandingPage() {
               transition={{ duration: 0.8, delay: 0.3 }}
               className="flex flex-col sm:flex-row justify-center gap-4 pt-4"
             >
-              <Button size="lg" onClick={() => {
-                const el = document.getElementById('planos');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }} className="rounded-full h-14 px-8 text-base bg-primary hover:bg-gold-400 text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] hover:shadow-[0_0_60px_rgba(212,175,55,0.5)] transition-all">
-                Ver Planos Disponíveis
+              <Button size="lg" onClick={() => navigate("/cadastro")} className="rounded-full h-14 px-8 text-base bg-primary hover:bg-gold-400 text-black shadow-[0_0_40px_rgba(212,175,55,0.3)] hover:shadow-[0_0_60px_rgba(212,175,55,0.5)] transition-all">
+                Solicitar Licença Experimental (7 dias)
               </Button>
               <Button size="lg" variant="outline" onClick={() => {
                 const el = document.getElementById('modulos');
@@ -162,52 +127,48 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Pricing */}
-        <section id="planos" className="py-32 px-6">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-20 space-y-4">
-              <h2 className="text-4xl md:text-5xl font-heading font-light tracking-tight">O Plano Ideal</h2>
-              <p className="text-muted-foreground">Projetado para crescer junto com o seu prestígio.</p>
-            </div>
-            
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {plans.map((plan) => (
-                <div 
-                  key={plan.name} 
-                  className={`relative rounded-2xl p-8 border hover:bg-card/40 transition-colors backdrop-blur-sm flex flex-col ${plan.popular ? 'bg-card/50 border-primary shadow-[0_0_30px_rgba(212,175,55,0.15)] scale-105 z-10' : 'bg-card/20 border-white/10'}`}
-                >
-                  {plan.popular && (
-                    <div className="absolute -top-3 inset-x-0 flex justify-center">
-                      <span className="bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">Mais Escolhido</span>
-                    </div>
-                  )}
-                  <div className="mb-8">
-                    <h3 className="text-xl font-heading mb-2">{plan.name}</h3>
-                    <p className="text-sm text-muted-foreground h-10">{plan.description}</p>
-                  </div>
-                  <div className="mb-8">
-                    <span className="text-sm text-muted-foreground">R$</span>
-                    <span className="text-4xl font-light font-heading tracking-tight">{plan.price}</span>
-                    <span className="text-sm text-muted-foreground">/mês</span>
-                  </div>
-                  
-                  <ul className="space-y-4 mb-8 flex-1">
-                    {plan.features.map(feature => (
-                      <li key={feature} className="flex items-start text-sm font-light">
-                        <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mr-3 mt-0.5" />
-                        <span className="text-muted-foreground">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  
-                  <Button onClick={() => navigate(`/cadastro?plan=${plan.planValue}`)} className={`w-full rounded-full h-12 ${plan.popular ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : 'bg-white/5 hover:bg-white/10 text-white'}`}>
-                    Assinar {plan.name}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+         {/* Consultative Trial Explanation */}
+         <section className="py-24 px-6 relative bg-gradient-to-b from-transparent via-primary/[0.01] to-transparent border-t border-white/5">
+           <div className="max-w-5xl mx-auto space-y-16">
+             <div className="text-center space-y-4">
+               <span className="text-xs uppercase font-semibold text-primary tracking-widest bg-primary/10 px-4 py-1.5 rounded-full">Licenciamento Inteligente</span>
+               <h2 className="text-4xl md:text-5xl font-heading font-light tracking-tight text-white font-sans">Como obter seu teste de 7 dias?</h2>
+               <p className="text-muted-foreground max-w-2xl mx-auto font-light leading-relaxed">
+                 Nossa tecnologia analisa o tamanho e as ambições do seu estabelecimento para liberar os recursos ideais de forma personalizada, sem fricção ou burocracia.
+               </p>
+             </div>
+
+             <div className="grid md:grid-cols-3 gap-8">
+               <div className="p-8 rounded-3xl bg-card/25 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
+                 <div className="text-3xl font-heading text-primary font-light">01</div>
+                 <h3 className="text-lg font-heading text-white">Diagnóstico Rápido</h3>
+                 <p className="text-sm text-muted-foreground font-light leading-relaxed">
+                   Informe o tamanho da sua equipe e os objetivos de excelência que seu salão de beleza ou clínica deseja alcançar.
+                 </p>
+               </div>
+               <div className="p-8 rounded-3xl bg-card/25 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
+                 <div className="text-3xl font-heading text-primary font-light">02</div>
+                 <h3 className="text-lg font-heading text-white">Liberação Customizada</h3>
+                 <p className="text-sm text-muted-foreground font-light leading-relaxed">
+                   Nossa inteligência calcula e pré-configura a plataforma sob medida para o perfil e as operações do seu negócio.
+                 </p>
+               </div>
+               <div className="p-8 rounded-3xl bg-card/25 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
+                 <div className="text-3xl font-heading text-primary font-light">03</div>
+                 <h3 className="text-lg font-heading text-white">Acesso Pleno</h3>
+                 <p className="text-sm text-muted-foreground font-light leading-relaxed">
+                   Utilize todas as ferramentas premium, assistente Lumière AI, comissões e checklists com suporte dedicado de boas-vindas.
+                 </p>
+               </div>
+             </div>
+
+             <div className="text-center">
+               <button onClick={() => navigate("/cadastro")} className="rounded-full h-14 px-10 text-base bg-primary hover:bg-gold-400 text-black font-semibold shadow-[0_0_40px_rgba(212,175,55,0.3)] hover:shadow-[0_0_60px_rgba(212,175,55,0.5)] transition-all cursor-pointer">
+                 Iniciar meu Diagnóstico de 7 Dias
+               </button>
+             </div>
+           </div>
+         </section>
 
         {/* Upcoming Updates */}
         <section className="py-24 px-6 border-t border-white/5 bg-gradient-to-b from-black/0 to-primary/[0.02]">

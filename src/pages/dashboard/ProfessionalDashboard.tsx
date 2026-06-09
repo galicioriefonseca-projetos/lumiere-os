@@ -49,6 +49,7 @@ export default function ProfessionalDashboard() {
   const [myGoals, setMyGoals] = useState<ProfessionalGoal[]>([]);
   const [selectedEval, setSelectedEval] = useState<ChecklistRun | null>(null);
   const [agendaTab, setAgendaTab] = useState<"today" | "all">("today");
+  const [useBusinessDays, setUseBusinessDays] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState('');
@@ -346,7 +347,6 @@ export default function ProfessionalDashboard() {
   const displayAppointments = agendaTab === "today" ? todayAppointments : myAppointments;
 
   // Active Goal for current month
-  const [useBusinessDays, setUseBusinessDays] = useState(false);
   const currentGoalRaw = myGoals.find(g => g.month === currentMonthStr);
   const currentGoal = currentGoalRaw ? normalizeGoal(currentGoalRaw, currentMonthEarnings) : undefined;
   

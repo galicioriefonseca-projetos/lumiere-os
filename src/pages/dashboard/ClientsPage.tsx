@@ -6,6 +6,7 @@ import { Client } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchBar } from '@/components/ui/search-bar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -149,15 +150,13 @@ export default function ClientsPage() {
         </Dialog>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input 
-          placeholder="Buscar por nome ou telefone..." 
-          className="pl-9 bg-card border-border"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+      <SearchBar 
+        value={search}
+        onChange={setSearch}
+        placeholder="Buscar por nome ou telefone..." 
+        containerClassName="max-w-sm"
+        className="bg-card border-border"
+      />
 
       {filteredClients.length === 0 ? (
         <Card className="border-border bg-card/50">

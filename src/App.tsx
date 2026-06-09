@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Toaster } from '@/components/ui/sonner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import OfflineIndicator from './components/OfflineIndicator';
 
 // Lightweight pages (loaded immediately)
 import LandingPage from './pages/LandingPage';
@@ -85,6 +86,7 @@ function App() {
         </Suspense>
         <Toaster theme="dark" />
         <PWAInstallPrompt />
+        <OfflineIndicator />
       </BrowserRouter>
     </AuthProvider>
   );
