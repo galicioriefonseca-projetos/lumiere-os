@@ -417,7 +417,13 @@ export default function DashboardHome() {
                    </div>
                    <span className="text-xs font-semibold text-slate-200">Checklists</span>
                 </Link>
-                <button onClick={() => setIsReportsDialogOpen(true)} className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group w-full">
+                <button onClick={() => {
+                  if (salonData?.plan === 'founder') {
+                    navigate('/dashboard/relatorios');
+                  } else {
+                    setIsReportsDialogOpen(true);
+                  }
+                }} className="bg-[#0c0c0f] hover:bg-gradient-to-b hover:from-[#131318] hover:to-[#0c0c0f] transition-all duration-300 border border-white/5 hover:border-[#D4AF37]/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-lg group w-full">
                    <div className="p-3 bg-[#D4AF37]/5 rounded-2xl border border-white/5 group-hover:bg-[#D4AF37]/10 group-hover:border-[#D4AF37]/30 transition-all duration-300">
                      <FileText className="w-5 h-5 text-[#D4AF37]" />
                    </div>

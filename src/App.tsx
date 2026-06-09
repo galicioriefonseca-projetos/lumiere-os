@@ -25,6 +25,7 @@ const ChecklistPage = React.lazy(() => import('./pages/dashboard/ChecklistPage')
 const BillingPage = React.lazy(() => import('./pages/dashboard/BillingPage'));
 const CommissionsPage = React.lazy(() => import('./pages/dashboard/CommissionsPage'));
 const AccountPage = React.lazy(() => import('./pages/dashboard/AccountPage'));
+const ReportsPage = React.lazy(() => import('./pages/dashboard/ReportsPage'));
 const MasterPanel = React.lazy(() => import('./pages/MasterPanel'));
 const OnboardingTeam = React.lazy(() => import('./pages/onboarding/OnboardingTeam'));
 const OnboardingServices = React.lazy(() => import('./pages/onboarding/OnboardingServices'));
@@ -71,6 +72,7 @@ function App() {
               <Route path="agendamentos" element={<AppointmentsPage />} />
               <Route path="metas" element={<GoalsPage />} />
               <Route path="comissoes" element={<CommissionsPage />} />
+              <Route path="relatorios" element={<ReportsPage />} />
               <Route path="minha-conta" element={<AccountPage />} />
               <Route path="checklist" element={<ChecklistPage />} />
               <Route path="assinatura" element={<BillingPage />} />
