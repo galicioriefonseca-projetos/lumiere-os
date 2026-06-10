@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, getAuth } from 'firebase/auth';
 import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 
@@ -14,12 +14,20 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 };
 
-export const app = firebaseConfig.apiKey ? initializeApp(firebaseConfig) : null;
+export const app = firebaseConfig.apiKey ? (getApps().length === 0 ? initializeApp(firebaseConfig) : getApp()) : null;
 export let auth: any = null;
 try {
-  auth = app ? getAuth(app) : null;
+  if (app) {
+    auth = initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+    });
+  }
 } catch (e) {
-  console.error("Failed to initialize Firebase Auth:", e);
+  try {
+    auth = app ? getAuth(app) : null;
+  } catch (err) {
+    console.error("Failed to initialize Firebase Auth:", err);
+  }
 }
 export let db: any = null;
 try {

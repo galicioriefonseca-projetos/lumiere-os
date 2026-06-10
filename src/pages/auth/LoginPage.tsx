@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Sparkles, ArrowLeft, Chrome } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithCustomToken } from 'firebase/auth';
 import { toast } from 'sonner';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
@@ -46,8 +46,47 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const user = userCredential.user;
+      let user;
+      try {
+        console.log("[LumièreAuth] Tentando login direto...");
+        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        user = userCredential.user;
+      } catch (directErr: any) {
+        console.warn("[LumièreAuth] Falha no login direto:", directErr);
+        
+        // Se der erro de rede (Ex: bloqueio de dns, adblock, carrier firewall, etc), usar o proxy do servidor
+        if (
+          directErr.code === 'auth/network-request-failed' || 
+          directErr.message?.includes('network-request-failed') ||
+          directErr.code === 'auth/internal-error'
+        ) {
+          console.log("[LumièreAuth] Ativando fallback de login por proxy de servidor...");
+          const proxyResp = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email: email.trim(),
+              password: password,
+            }),
+          });
+          
+          if (!proxyResp.ok) {
+            const proxyErrData = await proxyResp.json();
+            const thrownError = new Error(proxyErrData.error || "Erro de proxy no login.");
+            (thrownError as any).code = proxyErrData.code || "auth/unknown";
+            throw thrownError;
+          }
+          
+          const { customToken } = await proxyResp.json();
+          const userCredential = await signInWithCustomToken(auth, customToken);
+          user = userCredential.user;
+          console.log("[LumièreAuth] Login realizado com sucesso via proxy.");
+        } else {
+          throw directErr;
+        }
+      }
 
       // Clear any dev simulated role to prevent overriding logging user's role
       sessionStorage.removeItem('demo_role');
