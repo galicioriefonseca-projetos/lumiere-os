@@ -48,3 +48,10 @@ export const getAdminAuth = () => {
   const firebaseAdmin = (admin as any).default || admin;
   return firebaseAdmin.auth(appInstance);
 };
+
+export const getAdminMessaging = () => {
+  const appInstance = getFirebaseAdmin();
+  const firebaseAdmin = (admin as any).default || admin;
+  return firebaseAdmin.messaging(appInstance);
+};
+

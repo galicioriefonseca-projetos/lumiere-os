@@ -184,6 +184,13 @@ export default function DashboardLayout() {
           ]
         },
         {
+          category: 'Supervisão & Qualidade',
+          items: [
+            { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
+            { name: 'Metas', href: '/dashboard/metas', icon: Target },
+          ]
+        },
+        {
           category: 'Serviços',
           items: [
             { name: 'Serviços do Salão', href: '/dashboard/servicos', icon: Scissors },

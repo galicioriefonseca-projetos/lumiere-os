@@ -70,6 +70,7 @@ function App() {
               <Route path="servicos" element={<ServicesPage />} />
               <Route path="categorias" element={<CategoriesPage />} />
               <Route path="clientes" element={<ClientsPage />} />
+              <Route path="crm" element={<ClientsPage />} />
               <Route path="agendamentos" element={<AppointmentsPage />} />
               <Route path="metas" element={<GoalsPage />} />
               <Route path="comissoes" element={<CommissionsPage />} />

@@ -3,10 +3,11 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import { getFirebaseAdmin, getAdminDb, getAdminAuth } from "./firebaseAdmin";
+import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging } from "./firebaseAdmin";
 import createSubscription from "../api/mercadopago/create-subscription";
 import webhookMP from "../api/mercadopago/webhook";
 import healthMP from "../api/mercadopago/health";
+
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -110,6 +111,105 @@ async function startServer() {
   app.post("/api/mercadopago/create-subscription", createSubscription);
   app.post("/api/mercadopago/webhook", webhookMP);
   app.get("/api/mercadopago/health", healthMP);
+
+  // Rota de envio de Notificações Push via Firebase Cloud Messaging para Profissionais
+  app.post("/api/send-appointment-push", async (req, res) => {
+    try {
+      const { salonId, appointmentId, professionalId, clientName, serviceName, date, time, action } = req.body;
+      
+      if (!salonId || !professionalId) {
+        return res.status(400).json({ error: "salonId e professionalId são obrigatórios." });
+      }
+
+      console.log(`[Push Notification Backend] Enviando alerta para o profissional ${professionalId} no salão ${salonId}...`);
+
+      const adminDb = getAdminDb();
+      let uniqueTokens: string[] = [];
+
+      // 1. Procurar tokens FCM no cadastro do profissional do salão
+      try {
+        const proDocRef = adminDb.collection("salons").doc(salonId).collection("professionals").doc(professionalId);
+        const proDoc = await proDocRef.get();
+        if (proDoc.exists) {
+          const data = proDoc.data();
+          if (data?.fcmToken) uniqueTokens.push(data.fcmToken);
+          if (Array.isArray(data?.fcmTokens)) {
+            uniqueTokens = [...uniqueTokens, ...data.fcmTokens];
+          }
+        }
+      } catch (err) {
+        console.warn("[Push Notification Backend] Falha ao ler documento do profissional do salão:", err);
+      }
+
+      // 2. Procurar tokens FCM no cadastro global '/users'
+      try {
+        const userDocRef = adminDb.collection("users").doc(professionalId);
+        const userDoc = await userDocRef.get();
+        if (userDoc.exists) {
+          const data = userDoc.data();
+          if (data?.fcmToken) uniqueTokens.push(data.fcmToken);
+          if (Array.isArray(data?.fcmTokens)) {
+            uniqueTokens = [...uniqueTokens, ...data.fcmTokens];
+          }
+        }
+      } catch (err) {
+        console.warn("[Push Notification Backend] Falha ao ler documento global do usuário:", err);
+      }
+
+      // Filtrar e desduplicar tokens nulos ou vazios
+      const activeTokens = Array.from(new Set(uniqueTokens.filter(t => typeof t === "string" && t.trim().length > 0)));
+
+      if (activeTokens.length === 0) {
+        console.log(`[Push Notification Backend] Nenhum token registrado para o profissional ${professionalId}.`);
+        return res.json({ success: false, reason: "no_registered_tokens_found" });
+      }
+
+      console.log(`[Push Notification Backend] Disparando para ${activeTokens.length} tokens ativos...`);
+
+      const title = action === "cancel" 
+        ? "Agendamento Cancelado 🛑" 
+        : "Novo Agendamento Confirmado! 📅";
+      const body = action === "cancel"
+        ? `${clientName || "Cliente"} cancelou o serviço de ${serviceName || "Atendimento"} do dia ${date || ""} às ${time || ""}.`
+        : `${clientName || "Cliente"} agendou ${serviceName || "Atendimento"} para o dia ${date || ""} às ${time || ""}.`;
+
+      const payload = {
+        title,
+        body,
+      };
+
+      const messaging = getAdminMessaging();
+
+      // Envia notificação por token de forma concorrente e resiliente
+      const sendPromises = activeTokens.map((token) => 
+        messaging.send({
+          token,
+          notification: payload,
+          data: {
+            appointmentId: appointmentId || "",
+            click_action: "/dashboard?tab=agenda",
+          },
+          webpush: {
+            notification: {
+              badge: "/icons/icon-192x192.png",
+              icon: "/icons/icon-192x192.png",
+            }
+          }
+        }).catch((err: any) => {
+          console.warn(`[Push Notification Backend] Falha ao disparar para o token ${token.substring(0, 8)}...:`, err);
+          return null;
+        })
+      );
+
+      await Promise.all(sendPromises);
+
+      return res.json({ success: true, tokensNotifiedCount: activeTokens.length });
+    } catch (error: any) {
+      console.error("[Push Notification Backend] Erro crítico ao processar push notification:", error);
+      return res.status(500).json({ error: error?.message || "Erro crítico no servidor de push" });
+    }
+  });
+
 
   // Helper to isolate Developer API Key authentication by unsetting GCP ADC environment variables temporarily
   async function withDeveloperAuth<T>(apiKey: string, fn: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
@@ -246,6 +346,90 @@ Use tom em português (do Brasil). Vá direto para a análise executiva.`;
       console.error('Erro ao gerar insights de equipe do Gemini:', err);
       return res.status(500).json({
         error: err?.message || 'Falha de comunicação com o servidor Lumière AI.'
+      });
+    }
+  });
+
+  // API Route para o Parser de Catálogos de Serviço e Produtos em PDF com IA
+  app.post("/api/parse-catalog-pdf", async (req, res) => {
+    try {
+      const { pdfBase64, salonName } = req.body;
+      if (!pdfBase64) {
+        return res.status(400).json({ error: "O arquivo PDF (Base64) é obrigatório." });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
+        return res.status(400).json({ 
+          error: "Inteligência Artificial Não Configurada: Para importar catálogos em formato PDF, configure sua 'GEMINI_API_KEY' na aba Secrets (Configurações)."
+        });
+      }
+
+      const result = await withDeveloperAuth(apiKey, async (ai) => {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: [
+            {
+              inlineData: {
+                data: pdfBase64.split(',').pop(), // remove data URI headers
+                mimeType: "application/pdf"
+              }
+            },
+            {
+              text: `Analise o arquivo PDF de catálogo ou tabela de preços do estabelecimento "${salonName || 'Cliente'}". 
+Identifique e extraia TODOS os serviços (cortes, colorações, tratamentos) e produtos (shampoo, escova, máscara, cremes home care) contidos nele.
+
+Regras de Extração e Conversão de Campos:
+1. "name": Nome claro do serviço ou produto (ex: "Corte Feminino", "Shampoo L'Oréal Liss Unlimited").
+2. "category": Categoria elegante em português, por ex: "Cabelo", "Unha", "Cílios", "Sobrancelhas", "Massagem", "Maquiagem", "Estética", "Venda de Produtos", "Shampoo & Condicionador", "Finalizadores", "Cuidado Facial".
+3. "price": Preço como número decimal positivo. Se for sob consulta/grátis, retorne 0. Se expressar uma variação (Ex: de R$ 150 a R$ 200), defina o valor médio ou mínimo.
+4. "priceType": Identifique se o preço é "fixed" (preço fixo), "from" (a partir de) ou "variable" (sob avaliação/variável). Se o texto contiver "a partir de", comece com "from". Se não disser o preço, use "variable".
+5. "type": Classifique detalhadamente entre "service" (serviço prestado no salão) ou "product" (produto físico de revenda).
+6. "durationMinutes": Duração em minutos lógicos para serviços (Exemplo: Manicure = 45, Corte = 60, Escova = 60, Tintura = 90). Caso seja classificado como "product", "durationMinutes" deve ser obrigatoriamente 0.
+7. "description": Breve descrição refinada de uma frase para o cliente.
+
+Retorne estritamente o JSON estruturado em conformidade com o schema.`
+            }
+          ],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "OBJECT",
+              properties: {
+                items: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      name: { type: "STRING" },
+                      category: { type: "STRING" },
+                      price: { type: "NUMBER" },
+                      type: { type: "STRING", description: "logical 'service' or 'product'" },
+                      priceType: { type: "STRING", description: "logical 'fixed', 'from', 'variable'" },
+                      durationMinutes: { type: "INTEGER", description: "Logical time, or 0 if product" },
+                      description: { type: "STRING" }
+                    },
+                    required: ["name", "category", "price", "type", "priceType", "durationMinutes"]
+                  }
+                }
+              },
+              required: ["items"]
+            }
+          }
+        });
+
+        if (response && response.text) {
+          return JSON.parse(response.text.trim());
+        } else {
+          throw new Error('Retorno sem conteúdo do serviço Lumière AI.');
+        }
+      });
+
+      return res.json(result);
+    } catch (err: any) {
+      console.error('Erro ao processar catálogo pelo Gemini PDF Reader:', err);
+      return res.status(500).json({
+        error: err?.message || 'Falha de processamento via Inteligência Artificial.'
       });
     }
   });

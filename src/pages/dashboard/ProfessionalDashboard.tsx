@@ -31,9 +31,12 @@ import {
   Target,
   Filter,
   Info,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
 import { calculateGoalProgress, normalizeGoal } from "../../lib/goals";
+import { requestAndRegisterNotificationPermission } from "../../lib/pushNotifications";
 
 
 export default function ProfessionalDashboard() {
@@ -56,6 +59,44 @@ export default function ProfessionalDashboard() {
   const [editPhone, setEditPhone] = useState('');
   const [editPrimary, setEditPrimary] = useState('');
   const [editCustomPrimary, setEditCustomPrimary] = useState('');
+  const [pushStatus, setPushStatus] = useState<'granted' | 'default' | 'denied' | 'unsupported'>('default');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (!('Notification' in window)) {
+        setPushStatus('unsupported');
+      } else {
+        setPushStatus(Notification.permission as any);
+      }
+    }
+  }, [activeTab]);
+
+  const handleEnablePush = async () => {
+    if (!salonData || !userData) {
+      toast.error("Erro interno: dados de sessão ausentes.");
+      return;
+    }
+    try {
+      const token = await requestAndRegisterNotificationPermission(salonData.id, userData.id);
+      if (token) {
+        setPushStatus('granted');
+        toast.success("Notificações push ativadas com sucesso!");
+      } else {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          setPushStatus(Notification.permission as any);
+        }
+        if (Notification.permission === 'denied') {
+          toast.error("Permissão de notificação negada pelo navegador. Ative as permissões nas configurações do seu navegador para receber alertas.");
+        } else {
+          toast.error("Não foi possível registrar o token de notificações. Verifique as credenciais do Firebase.");
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Ocorreu um erro ao configurar notificações push.");
+    }
+  };
+
   const [editExtras, setEditExtras] = useState<string[]>([]);
   const [editCustomExtras, setEditCustomExtras] = useState('');
 
@@ -1099,157 +1140,228 @@ export default function ProfessionalDashboard() {
 
       {/* ==================== SCREEN: MEU PERFIL ==================== */}
       {activeTab === 'perfil' && (
-        <Card className="border-border bg-card/50 max-w-2xl mx-auto">
-          <CardHeader>
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <User className="w-4 h-4 text-[#D4AF37]" /> Meu Perfil Profissional
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Mantenha seus dados de contato e especialidades de atendimento sempre atualizados.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6">
-            <form onSubmit={handleSaveProfile} className="space-y-6">
-              
-              {/* Name & Phone inputs group */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="perfName" className="text-xs font-semibold text-zinc-300">Meu Nome Completo <span className="text-[#D4AF37]">*</span></Label>
-                  <Input 
-                    id="perfName" 
-                    value={editName} 
-                    onChange={(e) => setEditName(e.target.value)} 
-                    placeholder="Seu nome por extenso"
-                    className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="perfPhone" className="text-xs font-semibold text-zinc-300">Celular (Opcional)</Label>
-                  <Input 
-                    id="perfPhone" 
-                    value={editPhone} 
-                    onChange={(e) => setEditPhone(e.target.value)} 
-                    placeholder="Ex: (00) 00000-0000"
-                    className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50"
-                  />
-                </div>
-              </div>
-
-              {/* Email (Read Only Warning) */}
-              <div className="space-y-1 bg-zinc-950/40 p-3 rounded-xl border border-white/5">
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Conta Atrelada (E-mail)</span>
-                <span className="text-xs text-zinc-300 font-mono block select-none">{myProfile.email}</span>
-                <p className="text-[9px] text-zinc-500">Para alterar seu e-mail cadastrado, entre em contato com seu administrador.</p>
-              </div>
-
-              {/* Primary function selection dropdown */}
-              <div className="space-y-2">
-                <Label htmlFor="perfPrimary" className="text-xs font-semibold text-zinc-300">Função Principal <span className="text-[#D4AF37]">*</span></Label>
-                <div className="relative">
-                  <select
-                    id="perfPrimary"
-                    value={editPrimary}
-                    onChange={(e) => setEditPrimary(e.target.value)}
-                    required
-                    className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-11 px-3 text-xs focus:outline-none focus:border-primary appearance-none cursor-pointer"
-                  >
-                    <option value="">-- Escolha sua função principal --</option>
-                    {PROFESSIONAL_SPECIALTIES.map((spec) => (
-                      <option key={spec} value={spec}>{spec}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">
-                    ▼
-                  </div>
-                </div>
-
-                {editPrimary === 'Outro' && (
-                  <div className="pt-2">
-                    <Label htmlFor="perfCustomPrimary" className="text-[10px] text-zinc-400">Escreva qual é o seu cargo/função principal:</Label>
-                    <Input
-                      id="perfCustomPrimary"
-                      value={editCustomPrimary}
-                      onChange={(e) => setEditCustomPrimary(e.target.value)}
-                      placeholder="Ex: Cabeleireira Visagista"
-                      className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50 mt-1"
-                      required
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Additional Functions Checkboxes Grid */}
-              <div className="space-y-2 pt-1">
-                <Label className="text-xs font-semibold text-zinc-300">Funções Adicionais / Especialidades Extras</Label>
-                <p className="text-[11px] text-zinc-400 font-light leading-relaxed">
-                  Marque todas as outras funções que você realiza além da sua principal. No LumiereOS, você usa um único cadastro para todas as suas frentes.
-                </p>
+        <div className="space-y-6 max-w-2xl mx-auto">
+          <Card className="border-border bg-card/50">
+            <CardHeader>
+              <CardTitle className="text-base font-medium flex items-center gap-2">
+                <User className="w-4 h-4 text-[#D4AF37]" /> Meu Perfil Profissional
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Mantenha seus dados de contato e especialidades de atendimento sempre atualizados.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6">
+              <form onSubmit={handleSaveProfile} className="space-y-6">
                 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-52 overflow-y-auto p-3 bg-black/40 border border-[#ffffff05] rounded-2xl scrollbar-thin">
-                  {PROFESSIONAL_SPECIALTIES.filter(s => s !== editPrimary).map((spec) => {
-                    const isChecked = editExtras.includes(spec);
-                    return (
-                      <button
-                        key={spec}
-                        type="button"
-                        onClick={() => {
-                          setEditExtras(prev =>
-                            prev.includes(spec) ? prev.filter(p => p !== spec) : [...prev, spec]
-                          );
-                        }}
-                        className={`flex items-center gap-2.5 p-2 rounded-xl text-left text-xs transition-all border ${
-                          isChecked 
-                            ? 'bg-primary/10 border-primary/45 text-primary font-semibold shadow-[0_2px_10px_rgba(212,175,55,0.05)]' 
-                            : 'bg-black/30 border-[#ffffff05] text-zinc-400 hover:border-white/10 hover:text-zinc-200'
-                        }`}
-                        style={{ minHeight: '44px' }}
-                      >
-                        <div className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${isChecked ? 'bg-primary border-primary text-black' : 'border-zinc-500'} shrink-0`}>
-                          {isChecked && <CheckCircle className="w-3 h-3 stroke-[2.5]" />}
-                        </div>
-                        <span className="truncate leading-none">{spec}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {editExtras.includes('Outro') && (
-                  <div className="pt-2">
-                    <Label htmlFor="perfCustomExtras" className="text-[10px] text-zinc-400">Escreva suas outras funções adicionais separadas por vírgula:</Label>
-                    <Input
-                      id="perfCustomExtras"
-                      value={editCustomExtras}
-                      onChange={(e) => setEditCustomExtras(e.target.value)}
-                      placeholder="Ex: Escovista, Designer de Cargas"
-                      className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50 mt-1"
+                {/* Name & Phone inputs group */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="perfName" className="text-xs font-semibold text-zinc-300">Meu Nome Completo <span className="text-[#D4AF37]">*</span></Label>
+                    <Input 
+                      id="perfName" 
+                      value={editName} 
+                      onChange={(e) => setEditName(e.target.value)} 
+                      placeholder="Seu nome por extenso"
+                      className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50"
                       required
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="perfPhone" className="text-xs font-semibold text-zinc-300">Celular (Opcional)</Label>
+                    <Input 
+                      id="perfPhone" 
+                      value={editPhone} 
+                      onChange={(e) => setEditPhone(e.target.value)} 
+                      placeholder="Ex: (00) 00000-0000"
+                      className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Email (Read Only Warning) */}
+                <div className="space-y-1 bg-zinc-950/40 p-3 rounded-xl border border-white/5">
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Conta Atrelada (E-mail)</span>
+                  <span className="text-xs text-zinc-300 font-mono block select-none">{myProfile?.email}</span>
+                  <p className="text-[9px] text-zinc-500">Para alterar seu e-mail cadastrado, entre em contato com seu administrador.</p>
+                </div>
+
+                {/* Primary function selection dropdown */}
+                <div className="space-y-2">
+                  <Label htmlFor="perfPrimary" className="text-xs font-semibold text-zinc-300">Função Principal <span className="text-[#D4AF37]">*</span></Label>
+                  <div className="relative">
+                    <select
+                      id="perfPrimary"
+                      value={editPrimary}
+                      onChange={(e) => setEditPrimary(e.target.value)}
+                      required
+                      className="w-full bg-black/40 border border-white/10 text-white rounded-xl h-11 px-3 text-xs focus:outline-none focus:border-primary appearance-none cursor-pointer"
+                    >
+                      <option value="">-- Escolha sua função principal --</option>
+                      {PROFESSIONAL_SPECIALTIES.map((spec) => (
+                        <option key={spec} value={spec}>{spec}</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">
+                      ▼
+                    </div>
+                  </div>
+
+                  {editPrimary === 'Outro' && (
+                    <div className="pt-2">
+                      <Label htmlFor="perfCustomPrimary" className="text-[10px] text-zinc-400">Escreva qual é o seu cargo/função principal:</Label>
+                      <Input
+                        id="perfCustomPrimary"
+                        value={editCustomPrimary}
+                        onChange={(e) => setEditCustomPrimary(e.target.value)}
+                        placeholder="Ex: Cabeleireira Visagista"
+                        className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50 mt-1"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Additional Functions Checkboxes Grid */}
+                <div className="space-y-2 pt-1">
+                  <Label className="text-xs font-semibold text-zinc-300">Funções Adicionais / Especialidades Extras</Label>
+                  <p className="text-[11px] text-zinc-400 font-light leading-relaxed">
+                    Marque todas as outras funções que você realiza além da sua principal. No LumiereOS, você usa um único cadastro para todas as suas frentes.
+                  </p>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-52 overflow-y-auto p-3 bg-black/40 border border-[#ffffff05] rounded-2xl scrollbar-thin">
+                    {PROFESSIONAL_SPECIALTIES.filter(s => s !== editPrimary).map((spec) => {
+                      const isChecked = editExtras.includes(spec);
+                      return (
+                        <button
+                          key={spec}
+                          type="button"
+                          onClick={() => {
+                            setEditExtras(prev =>
+                              prev.includes(spec) ? prev.filter(p => p !== spec) : [...prev, spec]
+                            );
+                          }}
+                          className={`flex items-center gap-2.5 p-2 rounded-xl text-left text-xs transition-all border ${
+                            isChecked 
+                              ? 'bg-primary/10 border-primary/45 text-primary font-semibold shadow-[0_2px_10px_rgba(212,175,55,0.05)]' 
+                              : 'bg-black/30 border-[#ffffff05] text-zinc-400 hover:border-white/10 hover:text-zinc-200'
+                          }`}
+                          style={{ minHeight: '44px' }}
+                        >
+                          <div className={`w-4 h-4 rounded flex items-center justify-center border text-[10px] ${isChecked ? 'bg-primary border-primary text-black' : 'border-zinc-500'} shrink-0`}>
+                            {isChecked && <CheckCircle className="w-3 h-3 stroke-[2.5]" />}
+                          </div>
+                          <span className="truncate leading-none">{spec}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {editExtras.includes('Outro') && (
+                    <div className="pt-2">
+                      <Label htmlFor="perfCustomExtras" className="text-[10px] text-zinc-400">Escreva suas outras funções adicionais separadas por vírgula:</Label>
+                      <Input
+                        id="perfCustomExtras"
+                        value={editCustomExtras}
+                        onChange={(e) => setEditCustomExtras(e.target.value)}
+                        placeholder="Ex: Escovista, Designer de Cargas"
+                        className="bg-black/40 border-white/10 text-white rounded-xl h-11 text-xs focus:border-[#D4AF37]/50 mt-1"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Submit Buttons footer */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                  <Button
+                    type="submit"
+                    disabled={isSaving}
+                    className="bg-[#D4AF37] hover:bg-[#b08f2e] text-black font-semibold h-11 px-6 rounded-xl text-xs flex items-center justify-center gap-2 transition-all"
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                      </>
+                    ) : (
+                      "Salvar Dados do Perfil"
+                    )}
+                  </Button>
+                </div>
+
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Core Feature Card for Push Notifications */}
+          <Card className="border-border bg-card/50 overflow-hidden shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-[#D4AF37]" /> Notificações Push Essenciais
+                </span>
+                {pushStatus === 'granted' ? (
+                  <span className="text-[10px] bg-green-500/10 border border-green-500/20 text-green-400 px-2.5 py-0.5 rounded-full uppercase font-bold font-mono">
+                    Ativo
+                  </span>
+                ) : pushStatus === 'denied' ? (
+                  <span className="text-[10px] bg-red-500/10 border border-red-500/20 text-red-400 px-2.5 py-0.5 rounded-full uppercase font-bold font-mono">
+                    Bloqueado
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-zinc-500/15 border border-zinc-500/25 text-zinc-400 px-2.5 py-0.5 rounded-full uppercase font-bold font-mono">
+                    Inativo
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Receba alertas instantâneos no seu celular ou computador sempre que um novo agendamento for confirmado para você no salão.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-xs text-zinc-300 space-y-2 leading-relaxed font-sans font-light">
+                <p>
+                  O LumièreOS utiliza a tecnologia segura do Firebase Cloud Messaging (FCM) integrada para enviar alertas diretos em tempo real ao seu navegador. Assim, você nunca perde um horário!
+                </p>
+                {pushStatus === 'denied' && (
+                  <p className="text-xs font-normal text-red-300 bg-red-950/20 border border-red-900/30 p-3 rounded-xl flex items-start gap-2 leading-relaxed">
+                    <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                    Você recusou anteriormente a permissão de notificações deste site. Clique no ícone de "cadeado" ou "configurações" no seu navegador ao lado do endereço do site (URL) e mude para "Permitir" para restaurar os alertas.
+                  </p>
+                )}
+                {pushStatus === 'unsupported' && (
+                  <p className="text-xs font-semibold text-zinc-400 bg-zinc-950/40 p-3 rounded-xl">
+                    Seu navegador ou dispositivo atual não oferece suporte à API Push nativa (no iOS, adicione o LumièreOS à tela de início como aplicativo PWA para ativar o recurso completo!).
+                  </p>
                 )}
               </div>
 
-              {/* Submit Buttons footer */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
-                <Button
-                  type="submit"
-                  disabled={isSaving}
-                  className="bg-[#D4AF37] hover:bg-[#b08f2e] text-black font-semibold h-11 px-6 rounded-xl text-xs flex items-center justify-center gap-2 transition-all"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
-                    </>
-                  ) : (
-                    "Salvar Dados do Perfil"
-                  )}
-                </Button>
-              </div>
-
-            </form>
-          </CardContent>
-        </Card>
+              {pushStatus !== 'unsupported' && (
+                <div className="pt-2">
+                  <Button
+                    onClick={handleEnablePush}
+                    disabled={pushStatus === 'granted'}
+                    className={`w-full font-semibold rounded-xl text-xs h-11 flex items-center justify-center gap-2 transition-all ${
+                      pushStatus === 'granted'
+                        ? 'bg-zinc-800 border border-zinc-700/50 text-zinc-500 cursor-default'
+                        : 'bg-gradient-to-r from-[#D4AF37] to-[#b08f2e] hover:from-[#b08f2e] hover:to-[#917524] text-black shadow-md shadow-amber-500/5 cursor-pointer'
+                    }`}
+                  >
+                    {pushStatus === 'granted' ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-green-400" /> Alertas Push Ativos neste Dispositivo
+                      </>
+                    ) : (
+                      <>
+                        <Bell className="w-4 h-4 animate-bounce" /> Ativar Alertas Push do LumièreOS
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
     </div>

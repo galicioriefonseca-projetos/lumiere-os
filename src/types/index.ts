@@ -133,6 +133,7 @@ export interface Service {
   description?: string;
   isActive: boolean;
   source?: 'template' | 'custom' | string;
+  type?: 'service' | 'product';
   createdAt: number;
   updatedAt: number;
 }
@@ -145,6 +146,36 @@ export interface Client {
   notes?: string;
   createdAt: number;
   updatedAt: number;
+
+  // CRM fields
+  crmStage?: 'new' | 'in_service' | 'scheduled' | 'follow_up' | 'future_return' | 'active' | 'inactive_lost';
+  source?: 'instagram' | 'google' | 'indication' | 'whatsapp' | 'walk_in' | 'other';
+  sourceLabel?: string;
+  responsibleId?: string;
+  responsibleName?: string;
+  lastContactAt?: string;
+  nextActionAt?: string;
+  nextActionType?: 'call' | 'whatsapp' | 'schedule' | 'return' | 'note' | 'other';
+  tags?: string[];
+  lifetimeValue?: number;
+  totalAppointments?: number;
+  totalSpent?: number;
+  status?: 'active' | 'inactive';
+  createdBy?: string;
+  updatedBy?: string;
+  archived?: boolean;
+}
+
+export interface ClientHistory {
+  id: string;
+  type: 'created' | 'stage_changed' | 'note_added' | 'contact_logged' | 'appointment_created' | 'data_updated';
+  title: string;
+  description: string;
+  previousValue?: string;
+  newValue?: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: number;
 }
 
 export interface Appointment {

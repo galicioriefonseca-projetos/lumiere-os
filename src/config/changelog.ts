@@ -9,6 +9,21 @@ export interface ChangelogItem {
 
 export const CHANGELOG: ChangelogItem[] = [
   {
+    version: '1.6.1-founder',
+    date: 'Junho de 2026',
+    title: 'CRM de Clientes e Funil Visível',
+    description: 'Transformação completa da seção de Clientes em um CRM moderno, prático e visual. Fluxo Kanban integrado com arrastar-e-soltar, acompanhamento de próximas ações e histórico cronológico.',
+    highlights: [
+      'Quadro Kanban interativo contendo 7 colunas estratégicas de agendamentos e retornos futuros com suporte a drag-and-drop.',
+      'Histórico do Cliente: rastreabilidade total de ações, contatos e alterações salvos como linha do tempo cronológica.',
+      'Próxima Ação: sistema de agendamento de retorno com alertas visuais integrados para tarefas em atraso.',
+      'WhatsApp integrado para contato em um clique diretamente dos cards do funil.',
+      'Filtros avançados de pesquisa, equipe, responsável técnico e marcadores personalizados.',
+      'Segurança e acessibilidade: equipe operacional move e gerencia leads, enquanto faturamento e LTV permanecem protegidos por nível de acesso.'
+    ],
+    isNew: true
+  },
+  {
     version: '1.5.9-founder',
     date: 'Junho de 2026',
     title: 'Atualização automática e cache seguro',
@@ -20,7 +35,7 @@ export const CHANGELOG: ChangelogItem[] = [
       'Service Worker ajustado para atualização automática.',
       'Fallback preventivo para erros de carregamento de chunk (ChunkLoadError) e arquivos antigos.'
     ],
-    isNew: true
+    isNew: false
   },
   {
     version: '1.5.8-founder',

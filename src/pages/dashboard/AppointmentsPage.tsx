@@ -12,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { Loader2, Plus, Calendar as CalendarIcon, Clock, Edit2, ShoppingBag, Scissors, FileText } from 'lucide-react';
 import { formatBRL } from '@/lib/utils';
+import { triggerAppointmentPushNotification } from '../../lib/pushNotifications';
+
 
 export default function AppointmentsPage() {
   const { salonData, userData } = useAuth();
@@ -200,6 +202,20 @@ export default function AppointmentsPage() {
         const ref = doc(db, `salons/${salonData.id}/appointments`, editingItem.id);
         await updateDoc(ref, dataToSave);
         toast.success('Agendamento atualizado!');
+
+        // Enviar aviso se o status mudou para confirmado ou cancelado
+        if (editingItem.status !== dataToSave.status) {
+          triggerAppointmentPushNotification({
+            salonId: salonData.id,
+            appointmentId: editingItem.id,
+            professionalId: dataToSave.professionalId,
+            clientName: clientName || 'Consumidor',
+            serviceName: serviceName || 'Procedimento',
+            date: dataToSave.date,
+            time: dataToSave.time,
+            action: dataToSave.status === 'canceled' ? 'cancel' : 'confirm',
+          }).catch(err => console.error('[Push Notification Trigger error]', err));
+        }
       } else {
         const ref = doc(collection(db, `salons/${salonData.id}/appointments`));
         await setDoc(ref, {
@@ -208,6 +224,18 @@ export default function AppointmentsPage() {
           createdAt: Date.now(),
         });
         toast.success('Agendamento criado!');
+
+        // Enviar aviso de novo agendamento criado/confirmado
+        triggerAppointmentPushNotification({
+          salonId: salonData.id,
+          appointmentId: ref.id,
+          professionalId: dataToSave.professionalId,
+          clientName: clientName || 'Consumidor',
+          serviceName: serviceName || 'Procedimento',
+          date: dataToSave.date,
+          time: dataToSave.time,
+          action: 'create',
+        }).catch(err => console.error('[Push Notification Trigger error]', err));
       }
       setIsDialogOpen(false);
       resetForm();
@@ -244,6 +272,21 @@ export default function AppointmentsPage() {
         updatedAt: Date.now()
       });
       toast.success('Status atualizado.');
+
+      // Notificar profissional em caso de confirmação ou cancelamento instantâneo
+      const appointment = appointments.find(a => a.id === id);
+      if (appointment) {
+        triggerAppointmentPushNotification({
+          salonId: salonData.id,
+          appointmentId: id,
+          professionalId: appointment.professionalId,
+          clientName: appointment.clientName || 'Consumidor',
+          serviceName: appointment.serviceName || 'Procedimento',
+          date: appointment.date,
+          time: appointment.time,
+          action: newStatus === 'canceled' ? 'cancel' : 'confirm',
+        }).catch(err => console.error('[Push Notification trigger error in changeStatus]', err));
+      }
     } catch(e) {
       toast.error('Erro ao atualizar status.');
     }

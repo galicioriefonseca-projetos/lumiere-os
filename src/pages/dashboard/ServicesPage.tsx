@@ -44,6 +44,13 @@ import {
   Search,
   Clock,
   Sparkles,
+  FileSpreadsheet,
+  FileText,
+  Upload,
+  ArrowRight,
+  Settings2,
+  ShoppingBag,
+  Filter,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
 import { SERVICE_TEMPLATES, INITIAL_CATEGORIES } from "../../data/serviceTemplates";
@@ -62,6 +69,7 @@ export default function ServicesPage() {
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("Todos");
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<"all" | "service" | "product">("all");
 
   // Form state
   const [formData, setFormData] = useState({
@@ -71,6 +79,7 @@ export default function ServicesPage() {
     priceType: "fixed" as "fixed" | "from" | "variable",
     durationMinutes: "60",
     description: "",
+    type: "service" as "service" | "product",
   });
 
   // Custom category toggle in form
@@ -83,6 +92,29 @@ export default function ServicesPage() {
   const [selectedImportKeys, setSelectedImportKeys] = useState<Record<string, boolean>>({});
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [importing, setImporting] = useState(false);
+
+  // New Multi-source ( planilha / PDF ) Import States
+  const [isMultipleImportOpen, setIsMultipleImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"csv" | "pdf">("csv");
+  const [dragActive, setDragActive] = useState(false);
+  const [multiImportFile, setMultiImportFile] = useState<File | null>(null);
+  const [importHeaders, setImportHeaders] = useState<string[]>([]);
+  const [importRows, setImportRows] = useState<string[][]>([]);
+  const [columnMappings, setColumnMappings] = useState({
+    name: -1,
+    category: -1,
+    price: -1,
+    priceType: -1,
+    durationMinutes: -1,
+    description: -1,
+    type: -1,
+  });
+
+  const [pdfParsedItems, setPdfParsedItems] = useState<any[]>([]);
+  const [selectedPdfKeys, setSelectedPdfKeys] = useState<Record<number, boolean>>({});
+  const [isImportingProgress, setIsImportingProgress] = useState(false);
+  const [importProgressPercent, setImportProgressPercent] = useState(0);
+  const [totalImportedCount, setTotalImportedCount] = useState(0);
 
   // Role permissions
   const isOwnerOrManager =
@@ -156,7 +188,8 @@ export default function ServicesPage() {
 
     try {
       const priceVal = formData.priceType === 'variable' ? 0 : parseFloat(formData.price.replace(",", "."));
-      const durationVal = parseInt(formData.durationMinutes, 10);
+      // Products do not have logical durations. If type is product, default to 0.
+      const durationVal = formData.type === "product" ? 0 : parseInt(formData.durationMinutes, 10);
       
       const categoryToSave = isCustomCategory 
         ? customCategoryName.trim() 
@@ -180,9 +213,10 @@ export default function ServicesPage() {
           priceType: formData.priceType,
           durationMinutes: durationVal,
           description: formData.description.trim(),
+          type: formData.type,
           updatedAt: Date.now(),
         });
-        toast.success("Serviço atualizado!");
+        toast.success(`${formData.type === "product" ? "Produto" : "Serviço"} atualizado!`);
       } else {
         const ref = doc(collection(db, `salons/${salonData.id}/services`));
         await setDoc(ref, {
@@ -193,17 +227,18 @@ export default function ServicesPage() {
           priceType: formData.priceType,
           durationMinutes: durationVal,
           description: formData.description.trim(),
+          type: formData.type,
           isActive: true,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
-        toast.success("Serviço cadastrado com sucesso!");
+        toast.success(`${formData.type === "product" ? "Produto" : "Serviço"} cadastrado com sucesso!`);
       }
       setIsDialogOpen(false);
       resetForm();
     } catch (error) {
       console.error(error);
-      toast.error("Erro ao salvar serviço.");
+      toast.error("Erro ao salvar item.");
     }
   };
 
@@ -215,6 +250,7 @@ export default function ServicesPage() {
       priceType: "fixed",
       durationMinutes: "60",
       description: "",
+      type: "service",
     });
     setIsCustomCategory(false);
     setCustomCategoryName("");
@@ -229,7 +265,7 @@ export default function ServicesPage() {
         isActive: !item.isActive,
         updatedAt: Date.now(),
       });
-      toast.success(`Serviço ${!item.isActive ? "ativado" : "inativado"} com sucesso.`);
+      toast.success(`${item.type === "product" ? "Produto" : "Serviço"} ${!item.isActive ? "ativado" : "inativado"} com sucesso.`);
     } catch (error) {
       console.error(error);
       toast.error("Erro ao alterar status.");
@@ -241,11 +277,11 @@ export default function ServicesPage() {
     try {
       const ref = doc(db, `salons/${salonData.id}/services`, id);
       await deleteDoc(ref);
-      toast.success("Serviço excluído com sucesso.");
+      toast.success("Item excluído com sucesso.");
       setDeleteConfirmId(null);
     } catch (error) {
       console.error(error);
-      toast.error("Erro ao excluir serviço.");
+      toast.error("Erro ao excluir item.");
     }
   };
 
@@ -261,6 +297,7 @@ export default function ServicesPage() {
       priceType: item.priceType || "fixed",
       durationMinutes: item.durationMinutes.toString(),
       description: item.description || "",
+      type: item.type || "service",
     });
 
     if (!isPredefined) {
@@ -274,7 +311,7 @@ export default function ServicesPage() {
     setIsDialogOpen(true);
   };
 
-  // Filter service items based on query and selected category
+  // Filter service items based on query, selected category, and type
   const filteredServices = React.useMemo(() => {
     return services.filter((s) => {
       const matchesSearch =
@@ -283,9 +320,14 @@ export default function ServicesPage() {
       
       const matchesCategory =
         selectedCategoryFilter === "Todos" || s.category === selectedCategoryFilter;
-      return matchesSearch && matchesCategory;
+
+      const itemType = s.type || "service";
+      const matchesType =
+        selectedTypeFilter === "all" || itemType === selectedTypeFilter;
+
+      return matchesSearch && matchesCategory && matchesType;
     });
-  }, [services, searchQuery, selectedCategoryFilter]);
+  }, [services, searchQuery, selectedCategoryFilter, selectedTypeFilter]);
 
   // Import management: get list of predefined template services filtered by search
   const filteredTemplates = React.useMemo(() => {
@@ -413,6 +455,394 @@ export default function ServicesPage() {
     }
   };
 
+  // Multiple Source (CSV / PDF) Importer Logic
+  const resetMultipleImportState = () => {
+    setMultiImportFile(null);
+    setImportHeaders([]);
+    setImportRows([]);
+    setColumnMappings({
+      name: -1,
+      category: -1,
+      price: -1,
+      priceType: -1,
+      durationMinutes: -1,
+      description: -1,
+      type: -1,
+    });
+    setPdfParsedItems([]);
+    setSelectedPdfKeys({});
+    setIsImportingProgress(false);
+    setImportProgressPercent(0);
+    setTotalImportedCount(0);
+  };
+
+  const handleMultiDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleMultiDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleMultiFileLoad(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleMultiFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleMultiFileLoad(e.target.files[0]);
+    }
+  };
+
+  const handleMultiFileLoad = async (file: File) => {
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    setImportMode(isPdf ? "pdf" : "csv");
+    setMultiImportFile(file);
+
+    if (isPdf) {
+      // PDF Processing Flow via Gemini on Backend
+      setIsImportingProgress(true);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const result = e.target?.result as string;
+        if (!result) {
+          setIsImportingProgress(false);
+          toast.error("Erro ao ler arquivo PDF.");
+          return;
+        }
+        try {
+          const res = await fetch("/api/parse-catalog-pdf", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              pdfBase64: result,
+              salonName: salonData?.name || "Lumiere Salon",
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Erro desconhecido no processamento do catálogo em PDF.");
+          }
+          if (data.items && Array.isArray(data.items)) {
+            setPdfParsedItems(data.items);
+            const selectedMap: Record<number, boolean> = {};
+            data.items.forEach((_, idx) => {
+              selectedMap[idx] = true;
+            });
+            setSelectedPdfKeys(selectedMap);
+            toast.success(`Identificados ${data.items.length} itens do catálogo em PDF usando IA.`);
+          } else {
+            toast.error("Formatos inválidos de catálogo. Tente outro arquivo.");
+          }
+        } catch (err: any) {
+          console.error(err);
+          toast.error(err.message || "Falha ao processar o PDF. Verifique se o arquivo do catálogo está íntegro.");
+          resetMultipleImportState();
+        } finally {
+          setIsImportingProgress(false);
+        }
+      };
+      reader.onerror = () => {
+        setIsImportingProgress(false);
+        toast.error("Erro ao abrir arquivo PDF.");
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // CSV Parsing Flow
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        if (!text) return;
+
+        const parsedLines: string[][] = [];
+        let row: string[] = [];
+        let inQuotes = false;
+        let currentValue = "";
+
+        const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+        for (let i = 0; i < normalizedText.length; i++) {
+          const char = normalizedText[i];
+          const nextChar = normalizedText[i + 1];
+
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              currentValue += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if ((char === ',' || char === ';') && !inQuotes) {
+            row.push(currentValue.trim());
+            currentValue = "";
+          } else if (char === '\n' && !inQuotes) {
+            row.push(currentValue.trim());
+            parsedLines.push(row);
+            row = [];
+            currentValue = "";
+          } else {
+            currentValue += char;
+          }
+        }
+        if (currentValue !== "" || row.length > 0) {
+          row.push(currentValue.trim());
+          parsedLines.push(row);
+        }
+
+        const validLines = parsedLines.filter(r => r.some(cell => cell.length > 0));
+        if (validLines.length === 0) {
+          toast.error("Arquivo CSV vazio ou corrompido.");
+          return;
+        }
+
+        const headers = validLines[0];
+        const dataRows = validLines.slice(1);
+
+        setImportHeaders(headers);
+        setImportRows(dataRows);
+
+        // Auto detect mapping columns
+        const mapping = {
+          name: -1,
+          category: -1,
+          price: -1,
+          priceType: -1,
+          durationMinutes: -1,
+          description: -1,
+          type: -1,
+        };
+        const cleanString = (str: string) => {
+          return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+        };
+        headers.forEach((hdr, idx) => {
+          const cleaned = cleanString(hdr);
+          if (cleaned.includes("nome") || cleaned.includes("name") || cleaned.includes("servi") || cleaned.includes("produ") || cleaned.includes("item") || cleaned.includes("título") || cleaned.includes("titulo")) {
+            if (mapping.name === -1) mapping.name = idx;
+          } else if (cleaned.includes("categor") || cleaned.includes("grupo") || cleaned.includes("seç") || cleaned.includes("sec") || cleaned.includes("família") || cleaned.includes("familia")) {
+            if (mapping.category === -1) mapping.category = idx;
+          } else if (cleaned.includes("preço") || cleaned.includes("preco") || cleaned.includes("valor") || cleaned.includes("price") || cleaned.includes("custo")) {
+            if (mapping.price === -1) mapping.price = idx;
+          } else if (cleaned.includes("tipo pre") || cleaned.includes("price type") || cleaned.includes("tipo de preco") || cleaned.includes("preço_tipo")) {
+            if (mapping.priceType === -1) mapping.priceType = idx;
+          } else if (cleaned.includes("dura") || cleaned.includes("tempo") || cleaned.includes("minutos") || cleaned.includes("duration") || cleaned.includes("time") || cleaned.includes("mins")) {
+            if (mapping.durationMinutes === -1) mapping.durationMinutes = idx;
+          } else if (cleaned.includes("descri") || cleaned.includes("detalhe") || cleaned.includes("observa") || cleaned.includes("notes") || cleaned.includes("info") || cleaned.includes("sobre")) {
+            if (mapping.description === -1) mapping.description = idx;
+          } else if (cleaned.includes("tipo") || cleaned.includes("type") || cleaned.includes("classificac") || cleaned.includes("funcao")) {
+            if (mapping.type === -1) mapping.type = idx;
+          }
+        });
+        setColumnMappings(mapping);
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+  };
+
+  const parseFloatSafe = (val: string): number => {
+    if (!val) return 0;
+    const sanitized = val
+      .replace(/[R$\s]/g, '')
+      .replace(/\./g, '')
+      .replace(/,/g, '.');
+    const parsed = parseFloat(sanitized);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const isProductKeyword = (name: string, category: string): boolean => {
+    const cleanedName = name.toLowerCase();
+    const cleanedCategory = category.toLowerCase();
+    const prodWords = [
+      "produto", "venda", "home care", "shampoo", "creme", "hidratante", 
+      "oleo", "gel", "mascara", "spray", "pote", "condicionador", 
+      "esmalt", "pomada", "cera", "finalizador", "cosmetico", "batom",
+      "sabonete", "perfume", "ampola", "locao", "loção"
+    ];
+    return prodWords.some(w => cleanedName.includes(w) || cleanedCategory.includes(w));
+  };
+
+  const processCsvImport = async () => {
+    if (!salonData || !importRows.length) return;
+    if (columnMappings.name === -1) {
+      toast.error("Por favor, selecione qual coluna contém o Nome do item.");
+      return;
+    }
+
+    setIsImportingProgress(true);
+    setImportProgressPercent(0);
+    setTotalImportedCount(0);
+
+    let count = 0;
+    const total = importRows.length;
+
+    try {
+      // Load current services names map to prevent duplicates
+      const existingMapName = new Set<string>();
+      services.forEach((s) => {
+        existingMapName.add(`${s.name.toLowerCase()}::${(s.type || "service").toLowerCase()}`);
+      });
+
+      for (let i = 0; i < total; i++) {
+        const row = importRows[i];
+        const nameVal = row[columnMappings.name]?.trim();
+        if (!nameVal) continue;
+
+        const categoryVal = columnMappings.category !== -1 ? row[columnMappings.category]?.trim() || "Importados" : "Importados";
+        const priceVal = columnMappings.price !== -1 ? parseFloatSafe(row[columnMappings.price]) : 0;
+        
+        let priceTypeVal: "fixed" | "from" | "variable" = "fixed";
+        if (columnMappings.priceType !== -1) {
+          const rawPriceType = row[columnMappings.priceType]?.toLowerCase() || "";
+          if (rawPriceType.includes("var") || rawPriceType.includes("sob") || rawPriceType.includes("aval")) {
+            priceTypeVal = "variable";
+          } else if (rawPriceType.includes("a partir") || rawPriceType.includes("from") || rawPriceType.includes("partir")) {
+            priceTypeVal = "from";
+          }
+        }
+
+        const rawDur = columnMappings.durationMinutes !== -1 ? parseInt(row[columnMappings.durationMinutes], 10) : 60;
+        const durationMinutesVal = isNaN(rawDur) ? 60 : rawDur;
+        
+        const descriptionVal = columnMappings.description !== -1 ? row[columnMappings.description]?.trim() || "" : "";
+        
+        let typeVal: "service" | "product" = "service";
+        if (columnMappings.type !== -1) {
+          const rawType = row[columnMappings.type]?.toLowerCase() || "";
+          if (rawType.includes("prod") || rawType.includes("venda") || rawType.includes("peça") || rawType.includes("peca")) {
+            typeVal = "product";
+          }
+        } else if (isProductKeyword(nameVal, categoryVal)) {
+          typeVal = "product";
+        }
+
+        // Skip exact duplicate name + type matches
+        if (existingMapName.has(`${nameVal.toLowerCase()}::${typeVal.toLowerCase()}`)) {
+          continue;
+        }
+
+        const ref = doc(collection(db, `salons/${salonData.id}/services`));
+        await setDoc(ref, {
+          id: ref.id,
+          name: nameVal,
+          category: categoryVal,
+          price: priceVal,
+          priceType: priceTypeVal,
+          durationMinutes: typeVal === "product" ? 0 : durationMinutesVal,
+          description: descriptionVal,
+          type: typeVal,
+          isActive: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+
+        count++;
+        setTotalImportedCount(count);
+        setImportProgressPercent(Math.round(((i + 1) / total) * 100));
+      }
+
+      toast.success(`${count} itens de catálogo importados e indexados com sucesso!`);
+      setIsMultipleImportOpen(false);
+      resetMultipleImportState();
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao processar importação em massa.");
+    } finally {
+      setIsImportingProgress(false);
+    }
+  };
+
+  const processPdfImport = async () => {
+    if (!salonData || !pdfParsedItems.length) return;
+
+    const selectedItems = pdfParsedItems.filter((_, idx) => selectedPdfKeys[idx]);
+    if (selectedItems.length === 0) {
+      toast.error("Selecione pelo menos um item para importar.");
+      return;
+    }
+
+    setIsImportingProgress(true);
+    setImportProgressPercent(0);
+    setTotalImportedCount(0);
+
+    let count = 0;
+    const total = selectedItems.length;
+
+    try {
+      const existingMapName = new Set<string>();
+      services.forEach((s) => {
+        existingMapName.add(`${s.name.toLowerCase()}::${(s.type || "service").toLowerCase()}`);
+      });
+
+      for (let i = 0; i < total; i++) {
+        const item = selectedItems[i];
+        const nameVal = item.name?.trim();
+        if (!nameVal) continue;
+
+        const categoryVal = item.category?.trim() || "Importados AI";
+        const priceVal = typeof item.price === "number" ? item.price : parseFloatSafe(String(item.price || "0"));
+        
+        let priceTypeVal: "fixed" | "from" | "variable" = "fixed";
+        const rawPt = String(item.priceType || "").toLowerCase();
+        if (rawPt.includes("var") || rawPt.includes("sob")) {
+          priceTypeVal = "variable";
+        } else if (rawPt.includes("from") || rawPt.includes("partir")) {
+          priceTypeVal = "from";
+        }
+
+        const durationMinutesVal = typeof item.durationMinutes === "number" ? item.durationMinutes : parseInt(String(item.durationMinutes || "60"), 10) || 60;
+        const descriptionVal = item.description?.trim() || "";
+        
+        let typeVal: "service" | "product" = "service";
+        const rawType = String(item.type || "").toLowerCase();
+        if (rawType.includes("prod") || rawType.includes("venda")) {
+          typeVal = "product";
+        } else if (isProductKeyword(nameVal, categoryVal)) {
+          typeVal = "product";
+        }
+
+        if (existingMapName.has(`${nameVal.toLowerCase()}::${typeVal.toLowerCase()}`)) {
+          continue;
+        }
+
+        const ref = doc(collection(db, `salons/${salonData.id}/services`));
+        await setDoc(ref, {
+          id: ref.id,
+          name: nameVal,
+          category: categoryVal,
+          price: priceVal,
+          priceType: priceTypeVal,
+          durationMinutes: typeVal === "product" ? 0 : durationMinutesVal,
+          description: descriptionVal,
+          type: typeVal,
+          isActive: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+
+        count++;
+        setTotalImportedCount(count);
+        setImportProgressPercent(Math.round(((i + 1) / total) * 100));
+      }
+
+      toast.success(`${count} itens do PDF adicionados ao seu catálogo com sucesso!`);
+      setIsMultipleImportOpen(false);
+      resetMultipleImportState();
+    } catch (err) {
+      console.error(err);
+      toast.error("Falha ao salvar itens importados do PDF.");
+    } finally {
+      setIsImportingProgress(false);
+    }
+  };
+
   const formatPriceDescription = (price: number, priceType?: "fixed" | "from" | "variable") => {
     if (priceType === "variable") return "Sob avaliação";
     if (priceType === "from") return `A partir de ${formatBRL(price)}`;
@@ -458,6 +888,18 @@ export default function ServicesPage() {
               Importar Prontos
             </Button>
 
+            <Button
+              onClick={() => {
+                resetMultipleImportState();
+                setIsMultipleImportOpen(true);
+              }}
+              variant="outline"
+              className="flex-1 md:flex-none h-10 border-[#D4AF37]/20 hover:bg-[#D4AF37]/10 text-white font-medium text-xs rounded-xl px-5 select-none"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2 text-[#D4AF37]" />
+              Importar Planilha / PDF
+            </Button>
+
             <Dialog
               open={isDialogOpen}
               onOpenChange={(open) => {
@@ -473,21 +915,53 @@ export default function ServicesPage() {
               <DialogContent className="sm:max-w-[440px] bg-[#09090b] border border-white/10 text-white rounded-3xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
                 <DialogHeader className="space-y-1">
                   <DialogTitle className="font-heading text-lg font-medium text-white">
-                    {editingService ? "Editar Serviço" : "Cadastrar Novo Serviço"}
+                    {editingService ? "Editar Item" : "Cadastrar Novo Item"}
                   </DialogTitle>
                   <DialogDescription className="text-xs text-muted-foreground font-light">
-                    {editingService ? "Altere as informações do serviço." : "Preencha os campos para cadastrar um serviço manual."}
+                    {editingService ? "Altere as informações do item do seu catálogo." : "Preencha os campos para cadastrar um item manual."}
                   </DialogDescription>
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-                  {/* Service Name */}
+                  {/* Item Type selection toggle */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="name" className="text-xs text-slate-300 font-medium">Nome do Serviço *</Label>
+                    <Label className="text-xs text-slate-300 font-medium">Tipo de Cadastro</Label>
+                    <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 border border-white/5 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(p => ({ ...p, type: 'service' }))}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold select-none transition-all",
+                          formData.type === 'service'
+                            ? "bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37]"
+                            : "text-zinc-400 hover:text-white border border-transparent"
+                        )}
+                      >
+                        <Scissors className="w-3.5 h-3.5" /> Serviço
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => setFormData(p => ({ ...p, type: 'product' }))}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold select-none transition-all",
+                          formData.type === 'product'
+                            ? "bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37]"
+                            : "text-zinc-400 hover:text-white border border-transparent"
+                        )}
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5" /> Produto
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Service / Product Name */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="name" className="text-xs text-slate-300 font-medium">Nome do {formData.type === "product" ? "Produto" : "Serviço"} *</Label>
                     <Input
                       id="name"
                       required
-                      placeholder="Ex: Escova Orgânica Alisadora"
+                      placeholder={formData.type === "product" ? "Ex: Condicionador L'Oréal Professional" : "Ex: Escova Orgânica Alisadora"}
                       value={formData.name}
                       onChange={(e) =>
                         setFormData((p) => ({ ...p, name: e.target.value }))
@@ -515,7 +989,7 @@ export default function ServicesPage() {
                       <Input
                         id="customCategory"
                         required
-                        placeholder="Ex: Massagens Corporais"
+                        placeholder="Ex: Cosméticos de Luxo"
                         value={customCategoryName}
                         onChange={(e) => setCustomCategoryName(e.target.value)}
                         className="bg-black/40 border-white/10 focus:border-[#D4AF37]/40 rounded-xl text-sm"
@@ -524,7 +998,7 @@ export default function ServicesPage() {
                   ) : (
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
-                        <Label className="text-xs text-slate-300 font-medium">Categoria do Serviço *</Label>
+                        <Label className="text-xs text-slate-300 font-medium">Categoria do {formData.type === "product" ? "Produto" : "Serviço"} *</Label>
                         <button
                           type="button"
                           onClick={() => {
@@ -603,18 +1077,19 @@ export default function ServicesPage() {
                       <Label htmlFor="duration" className="text-xs text-slate-300 font-medium">Duração (minutos)</Label>
                       <Input
                         id="duration"
-                        required
+                        required={formData.type !== "product"}
+                        disabled={formData.type === "product"}
                         type="number"
-                        min="1"
-                        placeholder="60"
-                        value={formData.durationMinutes}
+                        min="0"
+                        placeholder={formData.type === "product" ? "N/A" : "60"}
+                        value={formData.type === "product" ? "" : formData.durationMinutes}
                         onChange={(e) =>
                           setFormData((p) => ({
                             ...p,
                             durationMinutes: e.target.value,
                           }))
                         }
-                        className="bg-black/40 border-white/10 focus:border-[#D4AF37]/40 rounded-xl text-sm"
+                        className="bg-black/40 border-white/10 focus:border-[#D4AF37]/40 rounded-xl text-sm disabled:opacity-30"
                       />
                     </div>
                   </div>
@@ -624,7 +1099,7 @@ export default function ServicesPage() {
                     <Label htmlFor="description" className="text-xs text-slate-300 font-medium">Descrição Opcional</Label>
                     <textarea
                       id="description"
-                      placeholder="Breve resumo do serviço, técnica ou produtos utilizados."
+                      placeholder={formData.type === "product" ? "Ex: Volume de 250ml, livre de parabenos." : "Ex: Breve resumo do serviço, técnica ou produtos utilizados."}
                       value={formData.description}
                       onChange={(e) =>
                         setFormData((p) => ({ ...p, description: e.target.value }))
@@ -638,7 +1113,7 @@ export default function ServicesPage() {
                     type="submit"
                     className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/80 text-black font-semibold rounded-xl text-xs h-10 mt-6 shadow-md"
                   >
-                    {editingService ? "Salvar Alterações" : "Cadastrar Serviço"}
+                    {editingService ? "Salvar Alterações" : `Cadastrar ${formData.type === "product" ? "Produto" : "Serviço"}`}
                   </Button>
                 </form>
               </DialogContent>
@@ -680,12 +1155,12 @@ export default function ServicesPage() {
         </div>
 
         {/* Quick horizontal categories slider for easy clicking */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <Button
             onClick={() => setSelectedCategoryFilter("Todos")}
             variant={selectedCategoryFilter === "Todos" ? "default" : "outline"}
             className={cn(
-              "h-8 px-4 rounded-xl text-xs shrink-0 select-none",
+               "h-8 px-4 rounded-xl text-xs shrink-0 select-none",
               selectedCategoryFilter === "Todos"
                 ? "bg-[#D4AF37] text-black font-semibold hover:bg-[#D4AF37]/80"
                 : "border-white/5 text-slate-300 hover:text-white hover:bg-white/[0.03]"
@@ -711,6 +1186,42 @@ export default function ServicesPage() {
               </Button>
             );
           })}
+        </div>
+
+        {/* Type selector tab filter */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-white/5 pt-3">
+          <div className="bg-black/60 border border-white/5 p-1 rounded-xl flex items-center shrink-0 w-full sm:w-auto">
+            <button
+              onClick={() => setSelectedTypeFilter("all")}
+              className={cn(
+                "flex-1 sm:flex-none py-1.5 px-3.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition select-none",
+                selectedTypeFilter === "all" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Todos os Itens ({services.length})
+            </button>
+            <button
+              onClick={() => setSelectedTypeFilter("service")}
+              className={cn(
+                "flex-1 sm:flex-none py-1.5 px-3.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition select-none",
+                selectedTypeFilter === "service" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <Scissors className="w-3.5 h-3.5" /> Serviços ({services.filter(s => !s.type || s.type === "service").length})
+            </button>
+            <button
+              onClick={() => setSelectedTypeFilter("product")}
+              className={cn(
+                "flex-1 sm:flex-none py-1.5 px-3.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition select-none",
+                selectedTypeFilter === "product" ? "bg-zinc-800 text-white" : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" /> Produtos ({services.filter(s => s.type === "product").length})
+            </button>
+          </div>
+          <p className="text-[10px] font-mono text-zinc-500">
+            Mostrando {filteredServices.length} de {services.length} itens cadastrados
+          </p>
         </div>
       </div>
 
@@ -831,12 +1342,21 @@ export default function ServicesPage() {
                     </span>
                   </div>
                   
-                  <div className="flex flex-col items-end">
-                    <span className="text-[9px] text-[#8e8e93] uppercase font-mono tracking-wider font-semibold">Duração</span>
-                    <span className="text-xs text-slate-300 font-medium flex items-center gap-1 mt-1 leading-none">
-                      <Clock className="w-3.5 h-3.5 text-zinc-500" /> {item.durationMinutes} min
-                    </span>
-                  </div>
+                  {item.type === "product" ? (
+                    <div className="flex flex-col items-end">
+                      <span className="text-[9px] text-[#8e8e93] uppercase font-mono tracking-wider font-semibold">Tipo</span>
+                      <span className="text-xs text-[#D4AF37] font-medium flex items-center gap-1 mt-1 leading-none">
+                        <ShoppingBag className="w-3.5 h-3.5" /> Produto
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-end">
+                      <span className="text-[9px] text-[#8e8e93] uppercase font-mono tracking-wider font-semibold">Duração</span>
+                      <span className="text-xs text-slate-300 font-medium flex items-center gap-1 mt-1 leading-none">
+                        <Clock className="w-3.5 h-3.5 text-zinc-500" /> {item.durationMinutes} min
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1052,6 +1572,351 @@ export default function ServicesPage() {
                   </>
                 )}
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Multi-Source Import Dialog (CSV Column Mapping and AI PDF Parsing) */}
+      <Dialog open={isMultipleImportOpen} onOpenChange={setIsMultipleImportOpen}>
+        <DialogContent className="max-w-3xl bg-[#08080a] border border-[#D4AF37]/20 text-white rounded-3xl shadow-2xl p-6 overflow-hidden flex flex-col h-[85vh] max-h-[720px]">
+          <DialogHeader className="space-y-1.5 pb-2 border-b border-white/5">
+            <div className="flex justify-between items-start gap-4">
+              <div className="space-y-1">
+                <DialogTitle className="text-lg font-heading font-semibold text-white flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" /> Upload de Próprio Catálogo (Planilha ou PDF)
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-400 font-light">
+                  Faça a migração de qualquer outro SaaS de beleza ou clínica para o Lumière. Aceitamos planilhas CSV com mapeamento inteligente de colunas ou PDFs de catálogos de serviços digitais.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Core container content */}
+          <div className="flex-1 overflow-y-auto pr-1 my-3 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
+            
+            {/* If no file is loaded, show elegant drag-and-drop file upload zone */}
+            {!multiImportFile && (
+              <div
+                onDragOver={handleMultiDrag}
+                onDragLeave={handleMultiDrag}
+                onDrop={handleMultiDrop}
+                onClick={() => {
+                  const input = document.getElementById("multi-file-picker");
+                  if (input) input.click();
+                }}
+                className={cn(
+                  "border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition relative group",
+                  dragActive 
+                    ? "border-[#D4AF37] bg-[#D4AF37]/5" 
+                    : "border-white/10 hover:border-[#D4AF37]/30 bg-black/40"
+                )}
+              >
+                <input
+                  id="multi-file-picker"
+                  type="file"
+                  accept=".csv,.pdf"
+                  className="hidden"
+                  onChange={handleMultiFileChange}
+                />
+                <div className="space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center mx-auto text-[#D4AF37] group-hover:scale-105 transition-transform duration-300">
+                    <Upload className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-sm font-semibold text-white group-hover:text-[#D4AF37] transition-colors">
+                      Arraste ou clique para selecionar arquivo
+                    </p>
+                    <p className="text-slate-400 text-xs">
+                      Suporta arquivos de planilhas <span className="text-[#D4AF37] font-semibold">.CSV</span> ou catálogos de preço no formato <span className="text-[#D4AF37] font-semibold">.PDF</span>
+                    </p>
+                  </div>
+                  <div className="pt-2 flex justify-center gap-6 text-[10px] text-zinc-500 font-mono">
+                    <span className="flex items-center gap-1"><FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" /> Planilha de CRM</span>
+                    <span className="flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-red-500" /> Cardápio / Catálogo em PDF</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* If file is uploaded, render processing state or specific review boards */}
+            {multiImportFile && (
+              <div className="space-y-4 animate-fade-in">
+                {/* File badge header and clean cancel option */}
+                <div className="bg-black/40 border border-white/5 p-3 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    {importMode === "csv" ? (
+                      <FileSpreadsheet className="w-7 h-7 text-emerald-500 shrink-0" />
+                    ) : (
+                      <FileText className="w-7 h-7 text-red-500 shrink-0" />
+                    )}
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-semibold text-white max-w-[280px] sm:max-w-md truncate">{multiImportFile.name}</p>
+                      <p className="text-[10px] font-mono text-zinc-400">{(multiImportFile.size / 1024).toFixed(1)} KB • {importMode === 'csv' ? "Planilha de dados" : "Leitor AI de catálogo"}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetMultipleImportState}
+                    className="h-8 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl text-xs px-3"
+                  >
+                    Resetar / Remover
+                  </Button>
+                </div>
+
+                {/* Loading indicator while Gemini is parsing the PDF */}
+                {isImportingProgress && pdfParsedItems.length === 0 && (
+                  <div className="border border-white/5 bg-black/40 rounded-2xl p-8 text-center space-y-4 animate-pulse">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37] mx-auto" />
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-semibold text-white">Análise inteligente por Inteligência Artificial</h4>
+                      <p className="text-[11px] text-slate-400 max-w-sm mx-auto leading-relaxed">
+                        Nossa IA integrada ao Gemini 1.5 Flash está lendo o conteúdo textual e as tabelas do seu PDF para estruturar e mapear automaticamente serviços, preços e produtos! Isso pode levar de 5 a 15 segundos...
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* CSV Specific Map and Preview Section */}
+                {importMode === "csv" && !isImportingProgress && importHeaders.length > 0 && (
+                  <div className="space-y-4">
+                    {/* Column Mapping form cards block */}
+                    <div className="border border-white/5 bg-black/40 p-4 rounded-2xl space-y-3">
+                      <h4 className="text-xs font-semibold text-[#D4AF37] flex items-center gap-1.5">
+                        <Settings2 className="w-4 h-4" /> Mapeamento inteligente de colunas
+                      </h4>
+                      <p className="text-[11px] text-slate-300 font-light leading-relaxed">
+                        Mapeie a qual informação corresponde cada cabeçalho da sua planilha. Nosso motor já realizou uma pré-detecção com base no vocabulário comum dos CRM.
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2">
+                        {/* Name Column selector */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-zinc-400 uppercase">Nome do Item *</Label>
+                          <select
+                            value={columnMappings.name}
+                            onChange={(e) => setColumnMappings(p => ({ ...p, name: parseInt(e.target.value) }))}
+                            className="w-full bg-black border border-white/10 focus:border-[#D4AF37]/40 text-white rounded-xl text-xs p-2 h-9 outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                          >
+                            <option value={-1}>Selecione a coluna...</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>Coluna: {h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Category Column selector */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-zinc-400 uppercase">Categoria</Label>
+                          <select
+                            value={columnMappings.category}
+                            onChange={(e) => setColumnMappings(p => ({ ...p, category: parseInt(e.target.value) }))}
+                            className="w-full bg-black border border-white/10 focus:border-[#D4AF37]/40 text-white rounded-xl text-xs p-2 h-9 outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                          >
+                            <option value={-1}>Usar valor padrão ("Importados")</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>Coluna: {h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Price Column selector */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-zinc-400 uppercase">Preço / Valor</Label>
+                          <select
+                            value={columnMappings.price}
+                            onChange={(e) => setColumnMappings(p => ({ ...p, price: parseInt(e.target.value) }))}
+                            className="w-full bg-black border border-white/10 focus:border-[#D4AF37]/40 text-white rounded-xl text-xs p-2 h-9 outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                          >
+                            <option value={-1}>Preço zero por padrão</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>Coluna: {h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Duration Column selector */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-zinc-400 uppercase">Duração (m)</Label>
+                          <select
+                            value={columnMappings.durationMinutes}
+                            onChange={(e) => setColumnMappings(p => ({ ...p, durationMinutes: parseInt(e.target.value) }))}
+                            className="w-full bg-black border border-white/10 focus:border-[#D4AF37]/40 text-white rounded-xl text-xs p-2 h-9 outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                          >
+                            <option value={-1}>60 minutos por padrão</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>Coluna: {h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Description Column selector */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-zinc-400 uppercase">Descrição / Observação</Label>
+                          <select
+                            value={columnMappings.description}
+                            onChange={(e) => setColumnMappings(p => ({ ...p, description: parseInt(e.target.value) }))}
+                            className="w-full bg-black border border-white/10 focus:border-[#D4AF37]/40 text-white rounded-xl text-xs p-2 h-9 outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                          >
+                            <option value={-1}>Deixar vazio</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>Coluna: {h}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Type Column selector */}
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-semibold text-zinc-400 uppercase">Tipo (Serviço ou Produto)</Label>
+                          <select
+                            value={columnMappings.type}
+                            onChange={(e) => setColumnMappings(p => ({ ...p, type: parseInt(e.target.value) }))}
+                            className="w-full bg-black border border-white/10 focus:border-[#D4AF37]/40 text-white rounded-xl text-xs p-2 h-9 outline-none focus:ring-1 focus:ring-[#D4AF37]/40"
+                          >
+                            <option value={-1}>Auto detectar por palavra-chave do Nome</option>
+                            {importHeaders.map((h, i) => (
+                              <option key={i} value={i}>Coluna: {h}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pre-mapped data table rows preview */}
+                    <div className="border border-white/5 bg-black/20 rounded-2xl p-4 space-y-2">
+                      <h4 className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Prévia das primeiras linhas ({importRows.length} linhas localizadas)</h4>
+                      <div className="overflow-x-auto max-h-[140px] border border-white/5 rounded-xl divide-y divide-white/[0.04] bg-black/40">
+                        {importRows.slice(0, 4).map((r, idx) => (
+                          <div key={idx} className="p-2 px-3 text-[10px] font-sans flex items-center gap-4 text-zinc-300">
+                            <span className="font-mono text-zinc-500 w-3 shrink-0">#{idx + 1}</span>
+                            <span className="truncate w-32 font-medium text-white">{r[columnMappings.name] || <span className="italic opacity-35">Vazio</span>}</span>
+                            <span className="truncate w-24">{columnMappings.category !== -1 ? r[columnMappings.category] : "Importados"}</span>
+                            <span className="font-mono text-[#D4AF37] w-16">{columnMappings.price !== -1 ? r[columnMappings.price] : "0.00"}</span>
+                            <span className="truncate flex-1 font-light italic">{columnMappings.description !== -1 ? r[columnMappings.description] : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PDF Specific AI Mapped Items Section */}
+                {importMode === "pdf" && !isImportingProgress && pdfParsedItems.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="border border-white/5 bg-black/40 p-4 rounded-2xl space-y-2.5">
+                      <div className="flex justify-between items-center pb-1">
+                        <h4 className="text-xs font-semibold text-[#D4AF37] flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 animate-pulse" /> Estruturação automática gerada pelo Gemini
+                        </h4>
+                        <span className="text-[10px] bg-[#D4AF37]/10 text-[#D4AF37] px-2 py-0.5 rounded-full font-mono">
+                          {pdfParsedItems.length} itens extraídos
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 font-light leading-relaxed">
+                        Nossa inteligência leu e categorizou os itens detectados no catálogo. Verifique abaixo a lista preliminar de ações mapeadas. Os produtos foram automaticamente configurados sem duração de agendamento por padrão.
+                      </p>
+
+                      <div className="overflow-y-auto max-h-[260px] border border-white/5 rounded-2xl divide-y divide-white/[0.04] bg-black/40 pr-1 select-none font-sans">
+                        {pdfParsedItems.map((item, idx) => {
+                          const isProduct = item.type === "product";
+                          return (
+                            <div key={idx} className="p-3 hover:bg-white/[0.01] transition flex justify-between items-center gap-4 text-xs">
+                              <div className="space-y-1 max-w-[70%]">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] uppercase font-mono font-bold text-[#D4AF37] bg-[#D4AF37]/5 px-2 py-0.5 rounded leading-none">
+                                    {item.category}
+                                  </span>
+                                  <span className={cn(
+                                    "text-[9px] uppercase font-bold px-1.5 py-0.5 rounded leading-none border",
+                                    isProduct 
+                                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" 
+                                      : "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                                  )}>
+                                    {isProduct ? "Produto" : "Serviço"}
+                                  </span>
+                                </div>
+                                <h5 className="font-semibold text-slate-200">{item.name}</h5>
+                                {item.description && (
+                                  <p className="text-[10px] text-zinc-500 font-light line-clamp-1">{item.description}</p>
+                                )}
+                              </div>
+
+                              <div className="text-right space-y-1 shrink-0 font-mono">
+                                <p className="font-bold text-white text-xs">
+                                  {formatPriceDescription(item.price, item.priceType || "fixed")}
+                                </p>
+                                {!isProduct && (
+                                  <p className="text-[10px] text-zinc-500">{item.durationMinutes || 60}m de tempo</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Database importing visual progress component (for csv / manual lists) */}
+                {isImportingProgress && pdfParsedItems.length > 0 && (
+                  <div className="border border-white/5 bg-black/40 rounded-2xl p-6 text-center space-y-4 animate-fade-in">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-semibold text-[#D4AF37]">Importando e Sincronizando com o Catálogo CRM</h4>
+                      <p className="text-[11px] text-slate-400 font-light">
+                        Criando registros no Firestore do seu salão Lumière e evitando duplicações...
+                      </p>
+                    </div>
+
+                    <div className="relative w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className="absolute h-full left-0 top-0 bg-gradient-to-r from-yellow-500 to-[#D4AF37] transition-all duration-300"
+                        style={{ width: `${importProgressPercent}%` }}
+                      />
+                    </div>
+                    
+                    <div className="flex justify-between items-center text-[10px] text-zinc-400 font-mono">
+                      <span>Progresso: {importProgressPercent}%</span>
+                      <span>Modificados/Salvos: {totalImportedCount} itens</span>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
+
+          </div>
+
+          {/* Action dialog control buttons */}
+          <div className="flex justify-between items-center border-t border-white/5 pt-4 shrink-0 mt-1">
+            <Button
+              variant="outline"
+              onClick={() => setIsMultipleImportOpen(false)}
+              disabled={isImportingProgress}
+              className="rounded-xl border-white/10 hover:bg-white/5 text-xs h-9.5 px-4 font-normal"
+            >
+              Cancelar / Fechar
+            </Button>
+
+            <div className="flex gap-2">
+              {importMode === "csv" && importRows.length > 0 && !isImportingProgress && (
+                <Button
+                  onClick={processCsvImport}
+                  className="bg-[#D4AF37] hover:bg-[#D4AF37]/80 text-black font-semibold rounded-xl text-xs h-9.5 px-5 shadow-lg select-none"
+                >
+                  Confirmar Importação de {importRows.length} linhas
+                </Button>
+              )}
+
+              {importMode === "pdf" && pdfParsedItems.length > 0 && !isImportingProgress && (
+                <Button
+                  onClick={processPdfImport}
+                  className="bg-[#D4AF37] hover:bg-[#D4AF37]/80 text-black font-semibold rounded-xl text-xs h-9.5 px-5 shadow-lg select-none"
+                >
+                  Confirmar Importação de {pdfParsedItems.length} itens (Leitor AI)
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>
