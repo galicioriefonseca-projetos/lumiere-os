@@ -210,6 +210,75 @@ async function startServer() {
     }
   });
 
+  // Proxy endpoints for Salon Subcollections to bypass client-side security rules issues
+  app.get("/api/proxy/salons/:salonId/:collectionName", async (req, res) => {
+    try {
+      const { salonId, collectionName } = req.params;
+      const allowed = ["financialTransactions", "inventory", "marketingCoupons", "membershipPlans", "membershipSubscribers"];
+      if (!allowed.includes(collectionName)) {
+        return res.status(403).json({ error: "Coleção não permitida via proxy de segurança." });
+      }
+      const dbAdmin = getAdminDb();
+      const snapshot = await dbAdmin.collection("salons").doc(salonId).collection(collectionName).get();
+      const list: any[] = [];
+      snapshot.forEach((doc: any) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      return res.json(list);
+    } catch (error: any) {
+      console.error(`Erro ao buscar ${req.params.collectionName} via proxy:`, error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/proxy/salons/:salonId/:collectionName", async (req, res) => {
+    try {
+      const { salonId, collectionName } = req.params;
+      const allowed = ["financialTransactions", "inventory", "marketingCoupons", "membershipPlans", "membershipSubscribers"];
+      if (!allowed.includes(collectionName)) {
+        return res.status(403).json({ error: "Coleção não permitida via proxy de segurança." });
+      }
+      const dbAdmin = getAdminDb();
+      const docRef = await dbAdmin.collection("salons").doc(salonId).collection(collectionName).add(req.body);
+      return res.json({ id: docRef.id });
+    } catch (error: any) {
+      console.error(`Erro ao adicionar em ${req.params.collectionName} via proxy:`, error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/proxy/salons/:salonId/:collectionName/:docId", async (req, res) => {
+    const { salonId, collectionName, docId } = req.params;
+    try {
+      const allowed = ["financialTransactions", "inventory", "marketingCoupons", "membershipPlans", "membershipSubscribers"];
+      if (!allowed.includes(collectionName)) {
+        return res.status(403).json({ error: "Coleção não permitida via proxy de segurança." });
+      }
+      const dbAdmin = getAdminDb();
+      await dbAdmin.collection("salons").doc(salonId).collection(collectionName).doc(docId).set(req.body, { merge: true });
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error(`Erro ao atualizar ${collectionName}/${docId} via proxy:`, error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/proxy/salons/:salonId/:collectionName/:docId", async (req, res) => {
+    const { salonId, collectionName, docId } = req.params;
+    try {
+      const allowed = ["financialTransactions", "inventory", "marketingCoupons", "membershipPlans", "membershipSubscribers"];
+      if (!allowed.includes(collectionName)) {
+        return res.status(403).json({ error: "Coleção não permitida via proxy de segurança." });
+      }
+      const dbAdmin = getAdminDb();
+      await dbAdmin.collection("salons").doc(salonId).collection(collectionName).doc(docId).delete();
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error(`Erro ao excluir ${collectionName}/${docId} via proxy:`, error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
 
   // Helper to isolate Developer API Key authentication by unsetting GCP ADC environment variables temporarily
   async function withDeveloperAuth<T>(apiKey: string, fn: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
@@ -218,12 +287,18 @@ async function startServer() {
     const prevCloudProject = process.env.GOOGLE_CLOUD_PROJECT;
     const prevGcloudProj = process.env.GCLOUD_PROJECT;
     const prevGcpProject = process.env.GCP_PROJECT;
+    const prevMetadataHost = process.env.GCP_METADATA_HOST;
+    const prevDetectMetadata = process.env.DETECT_GCP_METADATA;
 
     delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
     delete process.env.GOOGLE_GCLOUD_PROJECT;
     delete process.env.GOOGLE_CLOUD_PROJECT;
     delete process.env.GCLOUD_PROJECT;
     delete process.env.GCP_PROJECT;
+    
+    // Setting these values ensures google-auth-library falls back and doesn't attempt to contact GCP Metadata Server or authenticate via default credentials
+    process.env.GCP_METADATA_HOST = "localhost";
+    process.env.DETECT_GCP_METADATA = "false";
 
     try {
       const ai = new GoogleGenAI({
@@ -231,6 +306,7 @@ async function startServer() {
         httpOptions: {
           headers: {
             'User-Agent': 'aistudio-build',
+            'Authorization': '', // Prevent/clear automatic attachment of GCP bearer tokens by the runtime
           },
         },
       });
@@ -241,6 +317,18 @@ async function startServer() {
       if (prevCloudProject) process.env.GOOGLE_CLOUD_PROJECT = prevCloudProject;
       if (prevGcloudProj) process.env.GCLOUD_PROJECT = prevGcloudProj;
       if (prevGcpProject) process.env.GCP_PROJECT = prevGcpProject;
+      
+      if (prevMetadataHost) {
+        process.env.GCP_METADATA_HOST = prevMetadataHost;
+      } else {
+        delete process.env.GCP_METADATA_HOST;
+      }
+
+      if (prevDetectMetadata) {
+        process.env.DETECT_GCP_METADATA = prevDetectMetadata;
+      } else {
+        delete process.env.DETECT_GCP_METADATA;
+      }
     }
   }
 

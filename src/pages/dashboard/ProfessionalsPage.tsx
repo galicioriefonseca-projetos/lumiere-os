@@ -15,7 +15,6 @@ import {
   ChevronDown, ChevronUp, Search, Filter, Mail, Phone, Calendar, Sparkles
 } from 'lucide-react';
 import { PROFESSIONAL_SPECIALTIES } from '../../data/professionalSpecialties';
-import { TeamInsightsCard } from '../../components/TeamInsightsCard';
 
 const roleTranslations: Record<string, string> = {
   manager: 'Gerente',
@@ -583,7 +582,6 @@ export default function ProfessionalsPage() {
 
   return (
     <div className="space-y-6">
-      <TeamInsightsCard professionals={professionals} />
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>

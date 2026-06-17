@@ -27,6 +27,15 @@ const BillingPage = React.lazy(() => import('./pages/dashboard/BillingPage'));
 const CommissionsPage = React.lazy(() => import('./pages/dashboard/CommissionsPage'));
 const AccountPage = React.lazy(() => import('./pages/dashboard/AccountPage'));
 const ReportsPage = React.lazy(() => import('./pages/dashboard/ReportsPage'));
+
+// New avec pro equivalent features
+const FinancialPage = React.lazy(() => import('./pages/dashboard/FinancialPage'));
+const InventoryPage = React.lazy(() => import('./pages/dashboard/InventoryPage'));
+const MarketingPage = React.lazy(() => import('./pages/dashboard/MarketingPage'));
+const MembershipClubPage = React.lazy(() => import('./pages/dashboard/MembershipClubPage'));
+const LumierePayPage = React.lazy(() => import('./pages/dashboard/LumierePayPage'));
+const PricingCalculatorPage = React.lazy(() => import('./pages/dashboard/PricingCalculatorPage'));
+
 const MasterPanel = React.lazy(() => import('./pages/MasterPanel'));
 const OnboardingTeam = React.lazy(() => import('./pages/onboarding/OnboardingTeam'));
 const OnboardingServices = React.lazy(() => import('./pages/onboarding/OnboardingServices'));
@@ -78,6 +87,14 @@ function App() {
               <Route path="minha-conta" element={<AccountPage />} />
               <Route path="checklist" element={<ChecklistPage />} />
               <Route path="assinatura" element={<BillingPage />} />
+              
+              {/* New avec pro equivalent routes */}
+              <Route path="financeiro" element={<FinancialPage />} />
+              <Route path="estoque" element={<InventoryPage />} />
+              <Route path="marketing" element={<MarketingPage />} />
+              <Route path="clube-de-assinaturas" element={<MembershipClubPage />} />
+              <Route path="lumiere-pay" element={<LumierePayPage />} />
+              <Route path="precificacao" element={<PricingCalculatorPage />} />
             </Route>
 
             <Route path="/master" element={<ProtectedRoute requireAdmin><MasterPanel /></ProtectedRoute>} />

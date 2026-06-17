@@ -28,13 +28,25 @@ export function getEvaluableFunctions(professional: any): string[] {
   }
   
   const combined = [...mainFunctions, ...additional];
-  const unique = combined.filter((val, index) => combined.indexOf(val) === index);
-  const nonVacant = unique.filter(v => v.length > 0);
   
-  if (nonVacant.length === 0) {
+  // Clean, trim, and deduplicate case-insensitively / accent-insensitively
+  const uniqueList: string[] = [];
+  const seenKeys = new Set<string>();
+  
+  combined.forEach((val) => {
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    const key = sanitizeFunctionSlug(trimmed);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      uniqueList.push(trimmed);
+    }
+  });
+  
+  if (uniqueList.length === 0) {
     return ["Função não definida"];
   }
-  return nonVacant;
+  return uniqueList;
 }
 
 export function sanitizeFunctionSlug(func: string): string {

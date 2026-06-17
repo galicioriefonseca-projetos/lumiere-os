@@ -377,6 +377,43 @@ service cloud.firestore {
       allow create, update, delete: if canManageSalon(salonId);
     }
 
+    // 10. Audit Logs (Append-Only, restricted read)
+    match /salons/{salonId}/auditLogs/{logId} {
+      allow read: if canManageSalon(salonId);
+      allow create: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow update, delete: if false;
+    }
+
+    // 11. Financial Transactions
+    match /salons/{salonId}/financialTransactions/{transactionId} {
+      allow read, write: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+    }
+
+    // 12. Inventory / Stock Management
+    match /salons/{salonId}/inventory/{itemId} {
+      allow read, write: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+    }
+
+    // 13. Marketing Coupons
+    match /salons/{salonId}/marketingCoupons/{couponId} {
+      allow read, write: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+    }
+
+    // 14. Membership Plans
+    match /salons/{salonId}/membershipPlans/{planId} {
+      allow read, write: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+    }
+
+    // 15. Membership Subscribers
+    match /salons/{salonId}/membershipSubscribers/{subId} {
+      allow read, write: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+    }
+
+    // 16. Pricing Calculations
+    match /salons/{salonId}/pricing_calculations/{calculationId} {
+      allow read, write: if isPlatformAdmin() || canManageSalon(salonId);
+    }
+
     // Fallback Catch-All for any other subcollections under salons
     match /salons/{salonId}/{collectionName}/{docId} {
       allow read, write: if isPlatformAdmin();

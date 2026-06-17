@@ -27,7 +27,11 @@ import {
   Loader2,
   ChevronDown,
   User,
-  Play
+  Play,
+  DollarSign,
+  Megaphone,
+  Package,
+  Calculator
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -37,7 +41,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { APP_INFO } from '../../config/appInfo';
 import SystemUpdatesDialog from '../SystemUpdatesDialog';
 import { useEffect } from 'react';
-import { LumiereChatbot } from '../LumiereChatbot';
 import { InteractiveTour } from '../InteractiveTour';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -194,6 +197,7 @@ export default function DashboardLayout() {
           category: 'Serviços',
           items: [
             { name: 'Serviços do Salão', href: '/dashboard/servicos', icon: Scissors },
+            { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
           ]
         }
       ];
@@ -218,7 +222,23 @@ export default function DashboardLayout() {
             { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
             { name: 'Metas', href: '/dashboard/metas', icon: Target },
           ]
-        }
+        },
+        {
+          category: 'Gestão Financeira & Lojas',
+          items: [
+            { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign },
+            { name: 'Estoque', href: '/dashboard/estoque', icon: Package },
+            { name: 'LumièrePay', href: '/dashboard/lumiere-pay', icon: CreditCard },
+            { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
+          ]
+        },
+        {
+          category: 'Marketing & Fidelização',
+          items: [
+            { name: 'Marketing', href: '/dashboard/marketing', icon: Megaphone },
+            { name: 'Clube de Assinaturas', href: '/dashboard/clube-de-assinaturas', icon: Crown },
+          ]
+         }
       ];
     }
 
@@ -240,6 +260,21 @@ export default function DashboardLayout() {
           ]
         },
         {
+          category: 'Gestão Financeira & Lojas',
+          items: [
+            { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign },
+            { name: 'Estoque', href: '/dashboard/estoque', icon: Package },
+            { name: 'LumièrePay', href: '/dashboard/lumiere-pay', icon: CreditCard },
+          ]
+        },
+        {
+          category: 'Marketing & Fidelização',
+          items: [
+            { name: 'Marketing', href: '/dashboard/marketing', icon: Megaphone },
+            { name: 'Clube de Assinaturas', href: '/dashboard/clube-de-assinaturas', icon: Crown },
+          ]
+        },
+        {
           category: 'Supervisão de Equipe',
           items: [
             { name: 'Equipe', href: '/dashboard/equipe', icon: Users },
@@ -252,6 +287,7 @@ export default function DashboardLayout() {
           items: [
             { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
             { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
+            { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
           ]
         }
       ];
@@ -274,6 +310,21 @@ export default function DashboardLayout() {
         ]
       },
       {
+        category: 'Gestão Financeira & Lojas',
+        items: [
+          { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign },
+          { name: 'Estoque', href: '/dashboard/estoque', icon: Package },
+          { name: 'LumièrePay', href: '/dashboard/lumiere-pay', icon: CreditCard },
+        ]
+      },
+      {
+        category: 'Marketing & Fidelização',
+        items: [
+          { name: 'Marketing', href: '/dashboard/marketing', icon: Megaphone },
+          { name: 'Clube de Assinaturas', href: '/dashboard/clube-de-assinaturas', icon: Crown },
+        ]
+      },
+      {
         category: 'Gestão de Equipe',
         items: [
           { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
@@ -286,6 +337,7 @@ export default function DashboardLayout() {
         items: [
           { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
           { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
+          { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
         ]
       },
       {
@@ -438,6 +490,12 @@ export default function DashboardLayout() {
           </div>
           
           <div className="flex items-center gap-3">
+             {/* WhatsApp Integration Status badge */}
+             <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-sans text-[11px] font-bold rounded-xl h-8.5 shrink-0 select-none">
+               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+               WhatsApp Conectado 💬
+             </div>
+
              {/* Guia do Sistema Button */}
              <Button
                id="lumiere-guide-trigger"
@@ -1368,9 +1426,6 @@ export default function DashboardLayout() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Lumière AI Global Chatbot */}
-      <LumiereChatbot />
 
       {/* Interactive Guided Tour */}
       <InteractiveTour />

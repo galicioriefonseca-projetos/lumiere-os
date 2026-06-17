@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
+import { logAuditEvent } from '../../lib/audit';
 import { collection, query, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { Payment, PlanType } from '../../types';
 import { BILLING_CONFIG } from '../../config/billing';
@@ -137,6 +138,22 @@ export default function BillingPage() {
       };
 
       await setDoc(paymentRef, newPayment);
+
+      // Audit log registration
+      logAuditEvent(
+        salonData.id,
+        currentUser?.uid || '',
+        userData?.fullName || '',
+        currentUser?.email || userData?.email || '',
+        userData?.role || 'professional',
+        {
+          action: 'report',
+          targetEntity: 'payments',
+          targetId: paymentRef.id,
+          description: `${userData?.fullName || 'Usuário'} reportou um comprovante de pagamento no valor de R$ ${newPayment.amount} via PIX para o plano ${newPayment.plan}`,
+          details: newPayment
+        }
+      ).catch(err => console.error('[Audit] Error logging payment report:', err));
       
       const salonRef = doc(db, 'salons', salonData.id);
       await updateDoc(salonRef, {

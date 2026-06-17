@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, query, onSnapshot, getDocs, orderBy, limit } from 'firebase/firestore';
+import { AuditLog } from '../../types';
 import { 
   User, 
   MapPin, 
@@ -17,7 +18,10 @@ import {
   Crown,
   Sparkles,
   CalendarDays,
-  ListTodo
+  ListTodo,
+  History,
+  Activity,
+  Trash2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +39,8 @@ export default function AccountPage() {
     checklistsRunCount: 0
   });
   const [loading, setLoading] = useState(true);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [loadingAudits, setLoadingAudits] = useState(true);
 
   useEffect(() => {
     if (!salonData) return;
@@ -76,6 +82,32 @@ export default function AccountPage() {
     };
 
     fetchStats();
+  }, [salonData]);
+
+  useEffect(() => {
+    if (!salonData) return;
+
+    setLoadingAudits(true);
+    const salonId = salonData.id;
+    const q = query(
+      collection(db, `salons/${salonId}/auditLogs`),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const logs: AuditLog[] = [];
+      snapshot.forEach((doc) => {
+        logs.push(doc.data() as AuditLog);
+      });
+      setAuditLogs(logs);
+      setLoadingAudits(false);
+    }, (error) => {
+      console.error("Erro ao carregar logs de auditoria:", error);
+      setLoadingAudits(false);
+    });
+
+    return () => unsubscribe();
   }, [salonData]);
 
   const getRoleBadge = (role: string | undefined) => {
@@ -274,6 +306,116 @@ export default function AccountPage() {
         </div>
 
       </div>
+
+      {/* Histórico de Auditoria do Estabelecimento */}
+      <Card className="bg-zinc-950 border-zinc-900 overflow-hidden">
+        <CardHeader className="border-b border-zinc-900/50 pb-5">
+          <CardTitle className="text-lg font-heading font-light text-white flex items-center gap-2">
+            <History className="w-5 h-5 text-[#D4AF37]" />
+            Histórico de Alterações e Auditoria (Rastreabilidade)
+          </CardTitle>
+          <CardDescription className="text-xs text-zinc-500">
+            Registro cronológico e imutável de ações e alterações críticas realizadas pelos usuários nas coleções do Firestore do salão.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="p-6">
+          {loadingAudits ? (
+            <div className="flex items-center gap-2 text-zinc-500 py-8 text-xs font-mono justify-center">
+              <Activity className="w-4 h-4 animate-spin text-purple-400" /> Carregando trilha de auditoria...
+            </div>
+          ) : auditLogs.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-zinc-900 rounded-xl">
+              <History className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
+              <p className="text-sm font-medium text-zinc-400">Nenhuma ação crítica registrada</p>
+              <p className="text-xs text-zinc-500 mt-1">Os logs de novas alterações aparecerão aqui em tempo real.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs pb-2 border-b border-zinc-900">
+                <span className="text-zinc-400 font-mono">Últimas {auditLogs.length} operações registradas</span>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">Rastreabilidade Ativa (Imutável)</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <div className="min-w-full space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {auditLogs.map((log) => {
+                    const getActionBadge = (action: string) => {
+                      switch (action) {
+                        case 'create':
+                          return <span className="text-[10px] bg-green-500/10 border border-green-500/20 text-green-400 px-2 py-0.5 rounded font-mono font-bold uppercase">CRIAR</span>;
+                        case 'update':
+                          return <span className="text-[10px] bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded font-mono font-bold uppercase">EDITAR</span>;
+                        case 'delete':
+                          return <span className="text-[10px] bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-0.5 rounded font-mono font-bold uppercase">APAGAR</span>;
+                        case 'status_change':
+                          return <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-mono font-bold uppercase">STATUS</span>;
+                        case 'report':
+                          return <span className="text-[10px] bg-purple-500/10 border border-purple-500/20 text-purple-400 px-2 py-0.5 rounded font-mono font-bold uppercase">REPORTAR</span>;
+                        default:
+                          return <span className="text-[10px] bg-zinc-800 border border-zinc-700 text-zinc-400 px-2 py-0.5 rounded font-mono font-bold uppercase">{action}</span>;
+                      }
+                    };
+
+                    const getRoleText = (role: string) => {
+                      switch (role) {
+                        case 'owner': return 'Proprietário';
+                        case 'manager': return 'Gerente';
+                        case 'receptionist': return 'Recepcionista';
+                        case 'professional': return 'Colaborador';
+                        case 'platform_admin': return 'Super Admin';
+                        default: return 'Colaborador';
+                      }
+                    };
+
+                    const dateStr = new Date(log.createdAt).toLocaleString('pt-BR', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit'
+                    });
+
+                    return (
+                      <div 
+                        key={log.id} 
+                        className="p-3.5 bg-zinc-900/20 hover:bg-zinc-900/40 border border-zinc-900/60 rounded-xl transition-all space-y-2 text-xs"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <div className="flex items-center gap-2 shrink-0">
+                            {getActionBadge(log.action)}
+                            <span className="text-zinc-500 font-mono text-[10px]">{dateStr}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-white font-medium">{log.userName}</span>
+                            <span className="text-zinc-650 font-mono text-[10px]">({getRoleText(log.userRole)})</span>
+                            <span className="text-zinc-600 font-mono text-[10px]">•</span>
+                            <span className="text-zinc-400 font-mono text-[11px]">{log.userEmail}</span>
+                          </div>
+                        </div>
+
+                        <div className="pl-0 sm:pl-1 mt-1">
+                          <p className="text-zinc-300 leading-relaxed font-light">{log.description}</p>
+                        </div>
+                        
+                        {log.details && (
+                          <div className="p-2.5 bg-zinc-950/80 rounded-lg border border-zinc-900/40 text-[10px] font-mono text-zinc-500 max-h-[100px] overflow-y-auto mt-2">
+                            <span className="text-zinc-600 block mb-1 font-bold">DETALHES DA OPERAÇÃO (ID: {log.targetId}):</span>
+                            <pre className="whitespace-pre-wrap leading-tight text-zinc-405">{JSON.stringify(log.details, null, 2)}</pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
     </div>
   );
 }

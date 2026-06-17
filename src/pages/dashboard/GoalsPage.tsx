@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
+import { logAuditEvent } from "../../lib/audit";
 import {
   collection,
   query,
@@ -37,7 +38,7 @@ import { formatBRL } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
 export default function GoalsPage() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, currentUser } = useAuth();
 
   // Tabs state
   const [activeTab, setActiveTab] = useState<"salon" | "professionals">("salon");
@@ -209,14 +210,49 @@ export default function GoalsPage() {
       if (editingGoal) {
         const ref = doc(db, `salons/${salonData.id}/goals`, editingGoal.id);
         await updateDoc(ref, payload);
+
+        // Audit log
+        logAuditEvent(
+          salonData.id,
+          currentUser?.uid || '',
+          userData?.fullName || '',
+          currentUser?.email || userData?.email || '',
+          userData?.role || 'professional',
+          {
+            action: 'update',
+            targetEntity: 'goals',
+            targetId: editingGoal.id,
+            description: `${userData?.fullName || 'Usuário'} atualizou a meta do salão "${payload.title}" para R$ ${payload.targetAmount}`,
+            details: payload
+          }
+        ).catch(err => console.error('[Audit] Error logging goal update:', err));
+
         toast.success("Meta do salão atualizada com sucesso!");
       } else {
         const ref = doc(collection(db, `salons/${salonData.id}/goals`));
-        await setDoc(ref, {
+        const finalData = {
           id: ref.id,
           ...payload,
           createdAt: Date.now(),
-        });
+        };
+        await setDoc(ref, finalData);
+
+        // Audit log
+        logAuditEvent(
+          salonData.id,
+          currentUser?.uid || '',
+          userData?.fullName || '',
+          currentUser?.email || userData?.email || '',
+          userData?.role || 'professional',
+          {
+            action: 'create',
+            targetEntity: 'goals',
+            targetId: ref.id,
+            description: `${userData?.fullName || 'Usuário'} criou a nova meta do salão "${payload.title}" com alvo de R$ ${payload.targetAmount}`,
+            details: finalData
+          }
+        ).catch(err => console.error('[Audit] Error logging goal create:', err));
+
         toast.success("Meta do salão criada com sucesso!");
       }
       setIsDialogOpen(false);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
+import { logAuditEvent } from "../../lib/audit";
 import {
   collection,
   query,
@@ -81,7 +82,7 @@ function removeUndefinedDeep(obj: any): any {
 }
 
 export default function ChecklistPage() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, currentUser } = useAuth();
 
   const [activeOperationalChecklists, setActiveOperationalChecklists] =
     useState<Checklist[]>([]);
@@ -743,6 +744,29 @@ export default function ChecklistPage() {
     try {
       const runRef = doc(db, `salons/${salonData.id}/checklistRuns`, runId);
       await setDoc(runRef, removeUndefinedDeep(runData));
+
+      // Registrar log de auditoria
+      logAuditEvent(
+        salonData.id,
+        currentUser?.uid || '',
+        userData?.fullName || '',
+        currentUser?.email || userData?.email || '',
+        userData?.role || 'professional',
+        {
+          action: existingRun ? 'update' : 'create',
+          targetEntity: 'checklistRuns',
+          targetId: runId,
+          description: `${userData?.fullName || 'Usuário'} ${existingRun ? 'atualizou' : 'registrou'} a avaliação diária do profissional ${targetPro?.name || ''} (${runData.attendanceStatus === 'present' ? 'Nota ' + (runData.totalScore || 0) + '/' + (runData.maxScore || 40) : runData.attendanceStatus === 'absent' ? 'Falta' : runData.attendanceStatus === 'not_attended' ? 'Prejudicado' : 'Não Executou'})`,
+          details: {
+            professionalId: evalProfessionalId,
+            professionalName: targetPro?.name || '',
+            attendanceStatus: runData.attendanceStatus,
+            totalScore: runData.totalScore,
+            maxScore: runData.maxScore
+          }
+        }
+      ).catch(err => console.error('[Audit] Error logging evaluation:', err));
+
       toast.success("Avaliação salva");
 
       const updatedRuns = [
@@ -894,6 +918,29 @@ export default function ChecklistPage() {
     try {
       const runRef = doc(db, `salons/${salonData.id}/checklistRuns`, runId);
       await setDoc(runRef, removeUndefinedDeep(runData));
+
+      // Registrar log de auditoria
+      logAuditEvent(
+        salonData.id,
+        currentUser?.uid || '',
+        userData?.fullName || '',
+        currentUser?.email || userData?.email || '',
+        userData?.role || 'professional',
+        {
+          action: existingRun ? 'update' : 'create',
+          targetEntity: 'checklistRuns',
+          targetId: runId,
+          description: `${userData?.fullName || 'Usuário'} ${existingRun ? 'atualizou' : 'registrou'} a avaliação diária do profissional ${targetPro?.name || ''} (${runData.attendanceStatus === 'present' ? 'Nota ' + (runData.totalScore || 0) + '/' + (runData.maxScore || 40) : runData.attendanceStatus === 'absent' ? 'Falta' : runData.attendanceStatus === 'not_attended' ? 'Prejudicado' : 'Não Executou'})`,
+          details: {
+            professionalId: evalProfessionalId,
+            professionalName: targetPro?.name || '',
+            attendanceStatus: runData.attendanceStatus,
+            totalScore: runData.totalScore,
+            maxScore: runData.maxScore
+          }
+        }
+      ).catch(err => console.error('[Audit] Error logging evaluation:', err));
+
       toast.success("Avaliação salva");
       
       setMobileStep("list");
@@ -962,6 +1009,7 @@ export default function ChecklistPage() {
       }
     } else {
       setIncompleteValidationCategories([]);
+      setIsEvaluationOpen(false);
       if (window.innerWidth < 768) {
         setMobileStep("list");
       } else {

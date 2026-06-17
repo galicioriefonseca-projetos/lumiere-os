@@ -302,3 +302,19 @@ export interface BugReport {
   createdAt: any;
   updatedAt: any;
 }
+
+export interface AuditLog {
+  id: string;
+  salonId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  action: 'create' | 'update' | 'delete' | 'status_change' | 'report' | 'auth';
+  targetEntity: 'checklistRuns' | 'payments' | 'goals' | 'professionals' | 'services' | 'clients' | 'salon' | 'user' | 'financial' | 'inventory' | 'marketing' | 'subscription';
+  targetId: string;
+  description: string;
+  details?: any;
+  createdAt: any;
+}
+

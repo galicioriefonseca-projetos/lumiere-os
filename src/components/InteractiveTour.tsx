@@ -50,20 +50,7 @@ export function InteractiveTour() {
       position: 'bottom',
       path: '/dashboard'
     },
-    {
-      target: "gemini-insight-card",
-      title: "Lumière AI Insights 🧠",
-      description: "Este é o núcleo analítico inteligente do LumièreOS. Nossa inteligência artificial analisa em tempo real seus faturamentos, agendamentos e feedbacks de rotina para sugerir ações cirúrgicas e aumentar o seu lucro.",
-      position: 'top',
-      path: '/dashboard'
-    },
-    {
-      target: "lumiere-ai-chat-trigger",
-      title: "Mentor de Negócios 24/7 💬",
-      description: "Sempre que precisar de um conselho criativo, ideias de campanhas de marketing, estratégias de reajuste de comissão ou com dúvidas no checklist, basta clicar no balão flutuante dourado do cérebro artificial!",
-      position: 'left',
-      path: '/dashboard'
-    },
+
     {
       target: "lumiere-guide-trigger",
       title: "Central de Suporte Operacional 💡",
