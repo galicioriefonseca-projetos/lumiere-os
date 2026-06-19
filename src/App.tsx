@@ -35,12 +35,15 @@ const MarketingPage = React.lazy(() => import('./pages/dashboard/MarketingPage')
 const MembershipClubPage = React.lazy(() => import('./pages/dashboard/MembershipClubPage'));
 const LumierePayPage = React.lazy(() => import('./pages/dashboard/LumierePayPage'));
 const PricingCalculatorPage = React.lazy(() => import('./pages/dashboard/PricingCalculatorPage'));
+const GamificationPage = React.lazy(() => import('./pages/dashboard/GamificationPage'));
+const LogsPage = React.lazy(() => import('./pages/dashboard/LogsPage'));
 
 const MasterPanel = React.lazy(() => import('./pages/MasterPanel'));
 const OnboardingTeam = React.lazy(() => import('./pages/onboarding/OnboardingTeam'));
 const OnboardingServices = React.lazy(() => import('./pages/onboarding/OnboardingServices'));
 const OnboardingGoals = React.lazy(() => import('./pages/onboarding/OnboardingGoals'));
 const OnboardingChecklist = React.lazy(() => import('./pages/onboarding/OnboardingChecklist'));
+const BookingPage = React.lazy(() => import('./pages/booking/BookingPage'));
 
 // Suspense fallback spinner
 const PageLoader = () => (
@@ -62,6 +65,7 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cadastro" element={<RegisterPage />} />
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
+            <Route path="/agendar/:salonSlug" element={<BookingPage />} />
             
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
               <Route path="equipe" element={<OnboardingTeam />} />
@@ -83,6 +87,7 @@ function App() {
               <Route path="agendamentos" element={<AppointmentsPage />} />
               <Route path="metas" element={<GoalsPage />} />
               <Route path="comissoes" element={<CommissionsPage />} />
+              <Route path="gamificacao" element={<GamificationPage />} />
               <Route path="relatorios" element={<ReportsPage />} />
               <Route path="minha-conta" element={<AccountPage />} />
               <Route path="checklist" element={<ChecklistPage />} />
@@ -95,6 +100,7 @@ function App() {
               <Route path="clube-de-assinaturas" element={<MembershipClubPage />} />
               <Route path="lumiere-pay" element={<LumierePayPage />} />
               <Route path="precificacao" element={<PricingCalculatorPage />} />
+              <Route path="logs" element={<LogsPage />} />
             </Route>
 
             <Route path="/master" element={<ProtectedRoute requireAdmin><MasterPanel /></ProtectedRoute>} />

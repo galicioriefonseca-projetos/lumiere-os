@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useAlerts } from "../../hooks/useAlerts";
 import { db } from "@/lib/firebase";
 import { collection, query, onSnapshot, where, doc, updateDoc } from "firebase/firestore";
-import { Appointment, ChecklistRun, Professional, ProfessionalGoal, Service } from "../../types";
+import { Appointment, ChecklistRun, Professional, ProfessionalGoal, Service, GamificationProfile, Badge } from "../../types";
+import { calculateLevel } from "../../lib/gamification";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Sparkles, Flame, Trophy, Award as AwardIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useSearchParams } from "react-router-dom";
@@ -41,11 +44,14 @@ import { requestAndRegisterNotificationPermission } from "../../lib/pushNotifica
 
 export default function ProfessionalDashboard() {
   const { userData, salonData } = useAuth();
+  const { activeAlerts, performanceData, dismissAlert } = useAlerts(salonData?.id, userData?.id, userData?.role);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get("tab") || "painel";
 
   const [loading, setLoading] = useState(true);
   const [myProfile, setMyProfile] = useState<Professional | null>(null);
+  const [gamificationProfile, setGamificationProfile] = useState<GamificationProfile | null>(null);
+  const [salonRanking, setSalonRanking] = useState<GamificationProfile[]>([]);
   const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
   const [myEvaluations, setMyEvaluations] = useState<ChecklistRun[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -96,6 +102,39 @@ export default function ProfessionalDashboard() {
       toast.error("Ocorreu um erro ao configurar notificações push.");
     }
   };
+
+  useEffect(() => {
+    if (!salonData?.id || !myProfile?.id) return;
+
+    const profileRef = doc(db, `salons/${salonData.id}/gamification`, myProfile.id);
+    const unsubProfile = onSnapshot(profileRef, (snap) => {
+      if (snap.exists()) {
+        setGamificationProfile({ id: snap.id, ...snap.data() } as GamificationProfile);
+      } else {
+        setGamificationProfile(null);
+      }
+    }, (err) => {
+       console.error("Erro no snap de perfil gamification:", err);
+    });
+
+    const rankQuery = query(collection(db, `salons/${salonData.id}/gamification`));
+    const unsubRanking = onSnapshot(rankQuery, (snap) => {
+      const list: GamificationProfile[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as GamificationProfile);
+      });
+      // Sort by monthlyXP descending
+      const sorted = list.sort((a, b) => (b.monthlyXP || 0) - (a.monthlyXP || 0));
+      setSalonRanking(sorted);
+    }, (err) => {
+       console.error("Erro no snap de ranking gamification:", err);
+    });
+
+    return () => {
+      unsubProfile();
+      unsubRanking();
+    };
+  }, [salonData?.id, myProfile?.id]);
 
   const [editExtras, setEditExtras] = useState<string[]>([]);
   const [editCustomExtras, setEditCustomExtras] = useState('');
@@ -523,9 +562,258 @@ export default function ProfessionalDashboard() {
         </div>
       </div>
 
+      {/* ==================== GAMIFICATION DASHBOARD ROW ==================== */}
+      {(() => {
+        const lvlInfo = calculateLevel(gamificationProfile?.totalXP || 0);
+        const currentStreak = gamificationProfile?.currentStreakDays || 0;
+        const maxStreak = gamificationProfile?.maxStreakDays || 0;
+        const recentScores = gamificationProfile?.recentScores || [];
+        const latestScore = recentScores.length > 0 ? recentScores[recentScores.length - 1].score : 0;
+        const latestProdScore = recentScores.length > 0 ? recentScores[recentScores.length - 1].productionScore : 0;
+        const latestEvalScore = recentScores.length > 0 ? recentScores[recentScores.length - 1].evaluationScore : 0;
+        const badges = gamificationProfile?.badges || [];
+
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              
+              {/* Card 1: Seu Nível */}
+              <Card className="border-[#D4AF37]/10 bg-[#0c0c0f]/80 relative overflow-hidden backdrop-blur-sm">
+                <div className="absolute top-0 right-0 p-3 opacity-5">
+                  <AwardIcon className="h-16 w-16 text-[#D4AF37]" />
+                </div>
+                <CardHeader className="p-4 pb-1">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Nível & Experiência</span>
+                </CardHeader>
+                <CardContent className="p-4 pt-1 space-y-3">
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-2xl font-semibold text-[#D4AF37] font-heading">Nível {lvlInfo.level}</span>
+                    <span className="text-xs text-zinc-400 font-mono">{lvlInfo.currentXP} XP</span>
+                  </div>
+                  <div className="space-y-1">
+                    <Progress value={lvlInfo.progress} className="h-1.5 bg-black/40" />
+                    <div className="flex justify-between text-[9px] text-zinc-500 font-mono">
+                      <span>Próximo nível</span>
+                      <span>{lvlInfo.progress}%</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Card 2: Streak diário */}
+              <Card className="border-[#D4AF37]/10 bg-[#0c0c0f]/80 relative overflow-hidden backdrop-blur-sm">
+                <div className="absolute top-0 right-0 p-3 opacity-5">
+                  <Flame className="h-16 w-16 text-amber-500 animate-pulse" />
+                </div>
+                <CardHeader className="p-4 pb-1">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono font-heading">Streak de Excelência</span>
+                </CardHeader>
+                <CardContent className="p-4 pt-1 space-y-2">
+                  <div className="text-3xl font-light tracking-tight text-white flex items-baseline gap-1.5">
+                    <span className="font-semibold text-white">🔥 {currentStreak}</span>
+                    <span className="text-xs text-zinc-400 font-normal">dia(s)</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 font-mono">
+                    Recorde histórico: <span className="text-[#D4AF37]">⭐ {maxStreak} dias</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Card 3: Score Composto */}
+              <Card className="border-[#D4AF37]/10 bg-[#0c0c0f]/80 relative overflow-hidden backdrop-blur-sm">
+                <div className="absolute top-0 right-0 p-3 opacity-5">
+                  <Sparkles className="h-16 w-16 text-emerald-500" />
+                </div>
+                <CardHeader className="p-4 pb-1">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Score Composto</span>
+                </CardHeader>
+                <CardContent className="p-4 pt-1 space-y-2">
+                  <div className="text-3xl font-light tracking-tight text-white flex items-baseline gap-1.5">
+                    <span className="font-semibold text-emerald-400">{latestScore}%</span>
+                    <span className="text-xs text-zinc-400 font-normal">hoje</span>
+                  </div>
+                  <div className="text-[9px] text-zinc-500 leading-tight">
+                    Combina produção (60% da meta) e comportamento (40% de avaliações Essenza)
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Card 4: Últimas Conquistas (Badges) */}
+              <Card className="border-[#D4AF37]/10 bg-[#0c0c0f]/80 relative overflow-hidden backdrop-blur-sm">
+                <CardHeader className="p-4 pb-1">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Minhas Insígnias</span>
+                </CardHeader>
+                <CardContent className="p-4 pt-1 flex flex-col justify-center h-full">
+                  {badges.length === 0 ? (
+                    <p className="text-[9.5px] text-zinc-400 leading-normal">
+                      Sua jornada rumo ao topo começou! Complete suas tarefas e ganhe insígnias! 🚀
+                    </p>
+                  ) : (
+                    <div className="flex gap-2.5 overflow-x-auto pb-1">
+                      {badges.slice(-3).reverse().map((b, idx) => (
+                        <div key={idx} className="flex flex-col items-center justify-center bg-black/40 border border-white/5 p-1 px-2 rounded-xl text-center min-w-[55px] hover:border-[#D4AF37]/35 transition-all" title={b.description}>
+                          <span className="text-lg mb-0.5">{b.icon}</span>
+                          <span className="text-[8px] text-zinc-300 font-medium truncate max-w-[50px]">{b.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              
+            </div>
+
+            {/* Ranking do Salão */}
+            <Card className="border-zinc-900 bg-black/60 rounded-2xl shadow-xl overflow-hidden">
+              <CardHeader className="p-5 pb-3 flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm font-semibold text-white font-heading flex items-center gap-1.5">
+                     <Trophy className="w-4 h-4 text-[#D4AF37]" /> Ranking de Performance do Salão
+                  </CardTitle>
+                  <CardDescription className="text-[10px] text-zinc-500">
+                     Acompanhe a classificação baseada no XP acumulado no mês atual
+                  </CardDescription>
+                </div>
+                <div className="bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-full px-3 py-1 text-[9px] font-mono font-bold tracking-widest flex items-center gap-1">
+                  XP DO MÊS 🏆
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {salonRanking.length === 0 ? (
+                  <div className="p-8 text-center text-zinc-400 text-xs">
+                    Nenhum colaborador ranqueado este mês ainda. Comece as avaliações no checklist para inaugurar o placar! 🏁
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-zinc-300">
+                      <thead className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold font-mono border-b border-zinc-900">
+                        <tr>
+                          <th className="p-4 pl-6 text-center w-16">Posição</th>
+                          <th className="p-4">Nome</th>
+                          <th className="p-4">Nível</th>
+                          <th className="p-4 text-center">XP do Mês</th>
+                          <th className="p-4 text-center">Streak</th>
+                          <th className="p-4 text-center">Meta%</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-900/40">
+                        {salonRanking.map((p, idx) => {
+                          const isFirst = idx === 0;
+                          const latestProScore = p.recentScores && p.recentScores.length > 0 ? p.recentScores[p.recentScores.length - 1].productionScore : 0;
+                          
+                          // Determine color status logic for row border or badge
+                          // verde = meta >= 100%, amarelo = 70-99%, vermelho = < 70%
+                          let statusBg = "border-l-4 border-red-500";
+                          if (latestProScore >= 100) {
+                            statusBg = "border-l-4 border-green-500";
+                          } else if (latestProScore >= 70) {
+                            statusBg = "border-l-4 border-yellow-500";
+                          }
+
+                          return (
+                            <tr key={p.id} className={cn("hover:bg-zinc-950/45 transition-colors", p.id === myProfile?.id && "bg-[#D4AF37]/5 font-medium")}>
+                              <td className="p-4 pl-6 text-center font-heading font-semibold text-sm">
+                                {isFirst ? (
+                                  <span className="text-yellow-500 text-lg" title="Líder do Mês">👑</span>
+                                ) : (
+                                  <span>#{idx + 1}</span>
+                                )}
+                              </td>
+                              <td className={cn("p-4 flex items-center gap-2", statusBg)}>
+                                <span className="font-semibold text-white">{p.fullName}</span>
+                                {isFirst && (
+                                  <span className="text-[8px] uppercase bg-yellow-500/15 border border-yellow-500/40 text-yellow-500 font-bold px-1.5 py-0.5 rounded leading-none">
+                                     Líder do mês
+                                  </span>
+                                )}
+                                {p.id === myProfile?.id && (
+                                  <span className="text-[8px] uppercase bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] font-bold px-1.5 py-0.5 rounded leading-none font-mono">
+                                     VOCÊ
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4">
+                                <span className="p-1 px-2.5 bg-zinc-900 text-zinc-300 border border-white/5 rounded-full text-[10px] font-semibold font-mono">
+                                   Nível {p.level || 1}
+                                </span>
+                              </td>
+                              <td className="p-4 font-semibold text-white text-center font-mono">
+                                {p.monthlyXP || 0} XP
+                              </td>
+                              <td className="p-4 text-center font-semibold text-amber-500 font-mono">
+                                🔥 {p.currentStreakDays || 0}d
+                              </td>
+                              <td className="p-4 text-center">
+                                <span className={cn(
+                                  "font-bold font-mono text-xs px-2 py-0.5 rounded-md",
+                                  latestProScore >= 100 ? "text-green-400 bg-green-500/10" :
+                                  latestProScore >= 70 ? "text-yellow-400 bg-yellow-500/10" : "text-red-400 bg-red-500/10"
+                                )}>
+                                  {latestProScore ? `${Math.round(latestProScore)}%` : '0%'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
+
       {/* ==================== SCREEN: OVERVIEW (PAINEL) ==================== */}
       {activeTab === 'painel' && (
         <div className="space-y-6">
+          
+          {/* Central de Alertas e Notificações Pessoais */}
+          {activeAlerts.length > 0 && (
+            <div className="space-y-2.5 animate-in fade-in slide-in-from-top-3 duration-350">
+              <div className="flex items-center gap-1.5 px-0.5">
+                <Bell className="w-3.5 h-3.5 text-[#D4AF37] animate-bounce" />
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest font-mono">Central de Alertas</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {activeAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    id={`personal-alert-${alert.id}`}
+                    className={cn(
+                      "flex items-start gap-3 p-4 rounded-2xl border text-xs relative overflow-hidden transition-all duration-300 shadow-md",
+                      alert.type === 'success' ? "bg-gradient-to-br from-green-500/10 to-emerald-500/[0.03] border-green-500/20 text-zinc-100" :
+                      alert.type === 'warning' ? "bg-gradient-to-br from-amber-500/10 to-yellow-500/[0.03] border-amber-500/20 text-zinc-100" :
+                      "bg-gradient-to-br from-red-500/10 to-rose-500/[0.03] border-red-500/20 text-zinc-100"
+                    )}
+                  >
+                    <div className="mt-0.5 select-none text-lg p-1.5 bg-black/40 rounded-xl leading-none font-mono font-bold shrink-0">
+                      {alert.category === 'goal_near' ? '🎯' :
+                       alert.category === 'top_ranked' ? '👑' : '⚠️'}
+                    </div>
+                    <div className="space-y-1 pr-6 flex-1">
+                      <p className="font-bold text-[12.5px] text-white flex items-center gap-1">
+                        {alert.title}
+                      </p>
+                      <p className="leading-relaxed text-zinc-300 text-[11px] font-sans font-light">
+                        {alert.description}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => dismissAlert(alert.id)}
+                      className="absolute top-3.5 right-3.5 text-zinc-400 hover:text-white hover:bg-white/5 w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer text-xs"
+                      title="Dispensar alerta"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             
             {/* Rating card */}
@@ -1042,6 +1330,24 @@ export default function ProfessionalDashboard() {
               </div>
             ) : (
               <div className="max-w-2xl mx-auto space-y-6">
+                
+                {/* Alerta Motivacional de Sprint Final (<10% restante) */}
+                {(() => {
+                  const myPerf = performanceData.find(p => p.prof.id === userData?.id);
+                  if (myPerf?.isNearGoal) {
+                    return (
+                      <div className="bg-gradient-to-r from-amber-500/20 to-yellow-500/5 border-2 border-amber-500/30 rounded-3xl p-6 text-center space-y-3 shadow-xl relative overflow-hidden animate-pulse">
+                        <div className="absolute -top-3 -right-3 text-4xl opacity-10 select-none">🎯</div>
+                        <p className="text-sm font-bold uppercase tracking-wider font-heading text-amber-300">🎯 Quase lá! Sprint Final para a Vitória!</p>
+                        <p className="text-zinc-200 text-xs font-light max-w-lg mx-auto leading-relaxed">
+                          Seu faturamento de <span className="font-bold text-white">R$ {Math.round(myPerf.totalProduction)}</span> representa <span className="font-extrabold text-amber-300 text-sm font-mono">{Math.round(myPerf.goalProgressPct)}%</span> do seu alvo. Falta apenas <span className="font-bold text-white font-mono">R$ {Math.round(myPerf.targetAmount - myPerf.totalProduction)}</span> adicionais! Você está a um passo de bater a meta mensal e ativar o seu bônus de produção! 🚀
+                        </p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 {/* Header status block */}
                 <div className="bg-[#121217] p-6 rounded-3xl border border-white/5 space-y-4 text-center">
                   <div className="flex justify-between items-center">

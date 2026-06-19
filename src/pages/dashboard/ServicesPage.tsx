@@ -120,7 +120,6 @@ export default function ServicesPage() {
   const isOwnerOrManager =
     userData?.role === "owner" ||
     userData?.role === "manager" ||
-    userData?.role === "admin" ||
     userData?.role === "platform_admin";
 
   useEffect(() => {

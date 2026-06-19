@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { logAuditEvent } from "../../lib/audit";
-import { collection, query, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, doc, deleteDoc, updateDoc, getDocs } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,34 +58,40 @@ export default function MembershipClubPage() {
   const [joinDate, setJoinDate] = useState(() => new Date().toISOString().substring(0, 10));
 
   const fetchMembershipData = async () => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     setLoading(true);
     try {
-      const plansRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipPlans`);
-      if (plansRes.ok) {
-        const parsedPlans: MembershipPlan[] = await plansRes.json();
-        setPlans(parsedPlans);
-      }
+      const plansSnapshot = await getDocs(collection(db, "salons", salonId, "membershipPlans"));
+      const parsedPlans: MembershipPlan[] = [];
+      plansSnapshot.forEach((doc) => {
+        parsedPlans.push({ id: doc.id, ...doc.data() } as MembershipPlan);
+      });
+      setPlans(parsedPlans);
       
-      const subsRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipSubscribers`);
-      if (subsRes.ok) {
-        const parsedSubs: Subscriber[] = await subsRes.json();
-        setSubscribers(parsedSubs);
-      }
+      const subsSnapshot = await getDocs(collection(db, "salons", salonId, "membershipSubscribers"));
+      const parsedSubs: Subscriber[] = [];
+      subsSnapshot.forEach((doc) => {
+        parsedSubs.push({ id: doc.id, ...doc.data() } as Subscriber);
+      });
+      setSubscribers(parsedSubs);
     } catch (error) {
-      console.error("Erro ao carregar dados do clube via proxy:", error);
+      console.error("Erro ao carregar dados do clube do Firestore:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMembershipData();
-  }, [salonData]);
+    if (userData?.salonId) {
+      fetchMembershipData();
+    }
+  }, [userData?.salonId]);
 
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
 
     const prVal = parseFloat(planPrice.replace(",", ".")) || 0;
     if (!planName || isNaN(prVal) || prVal <= 0) {
@@ -103,15 +109,10 @@ export default function MembershipClubPage() {
         createdAt: Date.now()
       };
 
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/membershipPlans`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("Erro ao criar plano no proxy");
+      await addDoc(collection(db, "salons", salonId, "membershipPlans"), payload);
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -138,7 +139,8 @@ export default function MembershipClubPage() {
 
   const handleAddSubscriber = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
 
     const targetPlan = plans.find(p => p.id === selectedPlanId);
     if (!clientName || !targetPlan) {
@@ -163,25 +165,15 @@ export default function MembershipClubPage() {
         createdAt: Date.now()
       };
 
-      const subRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipSubscribers`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!subRes.ok) throw new Error("Erro ao adicionar membro no proxy");
+      await addDoc(collection(db, "salons", salonId, "membershipSubscribers"), payload);
 
       // Increment subscriber counter in parent plan doc
-      const planRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipPlans/${targetPlan.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subscribersCount: (targetPlan.subscribersCount || 0) + 1
-        })
+      await updateDoc(doc(db, "salons", salonId, "membershipPlans", targetPlan.id), {
+        subscribersCount: (targetPlan.subscribersCount || 0) + 1
       });
-      if (!planRes.ok) throw new Error("Erro ao ajustar contador do plano no proxy");
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -205,31 +197,24 @@ export default function MembershipClubPage() {
   };
 
   const handleRemoveSubscriber = async (sub: Subscriber) => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     if (!confirm(`Excluir plano de fidelidade e recorrência do cliente: "${sub.clientName}"?`)) return;
 
     try {
-      const delRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipSubscribers/${sub.id}`, {
-        method: "DELETE"
-      });
-      if (!delRes.ok) throw new Error("Erro ao excluir membro no proxy");
+      await deleteDoc(doc(db, "salons", salonId, "membershipSubscribers", sub.id));
 
       // Attempt to decrement plan subscribers count
       const matchedPlan = plans.find(p => p.name === sub.planName);
       if (matchedPlan) {
         const nextCount = Math.max(0, (matchedPlan.subscribersCount || 0) - 1);
-        const planRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipPlans/${matchedPlan.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            subscribersCount: nextCount
-          })
+        await updateDoc(doc(db, "salons", salonId, "membershipPlans", matchedPlan.id), {
+          subscribersCount: nextCount
         });
-        if (!planRes.ok) throw new Error("Erro ao decrementar contador no proxy");
       }
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -251,14 +236,12 @@ export default function MembershipClubPage() {
   };
 
   const handleRemovePlan = async (id: string, name: string) => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     if (!confirm(`Remover permanentemente o plano "${name}"? Os assinantes ativos continuarão existindo.`)) return;
 
     try {
-      const delRes = await fetch(`/api/proxy/salons/${salonData.id}/membershipPlans/${id}`, {
-        method: "DELETE"
-      });
-      if (!delRes.ok) throw new Error("Erro ao remover plano no proxy");
+      await deleteDoc(doc(db, "salons", salonId, "membershipPlans", id));
 
       toast.success("Plano de assinatura removido com sucesso.");
       await fetchMembershipData();

@@ -31,7 +31,9 @@ import {
   DollarSign,
   Megaphone,
   Package,
-  Calculator
+  Calculator,
+  Trophy,
+  Terminal
 } from 'lucide-react';
 import { BugReportDialog } from '../BugReportDialog';
 import { Button } from '@/components/ui/button';
@@ -163,6 +165,7 @@ export default function DashboardLayout() {
           items: [
             { name: 'Minha Agenda', href: '/dashboard?tab=agenda', icon: CalendarDays },
             { name: 'Meu Desempenho', href: '/dashboard?tab=desempenho', icon: TrendingUp },
+            { name: 'Arena & Conquistas', href: '/dashboard/gamificacao', icon: Trophy },
             { name: 'Minhas Avaliações', href: '/dashboard?tab=avaliacoes', icon: Star },
             { name: 'Minhas Metas', href: '/dashboard?tab=metas', icon: Target },
           ]
@@ -191,6 +194,7 @@ export default function DashboardLayout() {
           items: [
             { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
             { name: 'Metas', href: '/dashboard/metas', icon: Target },
+            { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
           ]
         },
         {
@@ -221,6 +225,7 @@ export default function DashboardLayout() {
             { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
             { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
             { name: 'Metas', href: '/dashboard/metas', icon: Target },
+            { name: 'Logs de Sistema', href: '/dashboard/logs', icon: Terminal },
           ]
         },
         {
@@ -280,6 +285,7 @@ export default function DashboardLayout() {
             { name: 'Equipe', href: '/dashboard/equipe', icon: Users },
             { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
             { name: 'Metas', href: '/dashboard/metas', icon: Target },
+            { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
           ]
         },
         {
@@ -288,6 +294,12 @@ export default function DashboardLayout() {
             { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
             { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
             { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
+          ]
+        },
+        {
+          category: 'Administração',
+          items: [
+            { name: 'Logs de Sistema', href: '/dashboard/logs', icon: Terminal },
           ]
         }
       ];
@@ -330,6 +342,7 @@ export default function DashboardLayout() {
           { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
           { name: 'Checklist de Qualidade', href: '/dashboard/checklist', icon: CheckSquare },
           { name: 'Definição de Metas', href: '/dashboard/metas', icon: Target },
+          { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
         ]
       },
       {
@@ -344,6 +357,7 @@ export default function DashboardLayout() {
         category: 'Administração',
         items: [
           { name: 'Plano & Inscrição', href: '/dashboard/assinatura', icon: CreditCard },
+          { name: 'Logs de Sistema', href: '/dashboard/logs', icon: Terminal },
         ]
       }
     ];

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAlerts } from '../../hooks/useAlerts';
 import { db, auth } from '@/lib/firebase';
 import { collection, query, onSnapshot, doc, setDoc, updateDoc, where, Timestamp, deleteDoc } from 'firebase/firestore';
 import { Professional } from '../../types';
@@ -46,6 +47,7 @@ interface Invite {
 
 export default function ProfessionalsPage() {
   const { salonData, userData, isPlatformAdmin, currentUser } = useAuth();
+  const { performanceData } = useAlerts(salonData?.id, userData?.id, userData?.role);
   const isAdmin = isPlatformAdmin;
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -1507,6 +1509,29 @@ export default function ProfessionalsPage() {
                         <span className="truncate select-all select-none" title={prof.email}>{prof.email || 'E-mail não informado'}</span>
                       </div>
                     </div>
+
+                    {/* Alerta de proximidade da meta (<10% restante) */}
+                    {(() => {
+                      const perf = performanceData.find(p => p.prof.id === prof.id);
+                      if (perf?.isNearGoal) {
+                        return (
+                          <div id={`goal-near-alert-${prof.id}`} className="mt-3.5 bg-gradient-to-r from-amber-500/15 to-yellow-500/[0.03] border border-amber-500/25 rounded-xl p-3 text-xs text-amber-200 shadow-md">
+                            <div className="flex items-center gap-1.5 font-bold mb-1">
+                              <span className="text-sm select-none">🎯</span>
+                              <span className="text-[11px] uppercase tracking-wider font-heading text-amber-300">Quase lá! Sprint Final</span>
+                              <span className="ml-auto font-mono text-[10px] text-amber-400 bg-amber-500/15 border border-amber-500/35 px-1.5 py-0.5 rounded leading-none">
+                                {Math.round(perf.goalProgressPct)}%
+                              </span>
+                            </div>
+                            <p className="text-[10.5px] text-zinc-300 font-light leading-relaxed">
+                              Este profissional está a menos de 10% de bater sua meta! Falta apenas <span className="font-semibold font-mono text-white text-[10.5px]">R$ {Math.round(perf.targetAmount - perf.totalProduction)}</span> para atingir o objetivo contratado de R$ {perf.targetAmount}. 🚀
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
                   </div>
 
                   {/* Card Footer Status section */}

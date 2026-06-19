@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { logAuditEvent } from "../../lib/audit";
-import { collection, query, onSnapshot, addDoc, doc, deleteDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, doc, deleteDoc, getDocs } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,28 +83,34 @@ export default function MarketingPage() {
   ];
 
   const fetchCoupons = async () => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     setLoadingCoupons(true);
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/marketingCoupons`);
-      if (!res.ok) throw new Error("Erro na rede do servidor");
-      const parsed: MarketingCoupon[] = await res.json();
+      const querySnapshot = await getDocs(collection(db, "salons", salonId, "marketingCoupons"));
+      const parsed: MarketingCoupon[] = [];
+      querySnapshot.forEach((doc) => {
+        parsed.push({ id: doc.id, ...doc.data() } as MarketingCoupon);
+      });
       parsed.sort((a, b) => b.code.localeCompare(a.code));
       setCoupons(parsed);
     } catch (error) {
-      console.error("Erro ao carregar cupons via proxy:", error);
+      console.error("Erro ao carregar cupons do Firestore:", error);
     } finally {
       setLoadingCoupons(false);
     }
   };
 
   useEffect(() => {
-    fetchCoupons();
-  }, [salonData]);
+    if (userData?.salonId) {
+      fetchCoupons();
+    }
+  }, [userData?.salonId]);
 
   const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
 
     const val = parseFloat(discountValue) || 0;
     const minSpendNum = parseFloat(minSpend) || 0;
@@ -126,15 +132,10 @@ export default function MarketingPage() {
         createdAt: Date.now()
       };
 
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/marketingCoupons`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("Erro ao criar cupom no proxy");
+      await addDoc(collection(db, "salons", salonId, "marketingCoupons"), payload);
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -160,17 +161,15 @@ export default function MarketingPage() {
   };
 
   const handleDeleteCoupon = async (id: string, code: string) => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     if (!confirm(`Remover permanentemente o cupom "${code}" do LumièreOS?`)) return;
 
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/marketingCoupons/${id}`, {
-        method: "DELETE"
-      });
-      if (!res.ok) throw new Error("Erro ao excluir cupom no proxy");
+      await deleteDoc(doc(db, "salons", salonId, "marketingCoupons", id));
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",

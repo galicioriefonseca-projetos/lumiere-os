@@ -93,6 +93,27 @@
         "createdAt": { "type": "integer" }
       },
       "required": ["serviceName", "durationHours", "durationMinutes", "hourlyChairCost", "monthlyCosts", "productsCost", "suggestedPrice", "selectedProfitMargin", "businessProfit", "partnerProfit", "partnerCommissionPercent", "createdAt"]
+    },
+    "ProductionLog": {
+      "title": "ProductionLog",
+      "description": "Registro de erro ou evento em produção para suporte e depuração.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userRole": { "type": "string" },
+        "level": { "type": "string", "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" },
+        "stack": { "type": "string" },
+        "pagePath": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "level", "message", "pagePath", "userAgent", "isActive", "createdAt"]
     }
   },
   "firestore": {
@@ -115,6 +136,10 @@
     "/salons/{salonId}/pricing_calculations/{calculationId}": {
       "schema": "SavedPricing",
       "description": "Subcoleção contendo fórmulas de precificação de serviços salvas pelo salão."
+    },
+    "/salons/{salonId}/productionLogs/{logId}": {
+      "schema": "ProductionLog",
+      "description": "Subcoleção contendo logs de erros em produção para suporte e depuração."
     }
   }
 }

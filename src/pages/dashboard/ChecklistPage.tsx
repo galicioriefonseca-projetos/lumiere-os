@@ -7,6 +7,7 @@ import {
   query,
   onSnapshot,
   doc,
+  getDoc,
   setDoc,
   serverTimestamp,
   updateDoc,
@@ -16,6 +17,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Checklist, ChecklistRun, ChecklistItemTemplate } from "../../types";
+import { calculateCompositeScore, updateDailyScoreAndStreak, applyXPGain } from "../../lib/gamification";
 import { canEvaluateTeam, canAccessOperationalChecklist } from "../../lib/permissions";
 import { getEvaluableFunctions, sanitizeFunctionSlug } from "../../lib/evaluation";
 import { Button } from "@/components/ui/button";
@@ -83,6 +85,81 @@ function removeUndefinedDeep(obj: any): any {
 
 export default function ChecklistPage() {
   const { salonData, userData, currentUser } = useAuth();
+
+  const triggerGamificationScore = async (professionalId: string, status: string, totalScore: number, maxScore: number, targetPro: any) => {
+    if (!salonData) return;
+    if (status !== 'present') return;
+    try {
+      const currentMonthStr = todayStr.substring(0, 7);
+      const goalRef = doc(db, `salons/${salonData.id}/professionalGoals`, `${professionalId}_${currentMonthStr}`);
+      const goalSnap = await getDoc(goalRef);
+      
+      let goalProgressPct = 0;
+      if (goalSnap.exists()) {
+        const goalData = goalSnap.data();
+        const target = goalData.targetAmount || 0;
+        const current = goalData.currentValue || 0;
+        goalProgressPct = target > 0 ? (current / target) * 100 : 0;
+      }
+
+      const evaluationPct = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+      const compositeScore = calculateCompositeScore(goalProgressPct, evaluationPct);
+
+      // 1. Atualizar Score Composto e Streak
+      await updateDailyScoreAndStreak(
+        salonData.id,
+        professionalId,
+        compositeScore,
+        goalProgressPct,
+        evaluationPct,
+        {
+          fullName: targetPro?.name,
+          role: targetPro?.role || 'professional',
+          goalProgress: goalProgressPct,
+          checklistScore: totalScore,
+          maxChecklistScore: maxScore
+        }
+      );
+
+      // 2. Dar XP Base por ter participado/sido avaliado
+      const resultEval = await applyXPGain(
+        salonData.id,
+        professionalId,
+        'EVALUATION_COMPLETED',
+        undefined,
+        {
+          fullName: targetPro?.name,
+          role: targetPro?.role || 'professional'
+        }
+      );
+
+      // 3. Dar XP extra se conseguiu nota excelente (>= 35)
+      let resultExcl = null;
+      if (totalScore >= 35) {
+        resultExcl = await applyXPGain(
+          salonData.id,
+          professionalId,
+          'EVAL_AVERAGE_EXCELLENCE',
+          undefined,
+          {
+            fullName: targetPro?.name,
+            role: targetPro?.role || 'professional'
+          }
+        );
+      }
+
+      // 4. Mostrar feedback animado se subiu de nível
+      if (resultEval.levelUp || (resultExcl && resultExcl?.levelUp)) {
+        const newLvl = resultExcl?.levelUp ? resultExcl.newLevel : resultEval.newLevel;
+        toast.success(`🎉 PARABÉNS! ${targetPro?.name} SUBIU DE NÍVEL! Agora é Nível ${newLvl}! ✨`, {
+          duration: 6000,
+          description: 'Nova conquista desbloqueada no painel!'
+        });
+      }
+    } catch (err) {
+      console.error('[Gamification] Erro ao sincronizar pontuação:', err);
+    }
+  };
 
   const [activeOperationalChecklists, setActiveOperationalChecklists] =
     useState<Checklist[]>([]);
@@ -767,6 +844,10 @@ export default function ChecklistPage() {
         }
       ).catch(err => console.error('[Audit] Error logging evaluation:', err));
 
+      if (runData.attendanceStatus === 'present' && runData.totalScore !== undefined) {
+        triggerGamificationScore(evalProfessionalId, runData.attendanceStatus, runData.totalScore, runData.maxScore || 40, targetPro);
+      }
+
       toast.success("Avaliação salva");
 
       const updatedRuns = [
@@ -940,6 +1021,10 @@ export default function ChecklistPage() {
           }
         }
       ).catch(err => console.error('[Audit] Error logging evaluation:', err));
+
+      if (runData.attendanceStatus === 'present' && runData.totalScore !== undefined) {
+        triggerGamificationScore(evalProfessionalId, runData.attendanceStatus, runData.totalScore, runData.maxScore || 40, targetPro);
+      }
 
       toast.success("Avaliação salva");
       

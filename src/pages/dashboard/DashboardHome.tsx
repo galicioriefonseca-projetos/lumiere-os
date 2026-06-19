@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAlerts } from '../../hooks/useAlerts';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -50,10 +51,12 @@ import {
   Bar,
   LineChart,
   Line,
+  ComposedChart,
 } from 'recharts';
 
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
+  const { activeAlerts, dismissAlert } = useAlerts(salonData?.id, userData?.id, userData?.role);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -79,6 +82,8 @@ export default function DashboardHome() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
   const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
+  const [allComandas, setAllComandas] = useState<any[]>([]);
+  const [teamRanking, setTeamRanking] = useState<any[]>([]);
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
   const [isFinanceDialogOpen, setIsFinanceDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -94,7 +99,7 @@ export default function DashboardHome() {
   const currentMonthStr = new Date().toISOString().substring(0, 7);
 
   // Checks for permissions
-  const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin' || userData?.role === 'admin';
+  const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin';
   const isReceptionistOrAttendant = userData?.role === 'receptionist' || userData?.role === 'attendant';
 
   const evaluationTargets = useMemo(() => {
@@ -131,8 +136,8 @@ export default function DashboardHome() {
   };
 
   useEffect(() => {
-    if (!salonData) return;
-    if (userData?.role === 'professional') {
+    if (!salonData || !userData) return;
+    if (userData.role === 'professional') {
       setLoading(false);
       return;
     }
@@ -192,6 +197,15 @@ export default function DashboardHome() {
         console.error("Erro no onSnapshot de todos agendamentos:", err);
     }));
 
+    // All Comandas (for revenue mapping)
+    const qComandas = query(collection(db, `salons/${salonData.id}/comandas`));
+    unsubs.push(onSnapshot(qComandas, snap => {
+       const list = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as any[];
+       setAllComandas(list);
+    }, err => {
+        console.error("Erro no onSnapshot de todas as comandas:", err);
+    }));
+
     // General Salon Goals
     const qg = query(collection(db, `salons/${salonData.id}/goals`));
     unsubs.push(onSnapshot(qg, snap => {
@@ -213,8 +227,22 @@ export default function DashboardHome() {
         setLoading(false);
      }));
 
+    // Gamification Team Ranking
+    const qgRanking = query(collection(db, `salons/${salonData.id}/gamification`));
+    unsubs.push(onSnapshot(qgRanking, snap => {
+      const list: any[] = [];
+      snap.forEach(d => {
+        list.push({ id: d.id, ...d.data() });
+      });
+      // Sort by monthlyXP descending
+      const sorted = list.sort((a, b) => (b.monthlyXP || 0) - (a.monthlyXP || 0));
+      setTeamRanking(sorted);
+    }, err => {
+      console.error("Erro no onSnapshot do ranking de gamificação:", err);
+    }));
+
     return () => unsubs.forEach(u => u());
-  }, [salonData, userData?.role]);
+  }, [salonData, userData]);
 
   // Efeito derivado para calcular estatísticas compostas sem gerar dependência circular
   useEffect(() => {
@@ -247,6 +275,48 @@ export default function DashboardHome() {
       checklistPct
     }));
   }, [goals, checklistRuns, professionals, salonData, currentMonthStr]);
+
+  // Daily Chart Data (Faturamento Diário vs Meta)
+  const dailyChartData = useMemo(() => {
+    if (!salonData) return [];
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    
+    // Obter dados da meta do mês
+    const currentGoal = goals.find(g => g.month === currentMonthStr);
+    const goalTarget = currentGoal ? currentGoal.targetAmount : 0;
+    const dailyTarget = goalTarget > 0 ? (goalTarget / daysInMonth) : 0;
+
+    const data = [];
+    const today = new Date().getDate();
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dayStr = String(i).padStart(2, '0');
+        const dateStr = `${currentMonthStr}-${dayStr}`;
+        
+        let faturamento = 0;
+        
+        // Apenas computa o faturamento passado ou presente
+        if (i <= today) {
+          const dayComandas = allComandas.filter(c => c.date === dateStr && c.status === 'completed');
+          const dayComandasRevenue = dayComandas.reduce((acc, c) => acc + (c.totalAmount || 0), 0);
+          
+          const dayAppointments = allAppointments.filter(a => a.date === dateStr && a.status === 'completed');
+          const dayApptsRevenue = dayAppointments.reduce((acc, a) => acc + (a.price || 0), 0);
+          
+          faturamento = dayComandasRevenue + dayApptsRevenue;
+        }
+
+        data.push({
+           day: dayStr,
+           date: dateStr,
+           Faturamento: i <= today ? faturamento : null,
+           Meta: dailyTarget,
+        });
+    }
+    return data;
+  }, [allComandas, allAppointments, goals, currentMonthStr, salonData]);
 
   if (isPlatformAdmin) {
     return (
@@ -584,7 +654,164 @@ export default function DashboardHome() {
 
       </div>
 
+      {/* ==================== TEAM ALERT PANEL (ATENÇÕES DA EQUIPE) ==================== */}
+      {isOwnerOrManager && activeAlerts.filter(a => a.proId !== userData?.id).length > 0 && (
+        <div className="space-y-3 p-5 bg-red-950/10 border border-red-500/20 rounded-2xl animate-in fade-in slide-in-from-top-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-400 animate-pulse" />
+            <div>
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Atenção Requerida • Alertas da Equipe</h3>
+              <p className="text-[10px] text-zinc-400">Notificações geradas automaticamente sobre metas, comportamento e presenças do time</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {activeAlerts.filter(a => a.proId !== userData?.id).map((alert) => (
+              <div 
+                key={alert.id}
+                id={`team-alert-${alert.id}`}
+                className={cn(
+                  "p-3.5 rounded-xl border text-[11px] relative overflow-hidden flex flex-col justify-between gap-3 shadow-md transition-all duration-300",
+                  alert.type === 'error' ? "bg-red-900/10 border-red-500/25 text-zinc-300" : "bg-amber-900/10 border-amber-500/25 text-zinc-300"
+                )}
+              >
+                <div className="space-y-1">
+                  <p className="font-bold text-white flex items-center gap-1.5 text-xs">
+                    {alert.title}
+                  </p>
+                  <p className="text-zinc-300 leading-relaxed font-sans font-light text-[10.5px]">
+                    {alert.description}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between mt-1 pt-2 border-t border-white/[0.03]">
+                  <span className="text-[9px] uppercase font-extrabold tracking-wider font-mono text-[#D4AF37] bg-[#D4AF37]/10 px-1.5 py-0.5 rounded leading-none border border-[#D4AF37]/15">
+                    {alert.category === 'low_rating' ? 'Notas Baixas' :
+                     alert.category === 'below_goal' ? 'Meta Baixa' : 'Muitas Faltas'}
+                  </span>
+                  <button 
+                    onClick={() => dismissAlert(alert.id)}
+                    className="text-[9px] font-bold text-red-400 hover:text-white hover:underline transition-colors shrink-0 uppercase tracking-wider cursor-pointer"
+                  >
+                    Dispensar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
+      {/* ==================== TEAM PERFORMANCE (GAMIFICATION RANKING) ==================== */}
+      {isOwnerOrManager && (
+        <Card className="border-zinc-900 bg-black/60 rounded-2xl shadow-xl overflow-hidden">
+          <CardHeader className="p-5 pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-semibold text-white font-heading flex items-center gap-1.5">
+                <Crown className="w-4 h-4 text-[#D4AF37]" strokeWidth={2.5} /> Performance da Equipe (Gamificação)
+              </CardTitle>
+              <p className="text-[10px] text-zinc-500 font-light">
+                Acompanhe e motive seus profissionais com base no progresso das metas e avaliações de comportamento do mês
+              </p>
+            </div>
+            <div className="bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-full px-3 py-1 text-[9px] font-mono font-bold tracking-widest">
+              LUMIÈRE CORE 🎖️
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {teamRanking.length === 0 ? (
+              <div className="p-8 text-center text-zinc-400 text-xs">
+                Nenhum colaborador ranqueado ainda. Realize a primeira avaliação do checklist diário para ativar o ranking! 🏁
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-zinc-300">
+                  <thead className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold font-mono border-b border-zinc-900">
+                    <tr>
+                      <th className="p-4 pl-6 text-center w-20">Classificação</th>
+                      <th className="p-4">Nome</th>
+                      <th className="p-4">Nível</th>
+                      <th className="p-4 text-center">XP Mensal</th>
+                      <th className="p-4 text-center">Streak Diário</th>
+                      <th className="p-4 text-center">Média Avaliações (Mês)</th>
+                      <th className="p-4 text-center">Meta do Mês</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900/40">
+                    {teamRanking.map((p, idx) => {
+                      const isFirst = idx === 0;
+                      
+                      // Calculate average score
+                      const recentScores = p.recentScores || [];
+                      const evalScores = recentScores.filter((s: any) => s.evaluationScore !== undefined);
+                      const avgEval = evalScores.length > 0 
+                        ? `${Math.round(evalScores.reduce((acc: number, cur: any) => acc + (cur.evaluationScore || 0), 0) / evalScores.length)}%`
+                        : "-";
+
+                      const latestProScore = recentScores.length > 0 ? recentScores[recentScores.length - 1].productionScore : 0;
+
+                      // Border signaling status da meta
+                      // verde = meta >= 100%, amarelo = 70-99%, vermelho = < 70%
+                      let statusBg = "border-l-4 border-red-500";
+                      if (latestProScore >= 100) {
+                        statusBg = "border-l-4 border-green-500";
+                      } else if (latestProScore >= 70) {
+                        statusBg = "border-l-4 border-yellow-500";
+                      }
+
+                      return (
+                        <tr key={p.id} className="hover:bg-zinc-950/45 transition-colors">
+                          <td className="p-4 pl-6 text-center font-heading font-semibold text-sm">
+                            {isFirst ? (
+                              <span className="text-yellow-500 text-lg" title="Líder do Salão">👑 #1</span>
+                            ) : (
+                              <span>#{idx + 1}</span>
+                            )}
+                          </td>
+                          <td className={cn("p-4 flex items-center gap-2", statusBg)}>
+                            <span className="font-semibold text-white">{p.fullName}</span>
+                            {latestProScore >= 90 && latestProScore < 100 && (
+                              <span className="text-[8px] uppercase bg-amber-500/15 border border-amber-500/40 text-amber-400 font-bold px-1.5 py-0.5 rounded leading-none animate-pulse" title="A menos de 10% de atingir a meta mensal!">
+                                🎯 Quase Lá!
+                              </span>
+                            )}
+                            {isFirst && (
+                              <span className="text-[8px] uppercase bg-yellow-500/15 border border-yellow-500/40 text-yellow-500 font-bold px-1.5 py-0.5 rounded leading-none">
+                                Ganhando destaque
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <span className="p-1 px-2.5 bg-zinc-900 text-zinc-300 border border-white/5 rounded-full text-[10px] font-semibold font-mono">
+                              Nível {p.level || 1}
+                            </span>
+                          </td>
+                          <td className="p-4 font-semibold text-white text-center font-mono">
+                            {p.monthlyXP || 0} XP
+                          </td>
+                          <td className="p-4 text-center font-semibold text-amber-500 font-mono">
+                            🔥 {p.currentStreakDays || 0}d
+                          </td>
+                          <td className="p-4 text-center font-semibold text-emerald-400 font-mono">
+                            {avgEval}
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={cn(
+                              "font-bold font-mono text-xs px-2 py-0.5 rounded-md",
+                              latestProScore >= 100 ? "text-green-400 bg-green-500/10" :
+                              latestProScore >= 70 ? "text-yellow-400 bg-yellow-500/10" : "text-red-400 bg-red-500/10"
+                            )}>
+                              {latestProScore ? `${Math.round(latestProScore)}%` : '0%'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main Grid: Agenda de Hoje (Left Col) & Sidebar indicators (Right Col) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -779,8 +1006,85 @@ export default function DashboardHome() {
         <div className="space-y-3.5">
           <div className="flex items-center gap-2 px-1">
              <TrendingUp className="w-4 h-4 text-[#D4AF37]" />
-             <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Histórico e Tendência Anual</span>
+             <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Evolução do Faturamento e Histórico</span>
           </div>
+
+          {/* Daily Revenue vs Goal */}
+          <Card className="border-white/5 bg-[#0c0c0f] shadow-xl rounded-2xl overflow-hidden mb-6">
+            <CardHeader className="border-b border-white/5 pb-4 bg-white/[0.01]">
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                     <CardTitle className="text-sm font-heading font-semibold text-white">
+                        Faturamento Diário vs. Meta Diária (Mês Atual)
+                     </CardTitle>
+                     <p className="text-[11px] text-muted-foreground mt-1">
+                        Acompanhe graficamente a velocidade do time em direção à meta neste mês.
+                     </p>
+                  </div>
+               </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+               <div className="h-[350px] w-full animate-fade-in">
+                  <ResponsiveContainer width="100%" height="100%">
+                     <ComposedChart
+                        data={dailyChartData}
+                        margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                     >
+                        <defs>
+                           <linearGradient id="colorFaturamentoDiario" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#d4af37" stopOpacity={0.8}/>
+                              <stop offset="95%" stopColor="#d4af37" stopOpacity={0.15}/>
+                           </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                        <XAxis 
+                           dataKey="day" 
+                           stroke="#71717a" 
+                           fontSize={11} 
+                           tickLine={false} 
+                           axisLine={false} 
+                        />
+                        <YAxis 
+                           stroke="#71717a" 
+                           fontSize={11} 
+                           tickLine={false} 
+                           axisLine={false}
+                           tickFormatter={(value) => `R$ ${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+                        />
+                        <Tooltip 
+                           contentStyle={{ 
+                              backgroundColor: '#121214', 
+                              borderRadius: '12px', 
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              fontFamily: 'sans-serif'
+                           }}
+                           labelStyle={{ color: '#d4af37', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}
+                           itemStyle={{ color: '#e4e4e7', fontSize: '12px' }}
+                           formatter={(value: any, name: string) => [value != null ? formatBRL(value) : '-', name]}
+                        />
+                        <Legend verticalAlign="top" height={36} iconType="circle" iconSize={8} />
+                        <Bar 
+                           dataKey="Faturamento" 
+                           name="Faturamento Diário" 
+                           fill="url(#colorFaturamentoDiario)" 
+                           radius={[4, 4, 0, 0]}
+                           maxBarSize={40}
+                        />
+                        <Line
+                           type="stepAfter"
+                           dataKey="Meta"
+                           name="Meta Fracionada/Dia"
+                           stroke="rgba(255, 255, 255, 0.4)"
+                           strokeWidth={1.5}
+                           strokeDasharray="4 4"
+                           dot={false}
+                           activeDot={false}
+                        />
+                     </ComposedChart>
+                  </ResponsiveContainer>
+               </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {/* Currency Performance Chart */}

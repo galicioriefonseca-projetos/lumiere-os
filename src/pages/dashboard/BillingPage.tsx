@@ -73,7 +73,7 @@ export default function BillingPage() {
     return () => unsubscribe();
   }, [salonData]);
 
-  const isAuthorized = userData?.role === 'owner' || isPlatformAdmin || userData?.role === 'admin';
+  const isAuthorized = userData?.role === 'owner' || isPlatformAdmin;
   if (!isAuthorized) {
     return (
       <div className="flex flex-col items-center justify-center p-24 text-center text-zinc-400">

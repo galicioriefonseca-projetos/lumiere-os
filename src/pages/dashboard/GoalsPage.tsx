@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { toast } from "sonner";
 import { normalizeGoal, calculateGoalProgress, GoalProgress, getDaysCount } from "../../lib/goals";
 import { canManageGoals } from "../../lib/permissions";
+import { applyXPGain } from "../../lib/gamification";
 import {
   Loader2,
   Plus,
@@ -371,6 +372,10 @@ export default function GoalsPage() {
         newValue = currentManualVal + value;
       }
 
+      const matchingGoalInList = professionalGoals.find(g => g.professionalId === selectedProfForProgress.id && g.month === selectedMonth);
+      const targetAmount = selectedGoalForProgress?.targetAmount ?? matchingGoalInList?.targetAmount ?? 0;
+      const alreadyAwarded = !!(selectedGoalForProgress?.goalXPAwardedAt || matchingGoalInList?.goalXPAwardedAt);
+
       const payload: any = {
         id: docId,
         professionalId: selectedProfForProgress.id,
@@ -381,6 +386,20 @@ export default function GoalsPage() {
         lastProgressUpdatedBy: userData?.fullName || userData?.email || "Manager",
         updatedAt: Date.now(),
       };
+
+      if (targetAmount > 0 && newValue >= targetAmount && !alreadyAwarded) {
+        payload.goalXPAwardedAt = Date.now();
+        try {
+          await applyXPGain(salonData.id, selectedProfForProgress.id, 'MONTHLY_GOAL_HIT', undefined, {
+            fullName: selectedProfForProgress.name || 'Colaborador',
+            role: selectedProfForProgress.role || 'professional',
+            reason: 'Meta faturamento mensal batida'
+          });
+          toast.success(`🎯 ${selectedProfForProgress.name} bateu a meta! +500 XP`);
+        } catch (xpErr) {
+          console.error("Erro ao aplicar XP ao bater meta:", xpErr);
+        }
+      }
 
       const ref = doc(db, `salons/${salonData.id}/professionalGoals`, docId);
       await setDoc(ref, payload, { merge: true });

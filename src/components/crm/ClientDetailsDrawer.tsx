@@ -72,7 +72,7 @@ export default function ClientDetailsDrawer({
   // Permissions Checks
   const isProfessionalRole = userRole === 'professional';
   const isReceptionistRole = userRole === 'receptionist' || userRole === 'attendant';
-  const isManagerOrOwner = userRole === 'owner' || userRole === 'manager' || userRole === 'admin' || userRole === 'platform_admin';
+  const isManagerOrOwner = userRole === 'owner' || userRole === 'manager' || userRole === 'platform_admin';
 
   // Format WhatsApp Link
   const formatWhatsAppLink = (phoneNum: string) => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, onSnapshot, getDocs, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 import { AuditLog } from '../../types';
 import { 
   User, 
@@ -21,14 +21,65 @@ import {
   ListTodo,
   History,
   Activity,
-  Trash2
+  Trash2,
+  Calendar,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatBRL } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export default function AccountPage() {
   const { salonData, userData, currentUser } = useAuth();
+
+  const [bookingEnabled, setBookingEnabled] = useState(false);
+  const [slug, setSlug] = useState('');
+  const [bookingMessage, setBookingMessage] = useState('');
+  const [workingHours, setWorkingHours] = useState<any>({
+    mon: { open: true, start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' },
+    tue: { open: true, start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' },
+    wed: { open: true, start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' },
+    thu: { open: true, start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' },
+    fri: { open: true, start: '09:00', end: '18:00', breakStart: '12:00', breakEnd: '13:00' },
+    sat: { open: true, start: '09:00', end: '16:00', breakStart: '', breakEnd: '' },
+    sun: { open: false, start: '09:00', end: '13:00', breakStart: '', breakEnd: '' },
+  });
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  useEffect(() => {
+    if (salonData) {
+      setBookingEnabled(salonData.bookingEnabled || false);
+      setSlug(salonData.slug || '');
+      setBookingMessage(salonData.bookingMessage || '');
+      if (salonData.workingHours) {
+        setWorkingHours(salonData.workingHours);
+      }
+    }
+  }, [salonData]);
+
+  const handleSaveBookingConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData) return;
+    try {
+      setSavingConfig(true);
+      const cleanedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+      const ref = doc(db, 'salons', salonData.id);
+      await updateDoc(ref, {
+        bookingEnabled,
+        slug: cleanedSlug,
+        bookingMessage,
+        workingHours,
+        updatedAt: Date.now()
+      });
+      toast.success('Configurações de agendamento salvas com sucesso!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao salvar as configurações.');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
   
   // Loading counters to show real usage statistics
   const [stats, setStats] = useState({
@@ -202,6 +253,216 @@ export default function AccountPage() {
                   <span className="text-sm font-semibold text-white block mt-0.5">{salonData?.city ? `${salonData.city} - ${salonData.state || 'MG'}` : 'Belo Horizonte - MG'}</span>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Configurações de Agendamento Online e Link Comercial */}
+          <Card className="bg-zinc-950 border-zinc-900">
+            <CardHeader className="border-b border-zinc-900/50 pb-5">
+              <CardTitle className="text-lg font-heading font-light text-white flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#D4AF37]" />
+                Agendamento Online & Link Comercial
+              </CardTitle>
+              <CardDescription className="text-xs text-zinc-500">
+                Configure as regras do seu portal público para captação direta de clientes via link no Instagram ou WhatsApp.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-6">
+              <form onSubmit={handleSaveBookingConfig} className="space-y-6">
+                <fieldset disabled={!['owner', 'manager', 'platform_admin'].includes(userData?.role || '')} className="space-y-6 border-none p-0 m-0">
+                  
+                  {/* Ativar/Desativar */}
+                  <div className="flex items-center justify-between p-4 bg-zinc-900/20 border border-zinc-900 rounded-2xl">
+                    <div className="space-y-0.5">
+                      <label className="text-sm font-bold text-white block">Ativar Agendamento Online</label>
+                      <span className="text-xs text-zinc-500">Permitir que clientes agendem serviços sem precisar de login.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBookingEnabled(!bookingEnabled)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        bookingEnabled ? 'bg-emerald-500' : 'bg-zinc-800'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          bookingEnabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* slug */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 font-mono uppercase">URL do Portal de Agendamento</label>
+                    <div className="flex rounded-xl shadow-sm">
+                      <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-zinc-800 bg-zinc-900 text-zinc-500 font-mono text-xs">
+                        lumiereos.com/agendar/
+                      </span>
+                      <input
+                        required
+                        type="text"
+                        placeholder="slug-unico-do-salao"
+                        value={slug}
+                        onChange={(e) => setSlug(e.target.value)}
+                        className="flex-1 bg-zinc-950 border border-zinc-800 focus:border-zinc-700 min-w-0 rounded-r-xl px-3 py-2 text-xs focus:outline-none placeholder-zinc-500 text-white font-mono font-bold"
+                      />
+                    </div>
+                    {slug && bookingEnabled && (
+                      <p className="text-xs text-zinc-500 flex items-center gap-1 mt-1.5">
+                        <LinkIcon className="w-3.5 h-3.5 text-zinc-400" />
+                        Seu link ativo: 
+                        <a 
+                          href={`/agendar/${slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="text-emerald-400 hover:text-emerald-300 font-mono font-semibold underline ml-1"
+                        >
+                          abrir link em nova guia
+                        </a>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Boas-vindas bookingMessage */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 font-mono uppercase">Mensagem de Boas-Vindas</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Seja bem-vindo ao portal de agendamentos! Reserve seu horário..."
+                      value={bookingMessage}
+                      onChange={(e) => setBookingMessage(e.target.value)}
+                      className="w-full bg-zinc-905 border border-zinc-800 focus:border-zinc-700 rounded-xl px-3 py-2 text-xs focus:outline-none placeholder-zinc-500 text-white leading-relaxed resize-none"
+                    />
+                  </div>
+
+                  {/* Working Hours */}
+                  <div className="space-y-4">
+                    <div className="border-b border-zinc-900 pb-2">
+                      <label className="text-xs font-bold text-zinc-300 font-mono uppercase">Dias de Funcionamento & Almoço</label>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Configure os dias de trabalho, horários de expediente e o intervalo de almoço.</p>
+                    </div>
+
+                    <div className="grid gap-3.5">
+                      {Object.keys(workingHours).map((dayKey) => {
+                        const wh = workingHours[dayKey];
+                        const dayLabels: { [key: string]: string } = {
+                          mon: 'Segunda-feira',
+                          tue: 'Terça-feira',
+                          wed: 'Quarta-feira',
+                          thu: 'Quinta-feira',
+                          fri: 'Sexta-feira',
+                          sat: 'Sábado',
+                          sun: 'Domingo'
+                        };
+
+                        return (
+                          <div 
+                            key={dayKey} 
+                            className={`p-3.5 rounded-xl border transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                              wh.open 
+                                ? 'bg-zinc-900/40 border-zinc-900' 
+                                : 'bg-transparent border-zinc-900/50 opacity-40'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={wh.open}
+                                onChange={(e) => {
+                                  setWorkingHours((p: any) => ({
+                                    ...p,
+                                    [dayKey]: { ...p[dayKey], open: e.target.checked }
+                                  }));
+                                }}
+                                className="w-4 h-4 rounded border-zinc-800 bg-zinc-950 text-white focus:ring-0 cursor-pointer"
+                              />
+                              <span className="text-xs font-bold text-white">{dayLabels[dayKey]}</span>
+                            </div>
+
+                            {wh.open && (
+                              <div className="flex flex-wrap items-center gap-3 text-xs">
+                                <div className="flex items-center gap-1.5 bg-zinc-950 p-1.5 rounded-lg border border-zinc-900">
+                                  <span className="text-[10px] text-zinc-500 font-mono uppercase">Expediente:</span>
+                                  <input 
+                                    type="time" 
+                                    value={wh.start} 
+                                    onChange={(e) => {
+                                      setWorkingHours((p: any) => ({
+                                        ...p,
+                                        [dayKey]: { ...p[dayKey], start: e.target.value }
+                                      }));
+                                    }}
+                                    className="bg-transparent text-white font-mono max-w-[70px] outline-none border-none p-0 focus:ring-0 text-center"
+                                  />
+                                  <span className="text-zinc-500">as</span>
+                                  <input 
+                                    type="time" 
+                                    value={wh.end} 
+                                    onChange={(e) => {
+                                      setWorkingHours((p: any) => ({
+                                        ...p,
+                                        [dayKey]: { ...p[dayKey], end: e.target.value }
+                                      }));
+                                    }}
+                                    className="bg-transparent text-white font-mono max-w-[70px] outline-none border-none p-0 focus:ring-0 text-center"
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 bg-zinc-950 p-1.5 rounded-lg border border-zinc-900">
+                                  <span className="text-[10px] text-zinc-500 font-mono uppercase">Almoço:</span>
+                                  <input 
+                                    type="time" 
+                                    value={wh.breakStart || ''} 
+                                    placeholder="Sem"
+                                    onChange={(e) => {
+                                      setWorkingHours((p: any) => ({
+                                        ...p,
+                                        [dayKey]: { ...p[dayKey], breakStart: e.target.value }
+                                      }));
+                                    }}
+                                    className="bg-transparent text-white font-mono max-w-[70px] outline-none border-none p-0 focus:ring-0 text-center placeholder-zinc-500"
+                                  />
+                                  <span className="text-zinc-500">as</span>
+                                  <input 
+                                    type="time" 
+                                    value={wh.breakEnd || ''} 
+                                    placeholder="Sem"
+                                    onChange={(e) => {
+                                      setWorkingHours((p: any) => ({
+                                        ...p,
+                                        [dayKey]: { ...p[dayKey], breakEnd: e.target.value }
+                                      }));
+                                    }}
+                                    className="bg-transparent text-white font-mono max-w-[70px] outline-none border-none p-0 focus:ring-0 text-center placeholder-zinc-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Apenas donos e gerentes veem e salvam */}
+                  {['owner', 'manager', 'platform_admin'].includes(userData?.role || '') ? (
+                    <Button 
+                      type="submit" 
+                      disabled={savingConfig}
+                      className="w-full bg-white hover:bg-zinc-100 text-black h-11 font-semibold rounded-xl transition flex items-center justify-center gap-2 text-xs"
+                    >
+                      {savingConfig ? 'Gravando Alterações...' : 'Salvar Configurações de Agendamento'}
+                    </Button>
+                  ) : (
+                    <div className="p-3 bg-zinc-900/20 border border-zinc-900 text-zinc-500 rounded-xl text-center text-xs">
+                      Apenas administradores (proprietários/gerentes) podem editar as configurações de agendamento online.
+                    </div>
+                  )}
+
+                </fieldset>
+              </form>
             </CardContent>
           </Card>
         </div>

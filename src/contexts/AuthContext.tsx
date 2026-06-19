@@ -130,6 +130,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    try {
+      if (userData) {
+        sessionStorage.setItem('lumiere_logged_user', JSON.stringify({
+          id: userData.id,
+          fullName: userData.fullName,
+          email: userData.email,
+          role: userData.role,
+          salonId: userData.salonId
+        }));
+      } else {
+        sessionStorage.removeItem('lumiere_logged_user');
+      }
+    } catch (e) {
+      console.error('Failed to sync user to sessionStorage', e);
+    }
+  }, [userData]);
+
+  useEffect(() => {
     if (!currentUser) return;
     
     const countSalons = async () => {

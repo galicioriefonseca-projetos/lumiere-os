@@ -1,4 +1,4 @@
-export type Role = 'owner' | 'admin' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
+export type Role = 'owner' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
 export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'other';
 export type PlanType = 'start' | 'studio' | 'performance' | 'network' | 'founder';
 export type SubscriptionStatus = 'trial' | 'active' | 'pending_payment' | 'overdue' | 'canceled';
@@ -21,6 +21,20 @@ export interface User {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface WorkingHoursDay {
+  open: boolean;
+  start: string; // "09:00"
+  end: string;   // "18:00"
+  breakStart?: string; // "12:00"
+  breakEnd?: string;   // "13:00"
+}
+
+export type WeekDay = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+
+export type WorkingHours = {
+  [key in WeekDay]: WorkingHoursDay;
+};
 
 export interface Salon {
   id: string;
@@ -62,6 +76,10 @@ export interface Salon {
   stripePriceId?: string;
   mercadoPagoPreapprovalId?: string;
   onboardingCompleted?: boolean;
+  slug?: string;               // ex: "studio-bella" — URL única do salão
+  bookingEnabled?: boolean;    // habilitar/desabilitar agendamento online
+  bookingMessage?: string;     // mensagem de boas-vindas na tela de agendamento
+  workingHours?: WorkingHours; // horários de funcionamento
 }
 
 export interface Payment {
@@ -112,6 +130,7 @@ export interface Professional {
   primaryFunction?: string;
   additionalFunctions?: string[];
   specialties?: string[];
+  commissionRate?: number;
 }
 
 export interface Category {
@@ -188,8 +207,13 @@ export interface Appointment {
   serviceName: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  status: 'scheduled' | 'completed' | 'canceled' | 'no_show';
+  status: 'scheduled' | 'confirmed' | 'completed' | 'canceled' | 'no_show';
   notes?: string;
+  source?: 'manual' | 'client_booking'; // origem do agendamento
+  clientPhone?: string;                  // para agendamentos online (sem cadastro)
+  clientEmail?: string;
+  serviceDuration?: number;              // duração em minutos
+  price?: number;                        // valor cobrado
   createdAt: number;
   updatedAt: number;
 }
@@ -317,4 +341,102 @@ export interface AuditLog {
   details?: any;
   createdAt: any;
 }
+
+export interface ProductionLog {
+  id: string;
+  salonId: string;
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  userRole?: string;
+  level: 'error' | 'warning' | 'info';
+  message: string;
+  stack?: string;
+  pagePath: string;
+  userAgent: string;
+  isActive: boolean;
+  deletedAt?: number | null;
+  createdAt: number | any;
+}
+
+export interface Badge {
+  id: string;
+  name: string;
+  icon: string;        // emoji
+  description: string;
+  earnedAt: number;
+  category: 'production' | 'evaluation' | 'streak' | 'ranking' | 'special';
+}
+
+export interface GamificationProfile {
+  id: string;             // professionalId
+  fullName: string;
+  role: string;
+  avatarUrl?: string;
+  
+  // XP & Nível
+  totalXP: number;
+  monthlyXP: number;      // XP acumulado no mês corrente (reinicia dia 1)
+  level: number;
+  
+  // Streak de excelência (scoreComposto >= 80%)
+  currentStreakDays: number;
+  maxStreakDays: number;
+  lastActiveDate?: string; // YYYY-MM-DD para controle de quebra do streak
+  
+  // Histórico de Conquistas
+  badges: Badge[];
+  
+  // Scores Recentes (para gráfico de linha)
+  recentScores: {
+    date: string;         // YYYY-MM-DD
+    score: number;        // scoreComposto do dia (0 a 100)
+    productionScore: number;
+    evaluationScore: number;
+  }[];
+  
+  updatedAt: number;
+}
+
+// XP thresholds for each level
+export const XP_LEVELS: Record<number, number> = {
+  1: 100,
+  2: 250,
+  3: 500,
+  4: 1000,
+  5: 2000,
+  6: 4000,
+  7: 8000,
+  8: 15000,
+  9: 30000,
+  10: 50000
+};
+
+// XP awarded for each event
+export const XP_EVENTS = {
+  EVALUATION_COMPLETED: 50,  // Participar da avaliação diária (ser avaliado)
+  EVAL_AVERAGE_EXCELLENCE: 100, // Tirar nota de excelência (totalScore >= 35)
+  GOAL_PROG_25: 20,          // Bater 25% da meta mensal
+  GOAL_PROG_50: 40,          // Bater 50% da meta mensal
+  GOAL_PROG_75: 60,          // Bater 75% da meta mensal
+  GOAL_COMPLETED: 150,       // Bater 100% da meta mensal
+  STREAK_3_DAYS: 30,         // Manter 3 dias de streak
+  STREAK_7_DAYS: 70,         // Manter 7 dias de streak
+  STREAK_15_DAYS: 150,        // Manter 15 dias de streak
+  MONTHLY_GOAL_HIT: 500      // Bater a meta do mês
+};
+
+// Available badges
+export const AVAILABLE_BADGES = [
+  { id: 'prod_bronze', name: 'Produtor Bronze', icon: '🥉', description: 'Bateu 100% da primeira meta mensal', category: 'production' },
+  { id: 'prod_silver', name: 'Produtor Prata', icon: '🥈', description: 'Duas metas consecutivas batidas no ano', category: 'production' },
+  { id: 'prod_gold', name: 'Produtor Gold', icon: '🥇', description: 'Três metas consecutivas batidas no ano', category: 'production' },
+  { id: 'prod_star', name: 'Estrela de Produção', icon: '⭐', description: 'Bateu 150% ou mais da meta mensal', category: 'production' },
+  { id: 'eval_excl', name: 'Profissional de Excelência', icon: '💎', description: 'Tirou nota máxima no checklist diário', category: 'evaluation' },
+  { id: 'eval_perfect_week', name: 'Semana Perfeita', icon: '🦄', description: 'Média de avaliações >= 4.8 na semana', category: 'evaluation' },
+  { id: 'streak_fire', name: 'No Fogo do Hábito', icon: '🔥', description: 'Alcançou 7 dias seguidos de streak', category: 'streak' },
+  { id: 'streak_master', name: 'Inabalável', icon: '🧬', description: 'Alcançou 15 dias seguidos de streak', category: 'streak' },
+  { id: 'rank_first', name: 'Campeão Mensal', icon: '🏆', description: 'Terminou o Ranking em 1º lugar no mês', category: 'ranking' }
+] as const;
+
 

@@ -52,6 +52,27 @@ window.addEventListener('error', (event) => {
       return;
     }
 
+    let salonId = 'unknown';
+    let userData = undefined;
+    try {
+      const loggedUserStr = sessionStorage.getItem('lumiere_logged_user');
+      if (loggedUserStr) {
+        const parsed = JSON.parse(loggedUserStr);
+        userData = parsed;
+        salonId = parsed.salonId || 'unknown';
+      }
+    } catch (e) {}
+
+    if (salonId && salonId !== 'unknown') {
+      import('./lib/logger').then(({ persistLog }) => {
+        persistLog(salonId, 'error', `[Crash Global] ${event.message}`, {
+          stack: event.error?.stack || `At ${event.filename}:${event.lineno}:${event.colno}`,
+          userData,
+          pagePath: window.location.pathname
+        });
+      }).catch(() => {});
+    }
+
     sessionStorage.setItem('lumiere_last_error', JSON.stringify({
       message: event.message,
       filename: event.filename,
@@ -71,6 +92,27 @@ window.addEventListener('unhandledrejection', (event) => {
     if (isChunkError(reason)) {
       handleChunkErrorRecovery();
       return;
+    }
+
+    let salonId = 'unknown';
+    let userData = undefined;
+    try {
+      const loggedUserStr = sessionStorage.getItem('lumiere_logged_user');
+      if (loggedUserStr) {
+        const parsed = JSON.parse(loggedUserStr);
+        userData = parsed;
+        salonId = parsed.salonId || 'unknown';
+      }
+    } catch (e) {}
+
+    if (salonId && salonId !== 'unknown') {
+      import('./lib/logger').then(({ persistLog }) => {
+        persistLog(salonId, 'error', `[Rejeição Promessa] ${event.reason?.message || 'Unhandled Promise Rejection'}`, {
+          stack: event.reason?.stack || String(event.reason),
+          userData,
+          pagePath: window.location.pathname
+        });
+      }).catch(() => {});
     }
 
     sessionStorage.setItem('lumiere_last_error', JSON.stringify({

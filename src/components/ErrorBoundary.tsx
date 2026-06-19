@@ -28,14 +28,38 @@ export class ErrorBoundary extends Component<Props, State> {
     const route = typeof window !== 'undefined' ? window.location.pathname + window.location.search : 'N/A';
     const appVersion = APP_INFO.version;
     
-    // We attempt to get the role if it was saved somewhere else, otherwise 'unknown'
-    // Since AuthContext doesn't save it directly in localStorage by default, we'll just log 'unknown' 
-    // unless you want to try reading a cookie or local storage if existed.
     let role = 'unknown';
+    let salonId = 'unknown';
+    let userData = undefined;
+    
+    try {
+      const loggedUserStr = sessionStorage.getItem('lumiere_logged_user');
+      if (loggedUserStr) {
+        const parsed = JSON.parse(loggedUserStr);
+        userData = parsed;
+        salonId = parsed.salonId || 'unknown';
+        role = parsed.role || 'unknown';
+      }
+    } catch (e) {
+      console.warn('Could not read user from sessionStorage inside ErrorBoundary', e);
+    }
 
     console.error(`[ErrorBoundary] ${error.message}\n${error.stack}\nroute: ${route}\nrole: ${role}\nappVersion: ${appVersion}`);
     console.error('Uncaught error details:', error, errorInfo);
     
+    // Auto-logging production crash to Firestore
+    if (salonId && salonId !== 'unknown') {
+      import('../lib/logger').then(({ persistLog }) => {
+        persistLog(salonId, 'error', `[ErrorBoundary Crítico] ${error.message}`, {
+          stack: (error.stack || '') + '\n\nComponent Stack:\n' + (errorInfo.componentStack || ''),
+          userData,
+          pagePath: route
+        });
+      }).catch(err => {
+        console.error('Falha ao importar dinamicamente o logger:', err);
+      });
+    }
+
     try {
       sessionStorage.setItem('lumiere_last_error', JSON.stringify({
         message: error.message,

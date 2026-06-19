@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { logAuditEvent } from "../../lib/audit";
-import { collection, query, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, doc, deleteDoc, updateDoc, getDocs } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,29 +78,35 @@ export default function FinancialPage() {
   }, [type]);
 
   const fetchTransactions = async () => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/financialTransactions`);
-      if (!res.ok) throw new Error("Erro na resposta do servidor");
-      const items: Transaction[] = await res.json();
+      const querySnapshot = await getDocs(collection(db, "salons", salonId, "financialTransactions"));
+      const items: Transaction[] = [];
+      querySnapshot.forEach((doc) => {
+        items.push({ id: doc.id, ...doc.data() } as Transaction);
+      });
       // Sort cronologically desc
       items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.createdAt - a.createdAt);
       setTransactions(items);
     } catch (error) {
-      console.error("Erro ao carregar transações financeiras via proxy:", error);
+      console.error("Erro ao carregar transações financeiras do Firestore:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchTransactions();
-  }, [salonData]);
+    if (userData?.salonId) {
+      fetchTransactions();
+    }
+  }, [userData?.salonId]);
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
 
     const valueNum = parseFloat(amount.replace(",", "."));
     if (!description || isNaN(valueNum) || valueNum <= 0) {
@@ -119,15 +125,10 @@ export default function FinancialPage() {
         createdAt: Date.now()
       };
 
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/financialTransactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("Erro ao registrar transação no proxy");
+      await addDoc(collection(db, "salons", salonId, "financialTransactions"), payload);
       
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -152,17 +153,15 @@ export default function FinancialPage() {
   };
 
   const handleDelete = async (id: string, trans: Transaction) => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     if (!confirm(`Excluir transação "${trans.description}" permanente?`)) return;
 
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/financialTransactions/${id}`, {
-        method: "DELETE"
-      });
-      if (!res.ok) throw new Error("Erro ao excluir transação no proxy");
+      await deleteDoc(doc(db, "salons", salonId, "financialTransactions", id));
       
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",

@@ -40,6 +40,8 @@ import {
 import { formatBRL } from '@/lib/utils';
 import { canEditCommissionRules } from '../../lib/permissions';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { calculateCommission } from '../../lib/commissions';
+import { applyXPGain } from '../../lib/gamification';
 
 interface Appointment {
   id: string;
@@ -71,11 +73,24 @@ interface Service {
   price: number;
 }
 
+interface ProfessionalGoal {
+  id: string; // professionalId_month
+  professionalId: string;
+  professionalName: string;
+  month: string; // YYYY-MM
+  targetAmount: number;
+  currentValue?: number;
+  createdAt: number;
+  updatedAt: number;
+  goalXPAwardedAt?: number;
+}
+
 export default function CommissionsPage() {
   const { salonData, userData } = useAuth();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [professionalGoals, setProfessionalGoals] = useState<ProfessionalGoal[]>([]);
   const [loading, setLoading] = useState(true);
 
   // States for selectors
@@ -90,6 +105,83 @@ export default function CommissionsPage() {
   const [adjustingProf, setAdjustingProf] = useState<Professional | null>(null);
   const [newCommissionRate, setNewCommissionRate] = useState<number>(50);
   const [selectedExtratoProf, setSelectedExtratoProf] = useState<Professional | null>(null);
+
+  // States for Quick Production Launch Modal
+  const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
+  const [launchProfessional, setLaunchProfessional] = useState<Professional | null>(null);
+  const [launchValue, setLaunchValue] = useState("");
+  const [launchMode, setLaunchMode] = useState<"set" | "add">("set");
+  const [launchMonth, setLaunchMonth] = useState(selectedMonth);
+
+  const handleConfirmLaunchProduction = async () => {
+    if (!salonData || !launchProfessional) return;
+
+    const value = parseFloat(launchValue.replace(",", "."));
+    if (isNaN(value) || value < 0) {
+      toast.error("Por favor, insira um valor numérico válido.");
+      return;
+    }
+
+    try {
+      const docId = `${launchProfessional.id}_${launchMonth}`;
+      const existingGoal = professionalGoals.find(
+        g => g.professionalId === launchProfessional.id && g.month === launchMonth
+      );
+      const currentManualVal = existingGoal?.currentValue ?? 0;
+
+      let newValue = value;
+      if (launchMode === "add") {
+        newValue = currentManualVal + value;
+      }
+
+      const payload: any = {
+        id: docId,
+        professionalId: launchProfessional.id,
+        professionalName: launchProfessional.name,
+        month: launchMonth,
+        currentValue: newValue,
+        lastProgressUpdateAt: Date.now(),
+        lastProgressUpdatedBy: userData?.fullName || userData?.email || "Manager",
+        updatedAt: Date.now(),
+      };
+
+      const targetAmount = existingGoal?.targetAmount ?? 0;
+      const alreadyAwarded = !!existingGoal?.goalXPAwardedAt;
+
+      if (targetAmount > 0 && newValue >= targetAmount && !alreadyAwarded) {
+        payload.goalXPAwardedAt = Date.now();
+        try {
+          await applyXPGain(salonData.id, launchProfessional.id, 'MONTHLY_GOAL_HIT', undefined, {
+            fullName: launchProfessional.name || 'Colaborador',
+            role: launchProfessional.role || 'professional',
+            reason: 'Meta faturamento mensal batida'
+          });
+          toast.success(`🎯 ${launchProfessional.name} bateu a meta! +500 XP`);
+        } catch (xpErr) {
+          console.error("Erro ao aplicar XP ao bater meta:", xpErr);
+        }
+      }
+
+      const ref = doc(db, `salons/${salonData.id}/professionalGoals`, docId);
+      await setDoc(ref, payload, { merge: true });
+
+      toast.success(`Produção de ${launchProfessional.name} atualizada para ${formatBRL(newValue)}!`);
+      setIsLaunchModalOpen(false);
+      setLaunchValue("");
+      setLaunchProfessional(null);
+    } catch (err) {
+      console.error("Error saving manual production from Commissions:", err);
+      toast.error("Erro ao salvar faturamento manual.");
+    }
+  };
+
+  const openLaunchModal = (prof: Professional) => {
+    setLaunchProfessional(prof);
+    setLaunchMonth(selectedMonth);
+    setLaunchValue("");
+    setLaunchMode("set");
+    setIsLaunchModalOpen(true);
+  };
 
   useEffect(() => {
     if (!salonData) return;
@@ -124,6 +216,16 @@ export default function CommissionsPage() {
       const arr: Service[] = [];
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
       setServices(arr);
+    }));
+
+    // Load Professional Goals
+    const qg = query(collection(db, `salons/${salonData.id}/professionalGoals`));
+    unsubs.push(onSnapshot(qg, (snap) => {
+      const arr: ProfessionalGoal[] = [];
+      snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+      setProfessionalGoals(arr);
+    }, (error) => {
+      console.error("Erro ao carregar metas dos profissionais:", error);
     }));
 
     return () => unsubs.forEach(u => u());
@@ -174,47 +276,28 @@ export default function CommissionsPage() {
     return map;
   }, [appointments]);
 
-  // Calculated Stats
-  const stats = React.useMemo(() => {
-    let totalRevenue = 0;
-    let totalCommissionToPay = 0;
-
-    filteredAppointments.forEach(app => {
-      const price = getApptPrice(app);
-      const prof = professionals.find(p => p.id === app.professionalId);
-      const rate = prof ? getPropCommissionRate(prof) : 50;
-
-      totalRevenue += price;
-      totalCommissionToPay += price * (rate / 100);
-    });
-
-    const totalNetEstablishment = totalRevenue - totalCommissionToPay;
-    const ticketsCount = filteredAppointments.length;
-    const avgTicket = ticketsCount > 0 ? totalRevenue / ticketsCount : 0;
-
-    return {
-      totalRevenue,
-      totalCommissionToPay,
-      totalNetEstablishment,
-      ticketsCount,
-      avgTicket
-    };
-  }, [filteredAppointments, professionals, services]);
-
   // Breakdown by individual professional for current month
   const professionalsReport = React.useMemo(() => {
     // Determine the list of professionals to evaluate:
     // 1. Any professional that is actively registered in professionals collection (isActive !== false)
     // 2. Any deactivated or other professional from professionals collection if they have sales in selectedMonth
     // 3. Any professional found in appointments of the selectedMonth who is missing from professionals collection
-    const list: (Professional & { salesCount?: number; totalRevenue?: number; totalCommission?: number; netEstablishment?: number })[] = [];
+    // 4. Any professional with a goal set for the selectedMonth
+    const list: (Professional & { 
+      salesCount?: number; 
+      totalRevenue?: number; 
+      totalCommission?: number; 
+      netEstablishment?: number;
+      componentSummary?: any;
+    })[] = [];
 
     // Add people from database first
     professionals.forEach(p => {
       const isActive = p.isActive !== false;
       const hasSalesInMonth = appointments.some(app => app.professionalId === p.id && app.date.startsWith(selectedMonth));
+      const hasGoalInMonth = professionalGoals.some(g => g.professionalId === p.id && g.month === selectedMonth);
       
-      if (isActive || hasSalesInMonth) {
+      if (isActive || hasSalesInMonth || hasGoalInMonth) {
         list.push({ ...p });
       }
     });
@@ -234,31 +317,91 @@ export default function CommissionsPage() {
       }
     });
 
-    return list.map(prof => {
+    // Add any missing professionals who have goals in this month
+    professionalGoals.forEach(g => {
+      if (g.professionalId && g.month === selectedMonth) {
+        if (!list.some(p => p.id === g.professionalId)) {
+          list.push({
+            id: g.professionalId,
+            name: g.professionalName || 'Profissional Outro_G',
+            role: 'Especialista',
+            isActive: false,
+            commissionRate: 50
+          });
+        }
+      }
+    });
+
+    // Filter list based on role-based permissions:
+    // platform_admin, owner and manager can see everyone
+    // receptionist, attendant and professional can only see themselves
+    const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin';
+    let filteredList = isOwnerOrManager 
+      ? list 
+      : list.filter(p => userData?.professionalId && p.id === userData.professionalId);
+
+    // Filter by selectedProfId dropdown
+    if (selectedProfId !== 'all') {
+      filteredList = filteredList.filter(p => p.id === selectedProfId);
+    }
+
+    return filteredList.map(prof => {
       const profAppts = appointments.filter(app => 
         app.professionalId === prof.id && 
         app.date.startsWith(selectedMonth)
       );
 
-      let totalRevenue = 0;
-      let totalCommission = 0;
+      const profGoal = professionalGoals.find(g => 
+        g.professionalId === prof.id && 
+        g.month === selectedMonth
+      ) || null;
 
-      profAppts.forEach(app => {
-        const price = getApptPrice(app);
-        const rate = getPropCommissionRate(prof);
-        totalRevenue += price;
-        totalCommission += price * (rate / 100);
-      });
+      const summary = calculateCommission(
+        {
+          id: prof.id,
+          name: prof.name,
+          role: prof.role,
+          isActive: prof.isActive,
+          commissionRate: prof.commissionRate
+        } as any,
+        profAppts as any,
+        profGoal as any,
+        services as any
+      );
 
       return {
         ...prof,
-        totalRevenue,
-        totalCommission,
-        netEstablishment: totalRevenue - totalCommission,
-        salesCount: profAppts.length
+        totalRevenue: summary.totalProduction,
+        totalCommission: summary.commissionValue,
+        netEstablishment: summary.totalProduction - summary.commissionValue,
+        salesCount: profAppts.length,
+        componentSummary: summary
       };
-    }).sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [professionals, appointments, selectedMonth, services]);
+    }).sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0));
+  }, [professionals, appointments, professionalGoals, selectedMonth, services, userData, selectedProfId]);
+
+  // Calculated Stats
+  const stats = React.useMemo(() => {
+    let totalRevenue = 0;
+    let totalCommissionToPay = 0;
+
+    professionalsReport.forEach(p => {
+      totalRevenue += p.totalRevenue || 0;
+      totalCommissionToPay += p.totalCommission || 0;
+    });
+
+    const totalNetEstablishment = totalRevenue - totalCommissionToPay;
+    const ticketsCount = filteredAppointments.length;
+    const avgTicket = ticketsCount > 0 ? totalRevenue / ticketsCount : 0;
+
+    return {
+      totalRevenue,
+      totalCommissionToPay,
+      totalNetEstablishment,
+      ticketsCount,
+      avgTicket
+    };
+  }, [professionalsReport, filteredAppointments]);
 
   // Chart data for Recharts
   const chartData = React.useMemo(() => {
@@ -430,6 +573,109 @@ export default function CommissionsPage() {
       </div>
 
       {chartsAndList()}
+
+      {/* Quick Production Launch Modal */}
+      <Dialog open={isLaunchModalOpen} onOpenChange={(open) => !open && setIsLaunchModalOpen(false)}>
+        <DialogContent className="bg-zinc-950 border-zinc-900 text-white sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading font-light text-white text-lg flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-[#D4AF37]" />
+              Lançar Produção Manual
+            </DialogTitle>
+            <DialogDescription className="text-zinc-500 text-xs">
+              Registre faturamento ou produção manual diretamente para a meta faturamento de {launchProfessional?.name}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {launchProfessional && (
+            <div className="py-4 space-y-4 font-sans">
+              <div className="flex justify-between items-center bg-zinc-900/45 p-3 rounded-xl border border-zinc-900">
+                <div>
+                  <h4 className="text-xs font-semibold text-zinc-200">{launchProfessional.name}</h4>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">{launchProfessional.role || 'Profissional'}</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-mono font-medium text-zinc-400">Referência:</span>
+                  <p className="text-[10px] font-bold text-[#D4AF37]">{availableMonths.find(m => m.value === launchMonth)?.label || launchMonth}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="launch_val" className="text-xs text-zinc-400 font-medium">Valor de Produção (R$)</Label>
+                  <Input 
+                    id="launch_val"
+                    placeholder="0,00"
+                    value={launchValue}
+                    onChange={(e) => setLaunchValue(e.target.value)}
+                    className="bg-zinc-900/60 border-zinc-800 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 text-sm h-10 rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-zinc-400 font-medium block">Tipo de Registro</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLaunchMode("set")}
+                      className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all flex flex-col items-center justify-center gap-1 ${
+                        launchMode === "set"
+                          ? "bg-[#D4AF37]/5 border-[#D4AF37] text-white"
+                          : "bg-zinc-900/40 border-zinc-900 text-zinc-400 hover:bg-zinc-900"
+                      }`}
+                    >
+                      <span className="font-bold">Substituir total</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Define como o valor total</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLaunchMode("add")}
+                      className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all flex flex-col items-center justify-center gap-1 ${
+                        launchMode === "add"
+                          ? "bg-[#D4AF37]/5 border-[#D4AF37] text-white"
+                          : "bg-zinc-900/40 border-zinc-900 text-zinc-400 hover:bg-zinc-900"
+                      }`}
+                    >
+                      <span className="font-bold">Somar ao atual</span>
+                      <span className="text-[9px] text-zinc-500 font-normal">Acrescenta ao valor existente</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="launch_month" className="text-xs text-zinc-400 font-medium">Mês de Referência</Label>
+                  <Select value={launchMonth} onValueChange={setLaunchMonth}>
+                    <SelectTrigger className="bg-zinc-900/60 border-zinc-800 h-10 text-white text-xs rounded-xl focus:ring-0 focus:border-cyan-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-950 border-zinc-850 text-white text-xs">
+                      {availableMonths.map(m => (
+                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-3">
+                <Button 
+                  variant="ghost" 
+                  onClick={() => setIsLaunchModalOpen(false)} 
+                  className="w-full text-zinc-400 hover:text-white border border-zinc-900 hover:bg-zinc-900 rounded-xl text-xs h-10"
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleConfirmLaunchProduction} 
+                  className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black rounded-xl font-bold text-xs h-10"
+                >
+                  Confirmar Registro
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Adjust Commission Modal */}
       <Dialog open={!!adjustingProf} onOpenChange={(open) => !open && setAdjustingProf(null)}>
@@ -616,6 +862,19 @@ export default function CommissionsPage() {
                         <td className="p-3.5">
                           <div className="font-semibold text-white text-xs">{p.name}</div>
                           <div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider font-mono">{p.role || 'Especialista'}</div>
+                          {p.componentSummary && p.componentSummary.targetAmount > 0 && (
+                            <div className="mt-2 space-y-1 max-w-[200px]">
+                              <div className="text-[9px] text-zinc-400">
+                                Produção: <span className="font-mono text-zinc-200">{formatBRL(p.totalRevenue || 0)}</span> / Meta: <span className="font-mono text-zinc-300">{formatBRL(p.componentSummary.targetAmount)}</span> ({Math.round(p.componentSummary.goalProgress)}%)
+                              </div>
+                              <div className="w-full bg-zinc-900 border border-white/5 rounded-full h-1 overflow-hidden">
+                                <div 
+                                  className="bg-[#D4AF37] h-full" 
+                                  style={{ width: `${Math.min(p.componentSummary.goalProgress, 100)}%` }} 
+                                />
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="p-3.5 text-center font-mono font-medium text-zinc-400">
                           {p.salesCount}
@@ -626,7 +885,20 @@ export default function CommissionsPage() {
                           </span>
                         </td>
                         <td className="p-3.5 text-right font-mono font-medium text-white">
-                          {formatBRL(p.totalRevenue)}
+                          <div>{formatBRL(p.totalRevenue)}</div>
+                          {p.componentSummary && (
+                            <div className="text-[9px] mt-1 inline-block">
+                              {p.componentSummary.productionFromAppointments > 0 && p.componentSummary.productionManual > 0 ? (
+                                <span className="text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/10 font-sans font-medium whitespace-nowrap">🔀 Combinado</span>
+                              ) : p.componentSummary.productionManual > 0 ? (
+                                <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/10 font-sans font-medium whitespace-nowrap">📋 Manual</span>
+                              ) : p.componentSummary.productionFromAppointments > 0 ? (
+                                <span className="text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/10 font-sans font-medium whitespace-nowrap">📅 Agenda</span>
+                              ) : (
+                                <span className="text-zinc-500 bg-zinc-500/10 px-1.5 py-0.5 rounded border border-zinc-500/10 font-sans font-medium whitespace-nowrap">Sem produção</span>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="p-3.5 text-right font-mono font-bold text-rose-400">
                           {formatBRL(p.totalCommission)}
@@ -636,12 +908,24 @@ export default function CommissionsPage() {
                         </td>
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-2">
+                            {(userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin') && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => openLaunchModal(p)}
+                                className="text-zinc-400 hover:text-[#D4AF37] px-2 py-1 h-auto text-[10px] border border-zinc-900 hover:border-zinc-800 bg-zinc-900/10"
+                                title="Lançar faturamento direto à meta"
+                              >
+                                Lançar
+                              </Button>
+                            )}
                             {canEditCommissionRules(userData?.role) && (
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => openAdjustModal(p)}
                                 className="text-zinc-400 hover:text-[#D4AF37] px-2 py-1 h-auto text-[10px]"
+                                title="Configurar margem"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </Button>

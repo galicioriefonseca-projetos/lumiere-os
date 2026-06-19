@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
 import { logAuditEvent } from "../../lib/audit";
-import { collection, query, onSnapshot, addDoc, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, addDoc, doc, deleteDoc, updateDoc, getDocs } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,28 +56,34 @@ export default function InventoryPage() {
   const [editQuantity, setEditQuantity] = useState("");
 
   const fetchInventory = async () => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/inventory`);
-      if (!res.ok) throw new Error("Erro na rede do servidor");
-      const dbItems: InventoryItem[] = await res.json();
+      const querySnapshot = await getDocs(collection(db, "salons", salonId, "inventory"));
+      const dbItems: InventoryItem[] = [];
+      querySnapshot.forEach((doc) => {
+        dbItems.push({ id: doc.id, ...doc.data() } as InventoryItem);
+      });
       dbItems.sort((a, b) => a.name.localeCompare(b.name));
       setItems(dbItems);
     } catch (error) {
-      console.error("Erro ao carregar estoque via proxy:", error);
+      console.error("Erro ao carregar estoque do Firestore:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchInventory();
-  }, [salonData]);
+    if (userData?.salonId) {
+      fetchInventory();
+    }
+  }, [userData?.salonId]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
 
     const qtyVal = parseInt(quantity) || 0;
     const minQtyVal = parseInt(minQuantity) || 0;
@@ -103,15 +109,10 @@ export default function InventoryPage() {
         updatedAt: Date.now()
       };
 
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/inventory`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error("Erro ao criar produto no proxy");
+      await addDoc(collection(db, "salons", salonId, "inventory"), payload);
       
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -144,7 +145,8 @@ export default function InventoryPage() {
 
   const handleUpdateQuantity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!salonData || !editingItem) return;
+    const salonId = userData?.salonId;
+    if (!salonId || !editingItem) return;
 
     const newQty = parseInt(editQuantity);
     if (isNaN(newQty) || newQty < 0) {
@@ -153,15 +155,10 @@ export default function InventoryPage() {
     }
 
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/inventory/${editingItem.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity: newQty, updatedAt: Date.now() })
-      });
-      if (!res.ok) throw new Error("Erro ao atualizar produto no proxy");
+      await updateDoc(doc(db, "salons", salonId, "inventory", editingItem.id), { quantity: newQty, updatedAt: Date.now() });
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
@@ -186,17 +183,15 @@ export default function InventoryPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!salonData) return;
+    const salonId = userData?.salonId;
+    if (!salonId) return;
     if (!confirm(`Remover permanentemente do estoque o item: "${name}"?`)) return;
 
     try {
-      const res = await fetch(`/api/proxy/salons/${salonData.id}/inventory/${id}`, {
-        method: "DELETE"
-      });
-      if (!res.ok) throw new Error("Erro ao excluir do estoque no proxy");
+      await deleteDoc(doc(db, "salons", salonId, "inventory", id));
 
       await logAuditEvent(
-        salonData.id,
+        salonId,
         currentUser?.uid || "system",
         userData?.fullName || "Usuário",
         userData?.email || "sem-email@lumiere.com",
