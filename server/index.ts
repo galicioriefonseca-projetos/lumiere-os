@@ -4,9 +4,6 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging } from "./firebaseAdmin";
-import createSubscription from "../api/mercadopago/create-subscription";
-import webhookMP from "../api/mercadopago/webhook";
-import healthMP from "../api/mercadopago/health";
 
 
 // Carregar variáveis de ambiente
@@ -36,6 +33,546 @@ async function startServer() {
   // Rota de Health Check
   app.get("/api/health", (req, res) => {
     res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });
+  });
+
+  // ==========================================
+  // INTEGRAÇÃO DE BACKEND SEGURO ASAAS BILLING
+  // ==========================================
+
+  // Helper de requisições seguras para a API do Asaas no backend (nunca expõe as chaves no cliente)
+  async function asaasRequest(method: string, endpoint: string, body?: any) {
+    const apiKey = process.env.ASAAS_API_KEY;
+    const baseUrl = process.env.ASAAS_API_URL || "https://sandbox.asaas.com/api/v3";
+
+    if (!apiKey) {
+      throw new Error("Chave de API do Asaas (ASAAS_API_KEY) não configurada no servidor.");
+    }
+
+    const url = `${baseUrl}${endpoint}`;
+    
+    // --- INÍCIO LOG TEMPORÁRIO ---
+    const maskedKey = apiKey.substring(0, 12) + "*".repeat(Math.max(0, apiKey.length - 12));
+    console.log(`[Diagnostic Log] ASAAS_API_URL=${baseUrl}`);
+    console.log(`[Diagnostic Log] ASAAS_API_KEY=${maskedKey}`);
+    console.log(`[Diagnostic Log] URL final chamada: ${method} ${url}`);
+    // --- FIM LOG TEMPORÁRIO ---
+    
+    const response = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "access_token": apiKey,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const text = await response.text();
+
+    // --- INÍCIO LOG RESPOSTA TEMPORÁRIO ---
+    console.log(`[Diagnostic Log] HTTP status retornado pelo Asaas: ${response.status}`);
+    if (!response.ok) {
+      console.log(`[Diagnostic Log] Corpo bruto (response.text()): ${text}`);
+    }
+    // --- FIM LOG RESPOSTA TEMPORÁRIO ---
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Resposta HTTP do Asaas inválida ou malformada: ${text}`);
+    }
+
+    if (!response.ok) {
+      const errorMsg = data?.errors?.[0]?.description || data?.message || text;
+      throw new Error(`Erro na API do Asaas (${response.status}): ${errorMsg}`);
+    }
+
+    return data;
+  }
+
+  // Middleware de autenticação segura para as rotas Asaas
+  const authenticateRequest = async (req: any, res: any, next: any) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "Autenticação requerida (Token ausente)." });
+      }
+      const token = authHeader.split("Bearer ")[1];
+      const adminAuth = getAdminAuth();
+      const decodedToken = await adminAuth.verifyIdToken(token);
+      req.user = decodedToken;
+      next();
+    } catch (err: any) {
+      console.error("[Asaas Auth] Erro de autenticação:", err);
+      return res.status(401).json({ error: "Sessão inválida ou expirada." });
+    }
+  };
+
+  // Função auxiliar para verificar as permissões de gerenciamento de faturamento do salão
+  async function canManageBilling(user: any, salonId: string, salonData: any): Promise<{ authorized: boolean; role?: string; reason?: string }> {
+    const uid = user?.uid;
+    const email = user?.email;
+
+    if (!uid) {
+      return { authorized: false, reason: "ID de usuário ausente." };
+    }
+
+    // 1. Proprietário direto do salão no Firestore (salonData.ownerId)
+    if (salonData?.ownerId === uid) {
+      return { authorized: true, role: "owner" };
+    }
+
+    // 2. Platform Admin via e-mail configurado ou na coleção platformAdmins
+    const platformAdminEmail = process.env.VITE_PLATFORM_ADMIN_EMAIL || process.env.PLATFORM_ADMIN_EMAIL || "admin@lumiereos.com";
+    if (email && email === platformAdminEmail) {
+      return { authorized: true, role: "platform_admin" };
+    }
+
+    const adminDb = getAdminDb();
+    
+    try {
+      const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
+      if (platformAdminSnap.exists) {
+        return { authorized: true, role: "platform_admin" };
+      }
+    } catch (err) {
+      console.warn(`[Billing Auth] Erro ao consultar platformAdmins/${uid}:`, err);
+    }
+
+    // 3. Usuário registrado com role autorizada ("owner", "admin", "manager") associada ao salão correspondente
+    try {
+      const userSnap = await adminDb.collection("users").doc(uid).get();
+      if (userSnap.exists) {
+        const uData = userSnap.data();
+        const userSalonId = uData?.salonId;
+        const userRole = uData?.role;
+
+        if (userSalonId === salonId) {
+          const allowedRoles = ["owner", "admin", "manager"];
+          if (allowedRoles.includes(userRole)) {
+            return { authorized: true, role: userRole };
+          } else {
+            return { authorized: false, role: userRole, reason: `Seu perfil (${userRole}) não possui permissão de faturamento.` };
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[Billing Auth] Erro ao consultar documento do usuário users/${uid}:`, err);
+    }
+
+    return { authorized: false, reason: "Você não tem permissão para gerenciar o faturamento deste salão." };
+  }
+
+  // Rota para criação de Cliente no Asaas
+  app.post("/api/asaas/create-customer", authenticateRequest, async (req, res) => {
+    try {
+      const { salonId, name, email, phone, document } = req.body;
+      if (!salonId || !name || !document) {
+        return res.status(400).json({ error: "salonId, name e document (CPF/CNPJ) são campos obrigatórios." });
+      }
+
+      const user = (req as any).user;
+      const adminDb = getAdminDb();
+      const salonRef = adminDb.collection("salons").doc(salonId);
+      const salonDoc = await salonRef.get();
+
+      if (!salonDoc.exists) {
+        return res.status(404).json({ error: "Salão não encontrado no banco de dados." });
+      }
+
+      const salonData = salonDoc.data();
+
+      // Garantia contra Acesso Cruzado / Invasão de Faturamento:
+      const authResult = await canManageBilling(user, salonId, salonData);
+      console.log(`[Asaas Auth Log] UID: ${user.uid} | Salon: ${salonId} | Role: ${authResult.role || "Nenhuma/Não-cadastrada"} | Autorizado: ${authResult.authorized}`);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Você não tem permissão para gerenciar o faturamento deste salão." });
+      }
+
+      // Idempotência básica: usar asaasCustomerId existente se já estiver associado ao salão
+      if (salonData?.asaasCustomerId) {
+        console.log(`[Asaas Customer] Salão ${salonId} já possui cliente Asaas associado: ${salonData.asaasCustomerId}`);
+        return res.json({
+          id: salonData.asaasCustomerId,
+          externalId: salonData.asaasCustomerId,
+          salonId,
+          name: salonData.ownerName || name,
+          email: salonData.ownerEmail || email,
+          phone: salonData.phone || phone,
+          document: salonData.document || document,
+          createdAt: new Date(salonData.createdAt || Date.now()),
+          updatedAt: new Date(),
+        });
+      }
+
+      // Se não houver, cria um novo no Asaas
+      const payload = {
+        name,
+        email,
+        phone,
+        mobilePhone: phone,
+        cpfCnpj: document.replace(/\D/g, ""), // Limpa caracteres não numéricos do documento
+        externalReference: salonId,
+        notificationDisabled: true, // silenciar alertas automáticos via e-mail direto do painel Asaas
+      };
+
+      const asaasCustomer = await asaasRequest("POST", "/customers", payload);
+      
+      // Atualizar o documento do salão no Firestore com o ID recém-criado
+      await salonRef.update({
+        asaasCustomerId: asaasCustomer.id,
+        updatedAt: Date.now(),
+      });
+
+      console.log(`[Asaas Customer] Cliente criado com sucesso para o salão ${salonId}: ${asaasCustomer.id}`);
+      return res.json({
+        id: asaasCustomer.id,
+        externalId: asaasCustomer.id,
+        salonId,
+        name: asaasCustomer.name,
+        email: asaasCustomer.email,
+        phone: asaasCustomer.phone,
+        document: asaasCustomer.cpfCnpj,
+        createdAt: new Date(asaasCustomer.dateCreated),
+        updatedAt: new Date(),
+      });
+    } catch (err: any) {
+      console.error("[Asaas Customer] Erro ao criar cliente:", err);
+      return res.status(500).json({ error: err.message || "Falha ao criar cliente no Asaas." });
+    }
+  });
+
+  // Rota para criação de Assinatura Recorrente no Asaas (inclui trial de 7 dias)
+  app.post("/api/asaas/create-subscription", authenticateRequest, async (req, res) => {
+    try {
+      const { salonId, customerId, planId, paymentMethod } = req.body;
+      if (!salonId || !customerId || !planId) {
+        return res.status(400).json({ error: "salonId, customerId e planId são obrigatórios." });
+      }
+
+      const user = (req as any).user;
+      const adminDb = getAdminDb();
+      const salonRef = adminDb.collection("salons").doc(salonId);
+      const salonDoc = await salonRef.get();
+
+      if (!salonDoc.exists) {
+        return res.status(404).json({ error: "Salão não encontrado no banco de dados." });
+      }
+
+      const salonData = salonDoc.data();
+
+      // Garantia contra Acesso Cruzado / Invasão de Faturamento:
+      const authResult = await canManageBilling(user, salonId, salonData);
+      console.log(`[Asaas Auth Log] UID: ${user.uid} | Salon: ${salonId} | Role: ${authResult.role || "Nenhuma/Não-cadastrada"} | Autorizado: ${authResult.authorized}`);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Você não tem permissão para gerenciar o faturamento deste salão." });
+      }
+
+      // Idempotência básica: usar asaasSubscriptionId existente para evitar duplicar cobranças recorrentes
+      if (salonData?.asaasSubscriptionId) {
+        console.log(`[Asaas Subscription] Salão ${salonId} já possui assinatura ativa no Asaas: ${salonData.asaasSubscriptionId}`);
+        return res.json({
+          id: salonData.asaasSubscriptionId,
+          externalId: salonData.asaasSubscriptionId,
+          salonId,
+          customerId,
+          planId,
+          status: salonData.subscriptionStatus || "active",
+          price: salonData.lastPaymentAmount || 0,
+          paymentMethod: paymentMethod || "credit_card",
+          interval: "monthly",
+          createdAt: new Date(salonData.createdAt),
+          updatedAt: new Date(),
+        });
+      }
+
+      // Mapeamento elegante de valores baseado nos planos cadastrados (Suporta Asaas ou Mercado Pago legado)
+      const planPrices: Record<string, number> = {
+        start: Number(process.env.ASAAS_PLAN_START_AMOUNT) || Number(process.env.MP_PLAN_START_AMOUNT) || 197,
+        studio: Number(process.env.ASAAS_PLAN_STUDIO_AMOUNT) || Number(process.env.MP_PLAN_STUDIO_AMOUNT) || 397,
+        performance: Number(process.env.ASAAS_PLAN_PERFORMANCE_AMOUNT) || Number(process.env.MP_PLAN_PERFORMANCE_AMOUNT) || 697,
+        network: Number(process.env.ASAAS_PLAN_NETWORK_AMOUNT) || Number(process.env.MP_PLAN_NETWORK_AMOUNT) || 1497,
+        founder: Number(process.env.ASAAS_PLAN_FOUNDER_AMOUNT) || Number(process.env.MP_PLAN_FOUNDER_AMOUNT) || 297,
+      };
+
+      const value = planPrices[planId] || 197;
+      
+      // Configurar trial de 7 dias: primeira cobrança real será daqui a 7 dias
+      const trialDays = 7;
+      const trialEndDate = new Date();
+      trialEndDate.setDate(trialEndDate.getDate() + trialDays);
+      const nextDueDateStr = trialEndDate.toISOString().split("T")[0];
+
+      const methodMapping: Record<string, string> = {
+        credit_card: "CREDIT_CARD",
+        pix: "PIX",
+        boleto: "BOLETO",
+      };
+      const billingType = methodMapping[paymentMethod] || "CREDIT_CARD";
+
+      const subscriptionPayload = {
+        customer: customerId,
+        billingType,
+        value,
+        nextDueDate: nextDueDateStr,
+        cycle: "MONTHLY",
+        description: `Assinatura LumièreOS - Plano ${planId.toUpperCase()}`,
+        externalReference: salonId,
+      };
+
+      const asaasSubscription = await asaasRequest("POST", "/subscriptions", subscriptionPayload);
+
+      // Obter de forma segura o link de checkout do primeiro ciclo pendente
+      let checkoutUrl = "";
+      try {
+        const paymentsResponse = await asaasRequest("GET", `/payments?subscription=${asaasSubscription.id}`);
+        if (paymentsResponse.data && paymentsResponse.data.length > 0) {
+          checkoutUrl = paymentsResponse.data[0].invoiceUrl;
+        }
+      } catch (err) {
+        console.warn("[Asaas Subscription] Erro ao carregar link de checkout para a assinatura recém-criada:", err);
+      }
+
+      // Atualizar dados no Firestore
+      await salonRef.update({
+        billingProvider: "asaas",
+        billingMode: billingType === "CREDIT_CARD" ? "recurring_card" : "manual_pix",
+        asaasSubscriptionId: asaasSubscription.id,
+        asaasCheckoutUrl: checkoutUrl || null,
+        subscriptionStatus: "trial",
+        paymentStatus: "pending",
+        nextBillingDate: trialEndDate.getTime(),
+        updatedAt: Date.now(),
+      });
+
+      console.log(`[Asaas Subscription] Assinatura criada com sucesso para o salão ${salonId}: ${asaasSubscription.id}`);
+      return res.json({
+        id: asaasSubscription.id,
+        externalId: asaasSubscription.id,
+        salonId,
+        customerId,
+        planId,
+        status: "trial",
+        price: value,
+        paymentMethod: paymentMethod || "credit_card",
+        interval: "monthly",
+        trialDays,
+        trialEnd: trialEndDate,
+        nextDueDate: trialEndDate,
+        createdAt: new Date(asaasSubscription.dateCreated),
+        updatedAt: new Date(),
+      });
+    } catch (err: any) {
+      console.error("[Asaas Subscription] Erro ao criar assinatura:", err);
+      return res.status(500).json({ error: err.message || "Falha ao criar assinatura no Asaas." });
+    }
+  });
+
+  // Rota para criação de Taxa de Implementação Única no Asaas
+  app.post("/api/asaas/create-implementation-fee", authenticateRequest, async (req, res) => {
+    try {
+      const { salonId, customerId, amount } = req.body;
+      if (!salonId || !customerId || !amount) {
+        return res.status(400).json({ error: "salonId, customerId e amount são campos obrigatórios." });
+      }
+
+      const user = (req as any).user;
+      const adminDb = getAdminDb();
+      const salonRef = adminDb.collection("salons").doc(salonId);
+      const salonDoc = await salonRef.get();
+
+      if (!salonDoc.exists) {
+        return res.status(404).json({ error: "Salão não encontrado no banco de dados." });
+      }
+
+      const salonData = salonDoc.data();
+
+      // Garantia contra Acesso Cruzado / Invasão de Faturamento:
+      const authResult = await canManageBilling(user, salonId, salonData);
+      console.log(`[Asaas Auth Log] UID: ${user.uid} | Salon: ${salonId} | Role: ${authResult.role || "Nenhuma/Não-cadastrada"} | Autorizado: ${authResult.authorized}`);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Você não tem permissão para gerenciar o faturamento deste salão." });
+      }
+
+      const externalRef = `${salonId}_implementation_fee`;
+
+      // Idempotência básica: verificar se já existe uma cobrança de taxa de implantação ativa no Asaas
+      try {
+        const existingPayments = await asaasRequest("GET", `/payments?externalReference=${externalRef}`);
+        if (existingPayments.data && existingPayments.data.length > 0) {
+          const payment = existingPayments.data[0];
+          console.log(`[Asaas Fee] Taxa de implantação já existente localizada: ${payment.id}`);
+          return res.json({
+            id: payment.id,
+            invoiceUrl: payment.invoiceUrl,
+            status: payment.status,
+            amount: payment.value,
+          });
+        }
+      } catch (err) {
+        console.warn("[Asaas Fee] Não foi possível verificar idempotência de pagamentos no Asaas:", err);
+      }
+
+      // Definir vencimento amanhã para facilidade do cliente
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 1);
+      const dueDateStr = dueDate.toISOString().split("T")[0];
+
+      const feePayload = {
+        customer: customerId,
+        billingType: "UNDEFINED", // Permite escolher qualquer método no checkout do Asaas
+        value: Number(amount),
+        dueDate: dueDateStr,
+        description: "Taxa única de implantação e configuração LumièreOS",
+        externalReference: externalRef,
+      };
+
+      const asaasPayment = await asaasRequest("POST", "/payments", feePayload);
+
+      console.log(`[Asaas Fee] Taxa de implantação criada com sucesso para o salão ${salonId}: ${asaasPayment.id}`);
+      return res.json({
+        id: asaasPayment.id,
+        invoiceUrl: asaasPayment.invoiceUrl,
+        status: asaasPayment.status,
+        amount: asaasPayment.value,
+      });
+    } catch (err: any) {
+      console.error("[Asaas Fee] Erro ao criar taxa de implantação:", err);
+      return res.status(500).json({ error: err.message || "Falha ao criar taxa de implantação no Asaas." });
+    }
+  });
+
+  // Endpoint de Webhook de faturamento e sincronização do Asaas
+  app.post("/api/asaas/webhook", async (req, res) => {
+    try {
+      const receivedToken = req.headers["asaas-access-token"];
+      const expectedToken = process.env.ASAAS_WEBHOOK_SECRET;
+
+      if (!expectedToken || receivedToken !== expectedToken) {
+        console.warn("[Asaas Webhook] Assinatura/token de webhook inválido.");
+        return res.status(401).json({ error: "Chave secreta de webhook inválida." });
+      }
+
+      const { event, payment, subscription } = req.body;
+      console.log(`[Asaas Webhook] Evento recebido: ${event}`);
+
+      let customerId = payment?.customer || subscription?.customer;
+      let subscriptionId = payment?.subscription || subscription?.id;
+
+      if (!customerId) {
+        console.warn("[Asaas Webhook] Sem ID do cliente no payload recebido.");
+        return res.status(200).json({ received: true, info: "Sem ID do cliente, ignorando." });
+      }
+
+      const adminDb = getAdminDb();
+      // Localizar o salão no Firestore pelo asaasCustomerId
+      let salonSnapshot = await adminDb.collection("salons")
+        .where("asaasCustomerId", "==", customerId)
+        .limit(1)
+        .get();
+
+      // Fallback: Localizar pelo asaasSubscriptionId se a busca anterior falhar
+      if (salonSnapshot.empty && subscriptionId) {
+        salonSnapshot = await adminDb.collection("salons")
+          .where("asaasSubscriptionId", "==", subscriptionId)
+          .limit(1)
+          .get();
+      }
+
+      if (salonSnapshot.empty) {
+        console.warn(`[Asaas Webhook] Salão não localizado para customerId ${customerId} ou subscriptionId ${subscriptionId}`);
+        return res.status(200).json({ received: true, info: "Salão correspondente não localizado." });
+      }
+
+      const salonDoc = salonSnapshot.docs[0];
+      const salonRef = salonDoc.ref;
+      const salonData = salonDoc.data();
+
+      // Proteção contra webhook duplicado (idempotência avançada de processamento de evento):
+      // Se o último evento e ID de pagamento salvos forem idênticos, evitamos processar novamente.
+      if (
+        salonData?.asaasLastEvent === event && 
+        payment?.id && 
+        salonData?.asaasLastPaymentId === payment.id
+      ) {
+        console.log(`[Asaas Webhook] Evento duplicado já processado anteriormente para o pagamento ${payment.id}. Ignorando.`);
+        return res.status(200).json({ success: true, info: "Evento duplicado já processado." });
+      }
+
+      const updatePayload: any = {
+        updatedAt: Date.now(),
+        asaasLastEvent: event,
+      };
+
+      if (payment?.id) {
+        updatePayload.asaasLastPaymentId = payment.id;
+      }
+
+      switch (event) {
+        case "PAYMENT_CREATED":
+          updatePayload.paymentStatus = "pending";
+          break;
+
+        case "PAYMENT_CONFIRMED":
+        case "PAYMENT_RECEIVED":
+          updatePayload.paymentStatus = "paid";
+          updatePayload.subscriptionStatus = "active";
+          updatePayload.lastPaymentAt = Date.now();
+          updatePayload.lastPaymentAmount = payment.value;
+          updatePayload.lastPaymentMethod = payment.billingType;
+          if (payment.dueDate) {
+            updatePayload.nextBillingDate = new Date(payment.dueDate).getTime();
+          }
+          break;
+
+        case "PAYMENT_OVERDUE":
+          updatePayload.paymentStatus = "overdue";
+          updatePayload.subscriptionStatus = "overdue";
+          break;
+
+        case "PAYMENT_DELETED":
+          updatePayload.paymentStatus = "canceled";
+          break;
+
+        case "SUBSCRIPTION_CREATED":
+          updatePayload.asaasSubscriptionId = subscription.id;
+          updatePayload.subscriptionStatus = subscription.status === "ACTIVE" ? "active" : "trial";
+          if (subscription.nextDueDate) {
+            updatePayload.nextBillingDate = new Date(subscription.nextDueDate).getTime();
+          }
+          break;
+
+        case "SUBSCRIPTION_UPDATED":
+          if (subscription.status === "ACTIVE") {
+            updatePayload.subscriptionStatus = "active";
+          } else if (subscription.status === "OVERDUE") {
+            updatePayload.subscriptionStatus = "overdue";
+          } else if (subscription.status === "INACTIVE" || subscription.status === "CANCELED" || subscription.status === "EXPIRED") {
+            updatePayload.subscriptionStatus = "canceled";
+          }
+          if (subscription.nextDueDate) {
+            updatePayload.nextBillingDate = new Date(subscription.nextDueDate).getTime();
+          }
+          break;
+
+        case "SUBSCRIPTION_DELETED":
+          updatePayload.subscriptionStatus = "canceled";
+          break;
+
+        default:
+          console.log(`[Asaas Webhook] Evento recebido não necessita de tratamento direto: ${event}`);
+          break;
+      }
+
+      // Persistir mutações de faturamento diretamente no Firestore usando privilégios admin
+      await salonRef.update(updatePayload);
+      console.log(`[Asaas Webhook] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${event})`);
+
+      return res.status(200).json({ success: true, eventProcessed: event });
+    } catch (err: any) {
+      console.error("[Asaas Webhook] Falha ao processar evento de webhook do Asaas:", err);
+      return res.status(500).json({ error: err.message || "Erro interno no servidor de webhook." });
+    }
   });
 
   // Proxy de autenticação robusto para contornar bloqueios de rede do cliente (Ex: Safari standalone, carrier / DNS firewall)
@@ -106,11 +643,6 @@ async function startServer() {
       });
     }
   });
-
-  // Rotas Mercado Pago (montadas dinamicamente para compatibilidade local)
-  app.post("/api/mercadopago/create-subscription", createSubscription);
-  app.post("/api/mercadopago/webhook", webhookMP);
-  app.get("/api/mercadopago/health", healthMP);
 
   // Rota de envio de Notificações Push via Firebase Cloud Messaging para Profissionais
   app.post("/api/send-appointment-push", async (req, res) => {

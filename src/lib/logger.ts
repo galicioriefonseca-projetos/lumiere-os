@@ -1,5 +1,5 @@
 import { collection, doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { ProductionLog } from '../types';
 
 export interface LogUserData {
@@ -22,9 +22,8 @@ export async function persistLog(
     pagePath?: string;
   } = {}
 ): Promise<void> {
-  if (!db || !salonId) {
-    // Se o banco não estiver inicializado ou não houver salão, apenas reporta no console local
-    console.warn(`[LumiereLogger Client-Fallback] [${level.toUpperCase()}] ${message}`, extra);
+  if (!db || !salonId || salonId === 'undefined' || !auth?.currentUser) {
+    // Se o banco não estiver inicializado, não houver salão ou não houver usuário autenticado, falha silenciosamente
     return;
   }
 
@@ -35,9 +34,9 @@ export async function persistLog(
     const payload: ProductionLog = {
       id: newLogDocRef.id,
       salonId,
-      userId: extra.userData?.id || '',
+      userId: extra.userData?.id || auth.currentUser.uid || '',
       userName: extra.userData?.fullName || '',
-      userEmail: extra.userData?.email || '',
+      userEmail: extra.userData?.email || auth.currentUser.email || '',
       userRole: extra.userData?.role || '',
       level,
       message: message || 'Nenhuma mensagem detalhada fornecida',
@@ -51,8 +50,7 @@ export async function persistLog(
 
     await setDoc(newLogDocRef, payload);
   } catch (error) {
-    // Evita loop infinito caso o erro de salvar seja jogado novamente no interceptor
-    console.error('Falha crítica ao persistir o log no Firestore:', error);
+    // Evita loop infinito caso o erro de salvar seja jogado novamente no interceptor, falha silenciosamente
   }
 }
 

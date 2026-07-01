@@ -145,7 +145,7 @@ export default function AppointmentsPage() {
 
   // Carregar Dados do Salão
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData?.id) return;
 
     const unsubs: (() => void)[] = [];
 
@@ -721,6 +721,15 @@ export default function AppointmentsPage() {
       default: return 'Concluído';
     }
   };
+
+  if (loading || !salonData?.id) {
+    return (
+      <div className="flex flex-col items-center justify-center p-24 gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
+        <span className="text-xs text-[#a1a1aa] tracking-widest font-mono uppercase animate-pulse">Sincronizando LumiereOS...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12" id="appointments-page">

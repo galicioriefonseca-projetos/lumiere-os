@@ -75,6 +75,14 @@ export interface Salon {
   stripeCheckoutSessionId?: string;
   stripePriceId?: string;
   mercadoPagoPreapprovalId?: string;
+  asaasCustomerId?: string;
+  asaasSubscriptionId?: string;
+  asaasCheckoutUrl?: string;
+  asaasLastPaymentId?: string;
+  asaasLastEvent?: string;
+  founderInitialPrice?: number;
+  founderInitialPriceEndsAt?: number;
+  founderFuturePrice?: number;
   onboardingCompleted?: boolean;
   slug?: string;               // ex: "studio-bella" — URL única do salão
   bookingEnabled?: boolean;    // habilitar/desabilitar agendamento online

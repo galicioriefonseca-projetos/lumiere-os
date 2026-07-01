@@ -35,8 +35,6 @@ import { Progress } from '@/components/ui/progress';
 import ProfessionalDashboard from './ProfessionalDashboard';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Appointment, Goal, ChecklistRun, Professional } from '../../types';
-import { PaymentDialog } from '../../components/billing/PaymentDialog';
-import { isPaymentDueInDays, isPaymentOverdue } from '../../lib/billing';
 
 import {
   ResponsiveContainer,
@@ -63,20 +61,6 @@ export default function DashboardHome() {
   
   const [loading, setLoading] = useState(true);
 
-  // Efeito para monitorar e validar status de faturamento/checkout da Stripe
-  useEffect(() => {
-    const checkout = searchParams.get('checkout');
-    if (checkout === 'success') {
-      toast.success('Assinatura configurada com sucesso. Estamos confirmando seu pagamento.');
-      // Limpa os parâmetros da URL de forma segura
-      searchParams.delete('checkout');
-      setSearchParams(searchParams);
-    } else if (checkout === 'cancel') {
-      toast.error('Configuração de faturamento cancelada pelo usuário.');
-      searchParams.delete('checkout');
-      setSearchParams(searchParams);
-    }
-  }, [searchParams, setSearchParams]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [checklistRuns, setChecklistRuns] = useState<ChecklistRun[]>([]);                
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -86,7 +70,7 @@ export default function DashboardHome() {
   const [teamRanking, setTeamRanking] = useState<any[]>([]);
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
   const [isFinanceDialogOpen, setIsFinanceDialogOpen] = useState(false);
-  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'detailed' | 'minimalist'>('detailed');
 
   const [stats, setStats] = useState({
     clients: 0,
@@ -136,7 +120,7 @@ export default function DashboardHome() {
   };
 
   useEffect(() => {
-    if (!salonData || !userData) return;
+    if (!salonData?.id || !userData) return;
     if (userData.role === 'professional') {
       setLoading(false);
       return;
@@ -246,7 +230,7 @@ export default function DashboardHome() {
 
   // Efeito derivado para calcular estatísticas compostas sem gerar dependência circular
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData?.id) return;
     
     // 1. Calcular estatísticas de metas baseadas em goals
     const currentGoal = goals.find(g => g.month === currentMonthStr);
@@ -278,7 +262,7 @@ export default function DashboardHome() {
 
   // Daily Chart Data (Faturamento Diário vs Meta)
   const dailyChartData = useMemo(() => {
-    if (!salonData) return [];
+    if (!salonData?.id) return [];
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
@@ -331,7 +315,7 @@ export default function DashboardHome() {
     );
   }
 
-  if (loading || !salonData) {
+  if (loading || !salonData?.id) {
     return (
       <div className="flex flex-col items-center justify-center p-24 gap-4">
         <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
@@ -464,9 +448,33 @@ export default function DashboardHome() {
 
       {/* Quick Access Shortcuts - Beautiful grid custom aligned for roles */}
       <div className="space-y-3.5">
-         <div className="flex items-center gap-2">
-           <Compass className="w-4 h-4 text-[#D4AF37]" />
-           <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Módulos de Acesso Rápido</span>
+         <div className="flex items-center justify-between">
+           <div className="flex items-center gap-2">
+              <Compass className="w-4 h-4 text-[#D4AF37]" />
+              <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Módulos de Acesso Rápido</span>
+           </div>
+           
+           {/* View Toggle */}
+           <div className="flex items-center bg-[#0c0c0f] border border-white/5 rounded-xl p-0.5">
+              <button 
+                onClick={() => setViewMode('detailed')}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-semibold rounded-lg uppercase tracking-wider font-mono transition-all",
+                  viewMode === 'detailed' ? "bg-white/10 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                Detalhada
+              </button>
+              <button 
+                onClick={() => setViewMode('minimalist')}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-semibold rounded-lg uppercase tracking-wider font-mono transition-all",
+                  viewMode === 'minimalist' ? "bg-white/10 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                Minimalista
+              </button>
+           </div>
          </div>
          <div className={cn("grid gap-3.5", 
            isReceptionistOrAttendant ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
@@ -701,7 +709,7 @@ export default function DashboardHome() {
       )}
 
       {/* ==================== TEAM PERFORMANCE (GAMIFICATION RANKING) ==================== */}
-      {isOwnerOrManager && (
+      {isOwnerOrManager && viewMode === 'detailed' && (
         <Card className="border-zinc-900 bg-black/60 rounded-2xl shadow-xl overflow-hidden">
           <CardHeader className="p-5 pb-3 flex flex-row items-center justify-between">
             <div>
@@ -1002,7 +1010,7 @@ export default function DashboardHome() {
       </div>
 
       {/* Chart performance card - Show only if faturamento/metas are active or for Owner / Manager */}
-      {isOwnerOrManager && (
+      {isOwnerOrManager && viewMode === 'detailed' && (
         <div className="space-y-3.5">
           <div className="flex items-center gap-2 px-1">
              <TrendingUp className="w-4 h-4 text-[#D4AF37]" />
@@ -1327,13 +1335,6 @@ export default function DashboardHome() {
             </div>
          </DialogContent>
       </Dialog>
-
-      <PaymentDialog 
-        isOpen={isPaymentDialogOpen} 
-        onClose={() => setIsPaymentDialogOpen(false)} 
-        salonData={salonData} 
-      />
-
     </div>
   );
 }

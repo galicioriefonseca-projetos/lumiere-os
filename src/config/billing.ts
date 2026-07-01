@@ -4,5 +4,14 @@ export const BILLING_CONFIG = {
   receiverName: "Galiciori e Fonseca Estratégia Digital",
   supportWhatsApp: "5517996140963",
   paymentInstructions: "Após realizar o pagamento via PIX, clique em Informar pagamento para nossa equipe validar sua assinatura.",
+  
+  // Asaas Configuration (Fase 1 - Configuração segura e estática para o frontend)
+  asaas: {
+    apiUrl: import.meta.env.VITE_ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3',
+    // Configurações do comportamento do checkout
+    chargeType: 'RECURRING', // Padrão recorrente
+    paymentMethods: ['CREDIT_CARD', 'PIX'], // Métodos seguros aceitos
+    sandboxMode: true, // Homologação ativa por padrão
+  }
 };
 

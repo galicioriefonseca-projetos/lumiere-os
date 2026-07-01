@@ -177,8 +177,6 @@ export function canAccessRoute(role: Role | undefined, route: string): boolean {
 
   // Route-specific checks
   switch (cleanRoute) {
-    case '/dashboard/assinatura':
-      return isOwner(role) || isPlatformAdmin(role);
     case '/dashboard/comissoes':
       return canViewCommissions(role);
     case '/dashboard/minha-conta':

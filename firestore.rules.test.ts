@@ -10,15 +10,24 @@ describe('LumièreOS Firestore Rules Tests', () => {
   const professionalUid = 'user_professional_789';
 
   beforeAll(async () => {
-    testEnv = await initializeTestEnvironment({
-      projectId: 'lumiereos-11a95',
-      firestore: {
-        rules: readFileSync('firestore.rules', 'utf8'),
-        // Support either local host/port or fallback configuration
-        host: '127.0.0.1',
-        port: 8080,
-      }
-    });
+    try {
+      testEnv = await initializeTestEnvironment({
+        projectId: 'lumiereos-11a95',
+        firestore: {
+          rules: readFileSync('firestore.rules', 'utf8'),
+          // Support either local host/port or fallback configuration
+          host: '127.0.0.1',
+          port: 8080,
+        }
+      });
+    } catch (error: any) {
+      console.error('\n❌ ERRO: Não foi possível inicializar o ambiente de testes do Firestore Emulator.');
+      console.error('Causa provável: O Firestore Emulator não está ativo ou o Java Runtime Environment (JRE) não está instalado no ambiente de execução.');
+      console.error('Para rodar os testes localmente com o emulator:');
+      console.error('1. Garanta que o Java (JRE 8+) esteja instalado.');
+      console.error('2. Execute: npm run test:rules\n');
+      throw new Error(`[Emulator Offline / JRE Missing] ${error?.message || error}`);
+    }
   });
 
   afterAll(async () => {

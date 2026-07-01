@@ -129,6 +129,31 @@ export default function MasterPanel() {
           updates.isActive = true;
           updates.activationStatus = 'active';
           break;
+        case 'asaas_activate':
+          updates.billingProvider = 'asaas';
+          updates.subscriptionStatus = 'active';
+          updates.paymentStatus = 'paid';
+          updates.isActive = true;
+          updates.activationStatus = 'active';
+          updates.asaasCustomerId = 'cus_' + Math.random().toString(36).substring(2, 11).toUpperCase();
+          updates.asaasSubscriptionId = 'sub_' + Math.random().toString(36).substring(2, 11).toUpperCase();
+          updates.asaasCheckoutUrl = 'https://sandbox.asaas.com/checkout/simulated';
+          updates.nextBillingDate = Date.now() + (30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'asaas_simulate_overdue':
+          updates.billingProvider = 'asaas';
+          updates.subscriptionStatus = 'overdue';
+          updates.paymentStatus = 'overdue';
+          updates.nextBillingDate = Date.now() - (5 * 24 * 60 * 60 * 1000); // 5 days late
+          break;
+        case 'asaas_clear':
+          updates.billingProvider = 'manual_pix';
+          updates.asaasCustomerId = '';
+          updates.asaasSubscriptionId = '';
+          updates.asaasCheckoutUrl = '';
+          updates.subscriptionStatus = 'trial';
+          updates.paymentStatus = 'none';
+          break;
         default:
           return;
       }
@@ -361,7 +386,7 @@ export default function MasterPanel() {
                            <div className="flex flex-col gap-1 items-start">
                               <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold">{salon.plan}</span>
                               <div className="text-[10px] text-zinc-500 mt-1 font-mono text-left">
-                                {salon.billingProvider === 'mercadopago' ? '💳 Mercado Pago' : salon.billingProvider === 'stripe' ? '💳 Stripe' : '💸 PIX Manual / Off-line'}
+                                {salon.billingProvider === 'mercadopago' ? '💳 Mercado Pago' : salon.billingProvider === 'stripe' ? '💳 Stripe' : salon.billingProvider === 'asaas' ? '💳 Asaas Recorrente' : '💸 PIX Manual / Off-line'}
                               </div>
                               <div className="flex gap-1">
                                 <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getStatusColor(salon.activationStatus)}`}>
@@ -371,6 +396,38 @@ export default function MasterPanel() {
                                    Pgto: {salon.paymentStatus || 'none'}
                                 </span>
                               </div>
+                              {salon.billingProvider === 'asaas' && (
+                                <div className="text-[9px] text-zinc-400 font-mono mt-1 flex flex-col gap-0.5 border-t border-white/5 pt-1 w-full" title="Informações Asaas">
+                                  <span className="truncate max-w-[150px]">Cus ID: {salon.asaasCustomerId || 'Não criado'}</span>
+                                  <span className="truncate max-w-[150px]">Sub ID: {salon.asaasSubscriptionId || 'Sem ass.'}</span>
+                                  {salon.nextBillingDate && (
+                                    <span>Venc: {new Date(salon.nextBillingDate).toLocaleDateString('pt-BR')}</span>
+                                  )}
+                                  {salon.asaasCheckoutUrl ? (
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <button 
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(salon.asaasCheckoutUrl || '');
+                                          toast.success('Checkout URL copiado!');
+                                        }}
+                                        className="text-[9px] bg-zinc-800 hover:bg-zinc-700 px-1 py-0.5 rounded text-white font-sans border border-zinc-700"
+                                      >
+                                        Copiar Link
+                                      </button>
+                                      <a 
+                                        href={salon.asaasCheckoutUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="text-[9px] text-[#D4AF37] hover:underline"
+                                      >
+                                        Abrir
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <span className="text-yellow-500 text-[8px] uppercase font-bold mt-0.5">Sem link de checkout</span>
+                                  )}
+                                </div>
+                              )}
                               {salon.mercadoPagoPreapprovalId && (
                                 <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.mercadoPagoPreapprovalId}>
                                    <span className="truncate max-w-[120px]">MP: {salon.mercadoPagoPreapprovalId}</span>
@@ -410,11 +467,18 @@ export default function MasterPanel() {
                                 <SelectTrigger className="h-8 w-28 bg-black/20 border-border text-[10px] uppercase text-white">
                                   <SelectValue placeholder="Pagto" />
                                 </SelectTrigger>
-                                <SelectContent className="bg-card border-border">
+                                <SelectContent className="bg-card border-border text-white">
                                   <SelectItem value="payment_paid">Marcar como Pago</SelectItem>
                                   <SelectItem value="payment_overdue">Marcar Vencido</SelectItem>
                                   <SelectItem value="payment_cancel">Cancelar Assinatura</SelectItem>
                                   <SelectItem value="payment_reactivate">Reativar Assinatura</SelectItem>
+                                  {import.meta.env.DEV && (
+                                    <>
+                                      <SelectItem value="asaas_activate">Ativar Asaas (Simular Link)</SelectItem>
+                                      <SelectItem value="asaas_simulate_overdue">Simular 5 dias de atraso</SelectItem>
+                                      <SelectItem value="asaas_clear">Limpar Dados Asaas</SelectItem>
+                                    </>
+                                  )}
                                 </SelectContent>
                               </Select>
                            </div>
