@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -8,6 +7,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const { getAdminDb } = await import("../_shared/firebaseAdmin");
     const receivedToken =
       req.headers["x-cakto-token"] ||
       req.headers["cakto-token"] ||
