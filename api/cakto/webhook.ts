@@ -67,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, info: "Webhook de teste/ping recebido com sucesso." });
     }
 
-    const { getAdminDb } = await import("../_shared/firebaseAdmin");
+    const { getAdminDb } = await import("../_shared/firebaseAdmin.js");
     const adminDb = getAdminDb();
     let salonRef = null;
     let salonDoc = null;

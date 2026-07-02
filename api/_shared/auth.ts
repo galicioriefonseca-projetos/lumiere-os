@@ -1,4 +1,4 @@
-import { getAdminAuth, getAdminDb } from "./firebaseAdmin";
+import { getAdminAuth, getAdminDb } from "./firebaseAdmin.js";
 
 export async function verifyIdToken(req: any): Promise<any> {
   const authHeader = req.headers.authorization;

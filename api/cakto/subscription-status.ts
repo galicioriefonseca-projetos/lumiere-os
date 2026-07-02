@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin";
-import { verifyIdToken, canManageBilling } from "../_shared/auth";
+import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {

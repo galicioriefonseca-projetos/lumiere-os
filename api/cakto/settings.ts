@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin";
-import { verifyIdToken } from "../_shared/auth";
+import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { verifyIdToken } from "../_shared/auth.js";
 
 interface CaktoSettings {
   productId: string;
