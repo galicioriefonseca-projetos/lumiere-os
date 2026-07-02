@@ -187,7 +187,7 @@ export default function DashboardHome() {
        const list = snap.docs.map(doc => ({id: doc.id, ...doc.data()})) as any[];
        setAllComandas(list);
     }, err => {
-        console.error("Erro no onSnapshot de todas as comandas:", err);
+        console.warn("Aviso no onSnapshot de todas as comandas (não operacional no momento):", err.message);
     }));
 
     // General Salon Goals
@@ -214,15 +214,35 @@ export default function DashboardHome() {
     // Gamification Team Ranking
     const qgRanking = query(collection(db, `salons/${salonData.id}/gamification`));
     unsubs.push(onSnapshot(qgRanking, snap => {
-      const list: any[] = [];
-      snap.forEach(d => {
-        list.push({ id: d.id, ...d.data() });
-      });
-      // Sort by monthlyXP descending
-      const sorted = list.sort((a, b) => (b.monthlyXP || 0) - (a.monthlyXP || 0));
-      setTeamRanking(sorted);
+       const list: any[] = [];
+       snap.forEach(d => {
+         list.push({ id: d.id, ...d.data() });
+       });
+       // Sort by composite performance score (70% Goals/Production + 30% Checklist/Evaluation)
+       const sorted = list.sort((a, b) => {
+          const aEvalList = (a.recentScores || []).filter((s: any) => s.evaluationScore !== undefined);
+          const aAvgEval = aEvalList.length > 0 
+            ? aEvalList.reduce((acc: number, cur: any) => acc + (cur.evaluationScore || 0), 0) / aEvalList.length
+            : 0;
+          const aLatestPro = a.recentScores && a.recentScores.length > 0 ? a.recentScores[a.recentScores.length - 1].productionScore || 0 : 0;
+          const aScore = (aLatestPro * 0.70) + (aAvgEval * 0.30);
+
+          const bEvalList = (b.recentScores || []).filter((s: any) => s.evaluationScore !== undefined);
+          const bAvgEval = bEvalList.length > 0 
+            ? bEvalList.reduce((acc: number, cur: any) => acc + (cur.evaluationScore || 0), 0) / bEvalList.length
+            : 0;
+          const bLatestPro = b.recentScores && b.recentScores.length > 0 ? b.recentScores[b.recentScores.length - 1].productionScore || 0 : 0;
+          const bScore = (bLatestPro * 0.70) + (bAvgEval * 0.30);
+
+          // Sort descending by score, or fallback to monthlyXP
+          if (bScore !== aScore) {
+            return bScore - aScore;
+          }
+          return (b.monthlyXP || 0) - (a.monthlyXP || 0);
+       });
+       setTeamRanking(sorted);
     }, err => {
-      console.error("Erro no onSnapshot do ranking de gamificação:", err);
+       console.warn("Aviso no onSnapshot do ranking de gamificação:", err.message);
     }));
 
     return () => unsubs.forEach(u => u());

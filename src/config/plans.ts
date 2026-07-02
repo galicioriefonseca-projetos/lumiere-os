@@ -72,6 +72,21 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
       'Suporte prioritário vIP'
     ]
   },
+  enterprise: {
+    planValue: 'enterprise',
+    name: 'Enterprise',
+    monthlyAmount: 2497,
+    accessLevel: 'full',
+    includesFutureUpdates: true,
+    maxProfessionals: 9999,
+    features: [
+      'Profissionais Ilimitados',
+      'Gestão Multiunidade & Franquias',
+      'Suporte VIP Dedicado 24/7',
+      'Painel Master customizado',
+      'Implantação assistida e treinamento'
+    ]
+  },
   founder: {
     planValue: 'founder',
     name: 'Founder / Piloto',
@@ -107,8 +122,8 @@ export function hasPlanFeature(plan: PlanType | string | undefined, feature: str
     return true;
   }
 
-  // Network also has access to all features
-  if (normalizedPlan === 'network') {
+  // Network and Enterprise also have access to all features
+  if (normalizedPlan === 'network' || normalizedPlan === 'enterprise') {
     return true;
   }
 

@@ -24,6 +24,10 @@ interface AuthContextType {
       phone: string;
       plan: string;
       limit: number;
+      ownerName?: string;
+      businessSegment?: string;
+      estimatedProfessionals?: string;
+      recommendedPlan?: string;
     },
     optionalFullName?: string
   ) => Promise<AuthUser>;
@@ -1317,6 +1321,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       phone: string;
       plan: string;
       limit: number;
+      ownerName?: string;
+      businessSegment?: string;
+      estimatedProfessionals?: string;
+      recommendedPlan?: string;
     },
     optionalFullName?: string
   ): Promise<AuthUser> => {
@@ -1337,7 +1345,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const now = Date.now();
       const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
       const salonId = crypto.randomUUID();
-      const fullName = optionalFullName || user.displayName || existingData.fullName || '';
+      const fullName = optionalFullName || user.displayName || existingData.fullName || salonFields.ownerName || '';
 
       const salonData = {
         id: salonId,
@@ -1357,6 +1365,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         professionalsLimit: salonFields.limit,
         createdAt: now,
         updatedAt: now,
+
+        // Optional onboarding fields
+        businessSegment: salonFields.businessSegment || '',
+        estimatedProfessionals: salonFields.estimatedProfessionals || '',
+        recommendedPlan: salonFields.recommendedPlan || salonFields.plan
       };
       await setDoc(doc(db, 'salons', salonId), salonData);
 
@@ -1375,7 +1388,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const now = Date.now();
     const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
     const salonId = crypto.randomUUID();
-    const fullName = optionalFullName || user.displayName || '';
+    const fullName = optionalFullName || user.displayName || salonFields.ownerName || '';
 
     const salonData = {
       id: salonId,
@@ -1395,6 +1408,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       professionalsLimit: salonFields.limit,
       createdAt: now,
       updatedAt: now,
+
+      // Optional onboarding fields
+      businessSegment: salonFields.businessSegment || '',
+      estimatedProfessionals: salonFields.estimatedProfessionals || '',
+      recommendedPlan: salonFields.recommendedPlan || salonFields.plan
     };
     await setDoc(doc(db, 'salons', salonId), salonData);
 

@@ -144,16 +144,29 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
   }, [professionals, goals, checklistRuns, appointments, currentMonth]);
 
   // 3. Compute dynamic ranking position based on Composite Score
-  // scoreComposto = (progressoMeta% * 0.6) + (mediaAvaliacoes% * 0.4)
+  // Unificado com o LumièreOS GamificationPage: 70% Metas, 30% Checklists
   const rankedPerformance = useMemo(() => {
     const scored = performanceData.map((p) => {
-      const scoreComposto = (p.goalProgressPct * 0.6) + (p.avgScorePercent * 0.4);
+      const hasGoals = p.targetAmount > 0;
+      const hasChecklists = p.hasEvaluations;
+
+      let scoreComposto = 0;
+      if (hasGoals && hasChecklists) {
+        scoreComposto = (p.goalProgressPct * 0.70) + (p.avgScorePercent * 0.30);
+      } else if (hasGoals) {
+        scoreComposto = p.goalProgressPct;
+      } else if (hasChecklists) {
+        scoreComposto = p.avgScorePercent;
+      } else {
+        scoreComposto = 0;
+      }
+
       return {
         ...p,
-        scoreComposto
+        scoreComposto: Math.round(scoreComposto)
       };
     });
-    // Sort descending
+    // Sort descending by composite score (ranking)
     return scored.sort((a, b) => b.scoreComposto - a.scoreComposto);
   }, [performanceData]);
 
@@ -170,28 +183,61 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
         // We only evaluate non-admins/professional roles
         if (prof.role === 'owner' || prof.role === 'platform_admin') return;
 
-        // Notas Baixas alert
-        if (hasEvaluations && avgScorePercent < 70) {
+        const isLowEvaluation = hasEvaluations && avgScorePercent < 75;
+        const isBelowGoal = targetAmount > 0 && goalProgressPct < 60;
+
+        // ALERTA COMBINADO CRÍTICO (Nota Ruim + Sem Bater Metas) - Alerta ao Proprietário
+        if (isLowEvaluation && isBelowGoal) {
           alertsList.push({
-            id: `team_low_rating_${prof.id}_${currentMonth}`,
+            id: `team_critical_underperformance_${prof.id}_${currentMonth}`,
             type: 'error',
-            category: 'low_rating',
-            title: `Feedback Crítico: ${prof.name}`,
-            description: `Desempenho de comportamento e aderência a baixo da média: ${Math.round(avgScorePercent)}% nos checklists deste mês. Recomenda-se feedback técnico.`,
+            category: 'attention',
+            title: `🚨 Atenção Proprietário: Desempenho Crítico de ${prof.name}`,
+            description: `Alerta de Correlação! O colaborador está com nota média de checklist de apenas ${Math.round(avgScorePercent)}% e atingiu somente ${Math.round(goalProgressPct)}% da meta de vendas. Notas ruins de comportamento diário estão correlacionadas ao não batimento das metas. Agende um feedback urgente!`,
             proId: prof.id,
             proName: prof.name,
             createdAt: Date.now()
           });
+        } else {
+          // Notas Baixas isolado
+          if (isLowEvaluation) {
+            alertsList.push({
+              id: `team_low_rating_${prof.id}_${currentMonth}`,
+              type: 'error',
+              category: 'low_rating',
+              title: `Feedback Crítico: ${prof.name}`,
+              description: `Desempenho de comportamento e aderência abaixo da média: ${Math.round(avgScorePercent)}% nos checklists deste mês. Recomenda-se feedback técnico.`,
+              proId: prof.id,
+              proName: prof.name,
+              createdAt: Date.now()
+            });
+          }
+
+          // Meta Baixa isolado
+          if (isBelowGoal) {
+            alertsList.push({
+              id: `team_below_goal_${prof.id}_${currentMonth}`,
+              type: 'warning',
+              category: 'below_goal',
+              title: `Meta em Risco: ${prof.name}`,
+              description: `Abaixo da projeção ótima: faturou apenas ${Math.round(goalProgressPct)}% de sua meta de R$ ${targetAmount}.`,
+              proId: prof.id,
+              proName: prof.name,
+              createdAt: Date.now()
+            });
+          }
         }
 
-        // Meta Baixa alert
-        if (targetAmount > 0 && goalProgressPct < 50) {
+        // ALERTA DE EXCELÊNCIA COMBINADA (Alta Nota + Alta Meta) - Alerta de Sucesso ao Proprietário
+        const isHighEvaluation = hasEvaluations && avgScorePercent >= 85;
+        const isHighGoal = targetAmount > 0 && goalProgressPct >= 95;
+        if (isHighEvaluation && isHighGoal) {
           alertsList.push({
-            id: `team_below_goal_${prof.id}_${currentMonth}`,
-            type: 'warning',
-            category: 'below_goal',
-            title: `Meta em Risco: ${prof.name}`,
-            description: `Abaixo da projeção ótima: faturou R$ ${Math.round(goalProgressPct)}% de sua meta de R$ ${targetAmount}.`,
+            id: `team_excellence_success_${prof.id}_${currentMonth}`,
+            type: 'success',
+            category: 'top_ranked',
+            title: `👑 Sucesso de Performance: ${prof.name}`,
+            description: `Correlação do Sucesso Confirmada! ${prof.name} está mantendo notas excelentes de checklist (${Math.round(avgScorePercent)}%) e batendo metas de vendas com ${Math.round(goalProgressPct)}% de alcance!`,
             proId: prof.id,
             proName: prof.name,
             createdAt: Date.now()
@@ -214,54 +260,95 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
       });
     }
 
-    // 4b. Personal Alerts for the active logged in professional/user
+    // 4b. Personal Alerts for the active logged in professional/user (rendered inside professional account)
     if (userId) {
       const myPerfIdx = rankedPerformance.findIndex(p => p.prof.id === userId);
       if (myPerfIdx !== -1) {
         const myPerf = rankedPerformance[myPerfIdx];
         const rankingPos = myPerfIdx + 1;
 
-        // Perto de bater a meta: ameno de 10%
-        if (myPerf.isNearGoal) {
-          alertsList.push({
-            id: `personal_near_goal_${userId}_${currentMonth}`,
-            type: 'success',
-            category: 'goal_near',
-            title: '🎯 Quase lá! Meta à vista!',
-            description: `Você faturou ${Math.round(myPerf.goalProgressPct)}% da sua meta mensal! Falta menos de 10% para o alcance do objetivo final e garantia do seu bônus!`,
-            proId: userId,
-            createdAt: Date.now()
-          });
-        }
+        const isLowEvaluation = myPerf.hasEvaluations && myPerf.avgScorePercent < 75;
+        const isBelowGoal = myPerf.targetAmount > 0 && myPerf.goalProgressPct < 60;
 
-        // Bem ranqueado e com boas avaliações (Top 3, scoreComposto >= 80%, boas avaliações)
-        const isHighEvaluation = myPerf.hasEvaluations && myPerf.avgScorePercent >= 85;
-        const isHighlyRanked = rankingPos <= 3 && rankedPerformance.length >= 2;
-        if (isHighlyRanked && isHighEvaluation) {
-          alertsList.push({
-            id: `personal_top_performer_${userId}_${currentMonth}`,
-            type: 'success',
-            category: 'top_ranked',
-            title: '👑 Desempenho Estelar! Destaque do Salão',
-            description: `Parabéns! Você está no Top ${rankingPos} do ranking do salão com média espetacular de ${Math.round(myPerf.avgScorePercent)}% nas avaliações Essenza!`,
-            proId: userId,
-            createdAt: Date.now()
-          });
-        }
-
-        // Abaixo da meta e com más avaliações
-        const isLowEvaluation = myPerf.hasEvaluations && myPerf.avgScorePercent < 70;
-        const isBelowGoal = myPerf.targetAmount > 0 && myPerf.goalProgressPct < 50;
+        // ALERTA COMBINADO CRÍTICO (Nota Ruim + Sem Bater Metas) - Alerta na Conta do Profissional
         if (isBelowGoal && isLowEvaluation) {
           alertsList.push({
-            id: `personal_attention_needed_${userId}_${currentMonth}`,
-            type: 'warning',
+            id: `personal_critical_underperformance_${userId}_${currentMonth}`,
+            type: 'error',
             category: 'attention',
-            title: '⚠️ Atenção: Plano de Ação Recomendado',
-            description: `Suas métricas combinadas estão abaixo da expectativa do Lumière (Meta: ${Math.round(myPerf.goalProgressPct)}%, Notas: ${Math.round(myPerf.avgScorePercent)}%). Vamos focar em recuperar no próximo atendimento!`,
+            title: '⚠️ Alerta de Atenção: Metas & Checklist em Queda',
+            description: `Suas notas médias de checklist estão em ${Math.round(myPerf.avgScorePercent)}% e seu progresso na meta de faturamento em ${Math.round(myPerf.goalProgressPct)}%. No LumièreOS, profissionais com boa nota nos checklists diários de atendimento e comportamento naturalmente conquistam mais clientes e batem metas com consistência. Revise seus procedimentos para recuperar o ritmo!`,
             proId: userId,
             createdAt: Date.now()
           });
+        } else {
+          // Perto de bater a meta: ameno de 10%
+          if (myPerf.isNearGoal) {
+            alertsList.push({
+              id: `personal_near_goal_${userId}_${currentMonth}`,
+              type: 'success',
+              category: 'goal_near',
+              title: '🎯 Quase lá! Meta à vista!',
+              description: `Você faturou ${Math.round(myPerf.goalProgressPct)}% da sua meta mensal! Falta menos de 10% para o alcance do objetivo final e garantia do seu bônus!`,
+              proId: userId,
+              createdAt: Date.now()
+            });
+          }
+
+          // Abaixo da meta isolado
+          if (isBelowGoal) {
+            alertsList.push({
+              id: `personal_below_goal_warning_${userId}_${currentMonth}`,
+              type: 'warning',
+              category: 'attention',
+              title: '🎯 Meta Mensal em Atraso',
+              description: `Seu progresso da meta está em ${Math.round(myPerf.goalProgressPct)}%. Vamos focar nos próximos agendamentos para elevar a produção de vendas!`,
+              proId: userId,
+              createdAt: Date.now()
+            });
+          }
+
+          // Baixa avaliação isolada
+          if (isLowEvaluation) {
+            alertsList.push({
+              id: `personal_low_rating_warning_${userId}_${currentMonth}`,
+              type: 'warning',
+              category: 'attention',
+              title: '📋 Atenção à Qualidade Operacional',
+              description: `Sua média de checklist está abaixo da expectativa (${Math.round(myPerf.avgScorePercent)}%). Cuide dos padrões de comportamento e higienização Essenza nos próximos dias!`,
+              proId: userId,
+              createdAt: Date.now()
+            });
+          }
+        }
+
+        // ALERTA DE EXCELÊNCIA COMBINADA (Alta Nota + Alta Meta) - Alerta de Sucesso na Conta do Profissional
+        const isHighEvaluation = myPerf.hasEvaluations && myPerf.avgScorePercent >= 85;
+        const isHighGoal = myPerf.targetAmount > 0 && myPerf.goalProgressPct >= 95;
+        if (isHighEvaluation && isHighGoal) {
+          alertsList.push({
+            id: `personal_excellence_success_${userId}_${currentMonth}`,
+            type: 'success',
+            category: 'top_ranked',
+            title: '👑 Parabéns! Sucesso de Excelência Absoluta!',
+            description: `Você provou a correlação do sucesso! Mantém uma média de ${Math.round(myPerf.avgScorePercent)}% nos checklists diários e atingiu ${Math.round(myPerf.goalProgressPct)}% de sua meta de vendas! Qualidade e faturamento andam de mãos dadas!`,
+            proId: userId,
+            createdAt: Date.now()
+          });
+        } else {
+          // Bem ranqueado isolado
+          const isHighlyRanked = rankingPos <= 3 && rankedPerformance.length >= 2;
+          if (isHighlyRanked && isHighEvaluation) {
+            alertsList.push({
+              id: `personal_top_performer_${userId}_${currentMonth}`,
+              type: 'success',
+              category: 'top_ranked',
+              title: '👑 Desempenho Estelar! Destaque do Salão',
+              description: `Parabéns! Você está no Top ${rankingPos} do ranking do salão com média espetacular de ${Math.round(myPerf.avgScorePercent)}% nas avaliações Essenza!`,
+              proId: userId,
+              createdAt: Date.now()
+            });
+          }
         }
       }
     }
