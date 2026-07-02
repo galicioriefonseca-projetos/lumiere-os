@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
+import { useSalonPerformanceRanking } from '../../hooks/useSalonPerformanceRanking';
 import { collection, query, onSnapshot, doc, setDoc, addDoc, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,17 +38,13 @@ export default function GamificationPage() {
   const isOwnerOrManager = userRole === 'owner' || userRole === 'manager' || userRole === 'platform_admin';
 
   const [campaigns, setCampaigns] = useState<GamificationCampaign[]>([]);
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [professionals, setProfessionals] = useState<any[]>([]);
-  const [checklistRuns, setChecklistRuns] = useState<any[]>([]);
-  const [salonGoals, setSalonGoals] = useState<any[]>([]);
-  const [professionalGoals, setProfessionalGoals] = useState<any[]>([]);
 
   const [isNewCampaignOpen, setIsNewCampaignOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [selectedProfForReport, setSelectedProfForReport] = useState<any | null>(null);
 
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'quests' | 'rewards'>('leaderboard');
+  const [leaderboardView, setLeaderboardView] = useState<'geral' | 'avaliacoes' | 'metas'>('geral');
 
   const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().substring(0, 7));
 
@@ -83,6 +80,8 @@ export default function GamificationPage() {
     targetValue: '5'
   });
 
+  const { professionalsPerformance, rankingByEvaluation, rankingByGoals, loading } = useSalonPerformanceRanking(salonData?.id, selectedMonth);
+
   // Carregar dados estruturados
   useEffect(() => {
     if (!salonData) return;
@@ -99,331 +98,288 @@ export default function GamificationPage() {
       console.warn("Aviso ao carregar campanhas:", error.message);
     }));
 
-    // Agendamentos/Lançamentos (Todos para calcular desempenho dinamicativo)
-    const qAp = query(collection(db, `salons/${salonData.id}/appointments`));
-    unsubs.push(onSnapshot(qAp, (snapshot) => {
-      const arr: any[] = [];
-      snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
-      setAppointments(arr);
-    }));
-
-    // Colaboradores
-    const qPro = query(collection(db, `salons/${salonData.id}/professionals`));
-    unsubs.push(onSnapshot(qPro, (snapshot) => {
-      const arr: any[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.isActive !== false) {
-          arr.push({ id: doc.id, ...data });
-        }
-      });
-      setProfessionals(arr);
-    }));
-
-    // ChecklistRuns para computar notas altas
-    const qCk = query(collection(db, `salons/${salonData.id}/checklistRuns`));
-    unsubs.push(onSnapshot(qCk, (snapshot) => {
-      const arr: any[] = [];
-      snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
-      setChecklistRuns(arr);
-    }));
-
-    // Metas do Salão (salons/{salonId}/goals)
-    const qG = query(collection(db, `salons/${salonData.id}/goals`));
-    unsubs.push(onSnapshot(qG, (snapshot) => {
-      const arr: any[] = [];
-      snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
-      setSalonGoals(arr);
-    }, (error) => {
-      console.warn("Aviso ao carregar metas do salão:", error.message);
-    }));
-
-    // Metas dos Profissionais (salons/{salonId}/professionalGoals)
-    const qPg = query(collection(db, `salons/${salonData.id}/professionalGoals`));
-    unsubs.push(onSnapshot(qPg, (snapshot) => {
-      const arr: any[] = [];
-      snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
-      setProfessionalGoals(arr);
-    }, (error) => {
-      console.warn("Aviso ao carregar metas profissionais:", error.message);
-    }));
-
     return () => unsubs.forEach(fn => fn());
   }, [salonData]);
 
-  // Cálculos dinâmicos de XP, Nível, Faturamento e Badge para cada profissional
-  const professionalsPerformance = useMemo(() => {
-    const mapped = professionals.map(prof => {
-      // 1. Filtrar agendamentos concluídos deste profissional e deste mês selecionado
-      const completedSrvs = appointments.filter(ap => {
-        const isCompleted = ap.status === 'completed';
-        if (!isCompleted) return false;
-        
-        const isSameProf = ap.professionalId === prof.id;
-        if (!isSameProf) return false;
 
-        const apDate = ap.date || (ap.createdAt && typeof ap.createdAt === 'string' && ap.createdAt) || '';
-        if (apDate.startsWith(selectedMonth)) return true;
-        
-        if (typeof ap.createdAt === 'number') {
-          return new Date(ap.createdAt).toISOString().substring(0, 7) === selectedMonth;
-        }
-        return false;
-      });
 
-      // Faturamento total
-      const totalRevenue = completedSrvs.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+  const currentLeaderboardData = useMemo(() => {
+    if (leaderboardView === 'avaliacoes') return rankingByEvaluation;
+    if (leaderboardView === 'metas') return rankingByGoals;
+    return professionalsPerformance;
+  }, [leaderboardView, professionalsPerformance, rankingByEvaluation, rankingByGoals]);
 
-      // Quantidade de serviços e produtos vendidos
-      const totalServices = completedSrvs.filter(ap => ap.type !== 'product').length;
-      const totalProducts = completedSrvs.filter(ap => ap.type === 'product').length;
+  const emptyStateMessage = useMemo(() => {
+    if (leaderboardView === 'avaliacoes') return "Nenhum profissional com checklists avaliados neste período.";
+    if (leaderboardView === 'metas') return "Nenhum profissional com metas cadastradas neste período.";
+    return "Nenhum colaborador registrado no salão para entrar na disputa.";
+  }, [leaderboardView]);
 
-      // 2. Nota média em checklists avaliados (0 a 100) no mês selecionado
-      const runsInMonth = checklistRuns.filter(r => 
-        r.evaluatedProfessionalId === prof.id && 
-        (r.date?.startsWith(selectedMonth) || r.evaluationDate?.startsWith(selectedMonth))
-      );
-      // Filtrar apenas runs válidas (onde a nota ou percentual foi registrado e não é uma falta)
-      const validRuns = runsInMonth.filter(r => {
-        if (r.attendanceStatus && r.attendanceStatus !== 'present') return false;
-        return r.percentage !== undefined || r.completionPercentage !== undefined;
-      });
-      const totalChecklists = validRuns.length;
-      const avgScore = totalChecklists > 0 
-        ? validRuns.reduce((sum, r) => {
-            const score = r.percentage !== undefined ? r.percentage : (r.completionPercentage ?? 0);
-            return sum + score;
-          }, 0) / totalChecklists
-        : 0;
+  const handleDownloadEvaluationPDF = () => {
+    if (!salonData) {
+      toast.error("Dados do salão não carregados.");
+      return;
+    }
 
-      // 3. Unificar metas atribuídas para o mês selecionado
-      const pGoalsPg = professionalGoals.filter(g => g.professionalId === prof.id && g.month === selectedMonth);
-      const pGoalsG = salonGoals.filter(g => g.professionalId === prof.id && g.month === selectedMonth);
+    try {
+      const docPdf = new jsPDF();
+      const todayStr = new Date().toLocaleDateString('pt-BR');
       
-      const uniqueGoalsMap = new Map<string, any>();
-      pGoalsPg.forEach(g => uniqueGoalsMap.set(g.id, g));
-      pGoalsG.forEach(g => uniqueGoalsMap.set(g.id, g));
-      const assignedGoals = Array.from(uniqueGoalsMap.values());
+      const formatMonthYear = (monthStr: string) => {
+        const [year, month] = monthStr.split('-');
+        const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+        return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+      };
+      const currentMonthYear = formatMonthYear(selectedMonth);
 
-      const totalGoals = assignedGoals.length;
-      const goalsHit = assignedGoals.filter(g => {
-        const target = g.targetAmount ?? g.targetValue ?? g.amount ?? 0;
-        const current = g.currentValue ?? g.currentAmount ?? g.realizedValue ?? 0;
-        return target > 0 && current >= target;
-      }).length;
+      // 1. Cabeçalho Principal (Tema Premium)
+      docPdf.setFillColor(15, 15, 15);
+      docPdf.rect(0, 0, 210, 40, 'F');
 
-      const sumGoalProgress = assignedGoals.reduce((sum, g) => {
-        const target = g.targetAmount ?? g.targetValue ?? g.amount ?? 0;
-        const current = g.currentValue ?? g.currentAmount ?? g.realizedValue ?? 0;
-        const progress = target > 0 ? Math.min(100, (current / target) * 100) : 0;
-        return sum + progress;
-      }, 0);
+      docPdf.setFontSize(22);
+      docPdf.setTextColor(212, 175, 55); // Ouro
+      docPdf.text(salonData.name ? salonData.name.toUpperCase() : "LUMIÈREOS", 14, 25);
 
-      const avgGoalProgress = totalGoals > 0 ? sumGoalProgress / totalGoals : 0;
+      docPdf.setFontSize(10);
+      docPdf.setTextColor(180, 180, 180);
+      docPdf.text(`RELATÓRIO DE DESEMPENHO E RANKING POR AVALIAÇÕES - ${currentMonthYear.toUpperCase()}`, 14, 34);
 
-      // 4. Nova fórmula inteligente (70% Metas, 30% Checklist)
-      const hasGoals = totalGoals > 0;
-      const hasChecklists = totalChecklists > 0;
+      // Linha de divisão dourada
+      docPdf.setDrawColor(212, 175, 55);
+      docPdf.setLineWidth(1);
+      docPdf.line(0, 40, 210, 40);
 
-      let performanceScore = 0;
-      let dataStatus: 'completo' | 'parcial_metas' | 'parcial_checklist' | 'sem_dados' = 'completo';
-      let dataStatusLabel = '';
+      // Meta Info
+      docPdf.setFontSize(10);
+      docPdf.setTextColor(80, 80, 80);
+      docPdf.text(`Emitido em: ${todayStr}`, 14, 52);
+      docPdf.text(`Software de Gestão: LumièreOS`, 150, 52);
 
-      if (hasGoals && hasChecklists) {
-        performanceScore = Math.round((avgGoalProgress * 0.70) + (avgScore * 0.30));
-        dataStatus = 'completo';
-        dataStatusLabel = 'Dados Completos';
-      } else if (hasGoals && !hasChecklists) {
-        performanceScore = Math.round(avgGoalProgress);
-        dataStatus = 'parcial_metas';
-        dataStatusLabel = 'Parcial (Sem Checklist)';
-      } else if (!hasGoals && hasChecklists) {
-        performanceScore = Math.round(avgScore);
-        dataStatus = 'parcial_checklist';
-        dataStatusLabel = 'Parcial (Sem Metas)';
-      } else {
-        performanceScore = 0;
-        dataStatus = 'sem_dados';
-        dataStatusLabel = 'Sem Dados Suficientes';
-      }
+      // 2. Seção Top 3 Destaques
+      docPdf.setFontSize(14);
+      docPdf.setTextColor(15, 15, 15);
+      docPdf.text("TOP 3 - DESTAQUE EM AVALIAÇÕES DE CHECKLIST", 14, 68);
 
-      // Cálculo de XP Inteligente no mês selecionado:
-      const baseXP = Math.floor(totalRevenue);
-      const serviceBonus = totalServices * 50;
-      const productBonus = totalProducts * 150;
-      const perfBonus = runsInMonth.filter(r => r.completionPercentage === 100 || r.percentage === 100).length * 200;
+      // Linha cinza sob o título
+      docPdf.setDrawColor(220, 220, 220);
+      docPdf.setLineWidth(0.5);
+      docPdf.line(14, 71, 196, 71);
 
-      const totalXP = baseXP + serviceBonus + productBonus + perfBonus + (prof.extraXP || 0);
+      const top3 = rankingByEvaluation.slice(0, 3);
+      let nextY = 80;
 
-      // Sistema de Nível Simples e Linear:
-      let level = 1;
-      let nextLevelXP = 1000;
-      let currentLevelXPStart = 0;
+      top3.forEach((prof, idx) => {
+        const medal = idx === 0 ? "🥇 LÍDER DE QUALIDADE" : idx === 1 ? "🥈 VICE-LÍDER DE QUALIDADE" : "🥉 TERCEIRO LUGAR";
+        docPdf.setFontSize(11);
+        docPdf.setTextColor(idx === 0 ? 180 : 50, idx === 0 ? 140 : 50, idx === 0 ? 20 : 50);
+        docPdf.text(`${medal}: ${prof.name || prof.fullName}`, 20, nextY);
+        
+        docPdf.setFontSize(9.5);
+        docPdf.setTextColor(100, 100, 100);
+        docPdf.text(`Nota Média Checklist: ${prof.avgScore.toFixed(1)}%  |  Rotinas Avaliadas: ${prof.totalChecklists}  |  Nível: ${prof.level}`, 30, nextY + 6);
+        
+        nextY += 15;
+      });
 
-      if (totalXP >= 10000) {
-        const extraXPs = totalXP - 10000;
-        const extraLevels = Math.floor(extraXPs / 5000);
-        level = 5 + extraLevels;
-        currentLevelXPStart = 10000 + extraLevels * 5000;
-        nextLevelXP = currentLevelXPStart + 5000;
-      } else if (totalXP >= 6000) {
-        level = 4;
-        currentLevelXPStart = 6000;
-        nextLevelXP = 10000;
-      } else if (totalXP >= 3000) {
-        level = 3;
-        currentLevelXPStart = 3000;
-        nextLevelXP = 6000;
-      } else if (totalXP >= 1000) {
-        level = 2;
-        currentLevelXPStart = 1000;
-        nextLevelXP = 3000;
-      }
+      // 3. Tabela Completa do Ranking
+      docPdf.setFontSize(14);
+      docPdf.setTextColor(15, 15, 15);
+      docPdf.text("CLASSIFICAÇÃO POR AVALIAÇÕES", 14, nextY + 10);
 
-      const progressPercent = Math.min(
-        100,
-        Math.max(0, ((totalXP - currentLevelXPStart) / (nextLevelXP - currentLevelXPStart)) * 100)
+      docPdf.setDrawColor(220, 220, 220);
+      docPdf.setLineWidth(0.5);
+      docPdf.line(14, nextY + 13, 196, nextY + 13);
+
+      const tableRows = rankingByEvaluation.map((prof, idx) => {
+        return [
+          `${idx + 1}º`,
+          prof.name || prof.fullName || "Colaborador",
+          `${prof.avgScore.toFixed(1)}%`,
+          String(prof.totalChecklists),
+          `Nível ${prof.level}`
+        ];
+      });
+
+      autoTable(docPdf, {
+        head: [["Pos", "Profissional", "Nota Média Checklist", "Nº de Rotinas Avaliadas", "Nível"]],
+        body: tableRows,
+        startY: nextY + 17,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [212, 175, 55], // Ouro premium
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+          fontSize: 9
+        },
+        bodyStyles: {
+          fontSize: 8.5
+        },
+        columnStyles: {
+          0: { cellWidth: 15, halign: 'center' },
+          2: { fontStyle: 'bold' }
+        }
+      });
+
+      // 4. Observação final
+      const finalY = (docPdf as any).lastAutoTable.finalY + 15;
+      docPdf.setFontSize(9);
+      docPdf.setTextColor(120, 120, 120);
+      
+      const noteText = "Observação Final: Este relatório foi gerado automaticamente pelo motor de Gamificação do LumièreOS. " +
+                       "O ranking por avaliações lista exclusivamente os profissionais com rotinas avaliadas no período, " +
+                       "ordenados pela nota média e desempatados pelo volume de checklists executados.";
+      
+      const splitText = docPdf.splitTextToSize(noteText, 180);
+      docPdf.text(splitText, 14, finalY);
+
+      // Rodapé
+      docPdf.text(
+        "LumièreOS — Inteligência e Gestão de Alta Performance para Beleza",
+        14,
+        docPdf.internal.pageSize.getHeight() - 10
       );
 
-      // Conquistas / Badges Dinâmicas:
-      const badges: Array<{ name: string; icon: string; description: string; color: string; unlocked: boolean }> = [
-        {
-          name: 'Mestre da Tesoura',
-          icon: '✂️',
-          description: 'Prestou mais de 10 serviços no salão.',
-          color: 'from-amber-500 to-yellow-600',
-          unlocked: totalServices >= 10
-        },
-        {
-          name: 'Inabalável',
-          icon: '⭐',
-          description: 'Obteve 100% de conformidade em uma auditoria.',
-          color: 'from-blue-500 to-indigo-600',
-          unlocked: runsInMonth.some(r => r.completionPercentage === 100 || r.percentage === 100)
-        },
-        {
-          name: 'Imperador de Vendas',
-          icon: '🛍️',
-          description: 'Vendeu mais de 3 produtos físicos para clientes.',
-          color: 'from-emerald-500 to-teal-600',
-          unlocked: totalProducts >= 3
-        },
-        {
-          name: 'Luz de Lumière',
-          icon: '👑',
-          description: 'Faturou acima de R$ 2.000,00 no mês corrente.',
-          color: 'from-purple-500 to-pink-600',
-          unlocked: totalRevenue >= 2000
-        },
-        {
-          name: 'Super Querido',
-          icon: '🔥',
-          description: 'Realizou mais de 20 atendimentos.',
-          color: 'from-orange-500 to-red-600',
-          unlocked: completedSrvs.length >= 20
-        }
-      ];
+      const formattedToday = todayStr.replace(/\//g, '-');
+      docPdf.save(`lumiere_ranking_avaliacoes_${formattedToday}.pdf`);
+      toast.success("Relatório de Avaliações em PDF exportado com sucesso!");
+    } catch (error) {
+      console.warn("Aviso ao gerar PDF de avaliações:", error);
+      toast.error("Falha ao exportar relatório de avaliações em PDF.");
+    }
+  };
 
-      // 5. Explicação "Por que está nesta posição?"
-      const pointsOfStrength: string[] = [];
-      const pointsOfAttention: string[] = [];
+  const handleDownloadGoalsPDF = () => {
+    if (!salonData) {
+      toast.error("Dados do salão não carregados.");
+      return;
+    }
 
-      if (hasGoals) {
-        if (avgGoalProgress >= 80) {
-          pointsOfStrength.push(`Excelente progresso nas metas manuais (${avgGoalProgress.toFixed(0)}%).`);
-        } else if (avgGoalProgress < 50) {
-          pointsOfAttention.push(`Baixo progresso na meta mensal (${avgGoalProgress.toFixed(0)}%). Necessário foco.`);
-        }
-      } else {
-        pointsOfAttention.push('Sem meta manual cadastrada neste mês.');
-      }
-
-      if (hasChecklists) {
-        if (avgScore >= 85) {
-          pointsOfStrength.push(`Excelente conformidade no checklist diário (${avgScore.toFixed(1)}%).`);
-        } else if (avgScore < 75) {
-          pointsOfAttention.push(`Atenção aos padrões de conformidade do checklist (${avgScore.toFixed(1)}%).`);
-        }
-      } else {
-        pointsOfAttention.push('Nenhuma rotina de checklist realizada no período.');
-      }
-
-      if (hasGoals && hasChecklists) {
-        if (avgGoalProgress >= 80 && avgScore >= 85) {
-          pointsOfStrength.push('Ótimo equilíbrio entre metas e conformidade.');
-        }
-      }
-
-      const explanation = {
-        reason: (hasGoals && hasChecklists)
-          ? `Seu score de ${performanceScore}% pondera seu progresso de ${avgGoalProgress.toFixed(0)}% nas metas (peso 70%) e conformidade de ${avgScore.toFixed(1)}% nos checklists (peso 30%).`
-          : hasGoals
-            ? `Score de ${performanceScore}% calculado provisoriamente apenas pelo progresso de ${avgGoalProgress.toFixed(0)}% nas metas individuais (sem checklists no período).`
-            : hasChecklists
-              ? `Score de ${performanceScore}% calculado provisoriamente apenas pela nota média de ${avgScore.toFixed(1)}% nos checklists (sem metas no período).`
-              : "Sem registros ativos de metas ou checklists para compor o ranking.",
-        pointsOfStrength: pointsOfStrength.length > 0 ? pointsOfStrength : ['Operação diária em andamento.'],
-        pointsOfAttention: pointsOfAttention.length > 0 ? pointsOfAttention : ['Continue mantendo o ritmo atual para pontuar!']
+    try {
+      const docPdf = new jsPDF();
+      const todayStr = new Date().toLocaleDateString('pt-BR');
+      
+      const formatMonthYear = (monthStr: string) => {
+        const [year, month] = monthStr.split('-');
+        const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+        return date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
       };
+      const currentMonthYear = formatMonthYear(selectedMonth);
 
-      // 6. Bonificação Status
-      let bonusStatus: 'elegivel' | 'evolucao' | 'atencao' | 'insuficiente' = 'insuficiente';
-      let bonusLabel = '';
-      let bonusColor = '';
+      // 1. Cabeçalho Principal (Tema Premium)
+      docPdf.setFillColor(15, 15, 15);
+      docPdf.rect(0, 0, 210, 40, 'F');
 
-      if (!hasGoals || !hasChecklists) {
-        bonusStatus = 'insuficiente';
-        bonusLabel = 'Dados insuficientes';
-        bonusColor = 'text-zinc-500 bg-zinc-900 border-zinc-850';
-      } else if (avgGoalProgress >= 80 && avgScore >= 85) {
-        bonusStatus = 'elegivel';
-        bonusLabel = 'Elegível para Bonificação';
-        bonusColor = 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      } else if (avgGoalProgress >= 50 || avgScore >= 70) {
-        bonusStatus = 'evolucao';
-        bonusLabel = 'Em Evolução';
-        bonusColor = 'text-blue-500 bg-blue-500/10 border-blue-500/20';
-      } else {
-        bonusStatus = 'atencao';
-        bonusLabel = 'Necessita Atenção';
-        bonusColor = 'text-orange-500 bg-orange-500/10 border-orange-500/20';
-      }
+      docPdf.setFontSize(22);
+      docPdf.setTextColor(212, 175, 55); // Ouro
+      docPdf.text(salonData.name ? salonData.name.toUpperCase() : "LUMIÈREOS", 14, 25);
 
-      return {
-        ...prof,
-        totalRevenue,
-        totalServices,
-        totalProducts,
-        totalXP,
-        level,
-        nextLevelXP,
-        currentLevelXPStart,
-        progressPercent,
-        badges,
-        avgScore,
-        totalChecklists,
-        totalGoals,
-        goalsHit,
-        avgGoalProgress,
-        performanceScore,
-        dataStatus,
-        dataStatusLabel,
-        explanation,
-        bonusStatus,
-        bonusLabel,
-        bonusColor,
-        unlockedBadgesCount: badges.filter(b => b.unlocked).length
-      };
-    });
+      docPdf.setFontSize(10);
+      docPdf.setTextColor(180, 180, 180);
+      docPdf.text(`RELATÓRIO DE DESEMPENHO E RANKING POR METAS - ${currentMonthYear.toUpperCase()}`, 14, 34);
 
-    // Ordenar ranking pelo SCORE FINAL (performanceScore) de forma decrescente, e por XP total em caso de empate
-    return mapped.sort((a, b) => {
-      if (b.performanceScore !== a.performanceScore) {
-        return b.performanceScore - a.performanceScore;
-      }
-      return b.totalXP - a.totalXP;
-    });
-  }, [professionals, appointments, checklistRuns, salonGoals, professionalGoals, selectedMonth]);
+      // Linha de divisão dourada
+      docPdf.setDrawColor(212, 175, 55);
+      docPdf.setLineWidth(1);
+      docPdf.line(0, 40, 210, 40);
+
+      // Meta Info
+      docPdf.setFontSize(10);
+      docPdf.setTextColor(80, 80, 80);
+      docPdf.text(`Emitido em: ${todayStr}`, 14, 52);
+      docPdf.text(`Software de Gestão: LumièreOS`, 150, 52);
+
+      // 2. Seção Top 3 Destaques
+      docPdf.setFontSize(14);
+      docPdf.setTextColor(15, 15, 15);
+      docPdf.text("TOP 3 - DESTAQUE EM METAS BATIDAS", 14, 68);
+
+      // Linha cinza sob o título
+      docPdf.setDrawColor(220, 220, 220);
+      docPdf.setLineWidth(0.5);
+      docPdf.line(14, 71, 196, 71);
+
+      const top3 = rankingByGoals.slice(0, 3);
+      let nextY = 80;
+
+      top3.forEach((prof, idx) => {
+        const medal = idx === 0 ? "🥇 LÍDER DE METAS" : idx === 1 ? "🥈 VICE-LÍDER DE METAS" : "🥉 TERCEIRO LUGAR";
+        docPdf.setFontSize(11);
+        docPdf.setTextColor(idx === 0 ? 180 : 50, idx === 0 ? 140 : 50, idx === 0 ? 20 : 50);
+        docPdf.text(`${medal}: ${prof.name || prof.fullName}`, 20, nextY);
+        
+        docPdf.setFontSize(9.5);
+        docPdf.setTextColor(100, 100, 100);
+        docPdf.text(`Metas Batidas: ${prof.goalsHit} de ${prof.totalGoals}  |  Progresso Médio: ${prof.avgGoalProgress.toFixed(1)}%  |  Nível: ${prof.level}`, 30, nextY + 6);
+        
+        nextY += 15;
+      });
+
+      // 3. Tabela Completa do Ranking
+      docPdf.setFontSize(14);
+      docPdf.setTextColor(15, 15, 15);
+      docPdf.text("CLASSIFICAÇÃO POR METAS", 14, nextY + 10);
+
+      docPdf.setDrawColor(220, 220, 220);
+      docPdf.setLineWidth(0.5);
+      docPdf.line(14, nextY + 13, 196, nextY + 13);
+
+      const tableRows = rankingByGoals.map((prof, idx) => {
+        return [
+          `${idx + 1}º`,
+          prof.name || prof.fullName || "Colaborador",
+          `${prof.goalsHit} / ${prof.totalGoals}`,
+          `${prof.avgGoalProgress.toFixed(1)}%`,
+          `Nível ${prof.level}`
+        ];
+      });
+
+      autoTable(docPdf, {
+        head: [["Pos", "Profissional", "Metas Batidas", "Progresso Médio", "Nível"]],
+        body: tableRows,
+        startY: nextY + 17,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [212, 175, 55], // Ouro premium
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+          fontSize: 9
+        },
+        bodyStyles: {
+          fontSize: 8.5
+        },
+        columnStyles: {
+          0: { cellWidth: 15, halign: 'center' },
+          2: { fontStyle: 'bold' }
+        }
+      });
+
+      // 4. Observação final
+      const finalY = (docPdf as any).lastAutoTable.finalY + 15;
+      docPdf.setFontSize(9);
+      docPdf.setTextColor(120, 120, 120);
+      
+      const noteText = "Observação Final: Este relatório foi gerado automaticamente pelo motor de Gamificação do LumièreOS. " +
+                       "O ranking por metas lista exclusivamente os profissionais com metas cadastradas no período, " +
+                       "ordenados por metas batidas e desempatados pelo progresso percentual médio.";
+      
+      const splitText = docPdf.splitTextToSize(noteText, 180);
+      docPdf.text(splitText, 14, finalY);
+
+      // Rodapé
+      docPdf.text(
+        "LumièreOS — Inteligência e Gestão de Alta Performance para Beleza",
+        14,
+        docPdf.internal.pageSize.getHeight() - 10
+      );
+
+      const formattedToday = todayStr.replace(/\//g, '-');
+      docPdf.save(`lumiere_ranking_metas_${formattedToday}.pdf`);
+      toast.success("Relatório de Metas em PDF exportado com sucesso!");
+    } catch (error) {
+      console.warn("Aviso ao gerar PDF de metas:", error);
+      toast.error("Falha ao exportar relatório de metas em PDF.");
+    }
+  };
 
   const handleDownloadPDF = () => {
     if (!salonData) {
@@ -1039,19 +995,74 @@ export default function GamificationPage() {
                     >
                       <Trophy className="w-3.5 h-3.5" /> Baixar PDF Geral
                     </Button>
+
+                    {leaderboardView === 'avaliacoes' && (
+                      <Button
+                        onClick={handleDownloadEvaluationPDF}
+                        className="bg-gradient-to-r from-[#D4AF37] to-amber-500 hover:from-[#e5bd3d] hover:to-amber-600 text-black font-semibold rounded-xl text-xs px-4 h-9 flex items-center gap-1.5 shadow-lg shadow-yellow-500/10 cursor-pointer animate-in fade-in zoom-in duration-200"
+                      >
+                        <Award className="w-3.5 h-3.5" /> Baixar PDF Avaliações
+                      </Button>
+                    )}
+
+                    {leaderboardView === 'metas' && (
+                      <Button
+                        onClick={handleDownloadGoalsPDF}
+                        className="bg-gradient-to-r from-[#D4AF37] to-amber-500 hover:from-[#e5bd3d] hover:to-amber-600 text-black font-semibold rounded-xl text-xs px-4 h-9 flex items-center gap-1.5 shadow-lg shadow-yellow-500/10 cursor-pointer animate-in fade-in zoom-in duration-200"
+                      >
+                        <Target className="w-3.5 h-3.5" /> Baixar PDF Metas
+                      </Button>
+                    )}
+
                     <div className="inline-flex items-center gap-1.5 text-xs text-zinc-400 bg-zinc-900 px-3.5 py-1.5 rounded-full border border-zinc-800 font-sans">
                       <Flame className="w-4 h-4 text-orange-500" /> Atualiza em tempo real
                     </div>
                   </div>
                 </div>
 
+                {/* Sub-filtro de Visualização por pills */}
+                <div className="px-6 py-4 border-b border-zinc-900 flex items-center bg-zinc-950">
+                  <div className="flex flex-wrap items-center gap-1.5 p-1 bg-zinc-900 border border-zinc-800 rounded-2xl">
+                    <button
+                      onClick={() => setLeaderboardView('geral')}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all select-none cursor-pointer ${
+                        leaderboardView === 'geral'
+                          ? 'bg-zinc-950 text-[#D4AF37] shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      <Trophy className="w-3.5 h-3.5" /> Geral
+                    </button>
+                    <button
+                      onClick={() => setLeaderboardView('avaliacoes')}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all select-none cursor-pointer ${
+                        leaderboardView === 'avaliacoes'
+                          ? 'bg-zinc-950 text-[#D4AF37] shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      <Star className="w-3.5 h-3.5" /> Por Avaliações
+                    </button>
+                    <button
+                      onClick={() => setLeaderboardView('metas')}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all select-none cursor-pointer ${
+                        leaderboardView === 'metas'
+                          ? 'bg-zinc-950 text-[#D4AF37] shadow-sm'
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      <Target className="w-3.5 h-3.5" /> Por Metas
+                    </button>
+                  </div>
+                </div>
+
                 <div className="divide-y divide-zinc-900 overflow-x-auto">
-                  {professionalsPerformance.length === 0 ? (
+                  {currentLeaderboardData.length === 0 ? (
                     <div className="p-8 text-center text-zinc-500 text-sm font-sans">
-                      Nenhum colaborador registrado no salão para entrar na disputa.
+                      {emptyStateMessage}
                     </div>
                   ) : (
-                    professionalsPerformance.map((prof, idx) => {
+                    currentLeaderboardData.map((prof, idx) => {
                       const isTop3 = idx < 3;
                       const medalColor = idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-zinc-400' : 'bg-orange-600';
                       
@@ -1080,7 +1091,15 @@ export default function GamificationPage() {
                             <div className="space-y-1">
                               <h4 className="text-sm font-bold text-white flex items-center gap-2 font-sans">
                                 {prof.name || prof.fullName}
-                                {idx === 0 && <span className="text-[10px] bg-yellow-500/15 border border-yellow-500/20 text-yellow-500 font-extrabold px-2 py-0.5 rounded-md tracking-wider uppercase font-sans">Líder</span>}
+                                {idx === 0 && (
+                                  <span className="text-[10px] bg-yellow-500/15 border border-yellow-500/20 text-yellow-500 font-extrabold px-2 py-0.5 rounded-md tracking-wider uppercase font-sans">
+                                    {leaderboardView === 'avaliacoes'
+                                      ? 'Líder em Avaliações'
+                                      : leaderboardView === 'metas'
+                                      ? 'Líder em Metas'
+                                      : 'Líder'}
+                                  </span>
+                                )}
                               </h4>
                               <p className="text-zinc-500 text-[11px] flex items-center gap-1.5 font-sans">
                                 Nível <span className="text-white font-bold font-mono bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">{prof.level}</span> • {prof.unlockedBadgesCount} Conquistas
@@ -1090,31 +1109,91 @@ export default function GamificationPage() {
 
                           {/* Metrics Grid */}
                           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 flex-1">
-                            {/* Score Final */}
-                            <div>
-                              <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Score Final</span>
-                              <span className="text-sm font-bold text-[#D4AF37] font-mono">{prof.performanceScore}%</span>
-                            </div>
+                            {leaderboardView === 'avaliacoes' ? (
+                              <>
+                                {/* Nota Checklist (Principal) */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-400 block uppercase tracking-wider font-sans font-semibold">Nota Checklist</span>
+                                  <span className="text-sm font-bold text-[#D4AF37] font-mono">
+                                    {prof.totalChecklists > 0 ? `${prof.avgScore.toFixed(1)}%` : "N/A"}
+                                  </span>
+                                  <span className="text-[9px] text-zinc-500 block font-sans">{prof.totalChecklists} rotinas</span>
+                                </div>
 
-                            {/* Média Checklist */}
-                            <div>
-                              <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Checklist (30%)</span>
-                              <span className="text-xs font-bold text-white font-mono">
-                                {prof.totalChecklists > 0 ? `${prof.avgScore.toFixed(1)}%` : "N/A"}
-                              </span>
-                              <span className="text-[9px] text-zinc-500 block font-sans">{prof.totalChecklists} rotinas</span>
-                            </div>
+                                {/* Score Final (Secundário) */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Score Final</span>
+                                  <span className="text-xs font-bold text-white font-mono">{prof.performanceScore}%</span>
+                                </div>
 
-                            {/* Metas Batidas */}
-                            <div>
-                              <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Metas (70%)</span>
-                              <span className="text-xs font-bold text-white font-mono">
-                                {prof.totalGoals > 0 ? `${prof.goalsHit}/${prof.totalGoals}` : "N/A"}
-                              </span>
-                              <span className="text-[9px] text-zinc-500 block font-sans">
-                                {prof.totalGoals > 0 ? `${prof.avgGoalProgress.toFixed(0)}% progresso` : "Sem metas"}
-                              </span>
-                            </div>
+                                {/* Metas Batidas */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Metas (70%)</span>
+                                  <span className="text-xs font-bold text-white font-mono">
+                                    {prof.totalGoals > 0 ? `${prof.goalsHit}/${prof.totalGoals}` : "N/A"}
+                                  </span>
+                                  <span className="text-[9px] text-zinc-500 block font-sans">
+                                    {prof.totalGoals > 0 ? `${prof.avgGoalProgress.toFixed(0)}% progresso` : "Sem metas"}
+                                  </span>
+                                </div>
+                              </>
+                            ) : leaderboardView === 'metas' ? (
+                              <>
+                                {/* Metas Batidas (Principal) */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-400 block uppercase tracking-wider font-sans font-semibold">Metas Batidas</span>
+                                  <span className="text-sm font-bold text-[#D4AF37] font-mono">
+                                    {prof.totalGoals > 0 ? `${prof.goalsHit}/${prof.totalGoals}` : "N/A"}
+                                  </span>
+                                  <span className="text-[9px] text-zinc-500 block font-sans">
+                                    {prof.totalGoals > 0 ? `${prof.avgGoalProgress.toFixed(0)}% progresso` : "Sem metas"}
+                                  </span>
+                                </div>
+
+                                {/* Checklist */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Checklist (30%)</span>
+                                  <span className="text-xs font-bold text-white font-mono">
+                                    {prof.totalChecklists > 0 ? `${prof.avgScore.toFixed(1)}%` : "N/A"}
+                                  </span>
+                                  <span className="text-[9px] text-zinc-500 block font-sans">{prof.totalChecklists} rotinas</span>
+                                </div>
+
+                                {/* Score Final */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Score Final</span>
+                                  <span className="text-xs font-bold text-white font-mono">{prof.performanceScore}%</span>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                {/* Score Final (Principal) */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Score Final</span>
+                                  <span className="text-sm font-bold text-[#D4AF37] font-mono">{prof.performanceScore}%</span>
+                                </div>
+
+                                {/* Média Checklist */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Checklist (30%)</span>
+                                  <span className="text-xs font-bold text-white font-mono">
+                                    {prof.totalChecklists > 0 ? `${prof.avgScore.toFixed(1)}%` : "N/A"}
+                                  </span>
+                                  <span className="text-[9px] text-zinc-500 block font-sans">{prof.totalChecklists} rotinas</span>
+                                </div>
+
+                                {/* Metas Batidas */}
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 block uppercase tracking-wider font-sans">Metas (70%)</span>
+                                  <span className="text-xs font-bold text-white font-mono">
+                                    {prof.totalGoals > 0 ? `${prof.goalsHit}/${prof.totalGoals}` : "N/A"}
+                                  </span>
+                                  <span className="text-[9px] text-zinc-500 block font-sans">
+                                    {prof.totalGoals > 0 ? `${prof.avgGoalProgress.toFixed(0)}% progresso` : "Sem metas"}
+                                  </span>
+                                </div>
+                              </>
+                            )}
 
                             {/* Faturamento */}
                             <div>

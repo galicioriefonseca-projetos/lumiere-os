@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useAlerts } from "../../hooks/useAlerts";
 import { db } from "@/lib/firebase";
+import { useSalonPerformanceRanking } from "../../hooks/useSalonPerformanceRanking";
 import { collection, query, onSnapshot, where, doc, updateDoc } from "firebase/firestore";
 import { Appointment, ChecklistRun, Professional, ProfessionalGoal, Service, GamificationProfile, Badge } from "../../types";
 import { calculateLevel } from "../../lib/gamification";
@@ -51,7 +52,6 @@ export default function ProfessionalDashboard() {
   const [loading, setLoading] = useState(true);
   const [myProfile, setMyProfile] = useState<Professional | null>(null);
   const [gamificationProfile, setGamificationProfile] = useState<GamificationProfile | null>(null);
-  const [salonRanking, setSalonRanking] = useState<GamificationProfile[]>([]);
   const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
   const [myEvaluations, setMyEvaluations] = useState<ChecklistRun[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -117,22 +117,8 @@ export default function ProfessionalDashboard() {
        console.error("Erro no snap de perfil gamification:", err);
     });
 
-    const rankQuery = query(collection(db, `salons/${salonData.id}/gamification`));
-    const unsubRanking = onSnapshot(rankQuery, (snap) => {
-      const list: GamificationProfile[] = [];
-      snap.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as GamificationProfile);
-      });
-      // Sort by monthlyXP descending
-      const sorted = list.sort((a, b) => (b.monthlyXP || 0) - (a.monthlyXP || 0));
-      setSalonRanking(sorted);
-    }, (err) => {
-       console.error("Erro no snap de ranking gamification:", err);
-    });
-
     return () => {
       unsubProfile();
-      unsubRanking();
     };
   }, [salonData?.id, myProfile?.id]);
 
@@ -175,6 +161,8 @@ export default function ProfessionalDashboard() {
 
   const todayStr = new Date().toISOString().substring(0, 10);
   const currentMonthStr = new Date().toISOString().substring(0, 7);
+
+  const { professionalsPerformance, rankingByEvaluation, rankingByGoals } = useSalonPerformanceRanking(salonData?.id, currentMonthStr);
 
   useEffect(() => {
     if (!salonData || !userData) return;
@@ -573,6 +561,24 @@ export default function ProfessionalDashboard() {
         const latestEvalScore = recentScores.length > 0 ? recentScores[recentScores.length - 1].evaluationScore : 0;
         const badges = gamificationProfile?.badges || [];
 
+        const myId = myProfile?.id;
+        const performanceList = professionalsPerformance || [];
+        const evalList = rankingByEvaluation || [];
+        const goalsList = rankingByGoals || [];
+        
+        const geralIndex = performanceList.findIndex(p => p.id === myId);
+        const geralPos = geralIndex !== -1 ? geralIndex + 1 : null;
+        const geralScore = geralIndex !== -1 ? performanceList[geralIndex].performanceScore : null;
+
+        const evalIndex = evalList.findIndex(p => p.id === myId);
+        const evalPos = evalIndex !== -1 ? evalIndex + 1 : null;
+        const evalScore = evalIndex !== -1 ? evalList[evalIndex].avgScore : null;
+
+        const goalsIndex = goalsList.findIndex(p => p.id === myId);
+        const goalsPos = goalsIndex !== -1 ? goalsIndex + 1 : null;
+        const goalsHitVal = goalsIndex !== -1 ? goalsList[goalsIndex].goalsHit : null;
+        const totalGoalsVal = goalsIndex !== -1 ? goalsList[goalsIndex].totalGoals : null;
+
         return (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -663,6 +669,92 @@ export default function ProfessionalDashboard() {
               
             </div>
 
+            {/* Seção Minha Posição no Ranking */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5 px-0.5">
+                <Trophy className="w-4 h-4 text-[#D4AF37]" />
+                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest font-mono">Minha Posição no Ranking</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Ranking Geral */}
+                <div className="bg-zinc-950 border border-[#D4AF37]/15 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden group hover:border-[#D4AF37]/30 transition-all duration-300">
+                  <div className="absolute top-0 right-0 p-2 opacity-[0.03] translate-x-2 -translate-y-2 group-hover:scale-110 transition-transform duration-300">
+                    <Trophy className="h-16 w-16 text-[#D4AF37]" />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Ranking Geral</span>
+                    <h3 className="text-base font-light text-white font-sans">
+                      {geralPos ? (
+                        <>
+                          Colocação: <span className="text-[#D4AF37] font-semibold">#{geralPos}</span>
+                        </>
+                      ) : (
+                        <span className="text-zinc-500">Nenhum</span>
+                      )}
+                    </h3>
+                    <p className="text-[10px] text-zinc-400 font-sans">
+                      {geralScore !== null ? `Score composto de ${geralScore}%` : 'Sem dados para o mês'}
+                    </p>
+                  </div>
+                  <div className="bg-[#D4AF37]/10 text-[#D4AF37] p-2 rounded-xl border border-[#D4AF37]/20">
+                    <Trophy className="w-4 h-4" />
+                  </div>
+                </div>
+
+                {/* Ranking de Avaliações */}
+                <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden group hover:border-[#D4AF37]/20 transition-all duration-300">
+                  <div className="absolute top-0 right-0 p-2 opacity-[0.03] translate-x-2 -translate-y-2 group-hover:scale-110 transition-transform duration-300">
+                    <FileText className="h-16 w-16 text-[#D4AF37]" />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Avaliações (Checklist)</span>
+                    <h3 className="text-base font-light text-white font-sans">
+                      {evalPos ? (
+                        <>
+                          Colocação: <span className="text-[#D4AF37] font-semibold">#{evalPos}</span>
+                        </>
+                      ) : (
+                        <span className="text-zinc-500">Sem Posição</span>
+                      )}
+                    </h3>
+                    <p className="text-[10px] text-zinc-400 font-sans">
+                      {evalScore !== null ? `Nota média de ${evalScore.toFixed(1)}%` : 'Sem checklists no mês'}
+                    </p>
+                  </div>
+                  <div className="bg-zinc-900 text-zinc-400 p-2 rounded-xl border border-zinc-800">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                </div>
+
+                {/* Ranking de Metas */}
+                <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 flex items-center justify-between shadow-xl relative overflow-hidden group hover:border-[#D4AF37]/20 transition-all duration-300">
+                  <div className="absolute top-0 right-0 p-2 opacity-[0.03] translate-x-2 -translate-y-2 group-hover:scale-110 transition-transform duration-300">
+                    <Target className="h-16 w-16 text-[#D4AF37]" />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Metas Individuais</span>
+                    <h3 className="text-base font-light text-white font-sans">
+                      {goalsPos ? (
+                        <>
+                          Colocação: <span className="text-[#D4AF37] font-semibold">#{goalsPos}</span>
+                        </>
+                      ) : (
+                        <span className="text-zinc-500">Sem Posição</span>
+                      )}
+                    </h3>
+                    <p className="text-[10px] text-zinc-400 font-sans">
+                      {goalsHitVal !== null && totalGoalsVal ? `${goalsHitVal}/${totalGoalsVal} metas batidas` : 'Sem metas no mês'}
+                    </p>
+                  </div>
+                  <div className="bg-zinc-900 text-zinc-400 p-2 rounded-xl border border-zinc-800">
+                    <Target className="w-4 h-4" />
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
             {/* Ranking do Salão */}
             <Card className="border-zinc-900 bg-black/60 rounded-2xl shadow-xl overflow-hidden">
               <CardHeader className="p-5 pb-3 flex flex-row items-center justify-between">
@@ -671,15 +763,15 @@ export default function ProfessionalDashboard() {
                      <Trophy className="w-4 h-4 text-[#D4AF37]" /> Ranking de Performance do Salão
                   </CardTitle>
                   <CardDescription className="text-[10px] text-zinc-500">
-                     Acompanhe a classificação baseada no XP acumulado no mês atual
+                     Acompanhe a classificação baseada no score composto e metas do mês atual
                   </CardDescription>
                 </div>
                 <div className="bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-full px-3 py-1 text-[9px] font-mono font-bold tracking-widest flex items-center gap-1">
-                  XP DO MÊS 🏆
+                  CORE RANKING 🏆
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {salonRanking.length === 0 ? (
+                {performanceList.length === 0 ? (
                   <div className="p-8 text-center text-zinc-400 text-xs">
                     Nenhum colaborador ranqueado este mês ainda. Comece as avaliações no checklist para inaugurar o placar! 🏁
                   </div>
@@ -692,24 +784,15 @@ export default function ProfessionalDashboard() {
                           <th className="p-4">Nome</th>
                           <th className="p-4">Nível</th>
                           <th className="p-4 text-center">XP do Mês</th>
-                          <th className="p-4 text-center">Streak</th>
-                          <th className="p-4 text-center">Meta%</th>
+                          <th className="p-4 text-center">Score Composto</th>
+                          <th className="p-4 text-center">Avaliações (30%)</th>
+                          <th className="p-4 text-center">Metas (70%)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-900/40">
-                        {salonRanking.map((p, idx) => {
+                        {performanceList.map((p, idx) => {
                           const isFirst = idx === 0;
-                          const latestProScore = p.recentScores && p.recentScores.length > 0 ? p.recentScores[p.recentScores.length - 1].productionScore : 0;
                           
-                          // Determine color status logic for row border or badge
-                          // verde = meta >= 100%, amarelo = 70-99%, vermelho = < 70%
-                          let statusBg = "border-l-4 border-red-500";
-                          if (latestProScore >= 100) {
-                            statusBg = "border-l-4 border-green-500";
-                          } else if (latestProScore >= 70) {
-                            statusBg = "border-l-4 border-yellow-500";
-                          }
-
                           return (
                             <tr key={p.id} className={cn("hover:bg-zinc-950/45 transition-colors", p.id === myProfile?.id && "bg-[#D4AF37]/5 font-medium")}>
                               <td className="p-4 pl-6 text-center font-heading font-semibold text-sm">
@@ -719,8 +802,8 @@ export default function ProfessionalDashboard() {
                                   <span>#{idx + 1}</span>
                                 )}
                               </td>
-                              <td className={cn("p-4 flex items-center gap-2", statusBg)}>
-                                <span className="font-semibold text-white">{p.fullName}</span>
+                              <td className="p-4 flex items-center gap-2 border-l-4 border-zinc-800">
+                                <span className="font-semibold text-white">{p.name || p.fullName}</span>
                                 {isFirst && (
                                   <span className="text-[8px] uppercase bg-yellow-500/15 border border-yellow-500/40 text-yellow-500 font-bold px-1.5 py-0.5 rounded leading-none">
                                      Líder do mês
@@ -738,18 +821,17 @@ export default function ProfessionalDashboard() {
                                 </span>
                               </td>
                               <td className="p-4 font-semibold text-white text-center font-mono">
-                                {p.monthlyXP || 0} XP
+                                {p.totalXP || 0} XP
                               </td>
-                              <td className="p-4 text-center font-semibold text-amber-500 font-mono">
-                                🔥 {p.currentStreakDays || 0}d
+                              <td className="p-4 text-center font-semibold text-[#D4AF37] font-mono">
+                                {p.performanceScore}%
+                              </td>
+                              <td className="p-4 text-center font-mono text-zinc-400">
+                                {p.totalChecklists > 0 ? `${p.avgScore.toFixed(1)}%` : 'N/A'}
                               </td>
                               <td className="p-4 text-center">
-                                <span className={cn(
-                                  "font-bold font-mono text-xs px-2 py-0.5 rounded-md",
-                                  latestProScore >= 100 ? "text-green-400 bg-green-500/10" :
-                                  latestProScore >= 70 ? "text-yellow-400 bg-yellow-500/10" : "text-red-400 bg-red-500/10"
-                                )}>
-                                  {latestProScore ? `${Math.round(latestProScore)}%` : '0%'}
+                                <span className="font-bold font-mono text-xs text-white">
+                                  {p.totalGoals > 0 ? `${p.goalsHit}/${p.totalGoals}` : 'N/A'}
                                 </span>
                               </td>
                             </tr>
