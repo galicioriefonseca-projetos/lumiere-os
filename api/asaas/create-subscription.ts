@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin";
+import { getAdminDb } from "../_shared/firebaseAdmin.js";
 import { asaasRequest } from "../_shared/asaasClient";
 import { verifyIdToken, canManageBilling } from "../_shared/auth";
 
