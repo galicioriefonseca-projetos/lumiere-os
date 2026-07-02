@@ -681,9 +681,98 @@ async function startServer() {
       `${apiUrl}/v1/oauth/token`,
     ];
 
-    let lastError: any = null;
+    let lastErrorDetail = "";
+
     for (const url of endpointsToTry) {
+      // 1. Tentar Form Urlencoded com client_id e client_secret no body (Standard OAuth2)
       try {
+        console.log(`[Cakto API Secure Log] Tentando obter token de ${url} via application/x-www-form-urlencoded (Body params)...`);
+        const params = new URLSearchParams();
+        params.append("grant_type", "client_credentials");
+        params.append("client_id", clientId);
+        params.append("client_secret", clientSecret);
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+        });
+
+        const responseStatus = response.status;
+        const text = await response.text();
+        const safeText = text
+          .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
+          .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
+
+        console.log(`[Cakto API Secure Log] URL: ${url} (urlencoded_body) | Status: ${responseStatus} | Resposta: ${safeText}`);
+
+        if (response.ok) {
+          const data = JSON.parse(text);
+          if (data && data.access_token) {
+            const expiresIn = (data.expires_in || 3600) * 1000;
+            cachedCaktoToken = {
+              token: data.access_token,
+              expiresAt: Date.now() + expiresIn - 60000
+            };
+            console.log("[Cakto API] Token de acesso obtido com sucesso via urlencoded_body!");
+            return data.access_token;
+          }
+        } else {
+          lastErrorDetail = `URL: ${url} (urlencoded_body) | Status: ${responseStatus} | Resposta: ${safeText}`;
+        }
+      } catch (err: any) {
+        console.warn(`[Cakto API] Erro na tentativa urlencoded_body para ${url}:`, err);
+        lastErrorDetail = `URL: ${url} (urlencoded_body) | Erro: ${err.message}`;
+      }
+
+      // 2. Tentar Form Urlencoded com Basic Auth Header
+      try {
+        console.log(`[Cakto API Secure Log] Tentando obter token de ${url} via application/x-www-form-urlencoded (Basic Auth header)...`);
+        const base64Credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+        const params = new URLSearchParams();
+        params.append("grant_type", "client_credentials");
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": `Basic ${base64Credentials}`,
+          },
+          body: params.toString(),
+        });
+
+        const responseStatus = response.status;
+        const text = await response.text();
+        const safeText = text
+          .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
+          .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
+
+        console.log(`[Cakto API Secure Log] URL: ${url} (urlencoded_basic) | Status: ${responseStatus} | Resposta: ${safeText}`);
+
+        if (response.ok) {
+          const data = JSON.parse(text);
+          if (data && data.access_token) {
+            const expiresIn = (data.expires_in || 3600) * 1000;
+            cachedCaktoToken = {
+              token: data.access_token,
+              expiresAt: Date.now() + expiresIn - 60000
+            };
+            console.log("[Cakto API] Token de acesso obtido com sucesso via urlencoded_basic!");
+            return data.access_token;
+          }
+        } else {
+          lastErrorDetail = `URL: ${url} (urlencoded_basic) | Status: ${responseStatus} | Resposta: ${safeText}`;
+        }
+      } catch (err: any) {
+        console.warn(`[Cakto API] Erro na tentativa urlencoded_basic para ${url}:`, err);
+        lastErrorDetail = `URL: ${url} (urlencoded_basic) | Erro: ${err.message}`;
+      }
+
+      // 3. Tentar JSON Body (fallback anterior)
+      try {
+        console.log(`[Cakto API Secure Log] Tentando obter token de ${url} via application/json (JSON Body)...`);
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -694,30 +783,35 @@ async function startServer() {
           }),
         });
 
-        console.log(`[Cakto API Secure Log] Status HTTP para obter token OAuth2 de ${url}: ${response.status}`);
+        const responseStatus = response.status;
+        const text = await response.text();
+        const safeText = text
+          .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
+          .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
+
+        console.log(`[Cakto API Secure Log] URL: ${url} (json) | Status: ${responseStatus} | Resposta: ${safeText}`);
 
         if (response.ok) {
-          const data = await response.json();
+          const data = JSON.parse(text);
           if (data && data.access_token) {
             const expiresIn = (data.expires_in || 3600) * 1000;
             cachedCaktoToken = {
               token: data.access_token,
               expiresAt: Date.now() + expiresIn - 60000
             };
-            console.log("[Cakto API] Token de acesso obtido com sucesso!");
+            console.log("[Cakto API] Token de acesso obtido com sucesso via json!");
             return data.access_token;
           }
         } else {
-          const text = await response.text();
-          console.warn(`[Cakto API] Falha na tentativa OAuth2 para ${url}:`, text);
+          lastErrorDetail = `URL: ${url} (json) | Status: ${responseStatus} | Resposta: ${safeText}`;
         }
-      } catch (err) {
-        console.warn(`[Cakto API] Erro na tentativa OAuth2 para ${url}:`, err);
-        lastError = err;
+      } catch (err: any) {
+        console.warn(`[Cakto API] Erro na tentativa json para ${url}:`, err);
+        lastErrorDetail = `URL: ${url} (json) | Erro: ${err.message}`;
       }
     }
 
-    throw new Error(lastError?.message || "Falha ao autenticar com a API Cakto (OAuth2). Verifique as chaves de Client ID e Client Secret.");
+    throw new Error(`Falha ao autenticar com a API Cakto (OAuth2). Detalhes: ${lastErrorDetail}`);
   }
 
   async function isPlatformAdminUser(user: any): Promise<boolean> {
