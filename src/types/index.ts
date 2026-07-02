@@ -68,7 +68,7 @@ export interface Salon {
   updatedAt: number;
   deletedAt?: number;
   // Stripe & Billing properties
-  billingProvider?: 'manual_pix' | 'stripe' | 'asaas' | 'mercadopago';
+  billingProvider?: 'manual_pix' | 'stripe' | 'asaas' | 'mercadopago' | 'cakto';
   billingMode?: 'manual_pix' | 'recurring_card';
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -80,6 +80,10 @@ export interface Salon {
   asaasCheckoutUrl?: string;
   asaasLastPaymentId?: string;
   asaasLastEvent?: string;
+  caktoCustomerId?: string;
+  caktoSubscriptionId?: string;
+  caktoCheckoutUrl?: string;
+  caktoOfferId?: string;
   founderInitialPrice?: number;
   founderInitialPriceEndsAt?: number;
   founderFuturePrice?: number;

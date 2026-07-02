@@ -15,7 +15,7 @@ import { createDemoSalon, deleteDemoSalon } from '@/lib/seedDemoSalon';
 import { APP_INFO } from '../config/appInfo';
 
 export default function MasterPanel() {
-  const { logout, isPlatformAdmin, userData, diagnostics } = useAuth();
+  const { logout, isPlatformAdmin, userData, diagnostics, currentUser } = useAuth();
   const [salons, setSalons] = useState<Salon[]>([]);
   const [bugReports, setBugReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +25,71 @@ export default function MasterPanel() {
   const [dialogAction, setDialogAction] = useState<string>('');
   const [selectedPlan, setSelectedPlan] = useState<any>('start');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'cakto'>('salons');
+  const [caktoSettings, setCaktoSettings] = useState({
+    productId: '',
+    founderOfferId: '',
+    studioOfferId: '',
+    performanceOfferId: '',
+    networkOfferId: ''
+  });
+  const [loadingSettings, setLoadingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const fetchCaktoSettings = async () => {
+    if (!currentUser) return;
+    setLoadingSettings(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/cakto/settings', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error(await res.text() || 'Falha ao buscar configurações');
+      }
+      const data = await res.json();
+      setCaktoSettings({
+        productId: data.productId || '',
+        founderOfferId: data.founderOfferId || '',
+        studioOfferId: data.studioOfferId || '',
+        performanceOfferId: data.performanceOfferId || '',
+        networkOfferId: data.networkOfferId || ''
+      });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Erro ao carregar configurações Cakto: ${err.message}`);
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
+
+  const saveCaktoSettings = async () => {
+    if (!currentUser) return;
+    setSavingSettings(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/cakto/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(caktoSettings)
+      });
+      if (!res.ok) {
+        throw new Error(await res.text() || 'Falha ao salvar configurações');
+      }
+      toast.success('Configurações do Cakto salvas com sucesso!');
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Erro ao salvar configurações Cakto: ${err.message}`);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
   useEffect(() => {
     if (!isPlatformAdmin) {
@@ -93,7 +158,7 @@ export default function MasterPanel() {
         case 'reactivate':
           updates.activationStatus = 'active';
           updates.isActive = true;
-          updates.deletedAt = 0; // null is harder with typescript if optional, using 0 or deleteField() isn't strictly necessary, setting 0 means it's back
+          updates.deletedAt = 0;
           break;
         case 'founder':
           updates.plan = 'founder';
@@ -107,7 +172,7 @@ export default function MasterPanel() {
           updates.isActive = true;
           updates.activationStatus = 'active';
           updates.lastPaymentAt = Date.now();
-          updates.lastPaymentAmount = selectedSalon.plan === 'founder' ? 297 : 0; // Or better dynamic mapping
+          updates.lastPaymentAmount = selectedSalon.plan === 'founder' ? 297 : 0;
           updates.lastPaymentMethod = 'pix';
           updates.currentPeriodStart = Date.now();
           updates.currentPeriodEnd = Date.now() + (30 * 24 * 60 * 60 * 1000);
@@ -129,6 +194,31 @@ export default function MasterPanel() {
           updates.isActive = true;
           updates.activationStatus = 'active';
           break;
+        case 'cakto_activate':
+          updates.billingProvider = 'cakto';
+          updates.subscriptionStatus = 'active';
+          updates.paymentStatus = 'paid';
+          updates.isActive = true;
+          updates.activationStatus = 'active';
+          updates.caktoCustomerId = 'cus_ck_' + Math.random().toString(36).substring(2, 11).toUpperCase();
+          updates.caktoSubscriptionId = 'sub_ck_' + Math.random().toString(36).substring(2, 11).toUpperCase();
+          updates.caktoCheckoutUrl = 'https://cakto.com.br/checkout/simulated';
+          updates.nextBillingDate = Date.now() + (30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'cakto_simulate_overdue':
+          updates.billingProvider = 'cakto';
+          updates.subscriptionStatus = 'overdue';
+          updates.paymentStatus = 'overdue';
+          updates.nextBillingDate = Date.now() - (5 * 24 * 60 * 60 * 1000);
+          break;
+        case 'cakto_clear':
+          updates.billingProvider = 'manual_pix';
+          updates.caktoCustomerId = '';
+          updates.caktoSubscriptionId = '';
+          updates.caktoCheckoutUrl = '';
+          updates.subscriptionStatus = 'trial';
+          updates.paymentStatus = 'none';
+          break;
         case 'asaas_activate':
           updates.billingProvider = 'asaas';
           updates.subscriptionStatus = 'active';
@@ -144,7 +234,7 @@ export default function MasterPanel() {
           updates.billingProvider = 'asaas';
           updates.subscriptionStatus = 'overdue';
           updates.paymentStatus = 'overdue';
-          updates.nextBillingDate = Date.now() - (5 * 24 * 60 * 60 * 1000); // 5 days late
+          updates.nextBillingDate = Date.now() - (5 * 24 * 60 * 60 * 1000);
           break;
         case 'asaas_clear':
           updates.billingProvider = 'manual_pix';
@@ -156,7 +246,7 @@ export default function MasterPanel() {
           break;
         default:
           return;
-      }
+       }
 
       await updateDoc(ref, updates as any);
       toast.success('Ação realizada com sucesso!');
@@ -340,6 +430,44 @@ export default function MasterPanel() {
           </Card>
         )}
 
+        {/* Navegação por Abas */}
+        <div className="flex border-b border-border gap-2 pb-px mb-2 text-left">
+          <button
+            onClick={() => setActiveTab('salons')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all relative ${
+              activeTab === 'salons'
+                ? 'border-destructive text-destructive font-semibold'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Empresas ({salons.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('bugs')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all relative ${
+              activeTab === 'bugs'
+                ? 'border-destructive text-destructive font-semibold'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Problemas & Feedbacks ({bugReports.length})
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('cakto');
+              fetchCaktoSettings();
+            }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all relative ${
+              activeTab === 'cakto'
+                ? 'border-destructive text-destructive font-semibold'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Integração Cakto
+          </button>
+        </div>
+
+        {activeTab === 'salons' && (
         <Card className="border-border bg-black/40">
            <CardHeader>
              <CardTitle className="text-xl">Empresas Cadastradas ({salons.length})</CardTitle>
@@ -359,79 +487,72 @@ export default function MasterPanel() {
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs uppercase bg-black/50 text-muted-foreground">
                     <tr>
-                      <th className="px-4 py-3 font-medium">Salão</th>
-                      <th className="px-4 py-3 font-medium">Responsável</th>
-                      <th className="px-4 py-3 font-medium">Contato</th>
-                      <th className="px-4 py-3 font-medium">Local</th>
-                      <th className="px-4 py-3 font-medium">Plano / Status</th>
-                      <th className="px-4 py-3 font-medium text-right">Ações</th>
+                      <th className="px-4 py-3">Salão / Dono</th>
+                      <th className="px-4 py-3">Contato</th>
+                      <th className="px-4 py-3">Plano</th>
+                      <th className="px-4 py-3">Faturamento / Provedor</th>
+                      <th className="px-4 py-3 text-right">Ações</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border">
                     {filteredSalons.map((salon) => (
-                      <tr key={salon.id} className="border-b border-border hover:bg-white/[0.02]">
-                        <td className="px-4 py-3 font-medium">
-                          {salon.name}
-                          {salon.deletedAt && salon.deletedAt > 0 && <span className="ml-2 text-[10px] text-destructive uppercase">Deletado</span>}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{salon.ownerName}</td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          <div className="flex flex-col">
-                             <span>{salon.phone}</span>
-                             <span className="text-xs opacity-60">{salon.ownerEmail}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{salon.city} - {salon.state}</td>
+                      <tr key={salon.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-4 py-3">
-                           <div className="flex flex-col gap-1 items-start">
-                              <span className="text-xs uppercase tracking-wider text-[#D4AF37] font-bold">{salon.plan}</span>
-                              <div className="text-[10px] text-zinc-500 mt-1 font-mono text-left">
-                                {salon.billingProvider === 'mercadopago' ? '💳 Mercado Pago' : salon.billingProvider === 'stripe' ? '💳 Stripe' : salon.billingProvider === 'asaas' ? '💳 Asaas Recorrente' : '💸 PIX Manual / Off-line'}
-                              </div>
-                              <div className="flex gap-1">
-                                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${getStatusColor(salon.activationStatus)}`}>
-                                   {getStatusLabel(salon.activationStatus)}
-                                </span>
-                                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${salon.paymentStatus === 'reported' ? 'bg-blue-500/20 text-blue-400' : salon.paymentStatus === 'overdue' ? 'bg-red-500/20 text-red-400' : 'bg-zinc-800 text-zinc-400'}`}>
-                                   Pgto: {salon.paymentStatus || 'none'}
-                                </span>
-                              </div>
-                              {salon.billingProvider === 'asaas' && (
-                                <div className="text-[9px] text-zinc-400 font-mono mt-1 flex flex-col gap-0.5 border-t border-white/5 pt-1 w-full" title="Informações Asaas">
-                                  <span className="truncate max-w-[150px]">Cus ID: {salon.asaasCustomerId || 'Não criado'}</span>
-                                  <span className="truncate max-w-[150px]">Sub ID: {salon.asaasSubscriptionId || 'Sem ass.'}</span>
-                                  {salon.nextBillingDate && (
-                                    <span>Venc: {new Date(salon.nextBillingDate).toLocaleDateString('pt-BR')}</span>
-                                  )}
-                                  {salon.asaasCheckoutUrl ? (
-                                    <div className="flex items-center gap-1.5 mt-1">
-                                      <button 
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(salon.asaasCheckoutUrl || '');
-                                          toast.success('Checkout URL copiado!');
-                                        }}
-                                        className="text-[9px] bg-zinc-800 hover:bg-zinc-700 px-1 py-0.5 rounded text-white font-sans border border-zinc-700"
-                                      >
-                                        Copiar Link
-                                      </button>
-                                      <a 
-                                        href={salon.asaasCheckoutUrl} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer" 
-                                        className="text-[9px] text-[#D4AF37] hover:underline"
-                                      >
-                                        Abrir
-                                      </a>
-                                    </div>
-                                  ) : (
-                                    <span className="text-yellow-500 text-[8px] uppercase font-bold mt-0.5">Sem link de checkout</span>
-                                  )}
+                           <div className="flex flex-col">
+                             <span className="font-semibold text-white flex items-center gap-1.5">
+                               {salon.name}
+                               {salon.isTutorial && (
+                                 <span className="text-[9px] bg-indigo-500/20 text-indigo-400 px-1 rounded">Seeded Tutorial</span>
+                               )}
+                             </span>
+                             <span className="text-xs text-muted-foreground">{salon.ownerName || '-'}</span>
+                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                           <div className="flex flex-col text-xs font-mono">
+                             <span className="text-white">{salon.ownerEmail}</span>
+                             <span className="text-muted-foreground">{salon.phone}</span>
+                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                           <div className="flex flex-col gap-1">
+                             <span className="uppercase text-xs font-bold text-white tracking-wide">{salon.plan || 'start'}</span>
+                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium w-fit ${getStatusColor(salon.activationStatus)}`}>
+                               {getStatusLabel(salon.activationStatus)}
+                             </span>
+                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                              <span className="font-semibold text-white uppercase">Provedor: {salon.billingProvider || 'Nenhum'}</span>
+                              {salon.caktoCustomerId && (
+                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.caktoCustomerId}>
+                                   <span className="truncate max-w-[120px]">Cakto Cus: {salon.caktoCustomerId}</span>
+                                   <span className="uppercase text-emerald-400">Status: {salon.subscriptionStatus}</span>
+                                   {salon.caktoCheckoutUrl ? (
+                                     <div className="flex gap-1.5 items-center mt-1">
+                                       <a href={salon.caktoCheckoutUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline hover:text-indigo-300">
+                                         Abrir Link
+                                       </a>
+                                     </div>
+                                   ) : (
+                                     <span className="text-yellow-500 text-[8px] uppercase font-bold mt-0.5">Sem link de checkout</span>
+                                   )}
                                 </div>
                               )}
-                              {salon.mercadoPagoPreapprovalId && (
-                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.mercadoPagoPreapprovalId}>
-                                   <span className="truncate max-w-[120px]">MP: {salon.mercadoPagoPreapprovalId}</span>
-                                   <span className="uppercase text-blue-400">Assinatura: {salon.subscriptionStatus}</span>
+                              {salon.asaasCustomerId && (
+                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.asaasCustomerId}>
+                                   <span className="truncate max-w-[120px]">Asaas Cus: {salon.asaasCustomerId}</span>
+                                   <span className="uppercase text-blue-400">Status: {salon.subscriptionStatus}</span>
+                                   {salon.asaasCheckoutUrl ? (
+                                     <div className="flex gap-1.5 items-center mt-1">
+                                       <a href={salon.asaasCheckoutUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
+                                         Abrir Link
+                                       </a>
+                                     </div>
+                                   ) : (
+                                     <span className="text-yellow-500 text-[8px] uppercase font-bold mt-0.5">Sem link de checkout</span>
+                                   )}
                                 </div>
                               )}
                            </div>
@@ -450,22 +571,16 @@ export default function MasterPanel() {
                               )}
                               {salon.activationStatus !== 'canceled' && (
                                 <Button size="sm" variant="outline" className="h-8 border-destructive/20 text-destructive hover:bg-destructive/10 mb-1" onClick={() => { setSelectedSalon(salon); setDialogAction('cancel'); setIsDialogOpen(true); }}>
-                                  Cancelar
+                                  <Trash2 className="w-3 h-3 mr-1" /> Cancelar
                                 </Button>
                               )}
-                              <Button size="sm" className="h-8 bg-black/40 hover:bg-black/60 border border-border mb-1" onClick={() => { setSelectedPlan(salon.plan); setSelectedSalon(salon); setDialogAction('change_plan'); setIsDialogOpen(true); }}>
-                                <RefreshCcw className="w-3 h-3 mr-1" /> Plano
+                              <Button size="sm" variant="outline" className="h-8 border-border hover:bg-white/5 mb-1 text-xs" onClick={() => { setSelectedSalon(salon); setDialogAction('change_plan'); setSelectedPlan(salon.plan || 'start'); setIsDialogOpen(true); }}>
+                                Mudar Plano
                               </Button>
 
-                              {salon.mercadoPagoPreapprovalId && (
-                                <Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700 text-white mb-1" onClick={() => window.open(`https://www.mercadopago.com.br/subscriptions/detail/${salon.mercadoPagoPreapprovalId}`, '_blank')}>
-                                  Abrir no MP
-                                </Button>
-                              )}
-
-                              <Select onValueChange={(val) => { setSelectedSalon(salon); setDialogAction(val as string); setIsDialogOpen(true); }}>
-                                <SelectTrigger className="h-8 w-28 bg-black/20 border-border text-[10px] uppercase text-white">
-                                  <SelectValue placeholder="Pagto" />
+                              <Select onValueChange={(val: string) => { setSelectedSalon(salon); setDialogAction(val); setIsDialogOpen(true); }}>
+                                <SelectTrigger className="w-24 h-8 text-xs bg-black/30 border-border">
+                                  <SelectValue placeholder="Faturamento" />
                                 </SelectTrigger>
                                 <SelectContent className="bg-card border-border text-white">
                                   <SelectItem value="payment_paid">Marcar como Pago</SelectItem>
@@ -474,8 +589,11 @@ export default function MasterPanel() {
                                   <SelectItem value="payment_reactivate">Reativar Assinatura</SelectItem>
                                   {import.meta.env.DEV && (
                                     <>
+                                      <SelectItem value="cakto_activate">Ativar Cakto (Simular Link)</SelectItem>
+                                      <SelectItem value="cakto_simulate_overdue">Simular 5 dias de atraso (Cakto)</SelectItem>
+                                      <SelectItem value="cakto_clear">Limpar Dados Cakto</SelectItem>
                                       <SelectItem value="asaas_activate">Ativar Asaas (Simular Link)</SelectItem>
-                                      <SelectItem value="asaas_simulate_overdue">Simular 5 dias de atraso</SelectItem>
+                                      <SelectItem value="asaas_simulate_overdue">Simular 5 dias de atraso (Asaas)</SelectItem>
                                       <SelectItem value="asaas_clear">Limpar Dados Asaas</SelectItem>
                                     </>
                                   )}
@@ -490,85 +608,165 @@ export default function MasterPanel() {
               </div>
            </CardContent>
         </Card>
+        )}
 
+        {activeTab === 'bugs' && (
         <Card className="border-border bg-black/40">
            <CardHeader>
              <CardTitle className="text-xl">Relatórios de Problemas e Feedback ({bugReports.length})</CardTitle>
            </CardHeader>
            <CardContent className="space-y-4">
               {bugReports.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground font-light text-sm">
-                   Nenhum problema reportado até o momento.
-                </div>
+                 <div className="text-center py-8 text-muted-foreground font-light text-sm">
+                    Nenhum problema reportado até o momento.
+                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-lg border border-border">
-                  <table className="w-full text-sm text-left">
-                    <thead className="text-xs uppercase bg-black/50 text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3 font-medium">Data / Página</th>
-                        <th className="px-4 py-3 font-medium">Título & Descrição</th>
-                        <th className="px-4 py-3 font-medium">Empresa / Usuário</th>
-                        <th className="px-4 py-3 font-medium">Prioridade / Tipo</th>
-                        <th className="px-4 py-3 font-medium text-right">Status / Atualizar</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bugReports.map((bug) => (
-                        <tr key={bug.id} className="border-b border-border hover:bg-white/[0.02]">
-                          <td className="px-4 py-3 text-xs text-muted-foreground text-left">
-                            <div className="flex flex-col gap-1">
-                               <span className="font-medium text-foreground">{formatBugDate(bug.createdAt)}</span>
-                               <span className="opacity-80 font-mono text-[10px] truncate max-w-[140px]" title={bug.pagePath}>{bug.pagePath}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 max-w-sm text-left">
-                            <div className="flex flex-col gap-1">
-                               <span className="font-semibold text-foreground text-sm">{bug.title}</span>
-                               <span className="text-xs text-muted-foreground opacity-90 line-clamp-2" title={bug.description}>{bug.description}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground text-left">
-                            <div className="flex flex-col gap-1">
-                               <span className="font-semibold text-foreground">{bug.salonName}</span>
-                               <span>{bug.userName} ({bug.userEmail})</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-left">
-                             <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getBugPriorityClass(bug.priority)}`}>
+                 <div className="overflow-x-auto rounded-lg border border-border">
+                   <table className="w-full text-sm text-left">
+                     <thead className="text-xs uppercase bg-black/50 text-muted-foreground">
+                       <tr>
+                         <th className="px-4 py-3">Tipo / Prioridade</th>
+                         <th className="px-4 py-3">Assunto / Descrição</th>
+                         <th className="px-4 py-3">Enviado por</th>
+                         <th className="px-4 py-3">Data</th>
+                         <th className="px-4 py-3">Status</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-border">
+                       {bugReports.map((bug) => (
+                         <tr key={bug.id} className="hover:bg-white/5 transition-colors">
+                           <td className="px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                <span className="font-semibold text-white uppercase text-xs">{getBugTypeLabel(bug.type)}</span>
+                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border w-fit font-bold uppercase ${getBugPriorityClass(bug.priority)}`}>
                                    {getBugPriorityLabel(bug.priority)}
                                 </span>
-                                <span className="bg-white/5 border border-white/10 text-white text-[10px] font-bold px-2 py-0.5 rounded">
-                                   {getBugTypeLabel(bug.type)}
-                                </span>
-                             </div>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                             <div className="flex justify-end items-center gap-2">
-                                <Select 
-                                  value={bug.status || 'open'} 
-                                  onValueChange={(val) => handleUpdateBugStatus(bug.id, val)}
-                                >
-                                  <SelectTrigger className="h-8 w-32 bg-black/20 border-border text-xs focus:ring-1 focus:ring-primary text-white">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="bg-card border-border">
-                                    <SelectItem value="open">Aberto</SelectItem>
-                                    <SelectItem value="reviewing">Em Análise</SelectItem>
-                                    <SelectItem value="resolved">Resolvido</SelectItem>
-                                    <SelectItem value="dismissed">Desconsiderado</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                              </div>
+                           </td>
+                           <td className="px-4 py-3">
+                              <div className="flex flex-col gap-0.5 max-w-sm md:max-w-md">
+                                 <span className="font-semibold text-white truncate">{bug.title}</span>
+                                 <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-2">{bug.description}</p>
+                                 {bug.userAgent && <span className="text-[9px] text-zinc-500 font-mono mt-1 truncate block">{bug.userAgent}</span>}
+                              </div>
+                           </td>
+                           <td className="px-4 py-3">
+                              <div className="flex flex-col text-xs">
+                                 <span className="text-white">{bug.userName || 'Anônimo'}</span>
+                                 <span className="text-muted-foreground font-mono">{bug.userEmail || '-'}</span>
+                                 {bug.salonName && <span className="text-[10px] text-[#D4AF37] font-semibold mt-0.5">Salão: {bug.salonName}</span>}
+                              </div>
+                           </td>
+                           <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
+                              {formatBugDate(bug.createdAt)}
+                           </td>
+                           <td className="px-4 py-3 text-right">
+                              <div className="flex justify-end items-center gap-2">
+                                 <Select value={bug.status || 'open'} onValueChange={(val) => handleUpdateBugStatus(bug.id, val)}>
+                                   <SelectTrigger className="w-28 h-8 text-xs bg-black/30 border-border text-white">
+                                      <SelectValue />
+                                   </SelectTrigger>
+                                   <SelectContent className="bg-card border-border">
+                                     <SelectItem value="open">Aberto</SelectItem>
+                                     <SelectItem value="reviewing">Em Análise</SelectItem>
+                                     <SelectItem value="resolved">Resolvido</SelectItem>
+                                     <SelectItem value="dismissed">Desconsiderado</SelectItem>
+                                   </SelectContent>
+                                 </Select>
+                              </div>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
               )}
            </CardContent>
         </Card>
+        )}
+
+        {activeTab === 'cakto' && (
+          <Card className="border-border bg-black/40">
+             <CardHeader>
+               <CardTitle className="text-xl flex items-center gap-2">
+                 <Sparkles className="w-5 h-5 text-destructive" />
+                 Integração Cakto
+               </CardTitle>
+               <p className="text-sm text-muted-foreground text-left">Cadastre e edite dinamicamente os IDs do produto e das ofertas da Cakto para faturamento dinâmico.</p>
+             </CardHeader>
+             <CardContent className="space-y-4">
+               {loadingSettings ? (
+                 <div className="flex justify-center p-8">
+                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                 </div>
+               ) : (
+                 <div className="space-y-4 max-w-xl text-left">
+                   <div className="space-y-1.5">
+                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cakto Product ID</label>
+                     <Input
+                       placeholder="Ex: prod_..."
+                       className="bg-card border-border text-white"
+                       value={caktoSettings.productId}
+                       onChange={(e) => setCaktoSettings({ ...caktoSettings, productId: e.target.value })}
+                     />
+                   </div>
+                   <div className="space-y-1.5">
+                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Founder (Start)</label>
+                     <Input
+                       placeholder="Ex: off_..."
+                       className="bg-card border-border text-white"
+                       value={caktoSettings.founderOfferId}
+                       onChange={(e) => setCaktoSettings({ ...caktoSettings, founderOfferId: e.target.value })}
+                     />
+                   </div>
+                   <div className="space-y-1.5">
+                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Studio</label>
+                     <Input
+                       placeholder="Ex: off_..."
+                       className="bg-card border-border text-white"
+                       value={caktoSettings.studioOfferId}
+                       onChange={(e) => setCaktoSettings({ ...caktoSettings, studioOfferId: e.target.value })}
+                     />
+                   </div>
+                   <div className="space-y-1.5">
+                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Performance</label>
+                     <Input
+                       placeholder="Ex: off_..."
+                       className="bg-card border-border text-white"
+                       value={caktoSettings.performanceOfferId}
+                       onChange={(e) => setCaktoSettings({ ...caktoSettings, performanceOfferId: e.target.value })}
+                     />
+                   </div>
+                   <div className="space-y-1.5">
+                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Network</label>
+                     <Input
+                       placeholder="Ex: off_..."
+                       className="bg-card border-border text-white"
+                       value={caktoSettings.networkOfferId}
+                       onChange={(e) => setCaktoSettings({ ...caktoSettings, networkOfferId: e.target.value })}
+                     />
+                   </div>
+                   <div className="pt-2">
+                     <Button
+                       onClick={saveCaktoSettings}
+                       disabled={savingSettings}
+                       className="bg-destructive hover:bg-destructive/80 text-white font-medium"
+                     >
+                       {savingSettings ? (
+                         <>
+                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                           Salvando...
+                         </>
+                       ) : (
+                         'Salvar Configurações'
+                       )}
+                     </Button>
+                   </div>
+                 </div>
+               )}
+             </CardContent>
+          </Card>
+        )}
 
         {/* Info dialog instructions */}
         <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 text-sm text-primary">

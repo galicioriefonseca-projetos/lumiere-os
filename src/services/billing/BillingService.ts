@@ -1,5 +1,5 @@
 import { BillingProvider } from './BillingProvider';
-import { AsaasProvider } from './providers/asaas/AsaasProvider';
+import { CaktoProvider } from './providers/cakto/CaktoProvider';
 import {
   BillingCustomer,
   BillingSubscription,
@@ -12,8 +12,8 @@ export class BillingService {
   private provider: BillingProvider;
 
   constructor(provider?: BillingProvider) {
-    // Inicializa com AsaasProvider por padrão
-    this.provider = provider || new AsaasProvider();
+    // Inicializa com CaktoProvider por padrão como gateway principal
+    this.provider = provider || new CaktoProvider();
   }
 
   /**

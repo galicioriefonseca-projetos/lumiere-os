@@ -81,54 +81,33 @@ export default function SubscriptionPage() {
     if (!ts) return 'Não configurado';
     return new Date(ts).toLocaleDateString('pt-BR');
   };
-
   const handleActivate = async () => {
     if (!salonData.id) return;
-    
-    // Verify if customer CPF/CNPJ is required
-    if (!document) {
-      toast.error('Informe seu CPF ou CNPJ para ativar faturamento no Asaas.');
-      return;
-    }
 
     setIsActivating(true);
     try {
-      toast.info('Sincronizando com o Asaas...');
+      toast.info('Sincronizando com o gateway Cakto...');
       
-      // Step 1: Create customer on Asaas if not exists
-      let customerId = salonData.asaasCustomerId;
-      if (!customerId) {
-        const custResult = await billingService.createCustomer(salonData.id, {
-          name: salonData.ownerName || salonData.name,
-          email: salonData.ownerEmail,
-          phone: salonData.phone,
-          document: document,
-        });
-        customerId = custResult.id;
-      }
-
-      // Step 2: Create recurrent subscription
-      const subResult = await billingService.createSubscription(salonData.id, customerId!, {
+      // Step 1: Create subscription checkout on Cakto
+      const subResult = await billingService.createSubscription(salonData.id, salonData.ownerEmail || '', {
         planId: selectedPlan,
         paymentMethod: paymentMethod,
       }) as any;
 
-      // Step 3: Refresh and handle response
+      // Step 2: Refresh and handle response
       await refreshUserData();
       
-      toast.success('Assinatura iniciada com sucesso!');
+      toast.success('Assinatura iniciada com sucesso! Redirecionando...');
       setShowActivationModal(false);
 
       // Open checkout URL if returned
-      if (subResult.checkoutUrl || salonData.asaasCheckoutUrl) {
-        const url = subResult.checkoutUrl || salonData.asaasCheckoutUrl;
-        if (url) {
-          window.open(url, '_blank');
-        }
+      const url = subResult.checkoutUrl || salonData.caktoCheckoutUrl;
+      if (url) {
+        window.open(url, '_blank');
       }
     } catch (err: any) {
       console.error("[Billing Page] Erro na ativação:", err);
-      toast.error(err.message || 'Falha ao processar assinatura via Asaas.');
+      toast.error(err.message || 'Falha ao processar assinatura via Cakto.');
     } finally {
       setIsActivating(false);
     }
@@ -171,6 +150,8 @@ export default function SubscriptionPage() {
   const isStrongWarning = daysOverdue >= 4 && daysOverdue <= 7;
   const isSoftWarning = daysOverdue > 0 && daysOverdue <= 3;
 
+  const currentCheckoutUrl = salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl;
+
   return (
     <div className="relative min-h-screen bg-background space-y-6 pb-12 select-none text-white">
       
@@ -193,18 +174,18 @@ export default function SubscriptionPage() {
                 <Info className="w-3.5 h-3.5 text-red-400" /> Como regularizar:
               </p>
               <p>1. Clique em "Regularizar Agora" abaixo.</p>
-              <p>2. Preencha seus dados para obter o link do Asaas.</p>
-              <p>3. Após a compensação do Pix ou Cartão, seu acesso será restabelecido imediatamente.</p>
+              <p>2. Complete o faturamento via checkout seguro.</p>
+              <p>3. Após a compensação, seu acesso será restabelecido imediatamente.</p>
             </div>
 
             <div className="flex flex-col gap-3">
-              {salonData.asaasCheckoutUrl ? (
+              {currentCheckoutUrl ? (
                 <button 
                   type="button"
-                  onClick={() => window.open(salonData.asaasCheckoutUrl, '_blank')}
+                  onClick={() => window.open(currentCheckoutUrl, '_blank')}
                   className="w-full bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold h-11 rounded-xl flex items-center justify-center gap-2 transition-colors duration-150"
                 >
-                  <CreditCard className="w-4 h-4" /> Pagar via Asaas (Fatura Pix/Cartão) <ExternalLink className="w-3.5 h-3.5" />
+                  <CreditCard className="w-4 h-4" /> Pagar Assinatura (Fatura Pix/Cartão) <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               ) : (
                 <button 
@@ -224,7 +205,7 @@ export default function SubscriptionPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
         <div>
           <h1 className="text-3xl font-heading text-white">Minha Assinatura</h1>
-          <p className="text-sm text-zinc-400 mt-1">Gerencie seu plano LumièreOS, limites de colaboradores e faturamento Asaas.</p>
+          <p className="text-sm text-zinc-400 mt-1">Gerencie seu plano LumièreOS, limites de colaboradores e faturamento.</p>
         </div>
         
         {/* Real-time status display */}
@@ -254,7 +235,7 @@ export default function SubscriptionPage() {
           <button 
             type="button"
             className="bg-red-500 hover:bg-red-600 text-white shrink-0 font-medium text-xs px-3 py-1.5 rounded-lg transition-colors duration-150"
-            onClick={() => salonData.asaasCheckoutUrl ? window.open(salonData.asaasCheckoutUrl, '_blank') : setShowActivationModal(true)}
+            onClick={() => currentCheckoutUrl ? window.open(currentCheckoutUrl, '_blank') : setShowActivationModal(true)}
           >
             Pagar Fatura Pendente
           </button>
@@ -278,7 +259,7 @@ export default function SubscriptionPage() {
           <button 
             type="button"
             className="bg-orange-500 hover:bg-orange-600 text-white shrink-0 font-medium text-xs px-3 py-1.5 rounded-lg transition-colors duration-150"
-            onClick={() => salonData.asaasCheckoutUrl ? window.open(salonData.asaasCheckoutUrl, '_blank') : setShowActivationModal(true)}
+            onClick={() => currentCheckoutUrl ? window.open(currentCheckoutUrl, '_blank') : setShowActivationModal(true)}
           >
             Regularizar Assinatura
           </button>
@@ -302,7 +283,7 @@ export default function SubscriptionPage() {
           <button 
             type="button"
             className="bg-[#D4AF37] hover:bg-[#Bca032] text-black shrink-0 font-medium text-xs px-3 py-1.5 rounded-lg transition-colors duration-150"
-            onClick={() => salonData.asaasCheckoutUrl ? window.open(salonData.asaasCheckoutUrl, '_blank') : setShowActivationModal(true)}
+            onClick={() => currentCheckoutUrl ? window.open(currentCheckoutUrl, '_blank') : setShowActivationModal(true)}
           >
             Ver Fatura Pix / Cartão
           </button>
@@ -359,7 +340,7 @@ export default function SubscriptionPage() {
                     <Coins className="w-3.5 h-3.5 text-zinc-400" /> Forma de Faturamento
                   </span>
                   <p className="text-sm font-semibold text-white uppercase flex items-center gap-1 text-xs">
-                    {salonData.billingProvider === 'asaas' ? '💳 ASAAS RECORRENTE' : '💸 PIX MANUAL / OUTROS'}
+                    {salonData.billingProvider === 'cakto' ? '💳 CAKTO RECORRENTE' : salonData.billingProvider === 'asaas' ? '💳 ASAAS LEGADO' : '💸 PIX MANUAL / OUTROS'}
                   </p>
                 </div>
               </div>
@@ -382,27 +363,27 @@ export default function SubscriptionPage() {
           </div>
 
           {/* ACTIVE RECURRENT LINK */}
-          {salonData.asaasCheckoutUrl && (
+          {(salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl) && (
             <div className="rounded-xl border border-[#D4AF37]/20 bg-[#D4AF37]/5 text-white shadow-sm">
               <div className="flex flex-col space-y-1.5 p-6">
                 <h3 className="font-semibold tracking-tight text-white text-md flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-[#D4AF37]" /> Link de Assinatura Asaas Ativo
+                  <ShieldCheck className="w-5 h-5 text-[#D4AF37]" /> Link de Assinatura Ativo
                 </h3>
-                <p className="text-xs text-zinc-400">Você possui um fluxo de checkout recorrente já configurado no Asaas.</p>
+                <p className="text-xs text-zinc-400">Você possui um fluxo de faturamento recorrente ativo via {salonData.billingProvider === 'cakto' ? 'Cakto' : 'Asaas'}.</p>
               </div>
               <div className="p-6 pt-0 space-y-4">
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button 
                     type="button"
-                    onClick={() => window.open(salonData.asaasCheckoutUrl, '_blank')}
+                    onClick={() => window.open(salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl, '_blank')}
                     className="bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold flex items-center justify-center gap-2 rounded-xl text-xs flex-1 h-10 transition-colors duration-150"
                   >
-                    <ExternalLink className="w-4 h-4" /> Abrir Checkout / Atualizar Cartão no Asaas
+                    <ExternalLink className="w-4 h-4" /> Abrir Checkout / Atualizar Forma de Pagamento no {salonData.billingProvider === 'cakto' ? 'Cakto' : 'Asaas'}
                   </button>
                   <button 
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(salonData.asaasCheckoutUrl || '');
+                      navigator.clipboard.writeText(salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl || '');
                       toast.success('Link de checkout copiado!');
                     }}
                     className="border border-zinc-800 hover:bg-zinc-900 text-zinc-400 text-xs h-10 px-4 rounded-xl transition-colors duration-150 flex items-center justify-center"
@@ -421,38 +402,38 @@ export default function SubscriptionPage() {
           <div className="rounded-xl border border-zinc-800 bg-black/40 text-white shadow-sm">
             <div className="flex flex-col space-y-1.5 p-6">
               <h3 className="font-semibold tracking-tight text-white text-lg">Ativação & Cobrança</h3>
-              <p className="text-sm text-zinc-500">Inicie ou atualize seu faturamento recorrente via Asaas.</p>
+              <p className="text-sm text-zinc-500">Inicie ou atualize seu faturamento recorrente via Cakto.</p>
             </div>
             <div className="p-6 pt-0 space-y-4">
               
               <div className="p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 space-y-3">
                 <div className="flex items-center gap-2 text-[#D4AF37] font-semibold text-xs uppercase tracking-wider">
-                  <Zap className="w-4 h-4" /> Benefícios Asaas
+                  <Zap className="w-4 h-4" /> Benefícios Cakto
                 </div>
                 <ul className="text-xs text-zinc-400 space-y-2">
                   <li className="flex items-center gap-2">✔ Cobrança recorrente todo mês sem consumir limite do cartão</li>
-                  <li className="flex items-center gap-2">✔ Recebimento imediato via Pix ou Boleto</li>
-                  <li className="flex items-center gap-2">✔ Alertas automáticos via WhatsApp/E-mail</li>
+                  <li className="flex items-center gap-2">✔ Recebimento imediato via Pix ou Cartão de Crédito</li>
+                  <li className="flex items-center gap-2">✔ Alertas automáticos no faturamento</li>
                 </ul>
               </div>
 
-              {!salonData.asaasSubscriptionId ? (
+              {!salonData.caktoSubscriptionId ? (
                 <button 
                   type="button"
                   onClick={() => setShowActivationModal(true)}
                   className="w-full bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold h-11 rounded-xl flex items-center justify-center gap-2 text-xs transition-colors duration-150"
                 >
-                  <Zap className="w-4 h-4 fill-black" /> Ativar Assinatura Recorrente Asaas
+                  <Zap className="w-4 h-4 fill-black" /> Ativar Assinatura Recorrente Cakto
                 </button>
               ) : (
                 <div className="space-y-3">
                   <button 
                     type="button"
                     onClick={() => {
-                      if (salonData.asaasCheckoutUrl) {
-                        window.open(salonData.asaasCheckoutUrl, '_blank');
+                      if (salonData.caktoCheckoutUrl) {
+                        window.open(salonData.caktoCheckoutUrl, '_blank');
                       } else {
-                        toast.error('Nenhum link de checkout encontrado para esta assinatura.');
+                        toast.error('Nenhum link de checkout encontrado para esta assinatura Cakto.');
                       }
                     }}
                     className="w-full bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white font-medium h-11 rounded-xl flex items-center justify-center gap-2 text-xs transition-colors duration-150"
@@ -460,8 +441,24 @@ export default function SubscriptionPage() {
                     <CreditCard className="w-4 h-4" /> Atualizar Forma de Pagamento
                   </button>
                   <div className="p-3 bg-green-500/5 border border-green-500/10 rounded-lg text-[10px] text-zinc-500 leading-normal">
-                    <span>Sua assinatura está ativa via Asaas Integrado (ID: <code className="text-green-400 select-all font-mono">{salonData.asaasSubscriptionId}</code>). Qualquer alteração ou pagamento efetuado refletirá no sistema automaticamente via webhook.</span>
+                    <span>Sua assinatura está ativa via Cakto (ID: <code className="text-green-400 select-all font-mono">{salonData.caktoSubscriptionId}</code>). Qualquer alteração ou pagamento efetuado refletirá no sistema automaticamente via webhook.</span>
                   </div>
+                </div>
+              )}
+
+              {salonData.asaasSubscriptionId && (
+                <div className="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-2 text-xs text-zinc-400">
+                  <p className="font-semibold text-zinc-300">Cobrança Legada Ativa (Asaas)</p>
+                  <p className="text-[10px] leading-normal">Sua conta possui faturamento configurado pelo Asaas (ID: <code className="text-amber-400 font-mono select-all">{salonData.asaasSubscriptionId}</code>). O acesso de faturamento permanece garantido por este canal.</p>
+                  {salonData.asaasCheckoutUrl && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(salonData.asaasCheckoutUrl, '_blank')}
+                      className="text-[#D4AF37] text-[10px] font-bold hover:underline flex items-center gap-1 mt-1 shrink-0"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Abrir Link Legado do Asaas
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -485,7 +482,7 @@ export default function SubscriptionPage() {
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-[#D4AF37]" /> Ativar Faturamento LumièreOS
                 </h3>
-                <p className="text-xs text-zinc-500 mt-1">Insira os dados cadastrais para geração da assinatura recorrente no Asaas.</p>
+                <p className="text-xs text-zinc-500 mt-1">Gere sua assinatura recorrente segura na Cakto.</p>
               </div>
               <button 
                 type="button"
@@ -525,21 +522,9 @@ export default function SubscriptionPage() {
                 </select>
               </div>
 
-              <div className="space-y-1.5 flex flex-col">
-                <label className="text-xs font-medium text-zinc-400">Documento CPF / CNPJ do Proprietário</label>
-                <input 
-                  type="text"
-                  placeholder="Apenas números (Ex: 000.000.000-00)" 
-                  className="bg-zinc-950 border border-zinc-800 text-white rounded-xl h-10 px-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
-                  value={document}
-                  onChange={(e) => setDocument(e.target.value)}
-                />
-                <p className="text-[10px] text-zinc-500 mt-1">Exigido pelo gateway Asaas para emitir faturas e evitar fraudes financeiras.</p>
-              </div>
-
               <div className="p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/80 space-y-1 text-[11px] text-zinc-400 leading-normal">
                 <p className="font-semibold text-white flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-green-400" /> Segurança dos Seus Dados</p>
-                <p>O LumièreOS não armazena os dados do seu cartão. Todo o processamento é executado de forma criptografada pelo Asaas, uma das maiores instituições de pagamento do Brasil.</p>
+                <p>O LumièreOS não armazena dados de pagamento. Todo o processamento é executado de forma criptografada pelo checkout seguro da Cakto.</p>
               </div>
             </div>
 
@@ -564,7 +549,7 @@ export default function SubscriptionPage() {
                   </>
                 ) : (
                   <>
-                    <Zap className="w-4 h-4 fill-black" /> Confirmar e Gerar Fatura
+                    <Zap className="w-4 h-4 fill-black" /> Confirmar e Ir para Pagamento
                   </>
                 )}
               </button>
