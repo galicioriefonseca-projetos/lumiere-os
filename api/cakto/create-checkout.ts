@@ -51,61 +51,6 @@ async function getCaktoSettingsCached(): Promise<CaktoSettings> {
   return settingsData;
 }
 
-let cachedCaktoToken: { token: string; expiresAt: number } | null = null;
-
-async function getCaktoAccessToken(): Promise<string> {
-  const clientId = process.env.CAKTO_CLIENT_ID;
-  const clientSecret = process.env.CAKTO_CLIENT_SECRET;
-  const apiUrl = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
-
-  console.log("[Cakto API Serverless Secure Log] getCaktoAccessToken chamado.");
-
-  if (!clientId || !clientSecret) {
-    throw new Error("CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET não configurados no servidor.");
-  }
-
-  if (cachedCaktoToken && cachedCaktoToken.expiresAt > Date.now()) {
-    return cachedCaktoToken.token;
-  }
-
-  console.log("[Cakto API Serverless] Solicitando novo token de acesso...");
-  
-  try {
-    const params = new URLSearchParams();
-    params.append("client_id", clientId);
-    params.append("client_secret", clientSecret);
-
-    const response = await fetch(`${apiUrl}/public_api/token/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params.toString(),
-    });
-
-    const responseStatus = response.status;
-    const text = await response.text();
-    
-    if (response.ok) {
-      const data = JSON.parse(text);
-      if (data && data.access_token) {
-        const expiresIn = (data.expires_in || 3600) * 1000;
-        cachedCaktoToken = {
-          token: data.access_token,
-          expiresAt: Date.now() + expiresIn - 60000
-        };
-        console.log("[Cakto API Serverless] Token de acesso obtido com sucesso!");
-        return data.access_token;
-      }
-    }
-
-    throw new Error(`Falha ao autenticar: Status ${responseStatus}, Resposta: ${text}`);
-  } catch (err: any) {
-    console.error("[Cakto API Serverless] Erro na autenticação:", err);
-    throw new Error(`Falha ao autenticar com a API Cakto: ${err.message}`);
-  }
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);

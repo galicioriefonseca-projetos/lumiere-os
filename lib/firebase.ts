@@ -18,16 +18,10 @@ export const app = firebaseConfig.apiKey ? (getApps().length === 0 ? initializeA
 export let auth: any = null;
 try {
   if (app) {
-    auth = initializeAuth(app, {
-      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-    });
+    auth = getAuth(app);
   }
 } catch (e) {
-  try {
-    auth = app ? getAuth(app) : null;
-  } catch (err) {
-    console.error("Failed to initialize Firebase Auth:", err);
-  }
+    console.error("Failed to initialize Firebase Auth:", e);
 }
 export let db: any = null;
 try {

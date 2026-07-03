@@ -1207,7 +1207,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<AuthUser> => {
     const provider = new GoogleAuthProvider();
-    console.log("[PlatformAuth] Chamando signInWithPopup...");
+    console.log("[PlatformAuth] Chamando signInWithPopup...", { auth, provider });
+    if (!auth) {
+        console.error("[PlatformAuth] auth is null!");
+        throw new Error("Auth instance is null");
+    }
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
     console.log("[PlatformAuth] Autenticado via Google Popup. UID:", user.uid, "Email:", user.email);
