@@ -96,6 +96,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Se ainda não encontrado, buscar pelo e-mail do checkout (quarta tentativa)
+    // Nota: Em caso de múltiplos checkouts com o mesmo e-mail, pegaremos o mais recente (limit 1).
+    const customerEmail = bodyData.customer?.email || bodyData.customerEmail;
+    if ((!salonDoc || !salonDoc.exists) && customerEmail) {
+      const snapshot = await adminDb.collection("salons")
+        .where("caktoCheckoutEmail", "==", String(customerEmail).toLowerCase())
+        .limit(1).get();
+      if (!snapshot.empty) {
+        salonDoc = snapshot.docs[0];
+        salonRef = salonDoc.ref;
+      }
+    }
+
     // Se for um evento de teste com IDs simulados ou se o salão de fato não existir no banco
     if (!salonDoc || !salonDoc.exists || !salonRef) {
       console.warn(`[Cakto Webhook Serverless] Salão correspondente não localizado para orderId: ${orderId}, subscriptionId: ${subscriptionId}, salonId: ${salonId}. Respondendo 200 OK para testes.`);
