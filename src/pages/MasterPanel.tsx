@@ -36,6 +36,42 @@ export default function MasterPanel() {
   });
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [syncingProducts, setSyncingProducts] = useState(false);
+
+  const syncProducts = async () => {
+    if (!currentUser) return;
+    setSyncingProducts(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/cakto/sync-products', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error(await res.text() || 'Falha ao sincronizar produtos');
+      }
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setCaktoSettings({
+          productId: data.settings.productId || '',
+          founderOfferId: data.settings.founderOfferId || '',
+          studioOfferId: data.settings.studioOfferId || '',
+          performanceOfferId: data.settings.performanceOfferId || '',
+          networkOfferId: data.settings.networkOfferId || ''
+        });
+        toast.success(`Sincronização concluída! Produto '${data.productName}' mapeado com sucesso.`);
+      } else {
+        throw new Error(data.error || 'Resposta inválida do servidor');
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Erro ao sincronizar produtos: ${err.message}`);
+    } finally {
+      setSyncingProducts(false);
+    }
+  };
 
   const fetchCaktoSettings = async () => {
     if (!currentUser) return;
@@ -746,10 +782,10 @@ export default function MasterPanel() {
                        onChange={(e) => setCaktoSettings({ ...caktoSettings, networkOfferId: e.target.value })}
                      />
                    </div>
-                   <div className="pt-2">
+                   <div className="pt-2 flex flex-wrap gap-3">
                      <Button
                        onClick={saveCaktoSettings}
-                       disabled={savingSettings}
+                       disabled={savingSettings || syncingProducts}
                        className="bg-destructive hover:bg-destructive/80 text-white font-medium"
                      >
                        {savingSettings ? (
@@ -759,6 +795,25 @@ export default function MasterPanel() {
                          </>
                        ) : (
                          'Salvar Configurações'
+                       )}
+                     </Button>
+
+                     <Button
+                       onClick={syncProducts}
+                       disabled={savingSettings || syncingProducts}
+                       variant="outline"
+                       className="border-border hover:bg-white/5 text-white font-medium"
+                     >
+                       {syncingProducts ? (
+                         <>
+                           <Loader2 className="w-4 h-4 mr-2 animate-spin text-white" />
+                           Sincronizando...
+                         </>
+                       ) : (
+                         <>
+                           <RefreshCcw className="w-4 h-4 mr-2 text-white" />
+                           Sincronizar Produtos da Cakto
+                         </>
                        )}
                      </Button>
                    </div>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User as AuthUser, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { User as AuthUser, onAuthStateChanged, signOut, GoogleAuthProvider, signInWithPopup, getAuth } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { User, Salon, Role } from '../types';
@@ -654,7 +654,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let unsubscribeUserSnapshot: (() => void) | null = null;
     let unsubscribeSalonSnapshot: (() => void) | null = null;
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(getAuth(), async (user) => {
       setCurrentUser(user);
       
       if (unsubscribeUserSnapshot) {
@@ -1198,7 +1198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     setLoading(true);
-    await signOut(auth);
+    await signOut(getAuth());
     setUserData(null);
     setSalonData(null);
     setIsPlatformAdmin(false);
@@ -1207,12 +1207,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<AuthUser> => {
     const provider = new GoogleAuthProvider();
-    console.log("[PlatformAuth] Chamando signInWithPopup...", { auth, provider });
-    if (!auth) {
+    const activeAuth = getAuth();
+    console.log("[PlatformAuth] Chamando signInWithPopup...", { auth: activeAuth, provider });
+    if (!activeAuth) {
         console.error("[PlatformAuth] auth is null!");
         throw new Error("Auth instance is null");
     }
-    const result = await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(activeAuth, provider);
     const user = result.user;
     console.log("[PlatformAuth] Autenticado via Google Popup. UID:", user.uid, "Email:", user.email);
     
@@ -1279,7 +1280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         console.log("[PlatformAuth] Bloqueando login: Usuário normal não registrado.");
-         await signOut(auth);
+         await signOut(activeAuth);
          throw { code: 'auth/user-not-registered-google' };
       }
     } else {
@@ -1333,7 +1334,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     optionalFullName?: string
   ): Promise<AuthUser> => {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
+    const activeAuth = getAuth();
+    const result = await signInWithPopup(activeAuth, provider);
     const user = result.user;
 
     const userRef = doc(db, 'users', user.uid);
@@ -1342,7 +1344,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (userSnap.exists()) {
       const existingData = userSnap.data();
       if (existingData.salonId) {
-        await signOut(auth);
+        await signOut(activeAuth);
         throw { code: 'auth/social-email-already-linked' };
       }
       
@@ -1443,11 +1445,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     choices?: { primaryFunction?: string; additionalFunctions?: string[] }
   ): Promise<AuthUser> => {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
+    const activeAuth = getAuth();
+    const result = await signInWithPopup(activeAuth, provider);
     const user = result.user;
 
     if (inviteData.email && inviteData.email.trim().toLowerCase() !== user.email?.trim().toLowerCase()) {
-      await signOut(auth);
+      await signOut(activeAuth);
       throw { code: 'auth/invite-email-mismatch', invitedEmail: inviteData.email };
     }
 
@@ -1462,7 +1465,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (existingData.salonId === inviteData.salonId) {
           isAlreadyInSameSalon = true;
         } else {
-          await signOut(auth);
+          await signOut(activeAuth);
           throw { code: 'auth/already-linked-to-other-salon' };
         }
       }

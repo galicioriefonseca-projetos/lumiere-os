@@ -888,6 +888,214 @@ async function startServer() {
     }
   });
 
+  app.post("/api/cakto/sync-products", authenticateRequest, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const isPlatformAdmin = await isPlatformAdminUser(user);
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ error: "Acesso restrito a administradores da plataforma." });
+      }
+
+      const clientId = process.env.CAKTO_CLIENT_ID;
+      const clientSecret = process.env.CAKTO_CLIENT_SECRET;
+      const apiUrl = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
+
+      console.log("[Cakto Sync Express] Iniciando sincronização automática de produtos...");
+      if (!clientId || !clientSecret) {
+        return res.status(400).json({
+          error: "CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET não configurados no servidor."
+        });
+      }
+
+      // 1. Obter token da Cakto (Usa a função getCaktoAccessToken já existente no Express!)
+      let accessToken;
+      try {
+        accessToken = await getCaktoAccessToken();
+      } catch (authErr: any) {
+        return res.status(502).json({
+          error: `Falha na autenticação com a API Cakto (status 400 ou 502): ${authErr.message}`
+        });
+      }
+
+      // 2. Listar produtos
+      console.log("[Cakto Sync Express] Listando produtos...");
+      const productsRes = await fetch(`${apiUrl}/public_api/products/`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!productsRes.ok) {
+        const errText = await productsRes.text();
+        return res.status(502).json({ error: `Falha ao listar produtos na Cakto: ${errText}` });
+      }
+
+      const productsData = await productsRes.json();
+      const products = Array.isArray(productsData) ? productsData : (productsData?.data || productsData?.results || []);
+
+      // 3. Procurar produto cujo nome contenha "LumièreOS" ou "LumiereOS"
+      const targetProduct = products.find((p: any) => {
+        const name = String(p.name || p.title || "").toLowerCase();
+        return name.includes("lumièreos") || name.includes("lumiereos");
+      });
+
+      if (!targetProduct) {
+        return res.status(404).json({
+          error: "Nenhum produto contendo 'LumièreOS' ou 'LumiereOS' foi localizado na sua conta da Cakto."
+        });
+      }
+
+      const productId = String(targetProduct.id || targetProduct.productId || "");
+      if (!productId) {
+        return res.status(502).json({ error: "ID do produto LumièreOS não encontrado no payload da Cakto." });
+      }
+
+      // 4. Listar checkouts do produto
+      console.log(`[Cakto Sync Express] Listando checkouts para o produto ${productId}...`);
+      const checkoutsRes = await fetch(`${apiUrl}/public_api/products/${productId}/checkouts/`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!checkoutsRes.ok) {
+        const errText = await checkoutsRes.text();
+        return res.status(502).json({ error: `Falha ao listar checkouts para o produto ${productId}: ${errText}` });
+      }
+
+      const checkoutsData = await checkoutsRes.json();
+      const checkouts = Array.isArray(checkoutsData) ? checkoutsData : (checkoutsData?.data || checkoutsData?.results || []);
+
+      if (checkouts.length === 0) {
+        return res.status(404).json({
+          error: `Nenhum checkout configurado para o produto '${targetProduct.name || "LumièreOS"}' (ID: ${productId}) na Cakto.`
+        });
+      }
+
+      // Helper inline para extrair offerId
+      const extractOfferIdLocal = (details: any): string => {
+        if (!details) return "";
+        if (details.offer_id) return String(details.offer_id);
+        if (details.offerId) return String(details.offerId);
+        if (details.offers) {
+          if (Array.isArray(details.offers)) {
+            if (details.offers.length > 0) {
+              const first = details.offers[0];
+              if (first && typeof first === "object") {
+                return String(first.id || first.offer_id || first.offerId || "");
+              }
+              return String(first);
+            }
+          } else if (typeof details.offers === "object") {
+            return String(details.offers.id || details.offers.offer_id || details.offers.offerId || "");
+          } else {
+            return String(details.offers);
+          }
+        }
+        if (details.default_offer_id) return String(details.default_offer_id);
+        return "";
+      };
+
+      // 5. Obter detalhes de cada checkout para extrair offerId e mapear por plano
+      let founderOfferId = "";
+      let studioOfferId = "";
+      let performanceOfferId = "";
+      let networkOfferId = "";
+
+      const checkoutsWithDetails = [];
+      for (const checkout of checkouts) {
+        const checkoutId = checkout.id || checkout.checkoutId || "";
+        if (!checkoutId) continue;
+        
+        try {
+          const detailRes = await fetch(`${apiUrl}/public_api/products/${productId}/checkouts/${checkoutId}/`, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+            },
+          });
+          
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            checkoutsWithDetails.push({
+              id: checkoutId,
+              name: String(detailData.name || checkout.name || detailData.title || checkout.title || ""),
+              details: detailData
+            });
+          }
+        } catch (err) {
+          console.warn(`[Cakto Sync Express] Erro ao buscar detalhes do checkout ${checkoutId}:`, err);
+        }
+      }
+
+      // Mapear por nome
+      for (const item of checkoutsWithDetails) {
+        const offerId = extractOfferIdLocal(item.details);
+        if (!offerId) continue;
+        
+        const nameLower = item.name.toLowerCase();
+        if (nameLower.includes("founder")) {
+          founderOfferId = offerId;
+        } else if (nameLower.includes("studio")) {
+          studioOfferId = offerId;
+        } else if (nameLower.includes("performance")) {
+          performanceOfferId = offerId;
+        } else if (nameLower.includes("network")) {
+          networkOfferId = offerId;
+        }
+      }
+
+      // Fallback: Obter o primeiro checkout com offerId válido
+      const defaultItem = checkoutsWithDetails.find(item => {
+        const d = item.details;
+        return d.is_default || d.default || d.is_active;
+      }) || checkoutsWithDetails[0];
+
+      const fallbackOfferId = defaultItem ? extractOfferIdLocal(defaultItem.details) : "";
+
+      if (!fallbackOfferId) {
+        return res.status(502).json({
+          error: "Não foi possível extrair nenhum Offer ID válido dos checkouts da Cakto para servir como fallback."
+        });
+      }
+
+      if (!founderOfferId) founderOfferId = fallbackOfferId;
+      if (!studioOfferId) studioOfferId = fallbackOfferId;
+      if (!performanceOfferId) performanceOfferId = fallbackOfferId;
+      if (!networkOfferId) networkOfferId = fallbackOfferId;
+
+      // 6. Salvar no Firestore
+      const adminDb = getAdminDb();
+      const docRef = adminDb.collection("settings").doc("cakto");
+
+      const syncData = {
+        productId,
+        founderOfferId,
+        studioOfferId,
+        performanceOfferId,
+        networkOfferId,
+        updatedAt: Date.now()
+      };
+
+      await docRef.set(syncData, { merge: true });
+      invalidateCaktoSettingsCache(syncData);
+      console.log(`[Cakto Sync Express] Sincronização concluída com sucesso por ${user.email}.`);
+
+      return res.status(200).json({
+        success: true,
+        message: "Sincronização realizada com sucesso!",
+        settings: syncData,
+        productName: targetProduct.name || "LumièreOS"
+      });
+
+    } catch (err: any) {
+      console.error("[Cakto Sync Express] Erro crítico:", err);
+      return res.status(500).json({ error: err.message || "Erro interno do servidor." });
+    }
+  });
+
   app.post("/api/cakto/create-checkout", authenticateRequest, async (req, res) => {
     try {
       const { salonId, planId, paymentMethod, email } = req.body;
@@ -1695,6 +1903,11 @@ Instruções de Resposta:
     }
   });
 
+  // Middleware para rotas de API não encontradas (retorna JSON 404 em vez de HTML)
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ error: `Rota de API não encontrada: ${req.method} ${req.originalUrl}` });
+  });
+
   // Configuração do Vite middleware ou arquivos estáticos dependendo do ambiente
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1723,6 +1936,9 @@ Instruções de Resposta:
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
+      if (req.originalUrl.startsWith("/api")) {
+        return res.status(404).json({ error: "Endpoint de API não encontrado." });
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

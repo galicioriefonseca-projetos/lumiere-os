@@ -527,9 +527,17 @@ export default function ServicesPage() {
               salonName: salonData?.name || "Lumiere Salon",
             }),
           });
-          const data = await res.json();
+          let data;
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            data = await res.json();
+          } else {
+            const rawText = await res.text();
+            throw new Error(rawText || "Resposta inválida do servidor.");
+          }
+
           if (!res.ok) {
-            throw new Error(data.error || "Erro desconhecido no processamento do catálogo em PDF.");
+            throw new Error(data?.error || "Erro desconhecido no processamento do catálogo em PDF.");
           }
           if (data.items && Array.isArray(data.items)) {
             setPdfParsedItems(data.items);
