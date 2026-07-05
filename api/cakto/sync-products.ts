@@ -60,6 +60,12 @@ function extractOfferId(details: any): string {
   return "";
 }
 
+function getCaktoApiBaseUrl() {
+  const raw = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
+  const url = new URL(raw);
+  return `${url.protocol}//${url.host}`;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -83,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const clientId = process.env.CAKTO_CLIENT_ID;
     const clientSecret = process.env.CAKTO_CLIENT_SECRET;
-    const apiUrl = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
+    const apiUrl = getCaktoApiBaseUrl();
 
     console.log("[Cakto Sync Serverless] Iniciando sincronização automática de produtos...");
     if (!clientId || !clientSecret) {
@@ -210,7 +216,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Mapear por nome se houver correspondência
     for (const item of checkoutsWithDetails) {
-      const offerId = extractOfferId(item.details);
+      const checkout = item.details;
+      console.log("JSON do checkout retornado pela API Cakto:");
+      console.log(JSON.stringify(checkout, null, 2));
+      const offerId = extractOfferId(checkout);
       if (!offerId) continue;
       
       const nameLower = item.name.toLowerCase();

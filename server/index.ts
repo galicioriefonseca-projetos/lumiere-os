@@ -654,12 +654,18 @@ async function startServer() {
     }
   }
 
+  function getCaktoApiBaseUrl() {
+    const raw = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
+    const url = new URL(raw);
+    return `${url.protocol}//${url.host}`;
+  }
+
   let cachedCaktoToken: { token: string; expiresAt: number } | null = null;
 
   async function getCaktoAccessToken(): Promise<string> {
     const clientId = process.env.CAKTO_CLIENT_ID;
     const clientSecret = process.env.CAKTO_CLIENT_SECRET;
-    const apiUrl = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
+    const apiUrl = getCaktoApiBaseUrl();
 
     // Secure Log - Never log actual values of clientId/clientSecret, only whether they exist
     console.log("[Cakto API Secure Log] getCaktoAccessToken chamado.");
@@ -676,142 +682,47 @@ async function startServer() {
     }
 
     console.log("[Cakto API] Solicitando novo token de acesso OAuth2...");
-    const endpointsToTry = [
-      `${apiUrl}/oauth/token`,
-      `${apiUrl}/v1/oauth/token`,
-    ];
+    const url = `${apiUrl}/public_api/token/`;
 
-    let lastErrorDetail = "";
+    try {
+      console.log(`[Cakto API Secure Log] Obtendo token de ${url} via application/x-www-form-urlencoded...`);
+      const params = new URLSearchParams();
+      params.append("client_id", clientId);
+      params.append("client_secret", clientSecret);
 
-    for (const url of endpointsToTry) {
-      // 1. Tentar Form Urlencoded com client_id e client_secret no body (Standard OAuth2)
-      try {
-        console.log(`[Cakto API Secure Log] Tentando obter token de ${url} via application/x-www-form-urlencoded (Body params)...`);
-        const params = new URLSearchParams();
-        params.append("grant_type", "client_credentials");
-        params.append("client_id", clientId);
-        params.append("client_secret", clientSecret);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+      });
 
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: params.toString(),
-        });
+      const responseStatus = response.status;
+      const text = await response.text();
+      const safeText = text
+        .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
+        .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
 
-        const responseStatus = response.status;
-        const text = await response.text();
-        const safeText = text
-          .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
-          .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
+      console.log(`[Cakto API Secure Log] URL: ${url} | Status: ${responseStatus} | Resposta: ${safeText}`);
 
-        console.log(`[Cakto API Secure Log] URL: ${url} (urlencoded_body) | Status: ${responseStatus} | Resposta: ${safeText}`);
-
-        if (response.ok) {
-          const data = JSON.parse(text);
-          if (data && data.access_token) {
-            const expiresIn = (data.expires_in || 3600) * 1000;
-            cachedCaktoToken = {
-              token: data.access_token,
-              expiresAt: Date.now() + expiresIn - 60000
-            };
-            console.log("[Cakto API] Token de acesso obtido com sucesso via urlencoded_body!");
-            return data.access_token;
-          }
-        } else {
-          lastErrorDetail = `URL: ${url} (urlencoded_body) | Status: ${responseStatus} | Resposta: ${safeText}`;
+      if (response.ok) {
+        const data = JSON.parse(text);
+        if (data && data.access_token) {
+          const expiresIn = (data.expires_in || 3600) * 1000;
+          cachedCaktoToken = {
+            token: data.access_token,
+            expiresAt: Date.now() + expiresIn - 60000
+          };
+          console.log("[Cakto API] Token de acesso obtido com sucesso!");
+          return data.access_token;
         }
-      } catch (err: any) {
-        console.warn(`[Cakto API] Erro na tentativa urlencoded_body para ${url}:`, err);
-        lastErrorDetail = `URL: ${url} (urlencoded_body) | Erro: ${err.message}`;
       }
-
-      // 2. Tentar Form Urlencoded com Basic Auth Header
-      try {
-        console.log(`[Cakto API Secure Log] Tentando obter token de ${url} via application/x-www-form-urlencoded (Basic Auth header)...`);
-        const base64Credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-        const params = new URLSearchParams();
-        params.append("grant_type", "client_credentials");
-
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": `Basic ${base64Credentials}`,
-          },
-          body: params.toString(),
-        });
-
-        const responseStatus = response.status;
-        const text = await response.text();
-        const safeText = text
-          .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
-          .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
-
-        console.log(`[Cakto API Secure Log] URL: ${url} (urlencoded_basic) | Status: ${responseStatus} | Resposta: ${safeText}`);
-
-        if (response.ok) {
-          const data = JSON.parse(text);
-          if (data && data.access_token) {
-            const expiresIn = (data.expires_in || 3600) * 1000;
-            cachedCaktoToken = {
-              token: data.access_token,
-              expiresAt: Date.now() + expiresIn - 60000
-            };
-            console.log("[Cakto API] Token de acesso obtido com sucesso via urlencoded_basic!");
-            return data.access_token;
-          }
-        } else {
-          lastErrorDetail = `URL: ${url} (urlencoded_basic) | Status: ${responseStatus} | Resposta: ${safeText}`;
-        }
-      } catch (err: any) {
-        console.warn(`[Cakto API] Erro na tentativa urlencoded_basic para ${url}:`, err);
-        lastErrorDetail = `URL: ${url} (urlencoded_basic) | Erro: ${err.message}`;
-      }
-
-      // 3. Tentar JSON Body (fallback anterior)
-      try {
-        console.log(`[Cakto API Secure Log] Tentando obter token de ${url} via application/json (JSON Body)...`);
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grant_type: "client_credentials",
-            client_id: clientId,
-            client_secret: clientSecret,
-          }),
-        });
-
-        const responseStatus = response.status;
-        const text = await response.text();
-        const safeText = text
-          .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
-          .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
-
-        console.log(`[Cakto API Secure Log] URL: ${url} (json) | Status: ${responseStatus} | Resposta: ${safeText}`);
-
-        if (response.ok) {
-          const data = JSON.parse(text);
-          if (data && data.access_token) {
-            const expiresIn = (data.expires_in || 3600) * 1000;
-            cachedCaktoToken = {
-              token: data.access_token,
-              expiresAt: Date.now() + expiresIn - 60000
-            };
-            console.log("[Cakto API] Token de acesso obtido com sucesso via json!");
-            return data.access_token;
-          }
-        } else {
-          lastErrorDetail = `URL: ${url} (json) | Status: ${responseStatus} | Resposta: ${safeText}`;
-        }
-      } catch (err: any) {
-        console.warn(`[Cakto API] Erro na tentativa json para ${url}:`, err);
-        lastErrorDetail = `URL: ${url} (json) | Erro: ${err.message}`;
-      }
+      throw new Error(`Status: ${responseStatus} | Resposta: ${safeText}`);
+    } catch (err: any) {
+      console.warn(`[Cakto API] Erro ao obter token para ${url}:`, err);
+      throw new Error(`Falha ao autenticar com a API Cakto (OAuth2). Detalhes: ${err.message}`);
     }
-
-    throw new Error(`Falha ao autenticar com a API Cakto (OAuth2). Detalhes: ${lastErrorDetail}`);
   }
 
   async function isPlatformAdminUser(user: any): Promise<boolean> {
@@ -898,7 +809,7 @@ async function startServer() {
 
       const clientId = process.env.CAKTO_CLIENT_ID;
       const clientSecret = process.env.CAKTO_CLIENT_SECRET;
-      const apiUrl = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
+      const apiUrl = getCaktoApiBaseUrl();
 
       console.log("[Cakto Sync Express] Iniciando sincronização automática de produtos...");
       if (!clientId || !clientSecret) {
@@ -1032,7 +943,10 @@ async function startServer() {
 
       // Mapear por nome
       for (const item of checkoutsWithDetails) {
-        const offerId = extractOfferIdLocal(item.details);
+        const checkout = item.details;
+        console.log("JSON do checkout retornado pela API Cakto:");
+        console.log(JSON.stringify(checkout, null, 2));
+        const offerId = extractOfferIdLocal(checkout);
         if (!offerId) continue;
         
         const nameLower = item.name.toLowerCase();
@@ -1155,7 +1069,7 @@ async function startServer() {
 
       // Secure Logging (regras de Sprint de Segurança):
       console.log("[Cakto API Secure Log] Iniciando criação de checkout:");
-      console.log(`[Cakto API Secure Log] CAKTO_API_URL: ${process.env.CAKTO_API_URL || "https://api.cakto.com.br"}`);
+      console.log(`[Cakto API Secure Log] CAKTO_API_URL: ${getCaktoApiBaseUrl()}`);
       console.log(`[Cakto API Secure Log] CAKTO_CLIENT_ID existe: ${!!process.env.CAKTO_CLIENT_ID}`);
       console.log(`[Cakto API Secure Log] CAKTO_CLIENT_SECRET existe: ${!!process.env.CAKTO_CLIENT_SECRET}`);
       console.log(`[Cakto API Secure Log] offerId usado: ${offerId}`);
@@ -1199,78 +1113,34 @@ async function startServer() {
         });
       }
 
-      const accessToken = await getCaktoAccessToken();
-      const apiUrl = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
-
-      const payload = {
-        product_id: productId,
-        offer_id: offerId,
-        external_id: salonId,
-        customer: {
-          name: salonData?.ownerName || salonData?.name || "Cliente LumièreOS",
-          email: email || salonData?.ownerEmail || user.email || "",
-          phone: salonData?.phone || "",
-        },
-        redirect_url: `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/faturamento`,
-        metadata: {
-          salonId: salonId,
-          planId: planId,
-        }
-      };
-
-      console.log(`[Cakto API] Enviando requisição de checkout para ${apiUrl}/v1/checkouts...`);
-      const response = await fetch(`${apiUrl}/v1/checkouts`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(payload),
+      const checkoutEmail = (email || salonData?.ownerEmail || user.email || "").toLowerCase();
+      const params = new URLSearchParams({
+        name: salonData?.ownerName || salonData?.name || "Cliente",
+        email: checkoutEmail,
       });
 
-      // Secure Logging para HTTP status da Cakto
-      console.log(`[Cakto API Secure Log] Status HTTP da requisição para v1/checkouts: ${response.status}`);
-
-      let checkoutData: any;
-      const text = await response.text();
-      try {
-        checkoutData = JSON.parse(text);
-      } catch (e) {
-        throw new Error(`Resposta inválida da API Cakto: ${text}`);
+      if (salonData?.phone) {
+        const digits = String(salonData.phone).replace(/\D/g, "");
+        const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
+        params.append("phone", withCountry);
       }
 
-      if (!response.ok) {
-        throw new Error(checkoutData?.message || `Erro da Cakto (${response.status}): ${text}`);
-      }
-
-      const checkoutUrl = checkoutData.checkout_url || checkoutData.payment_url || checkoutData.url || checkoutData.data?.checkout_url || checkoutData.data?.url;
-      const orderId = checkoutData.order_id || checkoutData.id || checkoutData.data?.order_id || checkoutData.data?.id || `ord_${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-      const customerId = checkoutData.customer_id || checkoutData.customer?.id || checkoutData.data?.customer_id || "cus_cakto";
-      const subscriptionId = checkoutData.subscription_id || checkoutData.subscription?.id || checkoutData.data?.subscription_id || `sub_${Math.random().toString(36).substring(2, 11).toUpperCase()}`;
-
-      if (!checkoutUrl) {
-        throw new Error("A API do Cakto não retornou uma URL de checkout válida.");
-      }
+      const checkoutUrl = `https://pay.cakto.com.br/${offerId}?${params.toString()}`;
 
       await salonRef.update({
         billingProvider: "cakto",
-        caktoCustomerId: customerId,
-        caktoOrderId: orderId,
-        caktoSubscriptionId: subscriptionId,
-        caktoCheckoutUrl: checkoutUrl,
         caktoOfferId: offerId,
+        caktoCheckoutUrl: checkoutUrl,
+        caktoCheckoutEmail: checkoutEmail,
         subscriptionStatus: "pending",
         paymentStatus: "pending",
-        nextBillingDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
         updatedAt: Date.now(),
       });
 
-      console.log(`[Cakto Checkout] Checkout gerado e salvo para o salão ${salonId}: ${orderId}`);
+      console.log(`[Cakto Checkout] URL de checkout montada para o salão ${salonId}`);
       return res.json({
         success: true,
         checkoutUrl,
-        orderId,
-        subscriptionId,
       });
 
     } catch (err: any) {
