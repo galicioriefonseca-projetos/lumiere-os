@@ -1,6 +1,6 @@
 export type Role = 'owner' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
 export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'other';
-export type PlanType = 'start' | 'studio' | 'performance' | 'network' | 'founder' | 'enterprise';
+export type PlanType = 'start' | 'performance' | 'network' | 'founder' | 'enterprise';
 export type SubscriptionStatus = 'trial' | 'active' | 'pending_payment' | 'overdue' | 'canceled';
 export type ActivationStatus = 'active' | 'pending' | 'blocked' | 'canceled';
 export type PaymentStatus = 'none' | 'pending' | 'reported' | 'paid' | 'overdue' | 'rejected' | 'canceled';

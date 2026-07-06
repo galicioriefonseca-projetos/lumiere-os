@@ -1,4 +1,44 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getAdminDb } from "../_shared/firebaseAdmin.js";
+
+interface CaktoSettings {
+  productId: string;
+  startOfferId: string;
+  founderOfferId: string;
+  performanceOfferId: string;
+  networkOfferId: string;
+  enterpriseOfferId: string;
+  updatedAt?: number;
+}
+
+async function getCaktoSettingsCached(adminDb: any): Promise<CaktoSettings> {
+  try {
+    const docRef = adminDb.collection("settings").doc("cakto");
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      return {
+        productId: data?.productId || "",
+        startOfferId: data?.startOfferId || "",
+        founderOfferId: data?.founderOfferId || "",
+        performanceOfferId: data?.performanceOfferId || "",
+        networkOfferId: data?.networkOfferId || "",
+        enterpriseOfferId: data?.enterpriseOfferId || "",
+        updatedAt: data?.updatedAt
+      };
+    }
+  } catch (err) {
+    console.error("[Cakto Webhook Serverless Settings] Erro ao carregar configurações:", err);
+  }
+  return {
+    productId: "",
+    startOfferId: "",
+    founderOfferId: "",
+    performanceOfferId: "",
+    networkOfferId: "",
+    enterpriseOfferId: ""
+  };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -57,37 +97,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const subscriptionId = bodyData.subscription_id || bodyData.subscriptionId;
     const customerId = bodyData.customer_id || bodyData.customerId || bodyData.customer?.id;
     const salonId = bodyData.external_id || bodyData.externalId || metadataObj?.salonId;
+    const customerEmail = String(bodyData.customer?.email || bodyData.customerEmail || metadataObj?.email || "").trim().toLowerCase();
+    const offerId = String(bodyData.offer_id || bodyData.offerId || bodyData.checkout_offer_id || "").trim();
 
-    console.log(`[Cakto Webhook Serverless] Evento: ${eventName} | Order ID: ${orderId} | Subscription ID: ${subscriptionId} | Salon ID: ${salonId}`);
-
-    // Se for um evento genérico de teste/ping sem dados de pedidos ou salões, retornar sucesso 200 imediatamente
-    const isTestEvent = !orderId && !subscriptionId && !salonId;
+    const isTestEvent = !orderId && !subscriptionId && !salonId && !customerEmail;
     if (isTestEvent) {
       console.log("[Cakto Webhook Serverless] Recebido evento genérico de teste/ping da Cakto.");
       return res.status(200).json({ success: true, info: "Webhook de teste/ping recebido com sucesso." });
     }
 
-    const { getAdminDb } = await import("../_shared/firebaseAdmin.js");
     const adminDb = getAdminDb();
     let salonRef = null;
     let salonDoc = null;
 
-    // Buscar pelo ID do salão (external_id / metadata.salonId)
+    // 4. Correlação do salão:
+    // a. Tentar localizar pelo salonId direto (external_id / externalId / metadata.salonId)
     if (salonId) {
       salonRef = adminDb.collection("salons").doc(String(salonId));
       salonDoc = await salonRef.get();
     }
 
-    // Se não encontrado, buscar pelo Order ID correspondente no Firestore
-    if ((!salonDoc || !salonDoc.exists) && orderId) {
-      const snapshot = await adminDb.collection("salons").where("caktoOrderId", "==", String(orderId)).limit(1).get();
-      if (!snapshot.empty) {
-        salonDoc = snapshot.docs[0];
-        salonRef = salonDoc.ref;
-      }
-    }
-
-    // Se ainda não encontrado, buscar pela Subscription ID correspondente no Firestore
+    // b. Se não encontrado, buscar por caktoSubscriptionId
     if ((!salonDoc || !salonDoc.exists) && subscriptionId) {
       const snapshot = await adminDb.collection("salons").where("caktoSubscriptionId", "==", String(subscriptionId)).limit(1).get();
       if (!snapshot.empty) {
@@ -96,12 +126,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Se ainda não encontrado, buscar pelo e-mail do checkout (quarta tentativa)
-    // Nota: Em caso de múltiplos checkouts com o mesmo e-mail, pegaremos o mais recente (limit 1).
-    const customerEmail = bodyData.customer?.email || bodyData.customerEmail;
-    if ((!salonDoc || !salonDoc.exists) && customerEmail) {
+    // c. Se ainda não encontrado, buscar por caktoOrderId
+    if ((!salonDoc || !salonDoc.exists) && orderId) {
+      const snapshot = await adminDb.collection("salons").where("caktoOrderId", "==", String(orderId)).limit(1).get();
+      if (!snapshot.empty) {
+        salonDoc = snapshot.docs[0];
+        salonRef = salonDoc.ref;
+      }
+    }
+
+    // d. Se ainda não encontrado, buscar por caktoOfferId + caktoCheckoutEmail
+    if ((!salonDoc || !salonDoc.exists) && offerId && customerEmail) {
       const snapshot = await adminDb.collection("salons")
-        .where("caktoCheckoutEmail", "==", String(customerEmail).toLowerCase())
+        .where("caktoOfferId", "==", offerId)
+        .where("caktoCheckoutEmail", "==", customerEmail)
         .limit(1).get();
       if (!snapshot.empty) {
         salonDoc = snapshot.docs[0];
@@ -109,12 +147,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Se for um evento de teste com IDs simulados ou se o salão de fato não existir no banco
+    // e. Se ainda não encontrado, buscar por e-mail normalizado do cliente (checkout ou owner email)
+    if ((!salonDoc || !salonDoc.exists) && customerEmail) {
+      const snapshot = await adminDb.collection("salons")
+        .where("caktoCheckoutEmail", "==", customerEmail)
+        .limit(1).get();
+      if (!snapshot.empty) {
+        salonDoc = snapshot.docs[0];
+        salonRef = salonDoc.ref;
+      }
+    }
+
+    if ((!salonDoc || !salonDoc.exists) && customerEmail) {
+      const snapshot = await adminDb.collection("salons")
+        .where("ownerEmail", "==", customerEmail)
+        .limit(1).get();
+      if (!snapshot.empty) {
+        salonDoc = snapshot.docs[0];
+        salonRef = salonDoc.ref;
+      }
+    }
+
+    // 6. Adicionar logs seguros
+    console.log(`[Cakto Webhook Serverless Secure Log] Processando evento:
+    - Evento: ${eventName}
+    - Offer ID: ${offerId || "N/A"}
+    - Order ID: ${orderId || "N/A"}
+    - Subscription ID: ${subscriptionId || "N/A"}
+    - Customer Email: ${customerEmail || "N/A"}
+    - Salon ID: ${salonId || "N/A"}
+    - Salão Encontrado no Firestore: ${!!(salonDoc && salonDoc.exists)} (${salonDoc?.id || "N/A"})`);
+
+    // 5. Todos os eventos devem retornar 200 OK quando recebidos corretamente, mesmo se salão não for encontrado, mas logar claramente.
     if (!salonDoc || !salonDoc.exists || !salonRef) {
-      console.warn(`[Cakto Webhook Serverless] Salão correspondente não localizado para orderId: ${orderId}, subscriptionId: ${subscriptionId}, salonId: ${salonId}. Respondendo 200 OK para testes.`);
+      console.warn(`[Cakto Webhook Serverless] Salão correspondente não localizado para os parâmetros informados. Respondendo 200 OK.`);
       return res.status(200).json({
-        received: true,
-        info: "Salão correspondente não localizado. Evento tratado com sucesso como caso de teste/integração."
+        success: true,
+        info: "Salão correspondente não localizado. Evento tratado com sucesso como caso de teste/integração.",
+        salonFound: false
       });
     }
 
@@ -127,6 +197,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, info: "Evento duplicado já processado." });
     }
 
+    // Carregar configurações de ofertas para mapear o plano correto
+    const sData = await getCaktoSettingsCached(adminDb);
+    let mappedPlan = null;
+    if (offerId) {
+      const offId = offerId.trim();
+      if (sData.startOfferId && sData.startOfferId.trim() === offId) mappedPlan = "start";
+      else if (sData.founderOfferId && sData.founderOfferId.trim() === offId) mappedPlan = "founder";
+      else if (sData.performanceOfferId && sData.performanceOfferId.trim() === offId) mappedPlan = "performance";
+      else if (sData.networkOfferId && sData.networkOfferId.trim() === offId) mappedPlan = "network";
+      else if (sData.enterpriseOfferId && sData.enterpriseOfferId.trim() === offId) mappedPlan = "enterprise";
+    }
+
+    // Fallback baseado em nome do checkout
+    if (!mappedPlan) {
+      const checkoutName = String(bodyData.checkout_name || bodyData.name || "").toLowerCase();
+      if (checkoutName.includes("start")) mappedPlan = "start";
+      else if (checkoutName.includes("founder") || checkoutName.includes("pioneiro")) mappedPlan = "founder";
+      else if (checkoutName.includes("performance")) mappedPlan = "performance";
+      else if (checkoutName.includes("network")) mappedPlan = "network";
+      else if (checkoutName.includes("enterprise")) mappedPlan = "enterprise";
+    }
+
     const updatePayload: any = {
       billingProvider: "cakto",
       updatedAt: Date.now(),
@@ -137,56 +229,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (orderId) updatePayload.caktoOrderId = String(orderId);
     if (subscriptionId) updatePayload.caktoSubscriptionId = String(subscriptionId);
     if (customerId) updatePayload.caktoCustomerId = String(customerId);
+    if (offerId) updatePayload.caktoOfferId = offerId;
 
     const ev = String(eventName).toLowerCase();
 
-    // Mapeamento preciso de eventos da Cakto
-    if (
-      ev === "purchase_approved" ||
-      ev === "subscription_renewed" ||
-      ev.includes("approved") ||
-      ev.includes("paid") ||
-      ev.includes("success") ||
-      ev.includes("completed") ||
-      ev === "active"
-    ) {
-      updatePayload.paymentStatus = "paid";
+    // Regras de Status conforme especificado
+    if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
+      // 1. Ao receber evento aprovado/renovado:
       updatePayload.subscriptionStatus = "active";
+      updatePayload.caktoPaymentStatus = "paid";
+      updatePayload.paymentStatus = "paid";
+      updatePayload.plan = mappedPlan || salonData?.plan || "start";
+      
+      const periodEnd = bodyData.current_period_end || bodyData.next_billing_date || bodyData.nextBillingDate;
+      let nextBillingDate = periodEnd ? new Date(periodEnd).getTime() : (Date.now() + 30 * 24 * 60 * 60 * 1000);
+      if (isNaN(nextBillingDate)) {
+        nextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+      }
+      updatePayload.nextBillingDate = nextBillingDate;
+      if (periodEnd) {
+        updatePayload.currentPeriodEnd = periodEnd;
+      }
       updatePayload.lastPaymentAt = Date.now();
       updatePayload.lastPaymentAmount = bodyData.amount || bodyData.value || bodyData.price || 0;
-      updatePayload.nextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
-    } else if (
-      ev === "purchase_refused" ||
-      ev.includes("overdue") ||
-      ev.includes("failed") ||
-      ev.includes("rejected") ||
-      ev.includes("refused")
-    ) {
-      updatePayload.paymentStatus = "overdue";
-      updatePayload.subscriptionStatus = "overdue";
-    } else if (
-      ev === "subscription_canceled" ||
-      ev.includes("cancel") ||
-      ev.includes("deleted") ||
-      ev.includes("refunded")
-    ) {
-      updatePayload.paymentStatus = "canceled";
+
+    } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
+      // 2. Ao receber cancelado/refund/chargeback:
       updatePayload.subscriptionStatus = "canceled";
-    } else if (
-      ev === "subscription_created" ||
-      ev.includes("trial") ||
-      ev.includes("created")
-    ) {
-      updatePayload.paymentStatus = "pending";
-      updatePayload.subscriptionStatus = "trial";
+      updatePayload.caktoPaymentStatus = "canceled";
+      updatePayload.paymentStatus = "canceled";
+
+    } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
+      // 3. Ao receber recusado/inadimplente:
+      updatePayload.subscriptionStatus = "overdue";
+      updatePayload.caktoPaymentStatus = "refused";
+      updatePayload.paymentStatus = "overdue";
+
+    } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
+      // Criação de assinatura
+      if (salonData?.subscriptionStatus !== "active") {
+        updatePayload.subscriptionStatus = "pending";
+        updatePayload.caktoPaymentStatus = "pending";
+        updatePayload.paymentStatus = "pending";
+      }
     }
 
     await salonRef.update(updatePayload);
-    console.log(`[Cakto Webhook Serverless] Sincronização concluída para o salão ${salonDoc.id} (Evento: ${eventName})`);
+    console.log(`[Cakto Webhook Serverless] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${eventName})`);
 
-    return res.status(200).json({ success: true, eventProcessed: eventName });
+    return res.status(200).json({ success: true, eventProcessed: eventName, salonId: salonDoc.id });
   } catch (err: any) {
-    console.error("[Cakto Webhook Serverless] Falha ao processar webhook:", err);
+    console.error("[Cakto Webhook Serverless Error] Falha de processamento:", err);
     return res.status(500).json({ error: err.message || "Erro interno no processamento do webhook." });
   }
 }

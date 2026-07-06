@@ -43,6 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       billingProvider: salonData?.billingProvider || "none",
       subscriptionStatus: salonData?.subscriptionStatus || "none",
       paymentStatus: salonData?.paymentStatus || "none",
+      caktoPaymentStatus: salonData?.caktoPaymentStatus || "none",
       nextBillingDate: salonData?.nextBillingDate || null,
       caktoCustomerId: salonData?.caktoCustomerId || null,
       caktoOrderId: salonData?.caktoOrderId || null,

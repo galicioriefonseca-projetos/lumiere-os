@@ -4,10 +4,11 @@ import { verifyIdToken } from "../_shared/auth.js";
 
 interface CaktoSettings {
   productId: string;
+  startOfferId: string;
   founderOfferId: string;
-  studioOfferId: string;
   performanceOfferId: string;
   networkOfferId: string;
+  enterpriseOfferId: string;
   updatedAt?: number;
 }
 
@@ -27,20 +28,22 @@ async function getCaktoSettingsCached(): Promise<CaktoSettings> {
 
   let settingsData: CaktoSettings = {
     productId: "",
+    startOfferId: "",
     founderOfferId: "",
-    studioOfferId: "",
     performanceOfferId: "",
-    networkOfferId: ""
+    networkOfferId: "",
+    enterpriseOfferId: ""
   };
 
   if (docSnap.exists) {
     const data = docSnap.data();
     settingsData = {
       productId: data?.productId || "",
+      startOfferId: data?.startOfferId || "",
       founderOfferId: data?.founderOfferId || "",
-      studioOfferId: data?.studioOfferId || "",
       performanceOfferId: data?.performanceOfferId || "",
       networkOfferId: data?.networkOfferId || "",
+      enterpriseOfferId: data?.enterpriseOfferId || "",
       updatedAt: data?.updatedAt
     };
   }
@@ -102,17 +105,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const settings = await getCaktoSettingsCached();
       return res.status(200).json(settings);
     } else {
-      const { productId, founderOfferId, studioOfferId, performanceOfferId, networkOfferId } = req.body || {};
+      const { productId, startOfferId, founderOfferId, performanceOfferId, networkOfferId, enterpriseOfferId } = req.body || {};
 
       const adminDb = getAdminDb();
       const docRef = adminDb.collection("settings").doc("cakto");
 
       const updatedSettings = {
         productId: productId || "",
+        startOfferId: startOfferId || "",
         founderOfferId: founderOfferId || "",
-        studioOfferId: studioOfferId || "",
         performanceOfferId: performanceOfferId || "",
         networkOfferId: networkOfferId || "",
+        enterpriseOfferId: enterpriseOfferId || "",
         updatedAt: Date.now()
       };
 

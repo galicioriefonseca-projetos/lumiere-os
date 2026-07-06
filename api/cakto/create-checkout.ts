@@ -4,10 +4,11 @@ import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 interface CaktoSettings {
   productId: string;
+  startOfferId: string;
   founderOfferId: string;
-  studioOfferId: string;
   performanceOfferId: string;
   networkOfferId: string;
+  enterpriseOfferId: string;
   updatedAt?: number;
 }
 
@@ -25,20 +26,22 @@ async function getCaktoSettingsCached(): Promise<CaktoSettings> {
 
   let settingsData: CaktoSettings = {
     productId: "",
+    startOfferId: "",
     founderOfferId: "",
-    studioOfferId: "",
     performanceOfferId: "",
-    networkOfferId: ""
+    networkOfferId: "",
+    enterpriseOfferId: ""
   };
 
   if (docSnap.exists) {
     const data = docSnap.data();
     settingsData = {
       productId: data?.productId || "",
+      startOfferId: data?.startOfferId || "",
       founderOfferId: data?.founderOfferId || "",
-      studioOfferId: data?.studioOfferId || "",
       performanceOfferId: data?.performanceOfferId || "",
       networkOfferId: data?.networkOfferId || "",
+      enterpriseOfferId: data?.enterpriseOfferId || "",
       updatedAt: data?.updatedAt
     };
   }
@@ -94,10 +97,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const sData = await getCaktoSettingsCached();
       switch (planId) {
-        case "start": offerId = sData.founderOfferId || ""; break;
-        case "studio": offerId = sData.studioOfferId || ""; break;
+        case "start": offerId = sData.startOfferId || ""; break;
+        case "founder": offerId = sData.founderOfferId || ""; break;
         case "performance": offerId = sData.performanceOfferId || ""; break;
         case "network": offerId = sData.networkOfferId || ""; break;
+        case "enterprise": offerId = sData.enterpriseOfferId || ""; break;
         default: offerId = sData.founderOfferId || ""; break;
       }
     } catch (err) {
@@ -124,7 +128,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       params.append("phone", withCountry);
     }
     
-    const checkoutUrl = `https://pay.cakto.com.br/${offerId}?${params.toString()}`;
+    const buildCheckoutUrl = (offerIdOrUrl: string, searchParams: URLSearchParams): string => {
+      if (!offerIdOrUrl) return "";
+      const baseUrl = offerIdOrUrl.trim();
+      if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+        try {
+          const urlObj = new URL(baseUrl);
+          searchParams.forEach((value, key) => {
+            urlObj.searchParams.set(key, value);
+          });
+          return urlObj.toString();
+        } catch (e) {
+          const separator = baseUrl.includes("?") ? "&" : "?";
+          return `${baseUrl}${separator}${searchParams.toString()}`;
+        }
+      } else {
+        return `https://pay.cakto.com.br/${baseUrl}?${searchParams.toString()}`;
+      }
+    };
+
+    const checkoutUrl = buildCheckoutUrl(offerId, params);
 
     await salonRef.update({
       billingProvider: "cakto",

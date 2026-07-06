@@ -27,25 +27,10 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
       'Agenda de Horários'
     ]
   },
-  studio: {
-    planValue: 'studio',
-    name: 'Studio',
-    monthlyAmount: 397,
-    accessLevel: 'standard',
-    includesFutureUpdates: false,
-    maxProfessionals: 10,
-    features: [
-      'Até 10 profissionais',
-      'Gestão de Categorias',
-      'Histórico de checklists',
-      'Metas por equipe',
-      'Agendamentos completos'
-    ]
-  },
   performance: {
     planValue: 'performance',
     name: 'Performance',
-    monthlyAmount: 697,
+    monthlyAmount: 397,
     accessLevel: 'advanced',
     includesFutureUpdates: false,
     maxProfessionals: 20,
@@ -60,7 +45,7 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
   network: {
     planValue: 'network',
     name: 'Network',
-    monthlyAmount: 1497,
+    monthlyAmount: 797,
     accessLevel: 'full',
     includesFutureUpdates: true,
     maxProfessionals: 999, // unlimited
@@ -75,7 +60,7 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
   enterprise: {
     planValue: 'enterprise',
     name: 'Enterprise',
-    monthlyAmount: 2497,
+    monthlyAmount: 1997,
     accessLevel: 'full',
     includesFutureUpdates: true,
     maxProfessionals: 9999,
@@ -89,7 +74,7 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
   },
   founder: {
     planValue: 'founder',
-    name: 'Founder / Piloto',
+    name: 'Founder (Pioneiro)',
     monthlyAmount: 297,
     founderDurationDays: 90,
     nextAmount: 397,
@@ -140,11 +125,11 @@ export function hasPlanFeature(plan: PlanType | string | undefined, feature: str
   }
 
   if (feature === 'checklist' || feature === 'checklist_essenza') {
-    return normalizedPlan === 'studio' || normalizedPlan === 'performance';
+    return normalizedPlan === 'performance';
   }
 
   if (feature === 'goals' || feature === 'metas') {
-    return normalizedPlan === 'studio' || normalizedPlan === 'performance';
+    return normalizedPlan === 'performance';
   }
 
   return true;

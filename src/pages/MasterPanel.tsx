@@ -29,47 +29,69 @@ export default function MasterPanel() {
   const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'cakto'>('salons');
   const [caktoSettings, setCaktoSettings] = useState({
     productId: '',
+    startOfferId: '',
     founderOfferId: '',
-    studioOfferId: '',
     performanceOfferId: '',
-    networkOfferId: ''
+    networkOfferId: '',
+    enterpriseOfferId: ''
   });
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [syncingProducts, setSyncingProducts] = useState(false);
 
-  const syncProducts = async () => {
+  // States para homologação da Cakto
+  const [testResult, setTestResult] = useState<any | null>(null);
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [testEvent, setTestEvent] = useState('purchase_approved');
+  const [testPlan, setTestPlan] = useState('start');
+  const [testSalonId, setTestSalonId] = useState('');
+
+  const executeWebhookTest = async () => {
     if (!currentUser) return;
-    setSyncingProducts(true);
+    if (!testSalonId) {
+      toast.error("Por favor, selecione ou informe o ID do salão para o teste.");
+      return;
+    }
+
+    setTestingWebhook(true);
+    setTestResult(null);
+
+    let offerId = '';
+    if (testPlan === 'start') offerId = caktoSettings.startOfferId || 'off_simulated_start';
+    else if (testPlan === 'founder') offerId = caktoSettings.founderOfferId || 'off_simulated_founder';
+    else if (testPlan === 'performance') offerId = caktoSettings.performanceOfferId || 'off_simulated_performance';
+    else if (testPlan === 'network') offerId = caktoSettings.networkOfferId || 'off_simulated_network';
+    else if (testPlan === 'enterprise') offerId = caktoSettings.enterpriseOfferId || 'off_simulated_enterprise';
+
     try {
       const token = await currentUser.getIdToken();
-      const res = await fetch('/api/cakto/sync-products', {
+      const res = await fetch('/api/cakto/webhook-test', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        }
+        },
+        body: JSON.stringify({
+          salonId: testSalonId,
+          offerId,
+          subscriptionId: `sub_homolog_${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
+          orderId: `ord_homolog_${Math.random().toString(36).substring(2, 11).toUpperCase()}`,
+          event: testEvent
+        })
       });
+
       if (!res.ok) {
-        throw new Error(await res.text() || 'Falha ao sincronizar produtos');
+        throw new Error(await res.text() || 'Falha ao executar teste do webhook');
       }
+
       const data = await res.json();
-      if (data.success && data.settings) {
-        setCaktoSettings({
-          productId: data.settings.productId || '',
-          founderOfferId: data.settings.founderOfferId || '',
-          studioOfferId: data.settings.studioOfferId || '',
-          performanceOfferId: data.settings.performanceOfferId || '',
-          networkOfferId: data.settings.networkOfferId || ''
-        });
-        toast.success(`Sincronização concluída! Produto '${data.productName}' mapeado com sucesso.`);
-      } else {
-        throw new Error(data.error || 'Resposta inválida do servidor');
-      }
+      setTestResult(data);
+      toast.success('Simulação de webhook executada com sucesso!');
     } catch (err: any) {
       console.error(err);
-      toast.error(`Erro ao sincronizar produtos: ${err.message}`);
+      toast.error(`Erro ao executar teste do webhook: ${err.message}`);
     } finally {
-      setSyncingProducts(false);
+      setTestingWebhook(false);
     }
   };
 
@@ -89,10 +111,11 @@ export default function MasterPanel() {
       const data = await res.json();
       setCaktoSettings({
         productId: data.productId || '',
+        startOfferId: data.startOfferId || '',
         founderOfferId: data.founderOfferId || '',
-        studioOfferId: data.studioOfferId || '',
         performanceOfferId: data.performanceOfferId || '',
-        networkOfferId: data.networkOfferId || ''
+        networkOfferId: data.networkOfferId || '',
+        enterpriseOfferId: data.enterpriseOfferId || ''
       });
     } catch (err: any) {
       console.error(err);
@@ -124,6 +147,31 @@ export default function MasterPanel() {
       toast.error(`Erro ao salvar configurações Cakto: ${err.message}`);
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const syncCaktoProducts = async () => {
+    if (!currentUser) return;
+    setSyncingProducts(true);
+    try {
+      const token = await currentUser.getIdToken();
+      const res = await fetch('/api/cakto/sync-products', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!res.ok) {
+        throw new Error(await res.text() || 'Falha ao sincronizar ofertas');
+      }
+      const data = await res.json();
+      toast.success(data.message || 'Sincronização realizada com sucesso!');
+      await fetchCaktoSettings();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Erro ao sincronizar ofertas Cakto: ${err.message}`);
+    } finally {
+      setSyncingProducts(false);
     }
   };
 
@@ -169,6 +217,14 @@ export default function MasterPanel() {
       setFilteredSalons(salons);
     }
   }, [search, salons]);
+
+  useEffect(() => {
+    if (userData?.salonId) {
+      setTestSalonId(userData.salonId);
+    } else if (salons.length > 0 && !testSalonId) {
+      setTestSalonId(salons[0].id);
+    }
+  }, [userData, salons]);
 
   const confirmAction = async () => {
     if (!selectedSalon) return;
@@ -722,105 +778,212 @@ export default function MasterPanel() {
         )}
 
         {activeTab === 'cakto' && (
-          <Card className="border-border bg-black/40">
-             <CardHeader>
-               <CardTitle className="text-xl flex items-center gap-2">
-                 <Sparkles className="w-5 h-5 text-destructive" />
-                 Integração Cakto
-               </CardTitle>
-               <p className="text-sm text-muted-foreground text-left">Cadastre e edite dinamicamente os IDs do produto e das ofertas da Cakto para faturamento dinâmico.</p>
-             </CardHeader>
-             <CardContent className="space-y-4">
-               {loadingSettings ? (
-                 <div className="flex justify-center p-8">
-                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                 </div>
-               ) : (
-                 <div className="space-y-4 max-w-xl text-left">
-                   <div className="space-y-1.5">
-                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cakto Product ID</label>
-                     <Input
-                       placeholder="Ex: prod_..."
-                       className="bg-card border-border text-white"
-                       value={caktoSettings.productId}
-                       onChange={(e) => setCaktoSettings({ ...caktoSettings, productId: e.target.value })}
-                     />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="border-border bg-black/40">
+               <CardHeader>
+                 <CardTitle className="text-xl flex items-center gap-2">
+                   <Sparkles className="w-5 h-5 text-destructive" />
+                   Integração Cakto
+                 </CardTitle>
+                 <p className="text-sm text-muted-foreground text-left">Cadastre e edite dinamicamente os IDs do produto e das ofertas da Cakto para faturamento dinâmico.</p>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                 {loadingSettings ? (
+                   <div className="flex justify-center p-8">
+                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                    </div>
-                   <div className="space-y-1.5">
-                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Founder (Start)</label>
-                     <Input
-                       placeholder="Ex: off_..."
-                       className="bg-card border-border text-white"
-                       value={caktoSettings.founderOfferId}
-                       onChange={(e) => setCaktoSettings({ ...caktoSettings, founderOfferId: e.target.value })}
-                     />
-                   </div>
-                   <div className="space-y-1.5">
-                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Studio</label>
-                     <Input
-                       placeholder="Ex: off_..."
-                       className="bg-card border-border text-white"
-                       value={caktoSettings.studioOfferId}
-                       onChange={(e) => setCaktoSettings({ ...caktoSettings, studioOfferId: e.target.value })}
-                     />
-                   </div>
-                   <div className="space-y-1.5">
-                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Performance</label>
-                     <Input
-                       placeholder="Ex: off_..."
-                       className="bg-card border-border text-white"
-                       value={caktoSettings.performanceOfferId}
-                       onChange={(e) => setCaktoSettings({ ...caktoSettings, performanceOfferId: e.target.value })}
-                     />
-                   </div>
-                   <div className="space-y-1.5">
-                     <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Network</label>
-                     <Input
-                       placeholder="Ex: off_..."
-                       className="bg-card border-border text-white"
-                       value={caktoSettings.networkOfferId}
-                       onChange={(e) => setCaktoSettings({ ...caktoSettings, networkOfferId: e.target.value })}
-                     />
-                   </div>
-                   <div className="pt-2 flex flex-wrap gap-3">
-                     <Button
-                       onClick={saveCaktoSettings}
-                       disabled={savingSettings || syncingProducts}
-                       className="bg-destructive hover:bg-destructive/80 text-white font-medium"
-                     >
-                       {savingSettings ? (
-                         <>
-                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                           Salvando...
-                         </>
-                       ) : (
-                         'Salvar Configurações'
-                       )}
-                     </Button>
+                 ) : (
+                   <div className="space-y-4 text-left">
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cakto Product ID</label>
+                       <Input
+                         placeholder="Ex: prod_..."
+                         className="bg-card border-border text-white"
+                         value={caktoSettings.productId}
+                         onChange={(e) => setCaktoSettings({ ...caktoSettings, productId: e.target.value })}
+                       />
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Start</label>
+                       <Input
+                         placeholder="Ex: off_..."
+                         className="bg-card border-border text-white"
+                         value={caktoSettings.startOfferId}
+                         onChange={(e) => setCaktoSettings({ ...caktoSettings, startOfferId: e.target.value })}
+                       />
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Founder</label>
+                       <Input
+                         placeholder="Ex: off_..."
+                         className="bg-card border-border text-white"
+                         value={caktoSettings.founderOfferId}
+                         onChange={(e) => setCaktoSettings({ ...caktoSettings, founderOfferId: e.target.value })}
+                       />
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Performance</label>
+                       <Input
+                         placeholder="Ex: off_..."
+                         className="bg-card border-border text-white"
+                         value={caktoSettings.performanceOfferId}
+                         onChange={(e) => setCaktoSettings({ ...caktoSettings, performanceOfferId: e.target.value })}
+                       />
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Network</label>
+                       <Input
+                         placeholder="Ex: off_..."
+                         className="bg-card border-border text-white"
+                         value={caktoSettings.networkOfferId}
+                         onChange={(e) => setCaktoSettings({ ...caktoSettings, networkOfferId: e.target.value })}
+                       />
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Enterprise</label>
+                       <Input
+                         placeholder="Ex: off_..."
+                         className="bg-card border-border text-white"
+                         value={caktoSettings.enterpriseOfferId}
+                         onChange={(e) => setCaktoSettings({ ...caktoSettings, enterpriseOfferId: e.target.value })}
+                       />
+                     </div>
+                     <div className="pt-2 flex flex-wrap gap-3">
+                       <Button
+                         onClick={saveCaktoSettings}
+                         disabled={savingSettings || syncingProducts}
+                         className="bg-destructive hover:bg-destructive/80 text-white font-medium"
+                       >
+                         {savingSettings ? (
+                           <>
+                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                             Salvando...
+                           </>
+                         ) : (
+                           'Salvar Configurações'
+                         )}
+                       </Button>
 
-                     <Button
-                       onClick={syncProducts}
-                       disabled={savingSettings || syncingProducts}
-                       variant="outline"
-                       className="border-border hover:bg-white/5 text-white font-medium"
-                     >
-                       {syncingProducts ? (
-                         <>
-                           <Loader2 className="w-4 h-4 mr-2 animate-spin text-white" />
-                           Sincronizando...
-                         </>
-                       ) : (
-                         <>
-                           <RefreshCcw className="w-4 h-4 mr-2 text-white" />
-                           Sincronizar Produtos da Cakto
-                         </>
-                       )}
-                     </Button>
+                       <Button
+                         onClick={syncCaktoProducts}
+                         disabled={savingSettings || syncingProducts}
+                         variant="outline"
+                         className="border-destructive/30 hover:bg-destructive/10 text-white font-medium"
+                       >
+                         {syncingProducts ? (
+                           <>
+                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                             Sincronizando...
+                           </>
+                         ) : (
+                           'Sincronizar Ofertas'
+                         )}
+                       </Button>
+                     </div>
                    </div>
-                 </div>
-               )}
-             </CardContent>
-          </Card>
+                 )}
+               </CardContent>
+            </Card>
+
+            <Card className="border-border bg-black/40">
+               <CardHeader>
+                 <CardTitle className="text-xl flex items-center gap-2">
+                   <RefreshCcw className="w-5 h-5 text-destructive" />
+                   Homologação Cakto
+                 </CardTitle>
+                 <p className="text-sm text-muted-foreground text-left">Permite simular o envio de eventos de webhook para testar a ativação, reativação, cancelamento ou recusado de planos.</p>
+               </CardHeader>
+               <CardContent className="space-y-4 text-left">
+                  <div className="space-y-1.5">
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Empresa/Salão para Teste</label>
+                    <Select value={testSalonId} onValueChange={setTestSalonId}>
+                      <SelectTrigger className="bg-card border-border text-white">
+                        <SelectValue placeholder="Selecione o salão para testar" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border text-white">
+                        {salons.map((salon) => (
+                          <SelectItem key={salon.id} value={salon.id}>
+                            {salon.name} ({salon.ownerEmail})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Evento do Webhook</label>
+                    <Select value={testEvent} onValueChange={setTestEvent}>
+                      <SelectTrigger className="bg-card border-border text-white">
+                        <SelectValue placeholder="Selecione o evento" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border text-white">
+                        <SelectItem value="purchase_approved">Aprovação de Compra (purchase_approved)</SelectItem>
+                        <SelectItem value="subscription_created">Assinatura Criada (subscription_created)</SelectItem>
+                        <SelectItem value="subscription_renewed">Assinatura Renovada (subscription_renewed)</SelectItem>
+                        <SelectItem value="subscription_canceled">Assinatura Cancelada (subscription_canceled)</SelectItem>
+                        <SelectItem value="purchase_refused">Pagamento Recusado (purchase_refused)</SelectItem>
+                        <SelectItem value="subscription_renewal_refused">Renovação Recusada (subscription_renewal_refused)</SelectItem>
+                        <SelectItem value="refund">Reembolso (refund)</SelectItem>
+                        <SelectItem value="chargeback">Disputa/Estorno (chargeback)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Plano Correspondente</label>
+                    <Select value={testPlan} onValueChange={setTestPlan}>
+                      <SelectTrigger className="bg-card border-border text-white">
+                        <SelectValue placeholder="Selecione o plano" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border text-white">
+                        <SelectItem value="start">Start</SelectItem>
+                        <SelectItem value="founder">Founder (Pioneiro)</SelectItem>
+                        <SelectItem value="performance">Performance</SelectItem>
+                        <SelectItem value="network">Network</SelectItem>
+                        <SelectItem value="enterprise">Enterprise</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="pt-2">
+                    <Button
+                      onClick={executeWebhookTest}
+                      disabled={testingWebhook}
+                      className="bg-destructive hover:bg-destructive/80 text-white font-medium w-full animate-none"
+                    >
+                      {testingWebhook ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Simulando Webhook...
+                        </>
+                      ) : (
+                        'Executar Teste'
+                      )}
+                    </Button>
+                  </div>
+
+                  {testResult && (
+                    <div className="mt-4 p-4 rounded-xl border border-border bg-black/60 space-y-3 text-xs font-mono">
+                      <div className="flex items-center gap-1.5 text-green-400 font-bold text-sm">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>✅ Sucesso</span>
+                      </div>
+                      <div className="space-y-1 text-muted-foreground">
+                        <div>
+                          <span className="text-white">Plano Atualizado:</span> <span className="text-[#D4AF37] uppercase font-bold">{testResult.plan}</span>
+                        </div>
+                        <div>
+                          <span className="text-white">Status da Assinatura:</span> <span className="text-indigo-400 uppercase font-bold">{testResult.status}</span>
+                        </div>
+                        <div>
+                          <span className="text-white">Documento Alterado:</span> <span className="text-zinc-300 break-all">{testResult.firestorePath}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+               </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* Info dialog instructions */}
@@ -858,11 +1021,11 @@ export default function MasterPanel() {
                         <SelectValue placeholder="Selecione o plano" />
                      </SelectTrigger>
                      <SelectContent>
-                       <SelectItem value="start">Start</SelectItem>
-                       <SelectItem value="studio">Studio</SelectItem>
-                       <SelectItem value="performance">Performance</SelectItem>
-                       <SelectItem value="network">Network</SelectItem>
-                       <SelectItem value="founder">Founder</SelectItem>
+                        <SelectItem value="start">Start</SelectItem>
+                         <SelectItem value="founder">Founder (Pioneiro)</SelectItem>
+                        <SelectItem value="performance">Performance</SelectItem>
+                        <SelectItem value="network">Network</SelectItem>
+                        <SelectItem value="enterprise">Enterprise</SelectItem>
                      </SelectContent>
                    </Select>
                 </div>

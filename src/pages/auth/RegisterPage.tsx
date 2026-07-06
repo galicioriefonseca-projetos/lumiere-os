@@ -45,10 +45,10 @@ export default function RegisterPage() {
           id: 'start',
           name: 'Start',
           price: 'R$ 197/mês',
-          maxProfessionals: 'Até 2 profissionais',
-          limit: 2,
+          maxProfessionals: 'Até 5 profissionais',
+          limit: 5,
           benefits: [
-            'Até 2 profissionais habilitados',
+            'Até 5 profissionais habilitados',
             'Checklist operacional de excelência',
             'Controle completo de agenda',
             'Painel operacional básico',
@@ -57,28 +57,29 @@ export default function RegisterPage() {
         };
       case '2 a 5':
         return {
-          id: 'studio',
-          name: 'Studio',
-          price: 'R$ 397/mês',
-          maxProfessionals: 'Até 5 profissionais',
-          limit: 5,
+          id: 'founder',
+          name: 'Founder (Pioneiro)',
+          price: 'R$ 297/mês',
+          maxProfessionals: 'Até 22 profissionais',
+          limit: 22,
           benefits: [
-            'Até 5 profissionais habilitados',
-            'Gestão completa de Categorias',
-            'Histórico de checklists diários',
+            'Até 22 profissionais habilitados',
+            'Acesso completo a todos os recursos',
+            'Sem bloqueios ou limites restritos',
+            'Checklist Essenza',
             'Metas de faturamento por colaborador',
-            'Agendamento inteligente premium'
+            'Suporte prioritário e implantação assistida'
           ]
         };
       case '6 a 10':
         return {
           id: 'performance',
           name: 'Performance',
-          price: 'R$ 697/mês',
-          maxProfessionals: 'Até 10 profissionais',
-          limit: 10,
+          price: 'R$ 397/mês',
+          maxProfessionals: 'Até 20 profissionais',
+          limit: 20,
           benefits: [
-            'Até 10 profissionais habilitados',
+            'Até 20 profissionais habilitados',
             'Gestão automatizada de Comissões',
             'Avaliações operacionais (Padrão Essenza)',
             'Módulo de Gamificação completo (Ranking & Desafios)',
@@ -89,11 +90,11 @@ export default function RegisterPage() {
         return {
           id: 'network',
           name: 'Network',
-          price: 'R$ 1497/mês',
-          maxProfessionals: 'Até 20 profissionais',
-          limit: 20,
+          price: 'R$ 797/mês',
+          maxProfessionals: 'Profissionais Ilimitados',
+          limit: 999,
           benefits: [
-            'Até 20 profissionais habilitados',
+            'Profissionais Ilimitados',
             'Gestão Multiunidade integrada',
             'Painel Master de Rede para franquias',
             'Relatórios executivos e auditorias',
@@ -104,7 +105,7 @@ export default function RegisterPage() {
         return {
           id: 'enterprise',
           name: 'Enterprise',
-          price: 'R$ 2497/mês',
+          price: 'R$ 1997/mês',
           maxProfessionals: 'Profissionais Ilimitados',
           limit: 9999,
           benefits: [
@@ -120,10 +121,10 @@ export default function RegisterPage() {
           id: 'start',
           name: 'Start',
           price: 'R$ 197/mês',
-          maxProfessionals: 'Até 2 profissionais',
-          limit: 2,
+          maxProfessionals: 'Até 5 profissionais',
+          limit: 5,
           benefits: [
-            'Até 2 profissionais habilitados',
+            'Até 5 profissionais habilitados',
             'Checklist operacional de excelência',
             'Controle completo de agenda',
             'Painel operacional básico',

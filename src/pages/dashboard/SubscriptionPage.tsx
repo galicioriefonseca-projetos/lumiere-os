@@ -501,24 +501,11 @@ export default function SubscriptionPage() {
                   onChange={(e) => setSelectedPlan(e.target.value)}
                   className="bg-zinc-950 border border-zinc-800 text-white text-xs h-10 rounded-xl px-3 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
                 >
-                  <option value="start">Plano Start (R$ 197/mês)</option>
-                  <option value="studio">Plano Studio (R$ 397/mês)</option>
-                  <option value="performance">Plano Performance (R$ 697/mês)</option>
-                  <option value="network">Plano Network (R$ 1497/mês)</option>
-                  <option value="founder">Plano Founder (R$ 297/mês)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5 flex flex-col">
-                <label className="text-xs font-medium text-zinc-400">Método de Pagamento</label>
-                <select 
-                  value={paymentMethod} 
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="bg-zinc-950 border border-zinc-800 text-white text-xs h-10 rounded-xl px-3 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
-                >
-                  <option value="credit_card">💳 Cartão de Crédito Recorrente</option>
-                  <option value="pix">⚡ PIX Integrado</option>
-                  <option value="boleto">📄 Boleto Bancário</option>
+                  <option value="start">Start (R$ 197/mês)</option>
+                  <option value="founder">Founder (Pioneiro) (R$ 297/mês)</option>
+                  <option value="performance">Performance (R$ 397/mês)</option>
+                  <option value="network">Network (R$ 797/mês)</option>
+                  <option value="enterprise">Enterprise (R$ 1997/mês)</option>
                 </select>
               </div>
 
@@ -548,9 +535,7 @@ export default function SubscriptionPage() {
                     <Loader2 className="w-4 h-4 animate-spin" /> Processando...
                   </>
                 ) : (
-                  <>
-                    <Zap className="w-4 h-4 fill-black" /> Confirmar e Ir para Pagamento
-                  </>
+                  'Continuar para pagamento seguro'
                 )}
               </button>
             </div>

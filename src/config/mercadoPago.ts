@@ -1,12 +1,12 @@
 // src/config/mercadoPago.ts
-export type SubscriptionPlan = 'founder' | 'start' | 'studio' | 'performance' | 'network';
+export type SubscriptionPlan = 'founder' | 'start' | 'performance' | 'network' | 'enterprise';
 
 export const MERCADO_PAGO_PLANS = {
-  founder: { label: 'Founder - Vitalício', defaultAmount: 297 },
+  founder: { label: 'Founder (Pioneiro)', defaultAmount: 297 },
   start: { label: 'Plano Start', defaultAmount: 197 },
-  studio: { label: 'Plano Studio', defaultAmount: 397 },
-  performance: { label: 'Plano Performance', defaultAmount: 697 },
-  network: { label: 'Plano Network', defaultAmount: 1497 },
+  performance: { label: 'Plano Performance', defaultAmount: 397 },
+  network: { label: 'Plano Network', defaultAmount: 797 },
+  enterprise: { label: 'Plano Enterprise', defaultAmount: 1997 },
 };
 
 export const MERCADO_PAGO_STATUS_LABELS: Record<string, string> = {
