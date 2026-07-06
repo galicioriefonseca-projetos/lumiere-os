@@ -155,32 +155,6 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
   - Salon ID: ${salonId || "N/A"}
   - Salão Encontrado no Firestore: ${!!(salonDoc && salonDoc.exists)} (${salonDoc?.id || "N/A"})`);
 
-  if (!salonDoc || !salonDoc.exists || !salonRef) {
-    console.warn(`[Cakto Webhook Processor] Salão correspondente não localizado para os parâmetros informados.`);
-    return {
-      success: true,
-      info: "Salão correspondente não localizado. Evento tratado com sucesso como caso de teste/integração.",
-      salonFound: false
-    };
-  }
-
-  const salonData = salonDoc.data();
-  const eventId = normalizedData.event_id || normalizedData.eventId || `${eventName}_${orderId || "test"}_${Date.now()}`;
-
-  // Evitar processamento de eventos duplicados
-  if (!skipTokenValidation && salonData?.caktoLastEventId === eventId) {
-    console.log(`[Cakto Webhook Processor] Evento duplicado já processado anteriormente: ${eventId}. Ignorando.`);
-    return {
-      success: true,
-      info: "Evento duplicado já processado.",
-      salonFound: true,
-      salonId: salonDoc.id,
-      plan: salonData?.plan || "start",
-      status: salonData?.subscriptionStatus || "active",
-      firestorePath: `salons/${salonDoc.id}`
-    };
-  }
-
   // Carregar configurações de ofertas para mapear o plano correto
   const sData = await getCaktoSettingsCached(adminDb);
   let mappedPlan = null;
@@ -203,6 +177,9 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
     else if (checkoutName.includes("enterprise")) mappedPlan = "enterprise";
   }
 
+  const ev = String(eventName).toLowerCase();
+  const eventId = normalizedData.event_id || normalizedData.eventId || `${eventName}_${orderId || "test"}_${Date.now()}`;
+
   const updatePayload: any = {
     billingProvider: "cakto",
     updatedAt: Date.now(),
@@ -215,15 +192,16 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
   if (customerId) updatePayload.caktoCustomerId = String(customerId);
   if (offerId) updatePayload.caktoOfferId = offerId;
 
-  const ev = String(eventName).toLowerCase();
-
   // Regras de Status conforme especificado
   if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
     // 1. Ao receber evento aprovado/renovado:
     updatePayload.subscriptionStatus = "active";
+    updatePayload.activationStatus = "active";
     updatePayload.caktoPaymentStatus = "paid";
     updatePayload.paymentStatus = "paid";
-    updatePayload.plan = mappedPlan || salonData?.plan || "start";
+    updatePayload.plan = mappedPlan || (salonDoc?.exists ? salonDoc.data()?.plan : null) || "start";
+    updatePayload.isActive = true;
+    updatePayload.ownerEmail = customerEmail || (salonDoc?.exists ? salonDoc.data()?.ownerEmail : null) || "";
     
     const periodEnd = normalizedData.current_period_end || normalizedData.next_billing_date || normalizedData.nextBillingDate;
     let nextBillingDate = periodEnd ? new Date(periodEnd).getTime() : (Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -240,22 +218,75 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
   } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
     // 2. Ao receber cancelado/refund/chargeback:
     updatePayload.subscriptionStatus = "canceled";
+    updatePayload.activationStatus = "canceled";
     updatePayload.caktoPaymentStatus = "canceled";
     updatePayload.paymentStatus = "canceled";
+    updatePayload.isActive = false;
 
   } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
     // 3. Ao receber recusado/inadimplente:
     updatePayload.subscriptionStatus = "overdue";
+    updatePayload.activationStatus = "blocked";
     updatePayload.caktoPaymentStatus = "refused";
     updatePayload.paymentStatus = "overdue";
+    updatePayload.isActive = false;
 
   } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
     // Criação de assinatura
-    if (salonData?.subscriptionStatus !== "active") {
+    if (salonDoc?.exists && salonDoc.data()?.subscriptionStatus !== "active") {
       updatePayload.subscriptionStatus = "pending";
       updatePayload.caktoPaymentStatus = "pending";
       updatePayload.paymentStatus = "pending";
     }
+  }
+
+  // Se o salão não existe e o pagamento foi aprovado ou se temos um salonId, criamos o salão!
+  if (!salonDoc || !salonDoc.exists || !salonRef) {
+    const finalSalonId = salonId || `salon_${Date.now()}`;
+    salonRef = adminDb.collection("salons").doc(String(finalSalonId));
+    
+    const isApproved = updatePayload.subscriptionStatus === "active";
+    const newSalonData = {
+      id: String(finalSalonId),
+      name: normalizedData.customer?.name || "LumièreOS Salon",
+      ownerEmail: customerEmail || "",
+      ownerName: normalizedData.customer?.name || "",
+      plan: mappedPlan || "start",
+      subscriptionStatus: updatePayload.subscriptionStatus || "pending",
+      activationStatus: updatePayload.activationStatus || "pending",
+      isActive: isApproved,
+      billingProvider: "cakto",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...updatePayload
+    };
+
+    await salonRef.set(newSalonData);
+    console.log(`[Cakto Webhook Processor] Salão novo criado e ativado com ID: ${finalSalonId}`);
+    
+    return {
+      success: true,
+      salonUpdated: true,
+      plan: newSalonData.plan,
+      status: newSalonData.subscriptionStatus,
+      firestorePath: `salons/${finalSalonId}`
+    };
+  }
+
+  const salonData = salonDoc.data();
+
+  // Evitar processamento de eventos duplicados
+  if (!skipTokenValidation && salonData?.caktoLastEventId === eventId) {
+    console.log(`[Cakto Webhook Processor] Evento duplicado já processado anteriormente: ${eventId}. Ignorando.`);
+    return {
+      success: true,
+      info: "Evento duplicado já processado.",
+      salonFound: true,
+      salonId: salonDoc.id,
+      plan: salonData?.plan || "start",
+      status: salonData?.subscriptionStatus || "active",
+      firestorePath: `salons/${salonDoc.id}`
+    };
   }
 
   await salonRef.update(updatePayload);

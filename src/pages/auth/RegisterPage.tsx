@@ -3,26 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Sparkles, Chrome, ChevronRight, ChevronLeft, Check, Gift, Building, MapPin, Phone, User, Mail, Lock, Users } from 'lucide-react';
-import { auth, db } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { Sparkles, ChevronRight, ChevronLeft, Check, Gift, Building, MapPin, Phone, User, Mail, Users } from 'lucide-react';
+import { auth } from '@/lib/firebase';
 import { toast } from 'sonner';
-import { useAuth } from '../../contexts/AuthContext';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
 
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const { signInWithGoogleForRegister } = useAuth();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -31,7 +18,6 @@ export default function RegisterPage() {
     salonName: '',
     phone: '',
     email: '',
-    password: '',
     city: '',
     state: '',
     businessSegment: '' as 'Salão de Beleza' | 'Barbearia' | 'Clínica de Estética' | '',
@@ -134,21 +120,6 @@ export default function RegisterPage() {
     }
   };
 
-  const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
-    const errInfo = {
-      error: error instanceof Error ? error.message : String(error),
-      authInfo: {
-        userId: auth.currentUser?.uid,
-        email: auth.currentUser?.email,
-        emailVerified: auth.currentUser?.emailVerified,
-      },
-      operationType,
-      path
-    };
-    console.error('Firestore Error: ', JSON.stringify(errInfo));
-    throw new Error(JSON.stringify(errInfo));
-  };
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
@@ -167,7 +138,6 @@ export default function RegisterPage() {
     formData.salonName.trim() !== '' &&
     formData.phone.trim() !== '' &&
     formData.email.trim() !== '' &&
-    formData.password.trim() !== '' &&
     formData.city.trim() !== '' &&
     formData.state.trim() !== '' &&
     formData.businessSegment !== '';
@@ -179,125 +149,45 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // 1. Create Auth User
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-      const user = userCredential.user;
-
-      await updateProfile(user, { displayName: formData.ownerName });
-
-      // Calculate trial end date (7 days from now)
-      const now = Date.now();
-      const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
-
       // Auto-generate a Salon ID
       const salonId = crypto.randomUUID();
 
-      // For backward compatibility mapping
-      let legacyBusinessType = 'salon';
-      if (formData.businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
-      if (formData.businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
+      // Fazer chamada ao backend seguro para criar o checkout e salvar o salão pendente
+      const response = await fetch('/api/cakto/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          salonId,
+          planId: reco.id,
+          email: formData.email,
+          ownerName: formData.ownerName,
+          salonName: formData.salonName,
+          phone: formData.phone,
+          city: formData.city,
+          state: formData.state,
+          businessSegment: formData.businessSegment,
+          estimatedProfessionals: formData.estimatedProfessionals,
+        }),
+      });
 
-      // 2. Create Salon Document
-      const salonData = {
-        id: salonId,
-        name: formData.salonName,
-        ownerId: user.uid,
-        ownerEmail: formData.email,
-        businessType: legacyBusinessType,
-        plan: reco.id,
-        subscriptionStatus: 'trial',
-        activationStatus: 'active',
-        trialEndsAt: trialEndsAt,
-        isActive: true,
-        professionalsLimit: reco.limit,
-        createdAt: now,
-        updatedAt: now,
-
-        // Optional onboarding commercial fields
-        ownerName: formData.ownerName,
-        businessSegment: formData.businessSegment,
-        estimatedProfessionals: formData.estimatedProfessionals,
-        city: formData.city,
-        state: formData.state,
-        phone: formData.phone,
-        recommendedPlan: reco.id
-      };
-
-      try {
-        await setDoc(doc(db, 'salons', salonId), salonData);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `salons/${salonId}`);
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Erro ao gerar link de pagamento seguro.');
       }
 
-      // 3. Create User Document
-      const userData = {
-        id: user.uid,
-        fullName: formData.ownerName,
-        email: formData.email,
-        phone: formData.phone,
-        role: 'owner',
-        salonId: salonId,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      try {
-        await setDoc(doc(db, 'users', user.uid), userData);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+      const result = await response.json();
+      if (result.checkoutUrl) {
+        toast.success('Direcionando para o pagamento seguro na Cakto...');
+        window.location.href = result.checkoutUrl;
+      } else {
+        throw new Error('URL de checkout inválida retornada pelo servidor.');
       }
-
-      // Clear layout-simulated demo role
-      sessionStorage.removeItem('demo_role');
-
-      toast.success('Sua licença experimental de 7 dias grátis foi ativada com sucesso!');
-      navigate('/onboarding/equipe', { replace: true });
 
     } catch (error: any) {
       console.error(error);
-      if (error.code === 'auth/email-already-in-use') {
-        toast.error('Este e-mail já está cadastrado. Por favor, faça login ou use outro e-mail.');
-      } else {
-        toast.error('Erro ao criar conta: ' + (error.message || 'Erro desconhecido'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleRegister = async () => {
-    if (!isStep1Valid || !formData.estimatedProfessionals) {
-      toast.error('Por favor, preencha todos os dados das etapas anteriores antes de continuar com o Google.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await signInWithGoogleForRegister({
-        salonName: formData.salonName,
-        businessType: formData.businessSegment === 'Barbearia' ? 'barbershop' : formData.businessSegment === 'Clínica de Estética' ? 'clinic' : 'salon',
-        city: formData.city,
-        state: formData.state,
-        phone: formData.phone,
-        plan: reco.id,
-        limit: reco.limit,
-        ownerName: formData.ownerName,
-        businessSegment: formData.businessSegment,
-        estimatedProfessionals: formData.estimatedProfessionals,
-        recommendedPlan: reco.id
-      }, formData.ownerName || undefined);
-
-      toast.success('Conta criada via Google e Trial de 7 dias ativado!');
-      navigate('/onboarding/equipe', { replace: true });
-    } catch (error: any) {
-      if (error.code === 'auth/social-email-already-linked') {
-        toast.error('Este e-mail já está vinculado a outro salão no LumièreOS.');
-      } else if (error.code === 'auth/email-already-in-use') {
-        toast.error('Este e-mail já está cadastrado. Por favor, faça login ou use outro e-mail.');
-      } else {
-        console.error('Google register error:', error);
-        toast.error('Erro ao cadastrar com Google: ' + (error.message || 'Erro inesperado'));
-      }
+      toast.error('Erro ao processar: ' + (error.message || 'Erro desconhecido'));
     } finally {
       setLoading(false);
     }
@@ -319,7 +209,7 @@ export default function RegisterPage() {
           Onboarding Comercial LumièreOS
         </h2>
         <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto font-light">
-          Preencha o perfil do seu negócio em menos de 1 minuto para recomendar o plano ideal e liberar seu Trial Premium de 7 dias.
+          Preencha o perfil do seu negócio em menos de 1 minuto para recomendar o plano ideal e garantir sua licença com garantia de 7 dias pela Cakto.
         </p>
       </div>
 
@@ -401,7 +291,7 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="email" className="text-zinc-300">Email Corporativo</Label>
                     <div className="relative">
@@ -413,23 +303,6 @@ export default function RegisterPage() {
                         required
                         placeholder="exemplo@lumiere.com"
                         value={formData.email}
-                        onChange={handleChange}
-                        className="bg-black/50 border-white/10 h-12 pl-11 rounded-xl focus:border-primary/50 text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="password" className="text-zinc-300">Senha de Acesso</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-3.5 h-5 w-5 text-zinc-500" />
-                      <Input
-                        id="password"
-                        name="password"
-                        type="password"
-                        required
-                        placeholder="••••••••"
-                        value={formData.password}
                         onChange={handleChange}
                         className="bg-black/50 border-white/10 h-12 pl-11 rounded-xl focus:border-primary/50 text-white"
                       />
@@ -578,7 +451,7 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* STEP 3: Sugestão Elegante de Plano & Confirmação de Trial */}
+          {/* STEP 3: Sugestão Elegante de Plano & Confirmação */}
           {step === 3 && (
             <div className="space-y-6 animate-fade-in" id="step-3-container">
               
@@ -628,8 +501,8 @@ export default function RegisterPage() {
                 </div>
 
                 <div className="pt-3 border-t border-primary/10 flex items-center justify-between text-[11px] text-[#D4AF37]">
-                  <span className="font-medium">🎁 Teste Cortesia Premium Liberado</span>
-                  <span className="font-mono text-[9px] bg-[#D4AF37]/10 px-2 py-0.5 rounded">7 DIAS GRÁTIS</span>
+                  <span className="font-medium">🛡️ Garantia Incondicional LumièreOS</span>
+                  <span className="font-mono text-[9px] bg-[#D4AF37]/10 px-2 py-0.5 rounded">GARANTIA DE 7 DIAS PELA CAKTO</span>
                 </div>
               </div>
 
@@ -643,30 +516,13 @@ export default function RegisterPage() {
                   className="w-full rounded-full h-14 bg-primary hover:bg-gold-400 text-black font-semibold uppercase tracking-wider text-xs flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-[0_0_20px_rgba(212,175,55,0.2)] cursor-pointer"
                 >
                   {loading ? (
-                    <span>Configurando seu Trial de 7 Dias...</span>
+                    <span>Processando...</span>
                   ) : (
                     <>
-                      <span>Iniciar meus 7 dias gratuitos</span>
+                      <span>Continuar para pagamento seguro</span>
                       <ChevronRight className="w-4 h-4" />
                     </>
                   )}
-                </Button>
-
-                <div className="relative flex py-2 items-center">
-                  <div className="flex-grow border-t border-white/10"></div>
-                  <span className="flex-shrink mx-4 text-muted-foreground text-[10px] uppercase tracking-widest font-light font-sans">ou com o Google</span>
-                  <div className="flex-grow border-t border-white/10"></div>
-                </div>
-
-                <Button
-                  type="button"
-                  id="btn-confirm-trial-google"
-                  disabled={loading}
-                  onClick={handleGoogleRegister}
-                  className="w-full rounded-full h-12 bg-black/40 hover:bg-black/80 text-foreground border border-white/10 hover:border-primary/20 transition-all flex items-center justify-center gap-2 text-xs cursor-pointer"
-                >
-                  <Chrome className="w-4 h-4 text-primary" />
-                  <span>Cadastrar e Iniciar 7 dias grátis com o Google</span>
                 </Button>
               </div>
 

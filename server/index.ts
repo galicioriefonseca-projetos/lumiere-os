@@ -950,29 +950,58 @@ async function startServer() {
     }
   });
 
-  app.post("/api/cakto/create-checkout", authenticateRequest, async (req, res) => {
+  app.post("/api/cakto/create-checkout", async (req, res) => {
     try {
-      const { salonId, planId, paymentMethod, email } = req.body;
+      const { 
+        salonId, 
+        planId, 
+        paymentMethod, 
+        email,
+        ownerName,
+        salonName,
+        phone,
+        city,
+        state,
+        businessSegment,
+        estimatedProfessionals
+      } = req.body || {};
+
       if (!salonId || !planId) {
         return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
       }
 
-      const user = (req as any).user;
       const adminDb = getAdminDb();
       const salonRef = adminDb.collection("salons").doc(salonId);
-      const salonDoc = await salonRef.get();
+      let salonDoc = await salonRef.get();
+      let salonData = salonDoc.exists ? salonDoc.data() : null;
 
-      if (!salonDoc.exists) {
-        return res.status(404).json({ error: "Salão não encontrado no banco de dados." });
-      }
+      let legacyBusinessType = salonData?.businessType || 'salon';
+      if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
+      else if (businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
 
-      const salonData = salonDoc.data();
+      const now = Date.now();
+      const finalEmail = (email || salonData?.ownerEmail || "").trim().toLowerCase();
 
-      const authResult = await canManageBilling(user, salonId, salonData);
-      console.log(`[Cakto Auth Log] UID: ${user.uid} | Salon: ${salonId} | Autorizado: ${authResult.authorized}`);
-      if (!authResult.authorized) {
-        return res.status(403).json({ error: authResult.reason || "Você não tem permissão para gerenciar o faturamento deste salão." });
-      }
+      // Preparar dados de mesclagem do salão
+      const mergedSalonData: any = {
+        id: salonId,
+        name: salonName || salonData?.name || "LumièreOS Salon",
+        ownerEmail: finalEmail,
+        ownerName: ownerName || salonData?.ownerName || "",
+        phone: phone || salonData?.phone || "",
+        city: city || salonData?.city || "",
+        state: state || salonData?.state || "",
+        businessType: legacyBusinessType,
+        businessSegment: businessSegment || salonData?.businessSegment || "",
+        estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
+        plan: planId,
+        subscriptionStatus: salonData?.subscriptionStatus || "pending",
+        activationStatus: salonData?.activationStatus || "pending",
+        isActive: salonData?.isActive || false,
+        createdAt: salonData?.createdAt || now,
+        updatedAt: now,
+        billingProvider: "cakto",
+      };
 
       // Carregar configurações dinâmicas da Cakto no Firestore usando o Cache do Servidor
       let offerId = "";
@@ -1008,7 +1037,7 @@ async function startServer() {
       const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
 
       // Secure Logging (regras de Sprint de Segurança):
-      console.log("[Cakto API Secure Log] Iniciando criação de checkout:");
+      console.log("[Cakto API Secure Log] Iniciando criação de checkout público:");
       console.log(`[Cakto API Secure Log] CAKTO_API_URL: ${getCaktoApiBaseUrl()}`);
       console.log(`[Cakto API Secure Log] CAKTO_CLIENT_ID existe: ${!!process.env.CAKTO_CLIENT_ID}`);
       console.log(`[Cakto API Secure Log] CAKTO_CLIENT_SECRET existe: ${!!process.env.CAKTO_CLIENT_SECRET}`);
@@ -1030,19 +1059,20 @@ async function startServer() {
         const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/faturamento?simulated_checkout=true&order_id=${simulatedOrderId}`;
 
         const simulatedData = {
+          ...mergedSalonData,
           billingProvider: "cakto",
           caktoCustomerId: "cus_simulated_dev",
           caktoOrderId: simulatedOrderId,
           caktoSubscriptionId: "sub_simulated_dev",
           caktoCheckoutUrl: simulatedCheckoutUrl,
           caktoOfferId: offerId || "off_simulated",
-          subscriptionStatus: "pending",
-          paymentStatus: "pending",
+          subscriptionStatus: salonData?.subscriptionStatus || "pending",
+          paymentStatus: salonData?.paymentStatus || "pending",
           nextBillingDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
           updatedAt: Date.now(),
         };
 
-        await salonRef.update(simulatedData);
+        await salonRef.set(simulatedData, { merge: true });
 
         return res.json({
           success: true,
@@ -1053,14 +1083,16 @@ async function startServer() {
         });
       }
 
-      const checkoutEmail = (email || salonData?.ownerEmail || user.email || "").toLowerCase();
+      const checkoutEmail = finalEmail;
       const params = new URLSearchParams({
-        name: salonData?.ownerName || salonData?.name || "Cliente",
+        name: ownerName || salonData?.ownerName || mergedSalonData.name || "Cliente",
         email: checkoutEmail,
+        external_id: salonId,
       });
 
-      if (salonData?.phone) {
-        const digits = String(salonData.phone).replace(/\D/g, "");
+      const activePhone = phone || salonData?.phone;
+      if (activePhone) {
+        const digits = String(activePhone).replace(/\D/g, "");
         const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
         params.append("phone", withCountry);
       }
@@ -1086,17 +1118,20 @@ async function startServer() {
 
       const checkoutUrl = buildCheckoutUrl(offerId, params);
 
-      await salonRef.update({
+      const finalData = {
+        ...mergedSalonData,
         billingProvider: "cakto",
         caktoOfferId: offerId,
         caktoCheckoutUrl: checkoutUrl,
         caktoCheckoutEmail: checkoutEmail,
-        subscriptionStatus: "pending",
-        paymentStatus: "pending",
+        subscriptionStatus: salonData?.subscriptionStatus || "pending",
+        paymentStatus: salonData?.paymentStatus || "pending",
         updatedAt: Date.now(),
-      });
+      };
 
-      console.log(`[Cakto Checkout] URL de checkout montada para o salão ${salonId}`);
+      await salonRef.set(finalData, { merge: true });
+
+      console.log(`[Cakto Checkout] URL de checkout montada e salão registrado para o salão ${salonId}`);
       return res.json({
         success: true,
         checkoutUrl,
