@@ -977,7 +977,7 @@ export default function CommissionsPage() {
           </div>
 
           <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-5 space-y-4">
-            <h4 className="text-xs font-bold uppercase text-[#D4AF37] tracking-wider">Metodologia Essenza</h4>
+            <h4 className="text-xs font-bold uppercase text-[#D4AF37] tracking-wider">Metodologia Lumière</h4>
             <div className="space-y-3 text-xs leading-relaxed text-zinc-400">
               <p>
                 As taxas de comissão são <b>soberanas</b> aos lançamentos. Atualizar a taxa de comissão de um profissional irá atualizar instantaneamente todo o extrato deste mês e meses anteriores para refletir os novos repasses acordados.

@@ -109,7 +109,7 @@ export default function SystemUpdatesDialog({ isOpen, onClose, onMarkAsSeen }: S
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-[10px] text-zinc-500 font-sans flex items-center gap-1">
-              <Award className="w-3.5 h-3.5 text-[#D4AF37]/70" /> Essenza Studio Partner
+              <Award className="w-3.5 h-3.5 text-[#D4AF37]/70" /> Lumière Studio Partner
             </span>
             <div className="flex gap-2">
               <Button 

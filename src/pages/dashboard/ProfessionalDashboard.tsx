@@ -639,7 +639,7 @@ export default function ProfessionalDashboard() {
                     <span className="text-xs text-zinc-400 font-normal">hoje</span>
                   </div>
                   <div className="text-[9px] text-zinc-500 leading-tight">
-                    Combina produção (60% da meta) e comportamento (40% de avaliações Essenza)
+                    Combina produção (60% da meta) e comportamento (40% de avaliações Lumière)
                   </div>
                 </CardContent>
               </Card>
@@ -902,7 +902,7 @@ export default function ProfessionalDashboard() {
             <Card className="border-border bg-card/60">
               <CardContent className="p-4 flex flex-col justify-between h-full">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Média Essenza</span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">Média Lumière</span>
                   <Star className="w-4 h-4 text-primary fill-primary" />
                 </div>
                 <div className="text-3xl font-light">{overallAvg > 0 ? overallAvg.toFixed(1) : "-"} <span className="text-[10px] text-muted-foreground font-sans">/ 5.0</span></div>
@@ -985,7 +985,7 @@ export default function ProfessionalDashboard() {
             <Card className="border-border bg-card/50">
               <CardHeader className="pb-3 flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle className="text-sm font-heading font-medium">Última Avaliação Essenza</CardTitle>
+                  <CardTitle className="text-sm font-heading font-medium">Última Avaliação Lumière</CardTitle>
                   <CardDescription className="text-xs">Acompanhamento diário</CardDescription>
                 </div>
                 <Button size="xs" onClick={() => setTab("avaliacoes")} className="border-primary/20 text-primary border rounded-xl hover:bg-primary/5 bg-transparent">Histórico</Button>
@@ -1173,7 +1173,7 @@ export default function ProfessionalDashboard() {
           <div>
             <Card className="border-border">
               <CardHeader>
-                <CardTitle className="text-base font-medium">Métricas Essenza</CardTitle>
+                <CardTitle className="text-base font-medium">Métricas Lumière</CardTitle>
                 <CardDescription className="text-xs">Classificações e aderência semanal.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-xs md:text-sm">
@@ -1359,7 +1359,7 @@ export default function ProfessionalDashboard() {
               <CardContent className="p-8 flex flex-col items-center justify-center text-center text-muted-foreground">
                 <FileText className="w-10 h-10 mb-3 opacity-30" />
                 <p className="font-medium text-sm">Selecione uma avaliação</p>
-                <p className="text-xs">Selecione uma data no histórico ao lado para abrir os detalhes do feedback Essenza.</p>
+                <p className="text-xs">Selecione uma data no histórico ao lado para abrir os detalhes do feedback Lumière.</p>
               </CardContent>
             )}
           </Card>

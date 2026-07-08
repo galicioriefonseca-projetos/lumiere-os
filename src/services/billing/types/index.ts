@@ -16,12 +16,12 @@ export interface BillingSubscription {
   salonId: string;
   customerId: string;
   planId: string;
-  status: 'active' | 'pending' | 'suspended' | 'canceled' | 'trialing';
+  status: 'active' | 'pending' | 'suspended' | 'canceled' | 'previewing';
   paymentMethod: 'credit_card' | 'pix' | 'boleto';
   price: number;
   interval: 'monthly' | 'semi-annually' | 'annually';
-  trialDays?: number;
-  trialEnd?: Date;
+  previewDays?: number;
+  previewEnd?: Date;
   nextDueDate?: Date;
   createdAt: Date;
   updatedAt: Date;

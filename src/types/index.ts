@@ -1,7 +1,7 @@
 export type Role = 'owner' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
 export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'other';
 export type PlanType = 'start' | 'performance' | 'network' | 'founder' | 'enterprise';
-export type SubscriptionStatus = 'trial' | 'active' | 'pending_payment' | 'overdue' | 'canceled';
+export type SubscriptionStatus = 'preview' | 'active' | 'pending_payment' | 'overdue' | 'canceled';
 export type ActivationStatus = 'active' | 'pending' | 'blocked' | 'canceled';
 export type PaymentStatus = 'none' | 'pending' | 'reported' | 'paid' | 'overdue' | 'rejected' | 'canceled';
 
@@ -50,7 +50,7 @@ export interface Salon {
   subscriptionStatus: SubscriptionStatus;
   activationStatus: ActivationStatus;
   paymentStatus?: PaymentStatus;
-  trialEndsAt: number;
+  previewEndsAt: number;
   currentPeriodStart?: number;
   currentPeriodEnd?: number;
   nextBillingDate?: number;
@@ -67,18 +67,28 @@ export interface Salon {
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
-  // Stripe & Billing properties
-  billingProvider?: 'manual_pix' | 'stripe' | 'asaas' | 'mercadopago' | 'cakto';
+  // Stripe & Billing properties (Active providers: manual_pix, cakto. Others are deprecated)
+  billingProvider?: 'manual_pix' | 'cakto' | 'stripe' | 'asaas' | 'mercadopago';
   billingMode?: 'manual_pix' | 'recurring_card';
+  /** @deprecated Use Cakto instead */
   stripeCustomerId?: string;
+  /** @deprecated Use Cakto instead */
   stripeSubscriptionId?: string;
+  /** @deprecated Use Cakto instead */
   stripeCheckoutSessionId?: string;
+  /** @deprecated Use Cakto instead */
   stripePriceId?: string;
+  /** @deprecated Use Cakto instead */
   mercadoPagoPreapprovalId?: string;
+  /** @deprecated Use Cakto instead */
   asaasCustomerId?: string;
+  /** @deprecated Use Cakto instead */
   asaasSubscriptionId?: string;
+  /** @deprecated Use Cakto instead */
   asaasCheckoutUrl?: string;
+  /** @deprecated Use Cakto instead */
   asaasLastPaymentId?: string;
+  /** @deprecated Use Cakto instead */
   asaasLastEvent?: string;
   caktoCustomerId?: string;
   caktoSubscriptionId?: string;
@@ -113,11 +123,15 @@ export interface Payment {
   notes?: string;
   createdAt: number;
   updatedAt: number;
-  // Stripe details
+  // Stripe details (Legacy)
   provider?: 'manual_pix' | 'stripe' | 'asaas' | 'mercadopago';
+  /** @deprecated */
   stripePaymentIntentId?: string;
+  /** @deprecated */
   stripeInvoiceId?: string;
+  /** @deprecated */
   stripeSubscriptionId?: string;
+  /** @deprecated */
   stripeCustomerId?: string;
   currency?: string;
 }

@@ -308,32 +308,7 @@ export default function MasterPanel() {
           updates.caktoCustomerId = '';
           updates.caktoSubscriptionId = '';
           updates.caktoCheckoutUrl = '';
-          updates.subscriptionStatus = 'trial';
-          updates.paymentStatus = 'none';
-          break;
-        case 'asaas_activate':
-          updates.billingProvider = 'asaas';
-          updates.subscriptionStatus = 'active';
-          updates.paymentStatus = 'paid';
-          updates.isActive = true;
-          updates.activationStatus = 'active';
-          updates.asaasCustomerId = 'cus_' + Math.random().toString(36).substring(2, 11).toUpperCase();
-          updates.asaasSubscriptionId = 'sub_' + Math.random().toString(36).substring(2, 11).toUpperCase();
-          updates.asaasCheckoutUrl = 'https://sandbox.asaas.com/checkout/simulated';
-          updates.nextBillingDate = Date.now() + (30 * 24 * 60 * 60 * 1000);
-          break;
-        case 'asaas_simulate_overdue':
-          updates.billingProvider = 'asaas';
-          updates.subscriptionStatus = 'overdue';
-          updates.paymentStatus = 'overdue';
-          updates.nextBillingDate = Date.now() - (5 * 24 * 60 * 60 * 1000);
-          break;
-        case 'asaas_clear':
-          updates.billingProvider = 'manual_pix';
-          updates.asaasCustomerId = '';
-          updates.asaasSubscriptionId = '';
-          updates.asaasCheckoutUrl = '';
-          updates.subscriptionStatus = 'trial';
+          updates.subscriptionStatus = 'preview';
           updates.paymentStatus = 'none';
           break;
         default:
@@ -632,21 +607,6 @@ export default function MasterPanel() {
                                    )}
                                 </div>
                               )}
-                              {salon.asaasCustomerId && (
-                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.asaasCustomerId}>
-                                   <span className="truncate max-w-[120px]">Asaas Cus: {salon.asaasCustomerId}</span>
-                                   <span className="uppercase text-blue-400">Status: {salon.subscriptionStatus}</span>
-                                   {salon.asaasCheckoutUrl ? (
-                                     <div className="flex gap-1.5 items-center mt-1">
-                                       <a href={salon.asaasCheckoutUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
-                                         Abrir Link
-                                       </a>
-                                     </div>
-                                   ) : (
-                                     <span className="text-yellow-500 text-[8px] uppercase font-bold mt-0.5">Sem link de checkout</span>
-                                   )}
-                                </div>
-                              )}
                            </div>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -684,9 +644,6 @@ export default function MasterPanel() {
                                       <SelectItem value="cakto_activate">Ativar Cakto (Simular Link)</SelectItem>
                                       <SelectItem value="cakto_simulate_overdue">Simular 5 dias de atraso (Cakto)</SelectItem>
                                       <SelectItem value="cakto_clear">Limpar Dados Cakto</SelectItem>
-                                      <SelectItem value="asaas_activate">Ativar Asaas (Simular Link)</SelectItem>
-                                      <SelectItem value="asaas_simulate_overdue">Simular 5 dias de atraso (Asaas)</SelectItem>
-                                      <SelectItem value="asaas_clear">Limpar Dados Asaas</SelectItem>
                                     </>
                                   )}
                                 </SelectContent>

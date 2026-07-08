@@ -134,7 +134,7 @@ export default function ReportsPage() {
 
   const handleExportPDF = () => {
     const docPdf = new jsPDF();
-    const title = `Relatório Consolidado Essenza - ${selectedMonth}`;
+    const title = `Relatório Consolidado Lumière - ${selectedMonth}`;
     
     docPdf.setFontSize(16);
     docPdf.text(title, 14, 15);

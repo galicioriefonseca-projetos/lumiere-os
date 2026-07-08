@@ -1,0 +1,1 @@
+sed -i 's/<LumiExecutiveAdvisor /<LumiExecutiveAdvisor userName={userData?.fullName} mainRecommendation={lumiRecommendations.length > 0 ? { title: lumiRecommendations[0].title, action: lumiRecommendations[0].actionText || "Agir", url: lumiRecommendations[0].actionUrl || "\/" } : undefined} /g' src/pages/dashboard/DashboardHome.tsx

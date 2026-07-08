@@ -315,7 +315,7 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
               type: 'warning',
               category: 'attention',
               title: '📋 Atenção à Qualidade Operacional',
-              description: `Sua média de checklist está abaixo da expectativa (${Math.round(myPerf.avgScorePercent)}%). Cuide dos padrões de comportamento e higienização Essenza nos próximos dias!`,
+              description: `Sua média de checklist está abaixo da expectativa (${Math.round(myPerf.avgScorePercent)}%). Cuide dos padrões de comportamento e higienização Lumière nos próximos dias!`,
               proId: userId,
               createdAt: Date.now()
             });
@@ -344,7 +344,7 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
               type: 'success',
               category: 'top_ranked',
               title: '👑 Desempenho Estelar! Destaque do Salão',
-              description: `Parabéns! Você está no Top ${rankingPos} do ranking do salão com média espetacular de ${Math.round(myPerf.avgScorePercent)}% nas avaliações Essenza!`,
+              description: `Parabéns! Você está no Top ${rankingPos} do ranking do salão com média espetacular de ${Math.round(myPerf.avgScorePercent)}% nas avaliações Lumière!`,
               proId: userId,
               createdAt: Date.now()
             });

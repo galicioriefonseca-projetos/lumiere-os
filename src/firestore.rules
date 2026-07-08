@@ -7,6 +7,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // authAuditLogs collection
+    match /authAuditLogs/{logId} {
+      allow create: if true;
+      allow read, update, delete: if isPlatformAdmin();
+    }
+
     // --- Global Helper Functions ---
     function isSignedIn() {
       return request.auth != null;
@@ -18,6 +24,10 @@ service cloud.firestore {
 
     function userDoc() {
       return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userEmail() {
+      return request.auth.token.get('email', '');
     }
 
     // Helper for role field
@@ -33,7 +43,7 @@ service cloud.firestore {
     // Super Admin global role helper
     function isPlatformAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == "galicioriefonseca@gmail.com" ||
+        userEmail() == "galicioriefonseca@gmail.com" ||
         exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
         (exists(userDoc()) && get(userDoc()).data.get('role', 'none') == "platform_admin")
       );
@@ -67,7 +77,7 @@ service cloud.firestore {
 
     function isSalonMember(salonId) {
       return isSignedIn() && (
-        request.auth.token.email == "galicioriefonseca@gmail.com" ||
+        userEmail() == "galicioriefonseca@gmail.com" ||
         isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
         (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId) ||
@@ -82,7 +92,7 @@ service cloud.firestore {
     }
 
     function isTutorialDemoUser() {
-      return isSignedIn() && request.auth.token.email == "leandropfonseca20@gmail.com";
+      return isSignedIn() && userEmail() == "leandropfonseca20@gmail.com";
     }
 
     function canUseTutorialDemo(salonId) {
@@ -192,7 +202,7 @@ service cloud.firestore {
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
           resource.data.ownerId == request.auth.uid ||
-          resource.data.get('ownerEmail', '') == request.auth.token.email ||
+          resource.data.get('ownerEmail', '') == userEmail() ||
           (isTutorialDemoUser() && isTutorialDemoSalon(resource.id))
         )
       );
@@ -385,7 +395,7 @@ service cloud.firestore {
       allow write: if canManageSalon(salonId);
     }
 
-    // 4. Checklist Daily Runs (Essenza Evaluations)
+    // 4. Checklist Daily Runs (Avaliações Operacionais)
     match /salons/{salonId}/checklistRuns/{runId} {
       allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
       allow create, update: if canRecordEvaluation(salonId);
@@ -409,7 +419,7 @@ service cloud.firestore {
     // 7. Clients
     match /salons/{salonId}/clients/{clientId} {
       allow get: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
-      allow list: if canOperateFrontDesk(salonId);
+      allow list: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
       allow create: if canOperateFrontDesk(salonId);
       allow update: if canOperateFrontDesk(salonId) && (
         request.resource.data.crmStage == resource.data.crmStage || 
@@ -448,12 +458,12 @@ service cloud.firestore {
 
     // 11. Financial Transactions
     match /salons/{salonId}/financialTransactions/{transactionId} {
-      allow read, write: if true;
+      allow read, write: if canManageSalon(salonId);
     }
 
     // 12. Inventory / Stock Management
     match /salons/{salonId}/inventory/{itemId} {
-      allow read: if canOperateFrontDesk(salonId);
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
       allow write: if canManageSalon(salonId);
     }
 

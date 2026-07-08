@@ -1,6 +1,10 @@
-# Planejamento da Integração de Assinaturas Recorrentes Asaas • LumièreOS
+Asaas foi descontinuado como gateway ativo do LumièreOS.
 
-Este documento descreve as diretrizes de segurança, compatibilidade retroativa e o roadmap de implementação do gateway **Asaas** como motor de cobrança e assinaturas do LumièreOS.
+# Planejamento da Integração de Assinaturas Recorrentes Asaas • LumièreOS (DEPRECATED / DESATIVADO)
+
+> ⚠️ **IMPORTANTE**: Este documento e o planejamento de integração com o Asaas foram desativados e marcados como descontinuados em conformidade com as novas decisões arquiteturais do LumièreOS. O Asaas e o Mercado Pago foram completamente desativados dos fluxos visuais de produção, mantendo apenas suporte legados de dados históricos opcionais. Toda assinatura recorrente ativa utiliza **Cakto**, e o fluxo alternativo utiliza **Manual PIX**.
+
+Este documento descreve as antigas diretrizes de segurança, compatibilidade retroativa e o roadmap de implementação do gateway **Asaas** como motor de cobrança e assinaturas do LumièreOS.
 
 ---
 
@@ -32,7 +36,7 @@ Todos os campos são estritamente opcionais para garantir que os documentos de s
 
 ## 3. Regras Específicas do Plano Founder (Preservação de Direitos)
 
-A cliente Founder já existente (ex: Essenza Studio di Bellezza) deve ser tratada como assinante ativa e protegida contra cobranças ou interrupções automáticas.
+A cliente Founder já existente (ex: Salão Founder Exemplo) deve ser tratada como assinante ativa e protegida contra cobranças ou interrupções automáticas.
 
 1. **Preço Promocional**: O plano possui suporte a condições especiais de preço com reajuste agendado (`founderInitialPrice` / `founderFuturePrice`).
 2. **Acesso Sem Bloqueio**: Clientes com `plan: 'founder'` não passam por fluxos de suspensão automática de conta, a menos que o admin da plataforma decida intervir manualmente via Master Panel.

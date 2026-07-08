@@ -479,7 +479,7 @@ export default function AccountPage() {
                 <CreditCard className="w-4 h-4 text-[#D4AF37]" />
                 Inscrição & Licenciamento
               </CardTitle>
-              <CardDescription className="text-xs text-zinc-500">Status atual do seu plano Essenza e limites operacionais.</CardDescription>
+              <CardDescription className="text-xs text-zinc-500">Status atual do seu plano Lumière e limites operacionais.</CardDescription>
             </CardHeader>
 
             <CardContent className="p-6 space-y-5">

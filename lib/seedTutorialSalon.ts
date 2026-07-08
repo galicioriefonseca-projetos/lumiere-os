@@ -320,8 +320,8 @@ export async function ensureTutorialSalonForLeandro(uid: string): Promise<{ succ
       updatedAt: now
     });
 
-    // 9. Checklist Base Title (Essenza)
-    const chkRef = doc(db, `salons/${salonId}/checklists`, 'tutorial_checklist_essenza');
+    // 9. Checklist Base Title (Operacional)
+    const chkRef = doc(db, `salons/${salonId}/checklists`, 'tutorial_checklist_operacional');
     const checklistCategories = [
       'Apresentação Pessoal', 'Pontualidade e Organização', 'Atendimento à Cliente',
       'Qualidade do Serviço', 'Organização do Ambiente', 'Colaboração com a Equipe',
@@ -336,8 +336,8 @@ export async function ensureTutorialSalonForLeandro(uid: string): Promise<{ succ
     }));
 
     batch.set(chkRef, {
-      id: 'tutorial_checklist_essenza',
-      title: 'Avaliação Diária do Profissional — Essenza',
+      id: 'tutorial_checklist_operacional',
+      title: 'Avaliação Diária do Profissional — Operacional',
       type: 'professional_daily_evaluation',
       scoringMode: 'rating_1_5',
       items: checklistItems,
@@ -366,8 +366,8 @@ export async function ensureTutorialSalonForLeandro(uid: string): Promise<{ succ
 
       batch.set(runRef, {
         id: `tutorial_run_${p.id}`,
-        checklistId: 'tutorial_checklist_essenza',
-        checklistTitle: 'Avaliação Diária do Profissional — Essenza',
+        checklistId: 'tutorial_checklist_operacional',
+        checklistTitle: 'Avaliação Diária do Profissional — Operacional',
         checklistType: 'professional_daily_evaluation',
         scoringMode: 'rating_1_5',
         evaluationDate: todayStr,
@@ -403,7 +403,7 @@ export async function ensureTutorialSalonForLeandro(uid: string): Promise<{ succ
         totalProfessionals: professionalsData.length,
         evaluatedProfessionals: professionalsData.length,
         pendingProfessionals: 0,
-        checklistId: 'tutorial_checklist_essenza'
+        checklistId: 'tutorial_checklist_operacional'
       }
     });
 

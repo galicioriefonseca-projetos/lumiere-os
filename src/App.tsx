@@ -11,6 +11,9 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import InviteRegisterPage from './pages/auth/InviteRegisterPage';
+import ActivationPage from './pages/auth/ActivationPage';
+import WaitingPaymentPage from './pages/auth/WaitingPaymentPage';
+import PreparingEnvironmentPage from './pages/auth/PreparingEnvironmentPage';
 import DashboardLayout from './components/layouts/DashboardLayout';
 import OnboardingLayout from './components/layouts/OnboardingLayout';
 
@@ -28,7 +31,7 @@ const AccountPage = React.lazy(() => import('./pages/dashboard/AccountPage'));
 const ReportsPage = React.lazy(() => import('./pages/dashboard/ReportsPage'));
 const SubscriptionPage = React.lazy(() => import('./pages/dashboard/SubscriptionPage'));
 
-// New avec pro equivalent features
+// New core features
 const FinancialPage = React.lazy(() => import('./pages/dashboard/FinancialPage'));
 const InventoryPage = React.lazy(() => import('./pages/dashboard/InventoryPage'));
 const PricingCalculatorPage = React.lazy(() => import('./pages/dashboard/PricingCalculatorPage'));
@@ -61,6 +64,9 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cadastro" element={<RegisterPage />} />
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
+            <Route path="/ativar-conta" element={<ActivationPage />} />
+            <Route path="/aguardando-pagamento" element={<WaitingPaymentPage />} />
+            <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
             
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
@@ -89,7 +95,7 @@ function App() {
               <Route path="checklist" element={<ChecklistPage />} />
               <Route path="assinatura" element={<SubscriptionPage />} />
               
-              {/* New avec pro equivalent routes */}
+              {/* New core routes */}
               <Route path="financeiro" element={<FinancialPage />} />
               <Route path="estoque" element={<InventoryPage />} />
               <Route path="precificacao" element={<PricingCalculatorPage />} />

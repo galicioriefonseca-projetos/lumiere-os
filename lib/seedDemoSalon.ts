@@ -241,7 +241,7 @@ export async function createDemoSalon(adminEmail: string | undefined): Promise<{
 
     batch.set(chkRef, {
       id: chkRef.id,
-      title: 'Avaliação Diária do Profissional — Essenza',
+      title: 'Avaliação Diária do Profissional — Operacional',
       type: 'professional_daily_evaluation',
       scoringMode: 'rating_1_5',
       items: items,
@@ -272,7 +272,7 @@ export async function createDemoSalon(adminEmail: string | undefined): Promise<{
         batch.set(runRef, {
             id: runRef.id,
             checklistId: chkRef.id,
-            checklistTitle: 'Avaliação Diária do Profissional — Essenza',
+            checklistTitle: 'Avaliação Diária do Profissional — Operacional',
             checklistType: 'professional_daily_evaluation',
             scoringMode: 'rating_1_5',
             evaluationDate: todayStr, // Ensure we use the proper field as it may be queried

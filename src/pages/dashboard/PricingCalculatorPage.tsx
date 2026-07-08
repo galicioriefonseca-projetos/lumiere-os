@@ -107,7 +107,7 @@ export default function PricingCalculatorPage() {
   const [newCustomCost, setNewCustomCost] = useState<string>('');
 
   // --- STEP 4: SERVICE DETAILS ---
-  const [serviceName, setServiceName] = useState('Coloração Essenza Excellence');
+  const [serviceName, setServiceName] = useState('Coloração Lumière Excellence');
   const [durationHours, setDurationHours] = useState<number>(1);
   const [durationMinutes, setDurationMinutes] = useState<number>(30);
 

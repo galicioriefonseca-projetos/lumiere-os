@@ -118,7 +118,7 @@ export default function SubscriptionPage() {
     switch (status) {
       case 'active':
         return 'bg-green-500/10 text-green-400 border-green-500/20';
-      case 'trial':
+      case 'preview':
         return 'bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/20';
       case 'pending_payment':
       case 'pending':
@@ -135,7 +135,7 @@ export default function SubscriptionPage() {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'active': return 'Ativa';
-      case 'trial': return 'Período de Testes (7 dias)';
+      case 'preview': return 'Avaliação Preview';
       case 'pending_payment':
       case 'pending': return 'Pagamento Pendente';
       case 'overdue': return 'Vencida / Atrasada';
@@ -150,7 +150,7 @@ export default function SubscriptionPage() {
   const isStrongWarning = daysOverdue >= 4 && daysOverdue <= 7;
   const isSoftWarning = daysOverdue > 0 && daysOverdue <= 3;
 
-  const currentCheckoutUrl = salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl;
+  const currentCheckoutUrl = salonData.caktoCheckoutUrl;
 
   return (
     <div className="relative min-h-screen bg-background space-y-6 pb-12 select-none text-white">
@@ -340,7 +340,7 @@ export default function SubscriptionPage() {
                     <Coins className="w-3.5 h-3.5 text-zinc-400" /> Forma de Faturamento
                   </span>
                   <p className="text-sm font-semibold text-white uppercase flex items-center gap-1 text-xs">
-                    {salonData.billingProvider === 'cakto' ? '💳 CAKTO RECORRENTE' : salonData.billingProvider === 'asaas' ? '💳 ASAAS LEGADO' : '💸 PIX MANUAL / OUTROS'}
+                    {salonData.billingProvider === 'cakto' ? '💳 CAKTO RECORRENTE' : '💸 PIX MANUAL / OUTROS'}
                   </p>
                 </div>
               </div>
@@ -363,27 +363,27 @@ export default function SubscriptionPage() {
           </div>
 
           {/* ACTIVE RECURRENT LINK */}
-          {(salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl) && (
+          {salonData.caktoCheckoutUrl && (
             <div className="rounded-xl border border-[#D4AF37]/20 bg-[#D4AF37]/5 text-white shadow-sm">
               <div className="flex flex-col space-y-1.5 p-6">
                 <h3 className="font-semibold tracking-tight text-white text-md flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-[#D4AF37]" /> Link de Assinatura Ativo
                 </h3>
-                <p className="text-xs text-zinc-400">Você possui um fluxo de faturamento recorrente ativo via {salonData.billingProvider === 'cakto' ? 'Cakto' : 'Asaas'}.</p>
+                <p className="text-xs text-zinc-400">Você possui um fluxo de faturamento recorrente ativo via Cakto.</p>
               </div>
               <div className="p-6 pt-0 space-y-4">
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button 
                     type="button"
-                    onClick={() => window.open(salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl, '_blank')}
+                    onClick={() => window.open(salonData.caktoCheckoutUrl, '_blank')}
                     className="bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold flex items-center justify-center gap-2 rounded-xl text-xs flex-1 h-10 transition-colors duration-150"
                   >
-                    <ExternalLink className="w-4 h-4" /> Abrir Checkout / Atualizar Forma de Pagamento no {salonData.billingProvider === 'cakto' ? 'Cakto' : 'Asaas'}
+                    <ExternalLink className="w-4 h-4" /> Abrir Checkout / Atualizar Forma de Pagamento no Cakto
                   </button>
                   <button 
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(salonData.caktoCheckoutUrl || salonData.asaasCheckoutUrl || '');
+                      navigator.clipboard.writeText(salonData.caktoCheckoutUrl || '');
                       toast.success('Link de checkout copiado!');
                     }}
                     className="border border-zinc-800 hover:bg-zinc-900 text-zinc-400 text-xs h-10 px-4 rounded-xl transition-colors duration-150 flex items-center justify-center"
@@ -446,21 +446,7 @@ export default function SubscriptionPage() {
                 </div>
               )}
 
-              {salonData.asaasSubscriptionId && (
-                <div className="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-2 text-xs text-zinc-400">
-                  <p className="font-semibold text-zinc-300">Cobrança Legada Ativa (Asaas)</p>
-                  <p className="text-[10px] leading-normal">Sua conta possui faturamento configurado pelo Asaas (ID: <code className="text-amber-400 font-mono select-all">{salonData.asaasSubscriptionId}</code>). O acesso de faturamento permanece garantido por este canal.</p>
-                  {salonData.asaasCheckoutUrl && (
-                    <button
-                      type="button"
-                      onClick={() => window.open(salonData.asaasCheckoutUrl, '_blank')}
-                      className="text-[#D4AF37] text-[10px] font-bold hover:underline flex items-center gap-1 mt-1 shrink-0"
-                    >
-                      <ExternalLink className="w-3 h-3" /> Abrir Link Legado do Asaas
-                    </button>
-                  )}
-                </div>
-              )}
+
 
               {/* Informative footer */}
               <p className="text-[10px] text-zinc-500 text-center leading-normal">

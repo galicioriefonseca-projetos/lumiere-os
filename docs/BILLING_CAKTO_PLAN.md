@@ -41,7 +41,8 @@ As credenciais são gerenciadas estritamente pelo servidor e nunca expostas ao f
 - `CAKTO_API_URL`: URL base (sandbox ou produção).
 - `CAKTO_WEBHOOK_SECRET`: Token de autenticação/assinatura do Webhook.
 
-## 3. Compatibilidade e Legado (Asaas)
-- **Status do Gateway**: O Asaas foi formalmente marcado como **LEGADO (DEPRECATED)**. Ele **NÃO deve ser utilizado como gateway principal** para novos cadastros ou faturamentos no LumièreOS. Todas as novas assinaturas e transações comerciais devem ser exclusivamente roteadas através da integração principal com a **Cakto**.
-- **Preservação e Zero Interrupção**: Para garantir a conformidade e a estabilidade com clientes ativos em produção, a infraestrutura legada do Asaas (incluindo rotas, campos de banco de dados e listeners de webhook) permanece intacta e plenamente operacional. Clientes que já possuem `billingProvider: "asaas"` ou `asaasSubscriptionId` continuam sendo atendidos com as telas e faturamentos legados. Os webhooks do Asaas continuam processando atualizações normalmente.
-- **Transição Transparente**: O painel administrativo (`MasterPanel`) permite visualizar e simular de forma isolada faturamentos tanto no Cakto quanto no Asaas para total segurança e flexibilidade de testes, mas novas ativações manuais de produção devem dar preferência estrita ao Cakto.
+## 3. Compatibilidade e Legado (Asaas & Mercado Pago)
+- **Status do Gateway (DEACTIVATED & DEPRECATED)**: O Asaas e o Mercado Pago foram completamente desativados e removidos dos fluxos visuais ativos, botões, simulações e CTAs do LumièreOS. Apenas `manual_pix` e `cakto` são aceitos como provedores de faturamento ativos.
+- **Campos Históricos e Retrocompatibilidade**: Para garantir a conformidade e estabilidade, os campos existentes do Asaas, Mercado Pago e Stripe no Firestore são mantidos estritamente como dados históricos e marcados como `@deprecated` em nível de tipos. Não há qualquer alteração de dados existentes no Firestore nem exclusão de dados de clientes, incluindo o salão Essenza Studio di Bellezza.
+- **Remoção de Interfaces Visuais**: Todos os botões, links de checkout legados, simulações de sandbox no painel administrativo (`MasterPanel`), e labels de "Asaas legado" foram completamente removidos da interface de usuário, eliminando qualquer ponto de entrada ou indução para esses gateways desativados.
+

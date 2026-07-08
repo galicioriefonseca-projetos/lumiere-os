@@ -517,13 +517,13 @@ export default function ChecklistPage() {
     return () => unsubs.forEach((u) => u());
   }, [salonData]);
 
-  const handleCreateEssenzaChecklist = async () => {
+  const handleCreateLumièreChecklist = async () => {
     if (!salonData) return;
     const template = predefinedTemplates.find(
       (t) => t.type === "professional_daily_evaluation",
     );
     if (!template) {
-      toast.error("Template Essenza não encontrado");
+      toast.error("Template Lumière não encontrado");
       return;
     }
 
@@ -1331,7 +1331,7 @@ export default function ChecklistPage() {
 
       <div className="space-y-6">
         
-        {/* A) Avaliação Diária Essenza */}
+        {/* A) Avaliação Diária Lumière */}
         {canEvaluateTeam(userData?.role) && (
           <div className="border border-[#D4AF37]/15 bg-zinc-950/60 rounded-2xl overflow-hidden shadow-xl hover:border-[#D4AF37]/30 transition-all">
             {/* Clickable Header */}
@@ -1345,7 +1345,7 @@ export default function ChecklistPage() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white font-heading tracking-tight flex items-center gap-2">
-                    Avaliação Diária Essenza
+                    Avaliação Diária Lumière
                   </h3>
                   <p className="text-xs text-zinc-404 font-light mt-0.5">
                     Avaliação diária do padrão operacional, postura e excelência de atendimento dos profissionais.
@@ -1374,7 +1374,7 @@ export default function ChecklistPage() {
                     <p className="text-zinc-400 text-sm">
                       Nenhuma avaliação diária configurada ou ativa.
                     </p>
-                    <Button onClick={handleCreateEssenzaChecklist} className="bg-primary hover:bg-gold-500 text-black font-semibold h-10 px-5 rounded-xl text-xs pb-1 shrink-0">
+                    <Button onClick={handleCreateLumièreChecklist} className="bg-primary hover:bg-gold-500 text-black font-semibold h-10 px-5 rounded-xl text-xs pb-1 shrink-0">
                       Criar de forma automática
                     </Button>
                   </div>
@@ -1485,7 +1485,7 @@ export default function ChecklistPage() {
                                   ? "Avaliação Concluída"
                                   : mobileStep === "evaluation"
                                     ? "Ficha de Avaliação"
-                                    : "Avaliação Diária Essenza"}
+                                    : "Avaliação Diária Lumière"}
                               </span>
                             </DialogTitle>
                           </div>
@@ -1877,7 +1877,7 @@ export default function ChecklistPage() {
                                               "Apresentação Pessoal": [
                                                 "O profissional estava com uniforme adequado e aparência impecável?",
                                                 "Manteve cuidados com higiene, asseio e boa apresentação?",
-                                                "Manifestou postura elegante de acordo com o padrão do salão Essenza?"
+                                                "Manifestou postura elegante de acordo com o padrão do salão Lumière?"
                                               ],
                                               "Pontualidade e Organização": [
                                                 "Cumpriu o horário de entrada e início do expediente?",
@@ -1911,7 +1911,7 @@ export default function ChecklistPage() {
                                               ],
                                               "Desempenho Comercial": [
                                                 "Sugeriu tratamentos, rituais complementares ou combos?",
-                                                "Apresentou de forma elegante os produtos Home Care Essenza?",
+                                                "Apresentou de forma elegante os produtos Home Care Lumière?",
                                                 "Incentivou delicadamente o retorno e novo agendamento?"
                                               ]
                                             };

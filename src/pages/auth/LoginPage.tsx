@@ -1,28 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Sparkles, ArrowLeft, Chrome } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Sparkles, Mail, KeyRound, ArrowRight, Eye, EyeOff, 
+  HelpCircle, ArrowLeft, Send, CheckCircle2, AlertTriangle, Play 
+} from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
-import { signInWithEmailAndPassword, signInWithCustomToken } from 'firebase/auth';
-import { toast } from 'sonner';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
+import { 
+  signInWithEmailAndPassword, 
+  signInWithCustomToken, 
+  sendPasswordResetEmail,
+  GoogleAuthProvider,
+  signInWithPopup
+} from 'firebase/auth';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
-import PWAInstallButton from '../../components/PWAInstallButton';
+import AuthLayout from '../../components/auth/AuthLayout';
+import AuthCard from '../../components/auth/AuthCard';
+import { translateAuthError, checkIfEmailExists, createActivationToken } from '../../lib/auth-helpers';
+import { logAuthAuditEvent } from '../../lib/audit';
+
+type LoginMode = 'login' | 'recovery' | 'activation-sim';
 
 export default function LoginPage() {
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/dashboard';
-  const { signInWithGoogle, currentUser, userData, isPlatformAdmin } = useAuth();
+  const { signInWithGoogle, currentUser, userData, isPlatformAdmin, refreshUserData } = useAuth();
 
+  const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
+  const isPlatform = isPlatformAdmin || userData?.role === 'platform_admin' || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+  const showSimulator = isDevelopment || isPlatform;
+
+  // Mode state
+  const [mode, setMode] = useState<LoginMode>('login');
+
+  // Input states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [keepConnected, setKeepConnected] = useState(true);
 
+  // Activation simulator input states
+  const [simName, setSimName] = useState('');
+  const [simEmail, setSimEmail] = useState('');
+  const [simSalon, setSimSalon] = useState('Salão Lumière Classic');
+  const [simCreatedSalonId, setSimCreatedSalonId] = useState('');
+  const [simCreatedToken, setSimCreatedToken] = useState('');
+  const [simEmailSent, setSimEmailSent] = useState(false);
+
+  // Loading & Error feedback states
+  const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
+
+  // Check URL params for pre-filling or deep-linking
   const queryParams = new URLSearchParams(location.search);
-  const isPwaSource = queryParams.get('source') === 'pwa';
+  const emailQuery = queryParams.get('email');
+  const recoveryQuery = queryParams.get('recovery');
 
+  useEffect(() => {
+    if (emailQuery) {
+      setEmail(emailQuery);
+    }
+    if (recoveryQuery === 'true') {
+      setMode('recovery');
+    }
+  }, [emailQuery, recoveryQuery]);
+
+  // Session persistence and intelligent redirection on load
   useEffect(() => {
     if (currentUser && userData) {
       if (isPlatformAdmin || userData.role === 'platform_admin' || currentUser.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
@@ -35,32 +82,36 @@ export default function LoginPage() {
     }
   }, [currentUser, userData, isPlatformAdmin, navigate]);
 
+  // Handle direct/proxy email login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading) return; // Guard for double or premature submissions
+    if (loading) return;
 
     if (!email.trim() || !password) {
-      toast.error('Favor informar o e-mail e a senha.');
+      setError('Por favor, informe seu e-mail corporativo e senha.');
       return;
     }
 
     setLoading(true);
+    setError(null);
+    setStatusText('Validando credenciais...');
+
     try {
       let user;
       try {
-        console.log("[LumièreAuth] Tentando login direto...");
+        console.log("[LumièreAuth] Tentando autenticação segura direta...");
         const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
         user = userCredential.user;
       } catch (directErr: any) {
-        console.warn("[LumièreAuth] Falha no login direto:", directErr);
+        console.warn("[LumièreAuth] Falha no canal direto, acionando fallback proxy:", directErr);
         
-        // Se der erro de rede (Ex: bloqueio de dns, adblock, carrier firewall, etc), usar o proxy do servidor
+        // Trigger server proxy if network-level failures block client direct connection
         if (
           directErr.code === 'auth/network-request-failed' || 
           directErr.message?.includes('network-request-failed') ||
           directErr.code === 'auth/internal-error'
         ) {
-          console.log("[LumièreAuth] Ativando fallback de login por proxy de servidor...");
+          setStatusText('Sincronizando via proxy seguro Lumière...');
           const proxyResp = await fetch("/api/auth/login", {
             method: "POST",
             headers: {
@@ -82,339 +133,740 @@ export default function LoginPage() {
           const { customToken } = await proxyResp.json();
           const userCredential = await signInWithCustomToken(auth, customToken);
           user = userCredential.user;
-          console.log("[LumièreAuth] Login realizado com sucesso via proxy.");
         } else {
           throw directErr;
         }
       }
 
-      // Clear any dev simulated role to prevent overriding logging user's role
+      setStatusText('Sincronizando perfil corporativo...');
       sessionStorage.removeItem('demo_role');
 
-      // Resolve redirect target dynamically
+      // Check account details in Firestore
       let targetPath = '/dashboard';
-      try {
-        const userSnap = await getDoc(doc(db, 'users', user.uid));
-        const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+      const userSnap = await getDoc(doc(db, 'users', user.uid));
+      const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+      
+      let isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
+      let isOwner = userSnap.exists() && userSnap.data()?.role === 'owner';
+
+      // Fallback for demo users
+      if (!isPlatform && !isOwner) {
+        if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) isPlatform = true;
+        else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
+      }
+
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
         
-        let isPlatform = false;
-        let isOwner = false;
-        
-        if (adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin')) {
-          isPlatform = true;
-        } else if (userSnap.exists() && userSnap.data()?.role === 'owner') {
-          isOwner = true;
+        // Block inactive users elegantly
+        if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
+          setError("Sua conta está inativa. Entre em contato com o suporte Lumière.");
+          await auth.signOut();
+          setLoading(false);
+          return;
         }
 
-        // TEMPORARY BOOTSTRAP FALLBACK: fallback por e-mail para configuração inicial caso o banco de dados esteja vazio
-        if (!isPlatform && !isOwner) {
-          if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
-            isPlatform = true;
-          } else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
-            isOwner = true;
+        // Auto-resolve missing salon associations
+        if (!isPlatform && !uData?.salonId) {
+          setStatusText('Sincronizando salão corporativo...');
+          const salonsColl = collection(db, 'salons');
+          const q1 = query(salonsColl, where('ownerId', '==', user.uid));
+          const snap1 = await getDocs(q1);
+          let foundSalonId = null;
+          if (!snap1.empty) {
+            foundSalonId = snap1.docs[0].id;
+          } else if (user.email) {
+            const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
+            const snap2 = await getDocs(q2);
+            if (!snap2.empty) {
+              foundSalonId = snap2.docs[0].id;
+            }
           }
-        }
 
-        if (userSnap.exists()) {
-          const uData = userSnap.data();
-          // Check for inactive user account status (Task 2 status validations)
-          if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
-            toast.error("Sua conta está inativa. Fale com o administrador.");
+          if (foundSalonId) {
+            await updateDoc(doc(db, 'users', user.uid), {
+              salonId: foundSalonId,
+              role: 'owner',
+              updatedAt: Date.now()
+            });
+            isOwner = true;
+          } else {
+            setError("Sua conta foi autenticada, mas não está vinculada a nenhum salão operacional.");
             await auth.signOut();
             setLoading(false);
             return;
           }
-          // Error check for missing salonId on non-platform_admin users
-          if (!isPlatform && !uData?.salonId) {
-            // Run fallback (Task 3)
-            const salonsColl = collection(db, 'salons');
-            const q1 = query(salonsColl, where('ownerId', '==', user.uid));
-            const snap1 = await getDocs(q1);
-            let foundSalonId = null;
-            if (!snap1.empty) {
-              foundSalonId = snap1.docs[0].id;
-            } else if (user.email) {
-              const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
-              const snap2 = await getDocs(q2);
-              if (!snap2.empty) {
-                foundSalonId = snap2.docs[0].id;
-              }
-            }
-
-            if (foundSalonId) {
-              console.log("[AuthLoginFallback] Salvando salonId auto-resolvido por login: ", foundSalonId);
-              await updateDoc(doc(db, 'users', user.uid), {
-                salonId: foundSalonId,
-                role: 'owner',
-                updatedAt: Date.now()
-              });
-              uData.salonId = foundSalonId;
-              uData.role = 'owner';
-              isOwner = true;
-            } else {
-              toast.error("Sua conta foi autenticada, mas ainda não está associada a nenhum salão operacional.");
-              await auth.signOut();
-              setLoading(false);
-              return;
-            }
-          }
         }
-        
-        if (isPlatform) {
-          targetPath = '/master';
-        } else if (isOwner) {
-          targetPath = '/dashboard';
-        } else if (userSnap.exists()) {
-          const uRole = userSnap.data()?.role;
-          if (uRole === 'professional') {
-            targetPath = '/dashboard/meu-painel';
-          } else {
-            if (from && from.startsWith('/dashboard') && from !== '/dashboard' && from !== '/dashboard/') {
-              targetPath = from;
-            } else {
-              targetPath = '/dashboard';
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Error checking user role on login:", err);
       }
 
-      toast.success('Login efetuado com sucesso.');
-      navigate(targetPath, { replace: true });
-    } catch (error: any) {
-      if (error.code === 'auth/invalid-credential') {
-        toast.error('E-mail ou senha incorretos.');
-      } else if (error.code === 'auth/user-not-found') {
-        toast.error('Conta não encontrada.');
-      } else if (error.code === 'auth/wrong-password') {
-        toast.error('Senha incorreta.');
-      } else if (error.code === 'auth/too-many-requests') {
-        toast.error('Muitas tentativas. Tente novamente em alguns minutos.');
-      } else {
-        console.error('Login error:', error);
-        toast.error('Erro ao acessar: ' + (error.message || 'Verifique suas credenciais.'));
+      if (isPlatform) {
+        targetPath = '/master';
+      } else if (isOwner) {
+        targetPath = '/dashboard';
+      } else if (userSnap.exists()) {
+        const uRole = userSnap.data()?.role;
+        if (uRole === 'professional') {
+          targetPath = '/dashboard/meu-painel';
+        } else {
+          targetPath = from.startsWith('/dashboard') ? from : '/dashboard';
+        }
       }
-    } finally {
+
+      setStatusText('Sessão estabelecida. Redirecionando...');
+      await refreshUserData();
+      try {
+        await logAuthAuditEvent(user.email || user.uid, 'Primeiro Login');
+      } catch (logErr) {
+        console.warn('Failed to register audit log:', logErr);
+      }
       setLoading(false);
+      navigate(`/preparando-ambiente?to=${encodeURIComponent(targetPath)}`, { replace: true });
+
+    } catch (err: any) {
+      console.error('[LumièreAuth] Login error:', err);
+      setLoading(false);
+      setError(translateAuthError(err.code || 'error', err.message));
     }
   };
 
+  // Handle Google OAuth login
   const handleGoogleLogin = async () => {
-    if (loading) return; // Guard for double submissions
+    if (loading) return;
     setLoading(true);
+    setError(null);
+    setStatusText('Conectando com o Google...');
+
     try {
       const user = await signInWithGoogle();
       
       let targetPath = '/dashboard';
-      try {
-        const userSnap = await getDoc(doc(db, 'users', user.uid));
-        const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
-        
-        let isPlatform = false;
-        let isOwner = false;
-        
-        if (adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin')) {
-          isPlatform = true;
-        } else if (userSnap.exists() && userSnap.data()?.role === 'owner') {
-          isOwner = true;
+      const userSnap = await getDoc(doc(db, 'users', user.uid));
+      const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+      
+      let isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
+      let isOwner = userSnap.exists() && userSnap.data()?.role === 'owner';
+
+      if (!isPlatform && !isOwner) {
+        if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) isPlatform = true;
+        else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
+      }
+
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
+          setError("Sua conta está inativa. Entre em contato com o suporte Lumière.");
+          await auth.signOut();
+          setLoading(false);
+          return;
         }
 
-        // TEMPORARY BOOTSTRAP FALLBACK: fallback por e-mail para configuração inicial caso o banco de dados esteja vazio
-        if (!isPlatform && !isOwner) {
-          if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
-            isPlatform = true;
-          } else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
-            isOwner = true;
+        if (!isPlatform && !uData?.salonId) {
+          const salonsColl = collection(db, 'salons');
+          const q1 = query(salonsColl, where('ownerId', '==', user.uid));
+          const snap1 = await getDocs(q1);
+          let foundSalonId = null;
+          if (!snap1.empty) {
+            foundSalonId = snap1.docs[0].id;
+          } else if (user.email) {
+            const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
+            const snap2 = await getDocs(q2);
+            if (!snap2.empty) {
+              foundSalonId = snap2.docs[0].id;
+            }
           }
-        }
 
-        if (userSnap.exists()) {
-          const uData = userSnap.data();
-          // Check for inactive user account status (Task 2 status validations)
-          if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
-            toast.error("Sua conta está inativa. Fale com o administrador.");
+          if (foundSalonId) {
+            await updateDoc(doc(db, 'users', user.uid), {
+              salonId: foundSalonId,
+              role: 'owner',
+              updatedAt: Date.now()
+            });
+            isOwner = true;
+          } else {
+            setError("Sua conta Google está autenticada, mas não está vinculada a nenhum salão operacional.");
             await auth.signOut();
             setLoading(false);
             return;
           }
-          // Error check for missing salonId on non-platform_admin users
-          if (!isPlatform && !uData?.salonId) {
-            // Run fallback (Task 3)
-            const salonsColl = collection(db, 'salons');
-            const q1 = query(salonsColl, where('ownerId', '==', user.uid));
-            const snap1 = await getDocs(q1);
-            let foundSalonId = null;
-            if (!snap1.empty) {
-              foundSalonId = snap1.docs[0].id;
-            } else if (user.email) {
-              const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
-              const snap2 = await getDocs(q2);
-              if (!snap2.empty) {
-                foundSalonId = snap2.docs[0].id;
-              }
-            }
-
-            if (foundSalonId) {
-              console.log("[AuthLoginFallback] Salvando salonId auto-resolvido por Google login: ", foundSalonId);
-              await updateDoc(doc(db, 'users', user.uid), {
-                salonId: foundSalonId,
-                role: 'owner',
-                updatedAt: Date.now()
-              });
-              uData.salonId = foundSalonId;
-              uData.role = 'owner';
-              isOwner = true;
-            } else {
-              toast.error("Sua conta foi autenticada, mas ainda não está associada a nenhum salão operacional.");
-              await auth.signOut();
-              setLoading(false);
-              return;
-            }
-          }
         }
-        
-        if (isPlatform) {
-          targetPath = '/master';
-        } else if (isOwner) {
-          targetPath = '/dashboard';
-        } else if (userSnap.exists()) {
-          const uRole = userSnap.data()?.role;
-          if (uRole === 'professional') {
-            targetPath = '/dashboard/meu-painel';
-          } else {
-            if (from && from.startsWith('/dashboard') && from !== '/dashboard' && from !== '/dashboard/') {
-              targetPath = from;
-            } else {
-              targetPath = '/dashboard';
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Error checking user role on Google login:", err);
       }
 
-      toast.success('Login efetuado com sucesso via Google.');
-      navigate(targetPath, { replace: true });
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-registered-google') {
-        toast.error('Sua conta Google ainda não está vinculada a um salão. Escolha um plano ou acesse por convite.');
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        toast.error('A conexão do Google foi fechada antes de ser concluída.');
-      } else if (error.code === 'auth/account-exists-with-different-credential') {
-        toast.error('Já existe uma conta associada a este e-mail do Google com outra senha.');
-      } else if (error.code === 'auth/unauthorized-domain') {
-        toast.error(`Domínio não autorizado nas configurações do Firebase. Adicione o domínio "${window.location.hostname}" em Firebase Console -> Authentication -> Configurações -> Domínios autorizados.`, { duration: 10000 });
-      } else {
-        console.error('Google login error:', error);
-        toast.error('Ocorreu um erro no login do Google: ' + (error.message || 'Erro inesperado'));
+      if (isPlatform) {
+        targetPath = '/master';
+      } else if (isOwner) {
+        targetPath = '/dashboard';
+      } else if (userSnap.exists()) {
+        const uRole = userSnap.data()?.role;
+        if (uRole === 'professional') {
+          targetPath = '/dashboard/meu-painel';
+        } else {
+          targetPath = from.startsWith('/dashboard') ? from : '/dashboard';
+        }
       }
-    } finally {
+
+      await refreshUserData();
+      try {
+        await logAuthAuditEvent(user.email || user.uid, 'Login Google');
+      } catch (logErr) {
+        console.warn('Failed to register audit log:', logErr);
+      }
       setLoading(false);
+      navigate(`/preparando-ambiente?to=${encodeURIComponent(targetPath)}`, { replace: true });
+
+    } catch (err: any) {
+      console.error('[LumièreAuth] Google login error:', err);
+      setLoading(false);
+      setError(translateAuthError(err.code || 'error', err.message));
+    }
+  };
+
+  // Handle password recovery link sending
+  const handleRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
+
+    if (!email.trim()) {
+      setError('Por favor, informe seu endereço de e-mail.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setStatusText('Enviando link de redefinição...');
+
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      try {
+        await logAuthAuditEvent(email.trim(), 'Reset solicitado');
+      } catch (logErr) {
+        console.warn('Failed to register audit log:', logErr);
+      }
+      setLoading(false);
+      setRecoverySuccess(true);
+    } catch (err: any) {
+      console.error('[LumièreAuth] Password reset link error:', err);
+      setLoading(false);
+      setError(translateAuthError(err.code || 'error', err.message));
+    }
+  };
+
+  // Helper to generate a mock salon record and show a welcome email inside the browser
+  const handleGenerateActivationEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!simEmail.trim()) {
+      setError('Forneça um e-mail para simular a ativação.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setStatusText('Criando salão de testes empresarial...');
+
+    try {
+      // 1. Create a simulated, pending salon in Firestore
+      const mockSalonId = 'salon_sim_' + Math.random().toString(36).substring(2, 9).toUpperCase();
+      const now = Date.now();
+      
+      const mockSalonRef = doc(db, 'salons', mockSalonId);
+      await setDoc(mockSalonRef, {
+        id: mockSalonId,
+        name: simSalon || 'Salão Lumière Classic',
+        ownerName: simName || 'Proprietário Simulado',
+        ownerEmail: simEmail.trim().toLowerCase(),
+        phone: '11999999999',
+        businessType: 'Salão de Beleza',
+        city: 'São Paulo',
+        state: 'SP',
+        plan: 'performance',
+        subscriptionStatus: 'pending', // Waiting for activation
+        activationStatus: 'pending',
+        isActive: false,
+        createdAt: now,
+        updatedAt: now
+      });
+
+      // 2. Create the activation token
+      setStatusText('Gerando token de ativação seguro...');
+      const token = await createActivationToken(simEmail.trim().toLowerCase(), mockSalonId);
+
+      setSimCreatedSalonId(mockSalonId);
+      setSimCreatedToken(token);
+      setLoading(false);
+      setSimEmailSent(true);
+    } catch (err: any) {
+      console.error('[LumièreAuth] Simulated activation generation failed:', err);
+      setLoading(false);
+      setError('Erro ao preparar salão simulado no banco de dados. Tente novamente.');
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-background to-background -z-10" />
-      
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center mb-8">
-          <Link to="/" className="flex items-center gap-2 group">
-            <Sparkles className="w-10 h-10 text-primary transition-transform group-hover:scale-110" />
-            <span className="text-3xl font-heading font-medium tracking-wide">Lumière</span>
-          </Link>
-        </div>
-        <h2 className="mt-6 text-center text-3xl font-light font-heading tracking-tight text-foreground">
-          Acesse sua conta
-        </h2>
-        {isPwaSource && (
-          <p className="mt-2 text-center text-xs text-primary font-mono tracking-wider animate-pulse">
-            ★ Bem-vindo ao LumiereOS App ★
-          </p>
-        )}
-      </div>
+    <AuthLayout 
+      showBackButton={mode !== 'login'} 
+      backTo="/login" 
+      backText="Voltar para login"
+      onBackClick={() => setMode('login')}
+    >
+      <AnimatePresence mode="wait">
+        
+        {/* VIEW 1: LOGIN FORM */}
+        {mode === 'login' && (
+          <motion.div
+            key="login-view"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.4 }}
+          >
+            <AuthCard
+              title="Painel Executivo"
+              subtitle="Entre com suas credenciais para gerenciar sua empresa da beleza."
+              loading={loading}
+              statusText={statusText}
+              error={error}
+              onDismissError={() => setError(null)}
+            >
+              <form onSubmit={handleLogin} className="space-y-4 font-sans">
+                {/* Email Input */}
+                <div>
+                  <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                    E-mail Corporativo
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <input
+                      type="email"
+                      placeholder="seuemail@lumiereos.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="w-full pl-10 pr-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                    />
+                  </div>
+                </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-card/50 backdrop-blur-xl py-8 px-4 shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-white/10 sm:rounded-3xl sm:px-10">
-          <form className="space-y-6" onSubmit={handleLogin}>
-            <div>
-              <Label htmlFor="email">E-mail</Label>
-              <div className="mt-2">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="flex h-12 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary/50 transition-colors"
-                  placeholder="admin@seusalao.com"
-                />
+                {/* Password Input */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest">
+                      Senha de Acesso
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setMode('recovery')}
+                      className="text-xs text-primary hover:text-amber-300 font-sans tracking-wide transition-colors"
+                    >
+                      Esqueceu sua senha?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Sua senha corporativa"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="w-full pl-10 pr-10 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Keep Connected & Activation Link */}
+                <div className="flex items-center justify-between py-1.5 font-sans">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={keepConnected}
+                      onChange={(e) => setKeepConnected(e.target.checked)}
+                      className="w-4 h-4 rounded border-neutral-800 bg-neutral-950/80 text-primary focus:ring-0 focus:ring-offset-0 cursor-pointer accent-primary"
+                    />
+                    <span className="text-xs text-neutral-400">Manter-me conectado</span>
+                  </label>
+                  <Link
+                    to="/ativar-conta"
+                    className="text-xs text-primary hover:text-amber-300 font-sans transition-colors"
+                  >
+                    Ativar minha conta
+                  </Link>
+                </div>
+
+                {/* Login Button */}
+                <button
+                  type="submit"
+                  className="w-full py-3.5 px-4 mt-2 rounded-xl bg-primary hover:bg-amber-500 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2.5 transition-all duration-300 shadow-[0_4px_20px_rgba(212,175,55,0.25)] hover:shadow-[0_4px_25px_rgba(212,175,55,0.4)]"
+                >
+                  <span>Entrar na Plataforma</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </form>
+
+              {/* Social Login Separator */}
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-neutral-800/80" />
+                </div>
+                <div className="relative flex justify-center text-[10px] uppercase font-mono">
+                  <span className="bg-[#121212] px-3 text-neutral-500 tracking-wider">OU ACESSE COM</span>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <Label htmlFor="password">Senha</Label>
-              <div className="mt-2">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="flex h-12 w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-foreground outline-none focus:border-primary/50 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Button type="submit" disabled={loading} className="w-full rounded-full h-12 bg-primary hover:bg-gold-400 text-black font-medium text-base">
-                {loading ? 'Entrando...' : 'Entrar na Conta'}
-              </Button>
-            </div>
-          </form>
-
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-[#141414] px-3 text-muted-foreground text-[11px] tracking-wider">ou entre com</span>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <Button
+              {/* Google SSO Login */}
+              <button
                 type="button"
-                disabled={loading}
                 onClick={handleGoogleLogin}
-                className="w-full rounded-full h-12 bg-black/40 hover:bg-black/80 text-foreground border border-white/10 hover:border-primary/20 transition-all flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 rounded-xl bg-neutral-950/60 hover:bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-neutral-200 font-medium text-xs flex items-center justify-center gap-2.5 transition-all duration-300"
               >
-                <Chrome className="w-4 h-4 text-primary" />
-                <span>Entrar com Google</span>
-              </Button>
-            </div>
-          </div>
-          
-          <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Não tem uma conta?{' '}
-              <Link to="/#planos" className="font-medium text-primary hover:text-gold-400">
-                Escolha um plano
-              </Link>
-            </p>
-          </div>
-        </div>
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.87-2.6-3.3-4.53-6.16-4.53z" />
+                  <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                </svg>
+                <span>Conectar com Conta Google</span>
+              </button>
 
-        <div className="mt-6 flex justify-center px-4 sm:px-0">
-          <PWAInstallButton variant="banner" />
-        </div>
-      </div>
-    </div>
+              {/* Extra helper links: Activation Simulation or Back */}
+              <div className="mt-8 pt-6 border-t border-neutral-800/60 flex flex-col items-center gap-3">
+                {showSimulator && (
+                  <button
+                    type="button"
+                    onClick={() => setMode('activation-sim')}
+                    className="text-xs text-neutral-400 hover:text-primary transition-colors flex items-center gap-2 group font-mono tracking-wider"
+                  >
+                    <HelpCircle className="w-4 h-4 text-primary group-hover:animate-bounce shrink-0" />
+                    <span>SIMULAR RECEBIMENTO DO E-MAIL DE ATIVAÇÃO</span>
+                  </button>
+                )}
+
+                <Link
+                  to="/"
+                  className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors uppercase font-mono tracking-widest pt-1"
+                >
+                  Voltar à Página Inicial
+                </Link>
+              </div>
+            </AuthCard>
+          </motion.div>
+        )}
+
+        {/* VIEW 2: ACCESS RECOVERY (Forgot Password) */}
+        {mode === 'recovery' && (
+          <motion.div
+            key="recovery-view"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.4 }}
+          >
+            <AuthCard
+              title="Recuperar Acesso"
+              subtitle={recoverySuccess ? "Instruções enviadas com sucesso." : "Inicie o procedimento de recuperação de sua senha corporativa."}
+              loading={loading}
+              statusText={statusText}
+              error={error}
+              onDismissError={() => setError(null)}
+            >
+              <AnimatePresence mode="wait">
+                {!recoverySuccess ? (
+                  <motion.form
+                    key="recovery-form"
+                    onSubmit={handleRecovery}
+                    className="space-y-4 font-sans"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <p className="text-xs text-neutral-400 leading-relaxed mb-2">
+                      Insira o e-mail cadastrado em seu salão de beleza. Enviaremos um link seguro para você redefinir sua senha de acesso em instantes.
+                    </p>
+
+                    <div>
+                      <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                        E-mail Cadastrado
+                      </label>
+                      <div className="relative">
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                        <input
+                          type="email"
+                          placeholder="seuemail@lumiereos.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="w-full pl-10 pr-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3.5 px-4 rounded-xl bg-primary hover:bg-amber-500 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-300"
+                    >
+                      <span>Solicitar Link de Recuperação</span>
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setMode('login')}
+                      className="w-full py-3 px-4 text-xs text-neutral-400 hover:text-neutral-200 transition-colors uppercase font-mono tracking-wider pt-2"
+                    >
+                      Cancelar e voltar ao login
+                    </button>
+                  </motion.form>
+                ) : (
+                  <motion.div
+                    key="recovery-success"
+                    className="text-center p-2 font-sans"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    
+                    <h3 className="text-sm font-semibold text-neutral-100 mb-1.5">
+                      E-mail de Redefinição Enviado
+                    </h3>
+                    
+                    <p className="text-xs text-neutral-400 leading-relaxed mb-6">
+                      Se o endereço <b className="text-neutral-200">{email}</b> estiver cadastrado na plataforma, você receberá um link seguro para escolher sua nova senha em instantes.
+                    </p>
+
+                    <button
+                      onClick={() => {
+                        setRecoverySuccess(false);
+                        setMode('login');
+                      }}
+                      className="w-full py-3 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-100 font-semibold text-xs uppercase tracking-wider transition-colors"
+                    >
+                      Voltar ao Painel de Login
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </AuthCard>
+          </motion.div>
+        )}
+
+        {/* VIEW 3: WELCOME EMAIL / ACTIVATION SIMULATOR */}
+        {mode === 'activation-sim' && (
+          <motion.div
+            key="activation-sim-view"
+            className="w-full max-w-lg mx-auto"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 15 }}
+            transition={{ duration: 0.5 }}
+          >
+            {/* If email not simulated yet, show setup. If simulated, show the browser email client! */}
+            <AnimatePresence mode="wait">
+              {!simEmailSent ? (
+                <motion.div key="setup-sim">
+                  <AuthCard
+                    title="Simulador de E-mail"
+                    subtitle="Simule o fluxo de onboarding e recebimento de e-mail corporativo de ativação."
+                    loading={loading}
+                    statusText={statusText}
+                    error={error}
+                    onDismissError={() => setError(null)}
+                  >
+                    <form onSubmit={handleGenerateActivationEmail} className="space-y-4 font-sans">
+                      <p className="text-xs text-neutral-400 leading-relaxed">
+                        Preencha os campos abaixo. O sistema criará um registro de salão pendente em nosso banco de dados Firestore e mostrará o e-mail oficial contendo o botão de ativação.
+                      </p>
+
+                      <div>
+                        <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                          Nome do Gestor
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Leandro Fonseca"
+                          value={simName}
+                          onChange={(e) => setSimName(e.target.value)}
+                          required
+                          className="w-full px-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                          E-mail de Cadastro
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="Ex: gestao@lumiereos.com"
+                          value={simEmail}
+                          onChange={(e) => setSimEmail(e.target.value)}
+                          required
+                          className="w-full px-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                          Nome do Estabelecimento
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Lumière Prime Studio"
+                          value={simSalon}
+                          onChange={(e) => setSimSalon(e.target.value)}
+                          required
+                          className="w-full px-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full py-3.5 px-4 rounded-xl bg-primary hover:bg-amber-500 text-neutral-950 font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all duration-300"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Gerar Simulação e Ver E-mail</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setMode('login')}
+                        className="w-full py-2.5 px-4 text-xs font-mono tracking-wide text-neutral-500 hover:text-neutral-300 transition-colors uppercase"
+                      >
+                        Voltar ao login
+                      </button>
+                    </form>
+                  </AuthCard>
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="email-client-preview"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl font-sans text-left"
+                >
+                  {/* Mock Browser/Email Client Top Bar */}
+                  <div className="bg-neutral-950 px-4 py-3 border-b border-neutral-800 flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-red-500 rounded-full" />
+                      <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full" />
+                      <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
+                    </div>
+                    <span className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">
+                      Caixa de Entrada • Gmail / Outlook
+                    </span>
+                    <button 
+                      onClick={() => setSimEmailSent(false)}
+                      className="text-[10px] font-mono bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 hover:text-neutral-200 transition-colors px-2 py-1 rounded"
+                    >
+                      EDITAR
+                    </button>
+                  </div>
+
+                  {/* Mail header */}
+                  <div className="p-4 sm:p-5 border-b border-neutral-800 bg-neutral-950/40 space-y-1.5 text-xs">
+                    <div>
+                      <span className="text-neutral-500 font-mono">Assunto:</span>{' '}
+                      <b className="text-neutral-100 text-sm">Bem-vindo ao LumièreOS! Complete sua ativação</b>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 font-mono">De:</span>{' '}
+                      <span className="text-amber-400 font-medium">LumièreOS Atendimento &lt;onboarding@lumiereos.com&gt;</span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-500 font-mono">Para:</span>{' '}
+                      <span className="text-neutral-300 font-medium">{simEmail.toLowerCase()}</span>
+                    </div>
+                  </div>
+
+                  {/* Mail Body - High Fidelity Luxury Email Layout */}
+                  <div className="p-6 sm:p-8 bg-neutral-950 text-neutral-100 max-w-full overflow-hidden leading-relaxed">
+                    <div className="max-w-md mx-auto space-y-6">
+                      
+                      {/* Email Brand Identity */}
+                      <div className="text-center pb-4 border-b border-neutral-900">
+                        <Sparkles className="w-10 h-10 text-primary mx-auto mb-2" />
+                        <span className="text-xl font-heading tracking-widest uppercase font-semibold text-neutral-100">
+                          LumièreOS
+                        </span>
+                        <p className="text-[9px] font-mono tracking-widest text-neutral-500 uppercase mt-0.5">
+                          The Operating System for Beauty Businesses
+                        </p>
+                      </div>
+
+                      {/* Email Content Greeting */}
+                      <div className="space-y-4 text-sm font-sans font-light text-neutral-300">
+                        <p>Olá, <b className="text-neutral-50 font-normal">{simName || 'Parceiro Lumière'}</b>,</p>
+                        
+                        <p>
+                          É com enorme prestígio que lhe damos as boas-vindas ao LumièreOS. 
+                          Seu pagamento e adesão corporativa para o plano empresarial do estabelecimento 
+                          <b className="text-primary font-normal"> {simSalon}</b> foram validados com êxito!
+                        </p>
+                        
+                        <p>
+                          Agora, você está a um passo de desbloquear o ecossistema operacional definitivo de gestão e marketing premium do setor da beleza.
+                        </p>
+                      </div>
+
+                      {/* Activation Button Block */}
+                      <div className="py-6 text-center bg-neutral-900/50 rounded-2xl border border-neutral-900 space-y-3">
+                        <p className="text-xs text-neutral-400 font-sans">
+                          Clique no botão oficial abaixo para ativar suas credenciais executivas:
+                        </p>
+                        
+                        <div className="flex justify-center">
+                          <Link
+                            to={`/ativar-conta?token=${encodeURIComponent(simCreatedToken)}`}
+                            className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-primary hover:bg-amber-500 text-neutral-950 font-semibold text-sm transition-all duration-300 shadow-[0_4px_20px_rgba(212,175,55,0.25)] scale-100 hover:scale-[1.03]"
+                          >
+                            <span>ATIVAR MINHA CONTA</span>
+                            <ArrowRight className="w-4 h-4" />
+                          </Link>
+                        </div>
+                        
+                        <p className="text-[10px] text-neutral-500 font-mono tracking-wide uppercase">
+                          Garantia de 7 dias pela Cakto • Link Seguro
+                        </p>
+                      </div>
+
+                      {/* Extra info */}
+                      <div className="space-y-2 text-xs font-sans text-neutral-400 font-light border-t border-neutral-900 pt-5">
+                        <p>
+                          Se você não solicitou este e-mail, por favor desconsidere este aviso de segurança. 
+                          O LumièreOS opera sob rígidos protocolos corporativos de confidencialidade de dados.
+                        </p>
+                        
+                        <div className="pt-2 text-neutral-500 text-[10px] font-mono uppercase tracking-wider text-center">
+                          Lumière Technologies Inc. • Av. Paulista, 1000 • São Paulo, SP
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Simulation Helper Banner at the bottom */}
+                  <div className="bg-neutral-900 p-4 border-t border-neutral-800 text-center space-y-2.5">
+                    <p className="text-xs text-amber-300 font-sans font-medium flex items-center justify-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                      <span>AMBENTE DE SIMULAÇÃO ATIVO</span>
+                    </p>
+                    <p className="text-[11px] text-neutral-400 max-w-sm mx-auto">
+                      O botão acima é um link de simulação real. Clique nele para abrir a tela de ativação de conta oficial e concluir as configurações.
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+      </AnimatePresence>
+    </AuthLayout>
   );
 }

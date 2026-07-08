@@ -1029,7 +1029,7 @@ export default function ProfessionalsPage() {
             <DialogContent className="sm:max-w-[480px] bg-zinc-950 border border-[#D4AF37]/20 text-white rounded-3xl p-6 shadow-2xl">
               <DialogHeader>
                 <DialogTitle className="font-heading font-normal text-white flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-primary" /> Link Único de Equipe (Essenza)
+                  <Sparkles className="w-5 h-5 text-primary" /> Link Único de Equipe (Lumière)
                 </DialogTitle>
                 <CardDescription className="text-xs text-zinc-400">
                   Envie este link único no WhatsApp do grupo. Cada profissional poderá escolher sua função principal e secundárias por conta própria.
@@ -1107,7 +1107,7 @@ export default function ProfessionalsPage() {
                 </span>
               </div>
               <CardDescription className="text-xs mt-0.5 hidden sm:block text-zinc-400">
-                Copie e envie para novos profissionais ou gerentes se registrarem em sua equipe do Essenza.
+                Copie e envie para novos profissionais ou gerentes se registrarem em sua equipe do Lumière.
               </CardDescription>
             </div>
             

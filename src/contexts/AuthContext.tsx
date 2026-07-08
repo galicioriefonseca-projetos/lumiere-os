@@ -4,6 +4,7 @@ import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { User, Salon, Role } from '../types';
 import { ensureTutorialSalonForLeandro } from '@/lib/seedTutorialSalon';
+import { logAuthAuditEvent } from '../lib/audit';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -1198,6 +1199,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     setLoading(true);
+    const userEmail = currentUser?.email || currentUser?.uid || 'Unknown';
+    try {
+      await logAuthAuditEvent(userEmail, 'Logout');
+    } catch (e) {
+      console.warn('Failed to register logout audit log:', e);
+    }
     await signOut(getAuth());
     setUserData(null);
     setSalonData(null);
@@ -1349,7 +1356,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       const now = Date.now();
-      const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
+      const previewEndsAt = now + 7 * 24 * 60 * 60 * 1000;
       const salonId = crypto.randomUUID();
       const fullName = optionalFullName || user.displayName || existingData.fullName || salonFields.ownerName || '';
 
@@ -1364,9 +1371,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         city: salonFields.city,
         state: salonFields.state,
         plan: salonFields.plan,
-        subscriptionStatus: 'trial',
+        subscriptionStatus: 'preview',
         activationStatus: 'active',
-        trialEndsAt: trialEndsAt,
+        previewEndsAt: previewEndsAt,
         isActive: true,
         professionalsLimit: salonFields.limit,
         createdAt: now,
@@ -1392,7 +1399,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const now = Date.now();
-    const trialEndsAt = now + 7 * 24 * 60 * 60 * 1000;
+    const previewEndsAt = now + 7 * 24 * 60 * 60 * 1000;
     const salonId = crypto.randomUUID();
     const fullName = optionalFullName || user.displayName || salonFields.ownerName || '';
 
@@ -1407,9 +1414,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       city: salonFields.city,
       state: salonFields.state,
       plan: salonFields.plan,
-      subscriptionStatus: 'trial',
+      subscriptionStatus: 'preview',
       activationStatus: 'active',
-      trialEndsAt: trialEndsAt,
+      previewEndsAt: previewEndsAt,
       isActive: true,
       professionalsLimit: salonFields.limit,
       createdAt: now,

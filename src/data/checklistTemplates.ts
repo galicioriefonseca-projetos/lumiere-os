@@ -16,7 +16,7 @@ export interface PredefinedTemplate {
 
 export const predefinedTemplates: PredefinedTemplate[] = [
   {
-    title: 'Avaliação Diária do Profissional — Essenza',
+    title: 'Avaliação Diária do Profissional — Lumière',
     type: 'professional_daily_evaluation',
     checklistGroup: 'professional_evaluation',
     scoringMode: 'rating_1_5',

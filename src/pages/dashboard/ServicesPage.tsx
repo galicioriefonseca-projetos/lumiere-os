@@ -872,7 +872,7 @@ export default function ServicesPage() {
             Gestão de <span className="font-semibold text-[#D4AF37]">Serviços</span>
           </h1>
           <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-            Cadastre os serviços oferecidos no salão, defina faixas de preço (fixo, a partir de ou sob avaliação) e tempos de duração. Importe o catálogo de luxo Essenza com apenas um clique.
+            Cadastre os serviços oferecidos no salão, defina faixas de preço (fixo, a partir de ou sob avaliação) e tempos de duração. Importe o catálogo de luxo Lumière com apenas um clique.
           </p>
         </div>
 
@@ -1258,7 +1258,7 @@ export default function ServicesPage() {
                 size="sm"
                 className="bg-[#D4AF37] hover:bg-[#D4AF37]/80 text-black font-semibold rounded-xl text-xs px-3.5"
               >
-                Importar Essenza
+                Importar Lumière
               </Button>
             </div>
           )}
@@ -1414,7 +1414,7 @@ export default function ServicesPage() {
             <div className="flex justify-between items-start gap-4">
               <div className="space-y-1">
                 <DialogTitle className="text-lg font-heading font-semibold text-white flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#D4AF37]" /> Biblioteca de Serviços Essenza
+                  <Sparkles className="w-5 h-5 text-[#D4AF37]" /> Biblioteca de Serviços Lumière
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-400 font-light">
                   Selecione os serviços que deseja importar para seu salão. Evitamos duplicações de serviços já existentes.

@@ -55,7 +55,7 @@ export function isPaymentDueInDays(salon: Salon, days: number): boolean {
 
 export function getSubscriptionStatusLabel(status: string): string {
   switch (status) {
-    case 'trial': return 'Período de Teste';
+    case 'preview': return 'Avaliação Preview';
     case 'active': return 'Ativo';
     case 'pending_payment': return 'Pagamento Pendente';
     case 'overdue': return 'Vencido';

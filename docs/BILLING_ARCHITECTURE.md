@@ -1,3 +1,5 @@
+Asaas foi descontinuado como gateway ativo do LumièreOS.
+
 # Arquitetura de Faturamento Recorrente (Billing Architecture) - LumièreOS
 
 Este documento descreve a arquitetura de faturamento projetada para suportar a cobrança recorrente e a gestão de assinaturas do LumièreOS de forma modular, segura e 100% retrocompatível com a base de clientes existente.
@@ -58,9 +60,8 @@ O `BillingService` atua como a única porta de entrada (**Facade**) para todas a
 2.  **Injeção de Dependência**: Permitir a troca dinâmica do provedor através do método `setProvider(provider)`.
 3.  **Segurança e Validação**: Adicionar camadas de segurança adicionais antes de repassar chamadas para serviços externos.
 
-### D. O Gateway Específico (`providers/asaas/AsaasProvider.ts`)
-É o módulo especialista encarregado de traduzir as chamadas da interface `BillingProvider` em chamadas HTTP ou de SDK específicas da API do Asaas. 
-Nesta Sprint 2 de arquitetura, todos os métodos foram projetados de forma passiva, lançando `"Not implemented"`, garantindo que nenhuma requisição ou comportamento inesperado seja executado no ambiente de produção.
+### D. O Gateway Específico (DEPRECATED - Asaas/Mercado Pago)
+Tanto o Asaas quanto o Mercado Pago foram desativados e removidos de todas as partes ativas do frontend e simulação do LumièreOS. Suas implementações no código são mantidas passivas e seus campos no Firestore servem estritamente como legado histórico compatível. Todo faturamento recorrente ativo utiliza exclusivamente a **Cakto**, e o faturamento manual utiliza o **Manual PIX**.
 
 ---
 

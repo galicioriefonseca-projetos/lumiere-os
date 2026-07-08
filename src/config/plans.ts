@@ -86,7 +86,7 @@ export const PLANS_CONFIG: Record<PlanType, PlanConfig> = {
       'Acesso Completo a todos os recursos',
       'Sem bloqueios ou limites restritos',
       'Atualizações futuras inclusas',
-      'Checklist Essenza',
+      'Checklist Lumière',
       'Metas por equipe',
       'Relatórios e Indicadores',
       'Suporte prioritário e implantação assistida'
@@ -124,7 +124,7 @@ export function hasPlanFeature(plan: PlanType | string | undefined, feature: str
     return normalizedPlan === 'performance';
   }
 
-  if (feature === 'checklist' || feature === 'checklist_essenza') {
+  if (feature === 'checklist' || feature === 'checklist_lumiere') {
     return normalizedPlan === 'performance';
   }
 

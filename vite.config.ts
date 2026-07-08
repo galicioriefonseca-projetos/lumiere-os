@@ -171,7 +171,7 @@ export default defineConfig(({mode}) => {
               ]
             },
             {
-              name: 'Checklists Essenza',
+              name: 'Checklists Operacionais',
               short_name: 'Checklists',
               description: 'Acompanhe checklists operacionais de abertura e fechamento',
               url: '/dashboard/checklist?source=pwa_shortcut',
