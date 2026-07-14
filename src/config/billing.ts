@@ -12,7 +12,7 @@ export const BILLING_CONFIG = {
     // Configurações do comportamento do checkout
     chargeType: 'RECURRING', // Padrão recorrente
     paymentMethods: ['CREDIT_CARD', 'PIX'], // Métodos seguros aceitos
-    sandboxMode: true, // Homologação ativa por padrão
+    sandboxMode: (import.meta.env.DEV === true) || (import.meta.env.VITE_CAKTO_SANDBOX_MODE === "true"), // Homologação ativa apenas em dev ou se explicitamente forçada por variável
   }
 };
 

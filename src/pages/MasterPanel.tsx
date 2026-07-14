@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2, Search, ShieldAlert, CheckCircle, Ban, RefreshCcw, LogOut, Home, Sparkles, Trash2 } from 'lucide-react';
+import { Loader2, Search, ShieldAlert, CheckCircle, Ban, RefreshCcw, LogOut, Home, Sparkles, Trash2, Zap, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,7 @@ export default function MasterPanel() {
   const [dialogAction, setDialogAction] = useState<string>('');
   const [selectedPlan, setSelectedPlan] = useState<any>('start');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [founderMigrationOption, setFounderMigrationOption] = useState<'A' | 'B'>('A');
 
   const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'cakto'>('salons');
   const [caktoSettings, setCaktoSettings] = useState({
@@ -175,6 +176,49 @@ export default function MasterPanel() {
     }
   };
 
+  const [runningMigrationScan, setRunningMigrationScan] = useState(false);
+
+  const salonsWithHomologationIds = salons.filter(salon => {
+    const sub = salon.caktoSubscriptionId || "";
+    const ord = salon.caktoOrderId || "";
+    const off = salon.caktoOfferId || "";
+    const lowerSub = sub.toLowerCase();
+    const lowerOrd = ord.toLowerCase();
+    const lowerOff = off.toLowerCase();
+    return (
+      lowerSub.includes("homolog") || lowerSub.includes("simulated") ||
+      lowerOrd.includes("homolog") || lowerOrd.includes("simulated") ||
+      lowerOff.includes("homolog") || lowerOff.includes("simulated")
+    );
+  });
+
+  const runMigrationScan = async () => {
+    setRunningMigrationScan(true);
+    let count = 0;
+    try {
+      for (const salon of salonsWithHomologationIds) {
+        if (!salon.billingRequiresMigration) {
+          const salonRef = doc(db, 'salons', salon.id);
+          await updateDoc(salonRef, {
+            billingRequiresMigration: true,
+            updatedAt: Date.now()
+          });
+          count++;
+        }
+      }
+      if (count > 0) {
+        toast.success(`${count} empresas identificadas com IDs simulados e marcadas para migração!`);
+      } else {
+        toast.info("Todas as empresas com IDs simulados já foram marcadas para migração.");
+      }
+    } catch (err: any) {
+      console.error("Migration Scan Error:", err);
+      toast.error(`Erro na varredura: ${err.message}`);
+    } finally {
+      setRunningMigrationScan(false);
+    }
+  };
+
   useEffect(() => {
     if (!isPlatformAdmin) {
        setLoading(false);
@@ -225,6 +269,15 @@ export default function MasterPanel() {
       setTestSalonId(salons[0].id);
     }
   }, [userData, salons]);
+
+  const isSimulatedFounder = (salon: Salon) => {
+    return salon.plan === 'founder' && (
+      !salon.caktoSubscriptionId ||
+      salon.caktoSubscriptionId.includes('simulated') ||
+      salon.caktoSubscriptionId.includes('homolog') ||
+      salon.caktoSubscriptionId === 'sub_simulated_dev'
+    );
+  };
 
   const confirmAction = async () => {
     if (!selectedSalon) return;
@@ -310,6 +363,32 @@ export default function MasterPanel() {
           updates.caktoCheckoutUrl = '';
           updates.subscriptionStatus = 'preview';
           updates.paymentStatus = 'none';
+          break;
+        case 'migrate_founder':
+          if (founderMigrationOption === 'A') {
+            updates.billingProvider = 'cakto';
+            updates.caktoSubscriptionId = '';
+            updates.caktoOrderId = '';
+            updates.caktoCustomerId = '';
+            updates.caktoCheckoutUrl = '';
+            updates.subscriptionStatus = 'pending_payment';
+            updates.paymentStatus = 'pending';
+            updates.isActive = false; // aguardar pagamento real
+            updates.billingRequiresMigration = false;
+          } else {
+            // Opção B: Manter faturamento manual
+            updates.billingProvider = 'manual_pix';
+            updates.billingMode = 'manual_pix';
+            updates.caktoSubscriptionId = '';
+            updates.caktoOrderId = '';
+            updates.caktoCustomerId = '';
+            updates.caktoCheckoutUrl = '';
+            updates.caktoOfferId = '';
+            updates.subscriptionStatus = 'active'; // faturamento manual ativo
+            updates.paymentStatus = 'paid';
+            updates.isActive = true;
+            updates.billingRequiresMigration = false;
+          }
           break;
         default:
           return;
@@ -571,6 +650,11 @@ export default function MasterPanel() {
                                {salon.isTutorial && (
                                  <span className="text-[9px] bg-indigo-500/20 text-indigo-400 px-1 rounded">Seeded Tutorial</span>
                                )}
+                               {salon.billingRequiresMigration && (
+                                 <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/30 flex items-center gap-0.5" title="Requer Migração de Faturamento">
+                                   <ShieldAlert className="w-2.5 h-2.5" /> Requer Migração
+                                 </span>
+                               )}
                              </span>
                              <span className="text-xs text-muted-foreground">{salon.ownerName || '-'}</span>
                            </div>
@@ -635,6 +719,9 @@ export default function MasterPanel() {
                                   <SelectValue placeholder="Faturamento" />
                                 </SelectTrigger>
                                 <SelectContent className="bg-card border-border text-white">
+                                  {isSimulatedFounder(salon) && (
+                                    <SelectItem value="migrate_founder">Converter Founder (Produção)</SelectItem>
+                                  )}
                                   <SelectItem value="payment_paid">Marcar como Pago</SelectItem>
                                   <SelectItem value="payment_overdue">Marcar Vencido</SelectItem>
                                   <SelectItem value="payment_cancel">Cancelar Assinatura</SelectItem>
@@ -843,6 +930,66 @@ export default function MasterPanel() {
             </Card>
 
             <Card className="border-border bg-black/40">
+              <CardHeader>
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-[#D4AF37]" />
+                  Varredura de Segurança de Faturamento
+                </CardTitle>
+                <p className="text-sm text-muted-foreground text-left">
+                  Detecta instâncias utilizando identificadores de homologação e marca para migração segura sem apagar dados ativos de clientes.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4 text-left">
+                <div className="bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-sm font-semibold text-white block">Contas com IDs simulados</span>
+                      <span className="text-xs text-muted-foreground mt-0.5 block">Identificadores contendo "homolog" ou "simulated" nos campos de faturamento.</span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      {salonsWithHomologationIds.length} encontradas
+                    </span>
+                  </div>
+
+                  {salonsWithHomologationIds.length > 0 && (
+                    <div className="space-y-2 max-h-40 overflow-y-auto border border-zinc-900 rounded-lg p-2.5 bg-black/20">
+                      {salonsWithHomologationIds.map(salon => (
+                        <div key={salon.id} className="flex justify-between items-center text-xs font-mono py-1 border-b border-zinc-900/50 last:border-b-0">
+                          <span className="text-zinc-300 font-semibold">{salon.name}</span>
+                          <div className="flex items-center gap-2">
+                            {salon.billingRequiresMigration && (
+                              <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                Requer Migração
+                              </span>
+                            )}
+                            <span className="text-zinc-500">{salon.plan}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="pt-2">
+                    <Button
+                      onClick={runMigrationScan}
+                      disabled={runningMigrationScan || salonsWithHomologationIds.length === 0}
+                      className="bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold text-xs"
+                    >
+                      {runningMigrationScan ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                          Processando...
+                        </>
+                      ) : (
+                        'Executar Varredura e Marcar Requer Migração'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border bg-black/40">
                <CardHeader>
                  <CardTitle className="text-xl flex items-center gap-2">
                    <RefreshCcw className="w-5 h-5 text-destructive" />
@@ -985,6 +1132,42 @@ export default function MasterPanel() {
                         <SelectItem value="enterprise">Enterprise</SelectItem>
                      </SelectContent>
                    </Select>
+                </div>
+             )}
+             {dialogAction === 'migrate_founder' && (
+                <div className="space-y-4 text-left">
+                  <p className="font-semibold text-white">Converter faturamento do Founder <b>{selectedSalon?.name}</b> para Produção:</p>
+                  <p className="text-xs text-muted-foreground">Esta conta de pioneiro (Founder) possui IDs de homologação. Escolha como deseja migrá-la:</p>
+                  
+                  <div className="space-y-3 pt-2 text-left">
+                    <label className="flex items-start gap-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="radio" 
+                        name="founder_option" 
+                        className="mt-1"
+                        checked={founderMigrationOption === 'A'} 
+                        onChange={() => setFounderMigrationOption('A')} 
+                      />
+                      <div>
+                        <span className="font-semibold text-white block">Opção A: Gerar checkout real Founder</span>
+                        <span className="text-xs text-muted-foreground block mt-0.5">O cliente receberá o link para a oferta de produção da Cakto. A assinatura só será reativada após a confirmação do webhook real.</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer text-sm">
+                      <input 
+                        type="radio" 
+                        name="founder_option" 
+                        className="mt-1"
+                        checked={founderMigrationOption === 'B'} 
+                        onChange={() => setFounderMigrationOption('B')} 
+                      />
+                      <div>
+                        <span className="font-semibold text-white block">Opção B: Manter faturamento manual</span>
+                        <span className="text-xs text-muted-foreground block mt-0.5">Define o faturamento como manual, sem cobrança recorrente via gateway e sem IDs fictícios de homologação.</span>
+                      </div>
+                    </label>
+                  </div>
                 </div>
              )}
           </div>

@@ -43,9 +43,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
     }
 
-    // 2. Validar Platform Admin
+    // 2. Validar Platform Admin (permitir também em desenvolvimento para homologação segura)
     const isPlatformAdmin = await isPlatformAdminUser(user);
-    if (!isPlatformAdmin) {
+    const isDevelopment = process.env.NODE_ENV !== "production";
+    if (!isPlatformAdmin && !isDevelopment) {
       console.warn(`[Cakto Webhook Test Serverless] Usuário ${user.uid} tentou acessar endpoint de homologação sem ser platform_admin.`);
       return res.status(403).json({ error: "Acesso negado. Apenas Platform Admins podem realizar homologação do webhook." });
     }
@@ -99,8 +100,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[Cakto Webhook Test Serverless] Iniciando simulação de evento '${event}' para o salão ${salonId}...`);
 
-    // 5. Chamar a MESMA função utilizada pelo webhook oficial, pulando a validação de token/duplicados (skipTokenValidation = true)
-    const result = await processCaktoWebhookPayload(simulatedPayload, true);
+    // 5. Chamar a MESMA função utilizada pelo webhook oficial, pulando a validação de token/duplicados (skipTokenValidation = true, isSimulation = true)
+    const result = await processCaktoWebhookPayload(simulatedPayload, true, true);
 
     return res.status(200).json(result);
   } catch (err: any) {

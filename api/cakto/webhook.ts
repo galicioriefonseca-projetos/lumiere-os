@@ -40,7 +40,7 @@ async function getCaktoSettingsCached(adminDb: any): Promise<CaktoSettings> {
   };
 }
 
-export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidation: boolean = false) {
+export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidation: boolean = false, isSimulation: boolean = false) {
   // 1. Normalizar a estrutura do corpo da requisição (lida com dados simples ou agrupados/data array)
   let normalizedData = bodyData || {};
   if (normalizedData.data) {
@@ -187,20 +187,33 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
     caktoLastEvent: eventName,
   };
 
-  if (orderId) updatePayload.caktoOrderId = String(orderId);
-  if (subscriptionId) updatePayload.caktoSubscriptionId = String(subscriptionId);
-  if (customerId) updatePayload.caktoCustomerId = String(customerId);
-  if (offerId) updatePayload.caktoOfferId = offerId;
+  if (isSimulation) {
+    if (orderId) updatePayload.homologationOrderId = String(orderId);
+    if (subscriptionId) updatePayload.homologationSubscriptionId = String(subscriptionId);
+    if (customerId) updatePayload.homologationCustomerId = String(customerId);
+    if (offerId) updatePayload.homologationOfferId = offerId;
+  } else {
+    if (orderId) updatePayload.caktoOrderId = String(orderId);
+    if (subscriptionId) updatePayload.caktoSubscriptionId = String(subscriptionId);
+    if (customerId) updatePayload.caktoCustomerId = String(customerId);
+    if (offerId) updatePayload.caktoOfferId = offerId;
+  }
 
   // Regras de Status conforme especificado
   if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
     // 1. Ao receber evento aprovado/renovado:
-    updatePayload.subscriptionStatus = "active";
-    updatePayload.activationStatus = "active";
-    updatePayload.caktoPaymentStatus = "paid";
-    updatePayload.paymentStatus = "paid";
-    updatePayload.plan = mappedPlan || (salonDoc?.exists ? salonDoc.data()?.plan : null) || "start";
-    updatePayload.isActive = true;
+    if (isSimulation) {
+      updatePayload.homologationSubscriptionStatus = "active";
+      updatePayload.homologationActivationStatus = "active";
+      updatePayload.homologationPaymentStatus = "paid";
+    } else {
+      updatePayload.subscriptionStatus = "active";
+      updatePayload.activationStatus = "active";
+      updatePayload.caktoPaymentStatus = "paid";
+      updatePayload.paymentStatus = "paid";
+      updatePayload.plan = mappedPlan || (salonDoc?.exists ? salonDoc.data()?.plan : null) || "start";
+      updatePayload.isActive = true;
+    }
     updatePayload.ownerEmail = customerEmail || (salonDoc?.exists ? salonDoc.data()?.ownerEmail : null) || "";
     
     const periodEnd = normalizedData.current_period_end || normalizedData.next_billing_date || normalizedData.nextBillingDate;
@@ -217,19 +230,31 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
 
   } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
     // 2. Ao receber cancelado/refund/chargeback:
-    updatePayload.subscriptionStatus = "canceled";
-    updatePayload.activationStatus = "canceled";
-    updatePayload.caktoPaymentStatus = "canceled";
-    updatePayload.paymentStatus = "canceled";
-    updatePayload.isActive = false;
+    if (isSimulation) {
+      updatePayload.homologationSubscriptionStatus = "canceled";
+      updatePayload.homologationActivationStatus = "canceled";
+      updatePayload.homologationPaymentStatus = "canceled";
+    } else {
+      updatePayload.subscriptionStatus = "canceled";
+      updatePayload.activationStatus = "canceled";
+      updatePayload.caktoPaymentStatus = "canceled";
+      updatePayload.paymentStatus = "canceled";
+      updatePayload.isActive = false;
+    }
 
   } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
     // 3. Ao receber recusado/inadimplente:
-    updatePayload.subscriptionStatus = "overdue";
-    updatePayload.activationStatus = "blocked";
-    updatePayload.caktoPaymentStatus = "refused";
-    updatePayload.paymentStatus = "overdue";
-    updatePayload.isActive = false;
+    if (isSimulation) {
+      updatePayload.homologationSubscriptionStatus = "overdue";
+      updatePayload.homologationActivationStatus = "blocked";
+      updatePayload.homologationPaymentStatus = "refused";
+    } else {
+      updatePayload.subscriptionStatus = "overdue";
+      updatePayload.activationStatus = "blocked";
+      updatePayload.caktoPaymentStatus = "refused";
+      updatePayload.paymentStatus = "overdue";
+      updatePayload.isActive = false;
+    }
 
   } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
     // Criação de assinatura
@@ -291,6 +316,80 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
 
   await salonRef.update(updatePayload);
   console.log(`[Cakto Webhook Processor] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${eventName})`);
+
+  // Salvar registro no histórico de cobrança
+  try {
+    const historyRef = salonRef.collection("billingHistory").doc();
+    let histType = "charge_approved";
+    let histTitle = "Cobrança Aprovada";
+    let histDesc = `O pagamento da assinatura Cakto foi processado com sucesso.`;
+
+    const PLAN_NAMES_LOCAL: Record<string, string> = {
+      start: "Start",
+      founder: "Founder (Pioneiro)",
+      performance: "Performance",
+      network: "Network",
+      enterprise: "Enterprise"
+    };
+
+    const PLANS_PRICES_LOCAL: Record<string, number> = {
+      start: 197,
+      founder: 297,
+      performance: 397,
+      network: 797,
+      enterprise: 1997
+    };
+
+    const prevPlan = salonData?.plan || "start";
+    const nextPlan = updatePayload.plan || prevPlan;
+    const prevStatus = salonData?.subscriptionStatus || "pending";
+
+    if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
+      if (prevStatus === "overdue") {
+        histType = "regularization";
+        histTitle = "Regularização de Faturamento";
+        histDesc = "A assinatura em atraso foi regularizada com sucesso após compensação.";
+      } else if (prevStatus === "preview" || prevStatus === "pending") {
+        histType = "activation";
+        histTitle = "Ativação de Assinatura";
+        histDesc = `Assinatura iniciada no plano ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan}.`;
+      } else if (prevPlan !== nextPlan) {
+        const isUp = (PLANS_PRICES_LOCAL[nextPlan] || 0) > (PLANS_PRICES_LOCAL[prevPlan] || 0);
+        histType = isUp ? "upgrade_applied" : "downgrade_applied";
+        histTitle = isUp ? "Upgrade de Plano Aplicado" : "Downgrade de Plano Aplicado";
+        histDesc = `Plano definitivo alterado de ${PLAN_NAMES_LOCAL[prevPlan] || prevPlan} para ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan}.`;
+      } else {
+        histType = "charge_approved";
+        histTitle = "Mensalidade Aprovada";
+        histDesc = `Cobrança mensal do plano ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan} aprovada com sucesso.`;
+      }
+    } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
+      histType = "canceled";
+      histTitle = "Assinatura Cancelada";
+      histDesc = `Assinatura do LumièreOS foi cancelada.`;
+    } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
+      histType = "charge_refused";
+      histTitle = "Cobrança Recusada";
+      histDesc = `O faturamento mensal da assinatura Cakto falhou ou foi recusado pela operadora.`;
+    } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
+      histType = "activation";
+      histTitle = "Nova Assinatura Registrada";
+      histDesc = `Faturamento recorrente registrado na Cakto, aguardando compensação inicial.`;
+    }
+
+    await historyRef.set({
+      id: historyRef.id,
+      eventType: histType,
+      title: histTitle,
+      description: histDesc,
+      amount: updatePayload.lastPaymentAmount || normalizedData.amount || normalizedData.value || normalizedData.price || 0,
+      plan: nextPlan,
+      timestamp: Date.now(),
+      recordedBy: "Cakto Gateway"
+    });
+  } catch (err) {
+    console.error("[Cakto Webhook History Logger] Falha ao gravar histórico:", err);
+  }
 
   return {
     success: true,

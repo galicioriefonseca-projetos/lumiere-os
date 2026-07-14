@@ -14,7 +14,7 @@ export default defineConfig(({mode}) => {
         registerType: 'autoUpdate',
         injectRegister: 'inline',
         devOptions: {
-          enabled: true
+          enabled: false
         },
         workbox: {
           cleanupOutdatedCaches: true,

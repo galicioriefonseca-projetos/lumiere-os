@@ -92,8 +92,23 @@ export interface Salon {
   asaasLastEvent?: string;
   caktoCustomerId?: string;
   caktoSubscriptionId?: string;
+  caktoOrderId?: string;
   caktoCheckoutUrl?: string;
   caktoOfferId?: string;
+  billingRequiresMigration?: boolean;
+  homologationSubscriptionId?: string;
+  homologationOrderId?: string;
+  homologationOfferId?: string;
+  homologationLastEvent?: string;
+  homologationUpdatedAt?: number;
+  homologationCustomerId?: string;
+  homologationCheckoutUrl?: string;
+  pendingPlan?: string;
+  pendingOfferId?: string;
+  pendingCheckoutUrl?: string;
+  pendingCheckoutEmail?: string;
+  pendingPaymentStatus?: string;
+  pendingSubscriptionStatus?: string;
   founderInitialPrice?: number;
   founderInitialPriceEndsAt?: number;
   founderFuturePrice?: number;
@@ -102,6 +117,19 @@ export interface Salon {
   bookingEnabled?: boolean;    // habilitar/desabilitar agendamento online
   bookingMessage?: string;     // mensagem de boas-vindas na tela de agendamento
   workingHours?: WorkingHours; // horários de funcionamento
+  founderAuthorized?: boolean;
+  isFounderAuthorized?: boolean;
+  pendingPlanChange?: {
+    fromPlan: string;
+    toPlan: string;
+    currentAmount: number;
+    targetAmount: number;
+    priceDifference: number;
+    targetOfferId: string;
+    requestedAt: number;
+    effectiveAt: number;
+    status: string;
+  } | null;
 }
 
 export interface Payment {

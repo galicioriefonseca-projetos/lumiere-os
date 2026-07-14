@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 interface CaktoSettings {
   productId: string;
@@ -78,10 +79,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
     }
 
+    // Rule 6: Plano inválido deve ser rejeitado
+    const validPlans = ["start", "performance", "network", "enterprise", "founder"];
+    if (!validPlans.includes(planId)) {
+      return res.status(400).json({ error: "O plano especificado é inválido." });
+    }
+
     const adminDb = getAdminDb();
     const salonRef = adminDb.collection("salons").doc(salonId);
     let salonDoc = await salonRef.get();
     let salonData = salonDoc.exists ? salonDoc.data() : null;
+
+    if (salonDoc.exists) {
+      // Rule 5: Endpoints de clientes existentes devem validar autenticação e propriedade do salão
+      let user;
+      try {
+        user = await verifyIdToken(req);
+      } catch (authErr: any) {
+        console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
+        return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
+      }
+
+      const authResult = await canManageBilling(user, salonId, salonData);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Não autorizado a gerenciar o faturamento deste salão." });
+      }
+
+      // Rule 2: Abrir checkout nunca sobrescreve uma assinatura ativa
+      if (salonData?.subscriptionStatus === "active" || salonData?.isActive === true) {
+        return res.status(400).json({ 
+          error: "Este salão já possui uma assinatura ativa. Não é permitido criar um novo checkout. Contate o suporte para alterações." 
+        });
+      }
+    }
 
     let legacyBusinessType = salonData?.businessType || 'salon';
     if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
@@ -102,7 +132,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       businessType: legacyBusinessType,
       businessSegment: businessSegment || salonData?.businessSegment || "",
       estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
-      plan: planId,
+      plan: salonData?.plan || "start",
+      pendingPlan: planId,
       subscriptionStatus: salonData?.subscriptionStatus || "pending",
       activationStatus: salonData?.activationStatus || "pending",
       isActive: salonData?.isActive || false,
@@ -121,7 +152,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         case "performance": offerId = sData.performanceOfferId || ""; break;
         case "network": offerId = sData.networkOfferId || ""; break;
         case "enterprise": offerId = sData.enterpriseOfferId || ""; break;
-        default: offerId = sData.founderOfferId || ""; break;
+        default: 
+            return res.status(400).json({ error: "O plano especificado não possui oferta configurada." });
       }
     } catch (err) {
       console.error("[Cakto Checkout Serverless] Erro ao carregar configurações dinâmicas:", err);
@@ -139,22 +171,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!isProduction && !hasCaktoCredentials) {
       console.warn("[Cakto Checkout Serverless] Aviso: Credenciais do Cakto ausentes. Usando simulação.");
       const simulatedOrderId = "ord_" + Math.random().toString(36).substring(2, 11).toUpperCase();
-      const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/faturamento?simulated_checkout=true&order_id=${simulatedOrderId}`;
+      const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/assinatura?simulated_checkout=true&order_id=${simulatedOrderId}`;
 
       const simulatedData = {
         ...mergedSalonData,
         billingProvider: "cakto",
-        caktoCustomerId: "cus_simulated_dev",
-        caktoOrderId: simulatedOrderId,
-        caktoSubscriptionId: "sub_simulated_dev",
-        caktoCheckoutUrl: simulatedCheckoutUrl,
-        caktoOfferId: offerId || "off_simulated",
+        homologationCustomerId: "cus_simulated_dev",
+        homologationOrderId: simulatedOrderId,
+        homologationSubscriptionId: "sub_simulated_dev",
+        homologationCheckoutUrl: simulatedCheckoutUrl,
+        homologationOfferId: offerId || "off_simulated",
         subscriptionStatus: salonData?.subscriptionStatus || "pending",
         paymentStatus: salonData?.paymentStatus || "pending",
         nextBillingDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
         updatedAt: Date.now(),
       };
-
       await salonRef.set(simulatedData, { merge: true });
 
       return res.status(200).json({
@@ -169,7 +200,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Se estiver em produção e faltar credenciais, reportar erro
     if (isProduction && !hasCaktoCredentials) {
       console.error("[Cakto Checkout Serverless] Erro Crítico: Credenciais da Cakto ausentes no ambiente de produção.");
-      return res.status(500).json({
+      return res.status(503).json({
         error: "Erro crítico: A integração com a Cakto não está configurada corretamente no ambiente de produção. Faltam as credenciais CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET."
       });
     }

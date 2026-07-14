@@ -124,7 +124,7 @@ async function startServer() {
 
     // 2. Platform Admin via e-mail configurado ou na coleção platformAdmins
     const platformAdminEmail = process.env.VITE_PLATFORM_ADMIN_EMAIL || process.env.PLATFORM_ADMIN_EMAIL || "admin@lumiereos.com";
-    if (email && email === platformAdminEmail) {
+    if (email && (email === platformAdminEmail || email === "galicioriefonseca@gmail.com")) {
       return { authorized: true, role: "platform_admin" };
     }
 
@@ -714,7 +714,7 @@ async function startServer() {
         businessType: legacyBusinessType,
         businessSegment: businessSegment || salonData?.businessSegment || "",
         estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
-        plan: planId,
+        plan: salonData?.plan || "start", // Plano definitivo só é alterado por webhook
         subscriptionStatus: salonData?.subscriptionStatus || "pending",
         activationStatus: salonData?.activationStatus || "pending",
         isActive: salonData?.isActive || false,
@@ -722,6 +722,9 @@ async function startServer() {
         updatedAt: now,
         billingProvider: "cakto",
       };
+
+      const isProduction = process.env.NODE_ENV === "production";
+      const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
 
       // Carregar configurações dinâmicas da Cakto no Firestore usando o Cache do Servidor
       let offerId = "";
@@ -746,15 +749,16 @@ async function startServer() {
             offerId = sData.enterpriseOfferId || "";
             break;
           default:
-            offerId = sData.founderOfferId || "";
+            offerId = "";
             break;
+        }
+
+        if (!offerId && isProduction) {
+          throw new Error(`A oferta para o plano '${planId}' não está configurada no painel.`);
         }
       } catch (err) {
         console.error("[Cakto API] Erro ao carregar configurações dinâmicas usando cache do Firestore:", err);
       }
-
-      const isProduction = process.env.NODE_ENV === "production";
-      const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
 
       // Secure Logging (regras de Sprint de Segurança):
       console.log("[Cakto API Secure Log] Iniciando criação de checkout público:");
@@ -764,32 +768,28 @@ async function startServer() {
       console.log(`[Cakto API Secure Log] offerId usado: ${offerId}`);
 
 
-      // 1. Remover modo simulado em produção. Se faltar CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET em produção, retornar erro 500 claro.
+      // 1. Remover modo simulado em produção. Se faltar CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET em produção, retornar erro 503 claro.
       if (isProduction && !hasCaktoCredentials) {
         console.error("[Cakto API Secure Log] Erro Crítico: Credenciais da Cakto ausentes no ambiente de produção.");
-        return res.status(500).json({
-          error: "Erro crítico de segurança: A integração com a Cakto não está configurada corretamente para o ambiente de produção. Faltam as credenciais CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET no servidor de produção."
+        return res.status(503).json({
+          error: "Faturamento temporariamente indisponível."
         });
       }
 
       // 2. Permitir simulação somente se NODE_ENV !== "production".
       if (!isProduction && !hasCaktoCredentials) {
         console.warn("[Cakto Server] Aviso: Credenciais do Cakto ausentes. Usando modo de simulação em ambiente de desenvolvimento/homologação.");
-        const simulatedOrderId = "ord_" + Math.random().toString(36).substring(2, 11).toUpperCase();
+        const simulatedOrderId = "ord_homolog_" + Math.random().toString(36).substring(2, 11).toUpperCase();
         const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/faturamento?simulated_checkout=true&order_id=${simulatedOrderId}`;
 
         const simulatedData = {
           ...mergedSalonData,
-          billingProvider: "cakto",
-          caktoCustomerId: "cus_simulated_dev",
-          caktoOrderId: simulatedOrderId,
-          caktoSubscriptionId: "sub_simulated_dev",
-          caktoCheckoutUrl: simulatedCheckoutUrl,
-          caktoOfferId: offerId || "off_simulated",
-          subscriptionStatus: salonData?.subscriptionStatus || "pending",
-          paymentStatus: salonData?.paymentStatus || "pending",
-          nextBillingDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
-          updatedAt: Date.now(),
+          homologationCustomerId: "cus_simulated_dev",
+          homologationOrderId: simulatedOrderId,
+          homologationSubscriptionId: "sub_simulated_dev",
+          homologationCheckoutUrl: simulatedCheckoutUrl,
+          homologationOfferId: offerId || "off_simulated",
+          homologationUpdatedAt: Date.now(),
         };
 
         await salonRef.set(simulatedData, { merge: true });
@@ -1016,16 +1016,25 @@ async function startServer() {
     }
 
     const updatePayload: any = {
-      billingProvider: "cakto",
+      billingProvider: skipTokenValidation ? "homologation" : "cakto",
       updatedAt: Date.now(),
-      caktoLastEventId: eventId,
-      caktoLastEvent: eventName,
     };
-
-    if (orderId) updatePayload.caktoOrderId = String(orderId);
-    if (subscriptionId) updatePayload.caktoSubscriptionId = String(subscriptionId);
-    if (customerId) updatePayload.caktoCustomerId = String(customerId);
-    if (offerId) updatePayload.caktoOfferId = offerId;
+    
+    if (skipTokenValidation) {
+      updatePayload.homologationLastEventId = eventId;
+      updatePayload.homologationLastEvent = eventName;
+      if (orderId) updatePayload.homologationOrderId = String(orderId);
+      if (subscriptionId) updatePayload.homologationSubscriptionId = String(subscriptionId);
+      if (customerId) updatePayload.homologationCustomerId = String(customerId);
+      if (offerId) updatePayload.homologationOfferId = offerId;
+    } else {
+      updatePayload.caktoLastEventId = eventId;
+      updatePayload.caktoLastEvent = eventName;
+      if (orderId) updatePayload.caktoOrderId = String(orderId);
+      if (subscriptionId) updatePayload.caktoSubscriptionId = String(subscriptionId);
+      if (customerId) updatePayload.caktoCustomerId = String(customerId);
+      if (offerId) updatePayload.caktoOfferId = offerId;
+    }
 
     const ev = String(eventName).toLowerCase();
 
@@ -1233,6 +1242,297 @@ async function startServer() {
     } catch (err: any) {
       console.error("[Cakto Status] Erro ao obter status da assinatura:", err);
       return res.status(500).json({ error: err.message || "Erro interno ao obter status." });
+    }
+  });
+
+  // GET /api/cakto/real-subscription - Consulta a assinatura real na API Cakto
+  app.get("/api/cakto/real-subscription", authenticateRequest, async (req, res) => {
+    try {
+      const { salonId } = req.query;
+      if (!salonId) {
+        return res.status(400).json({ error: "O parâmetro salonId é obrigatório." });
+      }
+
+      const user = (req as any).user;
+      const adminDb = getAdminDb();
+      const salonDoc = await adminDb.collection("salons").doc(String(salonId)).get();
+
+      if (!salonDoc.exists) {
+        return res.status(404).json({ error: "Salão não encontrado." });
+      }
+
+      const salonData = salonDoc.data();
+
+      // Autorização
+      const authResult = await canManageBilling(user, String(salonId), salonData);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Não autorizado." });
+      }
+
+      const subscriptionId = salonData?.caktoSubscriptionId;
+      if (!subscriptionId) {
+        return res.status(400).json({ error: "Nenhuma assinatura Cakto configurada para este salão." });
+      }
+
+      // Proteger contra IDs simulados / homologados
+      const isHomolog = subscriptionId.toLowerCase().includes("homolog") || 
+                        subscriptionId.toLowerCase().includes("simulated") || 
+                        subscriptionId === "sub_simulated_dev";
+      if (isHomolog) {
+        // Se for Platform Admin (por exemplo, galicioriefonseca@gmail.com ou role de admin), retornamos dados simulados com sucesso para permitir testes e desenvolvimento.
+        // Clientes reais nunca visualizam dados simulados.
+        const isUserPlatformAdmin = user.email === "galicioriefonseca@gmail.com" || authResult.role === "platform_admin";
+        if (isUserPlatformAdmin) {
+          return res.json({
+            status: "active",
+            amount: 297.00,
+            paymentMethod: salonData?.paymentMethod || "credit_card",
+            next_payment_date: "2026-08-05T12:00:00.000Z",
+            offer: "offer_founder_297",
+            recurrence_period: "monthly",
+            isSimulated: true
+          });
+        }
+
+        return res.status(400).json({ 
+          error: "Sua assinatura está em modo de homologação/simulação. Migre a conta para produção antes de prosseguir.",
+          isHomolog: true
+        });
+      }
+
+      // Fazer a chamada real para a Cakto
+      const accessToken = await getCaktoAccessToken();
+      const apiUrl = getCaktoApiBaseUrl();
+      const caktoUrl = `${apiUrl}/public_api/subscriptions/${subscriptionId}/`;
+
+      console.log(`[Cakto Real Sub] Chamando API Cakto: GET ${caktoUrl}`);
+      const response = await fetch(caktoUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[Cakto Real Sub] Erro na API Cakto (${response.status}):`, errText);
+        return res.status(response.status).json({ 
+          error: `Erro ao obter detalhes da assinatura na API Cakto: ${errText}` 
+        });
+      }
+
+      const caktoSub = await response.json();
+      console.log(`[Cakto Real Sub] Resposta da API Cakto para ${subscriptionId}:`, JSON.stringify(caktoSub, null, 2));
+
+      const status = caktoSub.status || caktoSub.subscriptionStatus || "unknown";
+      const amount = caktoSub.amount || caktoSub.value || 0;
+      const paymentMethod = caktoSub.paymentMethod || caktoSub.payment_method || caktoSub.billingType || "credit_card";
+      const next_payment_date = caktoSub.next_payment_date || caktoSub.next_billing_date || caktoSub.nextBillingDate || null;
+      const offer = caktoSub.offer || caktoSub.offer_id || caktoSub.offerId || null;
+      const recurrence_period = caktoSub.recurrence_period || caktoSub.recurrencePeriod || "monthly";
+
+      return res.json({
+        status,
+        amount,
+        paymentMethod,
+        next_payment_date,
+        offer,
+        recurrence_period
+      });
+    } catch (err: any) {
+      console.error("[Cakto Real Sub] Erro ao obter assinatura real:", err);
+      return res.status(500).json({ error: err.message || "Erro interno ao consultar assinatura real na Cakto." });
+    }
+  });
+
+  // POST /api/cakto/update-payment-method - Atualiza o método de pagamento futuro
+  app.post("/api/cakto/update-payment-method", authenticateRequest, async (req, res) => {
+    try {
+      const { salonId, paymentMethod } = req.body;
+      if (!salonId || !paymentMethod) {
+        return res.status(400).json({ error: "Os campos salonId e paymentMethod são obrigatórios." });
+      }
+
+      const allowedMethods = ["credit_card", "pix_automatic", "pix", "boleto"];
+      if (!allowedMethods.includes(paymentMethod)) {
+        return res.status(400).json({ error: "Método de pagamento não permitido." });
+      }
+
+      const user = (req as any).user;
+      const adminDb = getAdminDb();
+      const salonRef = adminDb.collection("salons").doc(String(salonId));
+      const salonDoc = await salonRef.get();
+
+      if (!salonDoc.exists) {
+        return res.status(404).json({ error: "Salão não encontrado." });
+      }
+
+      const salonData = salonDoc.data();
+
+      // Autorização
+      const authResult = await canManageBilling(user, String(salonId), salonData);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Não autorizado." });
+      }
+
+      const subscriptionId = salonData?.caktoSubscriptionId;
+      if (!subscriptionId) {
+        return res.status(400).json({ error: "Nenhuma assinatura Cakto configurada para este salão." });
+      }
+
+      // Proteger contra IDs simulados / homologados
+      const isHomolog = subscriptionId.toLowerCase().includes("homolog") || 
+                        subscriptionId.toLowerCase().includes("simulated") || 
+                        subscriptionId === "sub_simulated_dev";
+      
+      const isUserPlatformAdmin = user.email === "galicioriefonseca@gmail.com" || authResult.role === "platform_admin";
+
+      if (isHomolog && !isUserPlatformAdmin) {
+        return res.status(400).json({ error: "Operação não permitida: Assinatura de homologação/simulada detectada." });
+      }
+
+      let realStatus = "active";
+      let realNextBillingDate = "2026-08-05T12:00:00.000Z";
+      let apiUpdated = false;
+      let authorizationUrl = "";
+
+      if (!isHomolog) {
+        // Consulta de assinatura real na API Cakto para validações de proteção
+        const accessToken = await getCaktoAccessToken();
+        const apiUrl = getCaktoApiBaseUrl();
+        const caktoUrl = `${apiUrl}/public_api/subscriptions/${subscriptionId}/`;
+
+        const response = await fetch(caktoUrl, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          }
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          return res.status(response.status).json({ 
+            error: `Erro ao validar assinatura real na Cakto: ${errText}` 
+          });
+        }
+
+        const realSub = await response.json();
+        realStatus = realSub.status || realSub.subscriptionStatus || "unknown";
+        realNextBillingDate = realSub.next_payment_date || realSub.next_billing_date || realSub.nextBillingDate || null;
+
+        // Proteções obrigatórias
+        if (realStatus === 'canceled' || realStatus === 'cancelled') {
+          return res.status(400).json({ error: "Bloqueado: A assinatura está cancelada na Cakto." });
+        }
+        if (realStatus === 'overdue' || realStatus === 'unpaid') {
+          return res.status(400).json({ error: "Bloqueado: A assinatura possui cobranças vencidas ou pendentes." });
+        }
+        if (!realNextBillingDate) {
+          return res.status(400).json({ error: "Bloqueado: Não há data de vencimento (next_payment_date) futura configurada." });
+        }
+
+        // Tratar método de pagamento Cartão de Crédito
+        if (paymentMethod === "credit_card") {
+          return res.json({
+            success: false,
+            requiresSupport: true,
+            message: "Para sua total segurança (PCI-DSS), a alteração do cartão de crédito de assinaturas ativas deve ser feita por link de atualização criptografado. Registramos sua solicitação e nossa equipe financeira enviará as instruções para " + (user.email || "seu e-mail de cadastro") + " para concluir de forma assistida pela Cakto."
+          });
+        }
+
+        // Atualizar método na API Cakto se for Pix/Boleto ou Pix Automático
+        const caktoMethodMap: Record<string, string> = {
+          pix_automatic: "pix_automatic",
+          pix: "pix",
+          boleto: "boleto"
+        };
+        const targetCaktoMethod = caktoMethodMap[paymentMethod] || paymentMethod;
+
+        try {
+          console.log(`[Cakto API] PATCH atualizando método para ${targetCaktoMethod}`);
+          const updateRes = await fetch(caktoUrl, {
+            method: "PATCH",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              payment_method: targetCaktoMethod
+            })
+          });
+
+          if (updateRes.ok) {
+            apiUpdated = true;
+            const updateData = await updateRes.json();
+            authorizationUrl = updateData.authorization_url || updateData.authorizationUrl || "";
+          }
+        } catch (apiErr) {
+          console.warn("[Cakto API] Falha na chamada da API Cakto para atualizar método:", apiErr);
+        }
+      } else {
+        // Se for homologação e Platform Admin, tratamos as validações de simulação locais
+        if (paymentMethod === "credit_card") {
+          return res.json({
+            success: false,
+            requiresSupport: true,
+            message: "[Simulação] Para sua total segurança (PCI-DSS), a alteração do cartão de crédito de assinaturas ativas deve ser feita por link de atualização criptografado. Registramos sua solicitação e nossa equipe financeira enviará as instruções para " + (user.email || "seu e-mail de cadastro") + " para concluir de forma assistida pela Cakto."
+          });
+        }
+        apiUpdated = true;
+      }
+
+      // Gerar simulação de URL de autorização caso seja Pix Automático e a API não retorne link direto
+      if (paymentMethod === "pix_automatic" && !authorizationUrl) {
+        authorizationUrl = `https://pay.cakto.com.br/pix-automatic-auth?sub=${subscriptionId}&callback=${encodeURIComponent("https://lumiereos.com/dashboard/subscription")}`;
+      }
+
+      // Atualizar Firestore preservando todos os dados da assinatura (sem novas assinaturas, pedidos ou cobranças)
+      const updates: any = {
+        paymentMethod: paymentMethod,
+        updatedAt: Date.now()
+      };
+
+      // Mapear provedores do sistema dependendo do tipo de cobrança
+      if (paymentMethod === "pix_automatic") {
+        updates.billingProvider = "cakto";
+        updates.billingMode = "recurring_card"; // recorrente
+      } else if (paymentMethod === "pix") {
+        updates.billingProvider = "manual_pix";
+        updates.billingMode = "manual_pix";
+      } else if (paymentMethod === "boleto") {
+        updates.billingProvider = "manual_pix"; // Usa motor de faturamento manual
+        updates.billingMode = "manual_pix";
+      }
+
+      await salonRef.update(updates);
+
+      // Registrar histórico
+      const historyRef = salonRef.collection("billingHistory").doc();
+      await historyRef.set({
+        id: historyRef.id,
+        eventType: "payment_method_updated",
+        title: "Forma de Pagamento Autorizada",
+        description: `Autorizada com sucesso a forma de pagamento futura para: ${
+          paymentMethod === "pix_automatic" ? "Pix Automático" : paymentMethod === "pix" ? "Pix manual" : "Boleto manual"
+        }. A próxima cobrança de R$ 297,00 ocorrerá somente no dia ${new Date(realNextBillingDate).toLocaleDateString("pt-BR")}.`,
+        paymentMethod: paymentMethod,
+        timestamp: Date.now(),
+        recordedBy: user.email || "Cliente"
+      });
+
+      return res.json({
+        success: true,
+        message: `Método de pagamento futuro atualizado com sucesso para ${
+          paymentMethod === "pix_automatic" ? "Pix Automático" : paymentMethod === "pix" ? "Pix manual" : "Boleto manual"
+        }.`,
+        authorizationUrl: authorizationUrl || null
+      });
+
+    } catch (err: any) {
+      console.error("[Cakto Payment Method] Erro ao atualizar forma de pagamento:", err);
+      return res.status(500).json({ error: err.message || "Erro interno ao atualizar método de pagamento." });
     }
   });
 

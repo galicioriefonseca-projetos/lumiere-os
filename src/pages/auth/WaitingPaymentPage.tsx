@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Sparkles, Clock, RefreshCw, ExternalLink, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import AuthLayout from '../../components/auth/AuthLayout';
 import AuthCard from '../../components/auth/AuthCard';
 import LoadingExperience from '../../components/auth/LoadingExperience';
 
 export default function WaitingPaymentPage() {
   const navigate = useNavigate();
+  const { salonData } = useAuth();
   const [checking, setChecking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -24,8 +26,12 @@ export default function WaitingPaymentPage() {
   };
 
   const handleOpenCheckout = () => {
-    // Open Cakto checkout or billing configuration
-    window.open('https://cakto.com.br', '_blank');
+    if (salonData?.caktoCheckoutUrl) {
+      window.open(salonData.caktoCheckoutUrl, '_blank');
+    } else {
+      // Fallback
+      window.open('https://cakto.com.br', '_blank');
+    }
   };
 
   return (

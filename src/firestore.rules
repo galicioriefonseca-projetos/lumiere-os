@@ -342,6 +342,17 @@ service cloud.firestore {
       allow write: if isPlatformAdmin();
     }
 
+    // Billing History
+    match /salons/{salonId}/billingHistory/{historyId} {
+      allow read: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
+      );
+      allow write: if isPlatformAdmin();
+    }
+
     // 1. Professionals & Staff
     match /salons/{salonId}/professionals/{professionalId} {
       allow read: if isSalonMember(salonId) ||
