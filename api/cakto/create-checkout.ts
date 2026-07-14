@@ -76,7 +76,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       checkoutPurpose = "new_subscription"
     } = req.body || {};
 
-    if (!salonId || !planId) {
+    
+    if (!['new_subscription', 'activate_recurring', 'regularize_payment'].includes(checkoutPurpose)) {
+      return res.status(400).json({ error: 'checkoutPurpose inválido.' });
+    }
+if (!salonId || !planId) {
       return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
     }
 
@@ -106,7 +110,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(403).json({ error: authResult.reason || "Não autorizado a gerenciar o faturamento deste salão." });
       }
 
-      // Check Real vs Manual subscription
+      
+      // Rule: Protect Founder Plan
+      if (planId === 'founder') {
+        const isAuthorized = salonData?.plan === 'founder' || 
+                             salonData?.founderAuthorized === true || 
+                             salonData?.isFounder === true || 
+                             (user && user.email === 'galicioriefonseca@gmail.com') ||
+                             authResult.role === 'platform_admin';
+                             
+        if (!isAuthorized) {
+          return res.status(403).json({ error: 'O plano Founder é exclusivo para contas autorizadas.' });
+        }
+      }
+      
+      if (checkoutPurpose === 'activate_recurring' && planId !== salonData?.plan) {
+        return res.status(400).json({ error: 'A recorrência deve ser configurada para o plano atual da conta.' });
+      }
+// Check Real vs Manual subscription
       const isRealCakto = salonData?.billingProvider === "cakto" &&
         salonData?.subscriptionStatus === "active" &&
         !!salonData?.caktoSubscriptionId &&

@@ -205,13 +205,22 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
     if (!isSimulation && salonDoc?.exists) {
       const data = salonDoc.data();
       if (data?.pendingOfferId && offerId && data.pendingOfferId !== offerId) {
-        console.error(`[Cakto Webhook] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonDoc.id}. Esperada: ${data.pendingOfferId}, Recebida: ${offerId}. Auditoria necessária.`);
-        updatePayload.auditOfferMismatch = true;
-        updatePayload.auditExpectedOffer = data.pendingOfferId;
-        updatePayload.auditReceivedOffer = offerId;
+        console.error(`[Cakto Webhook] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonDoc.id}. Esperada: ${data.pendingOfferId}, Recebida: ${offerId}.`);
+        
+        const historyRef = adminDb.collection("salons").doc(salonDoc.id).collection("billingHistory").doc();
+        await historyRef.set({
+          id: historyRef.id,
+          eventType: "webhook_offer_mismatch",
+          title: "Divergência de Oferta Bloqueada",
+          description: `A assinatura Cakto foi rejeitada por divergência de oferta (Esperada: ${data.pendingOfferId}, Recebida: ${offerId}).`,
+          timestamp: Date.now(),
+          recordedBy: "system"
+        });
+
+        return { status: 200, data: { success: false, requiresReview: true, reason: "offer_mismatch" } };
       }
     }
-
+    
     if (isSimulation) {
       updatePayload.homologationSubscriptionStatus = "active";
       updatePayload.homologationActivationStatus = "active";
@@ -417,6 +426,30 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
     status: updatePayload.subscriptionStatus || salonData?.subscriptionStatus || "active",
     firestorePath: `salons/${salonDoc.id}`
   };
+}
+
+
+function buildHomologationWebhookUpdate(ev, offerId, bodyData) {
+  const updatePayload: any = { homologationUpdatedAt: Date.now() };
+  if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
+      updatePayload.homologationSubscriptionStatus = "active";
+      updatePayload.homologationActivationStatus = "active";
+      updatePayload.homologationPaymentStatus = "paid";
+      updatePayload.homologationNextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
+      updatePayload.homologationSubscriptionStatus = "pending";
+      updatePayload.homologationActivationStatus = "pending";
+      updatePayload.homologationPaymentStatus = "pending";
+  } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
+      updatePayload.homologationSubscriptionStatus = "canceled";
+      updatePayload.homologationActivationStatus = "canceled";
+      updatePayload.homologationPaymentStatus = "canceled";
+  } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
+      updatePayload.homologationSubscriptionStatus = "overdue";
+      updatePayload.homologationActivationStatus = "blocked";
+      updatePayload.homologationPaymentStatus = "refused";
+  }
+  return updatePayload;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

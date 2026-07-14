@@ -671,200 +671,295 @@ async function startServer() {
   });
 
   app.post("/api/cakto/create-checkout", async (req, res) => {
-    try {
-      const { 
-        salonId, 
-        planId, 
-        paymentMethod, 
-        email,
-        ownerName,
-        salonName,
-        phone,
-        city,
-        state,
-        businessSegment,
-        estimatedProfessionals
-      } = req.body || {};
+  try {
+    const { 
+      salonId, 
+      planId, 
+      paymentMethod, 
+      email,
+      ownerName,
+      salonName,
+      phone,
+      city,
+      state,
+      businessSegment,
+      estimatedProfessionals,
+      checkoutPurpose = "new_subscription"
+    } = req.body || {};
 
-      if (!salonId || !planId) {
-        return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
-      }
+    
+    if (!['new_subscription', 'activate_recurring', 'regularize_payment'].includes(checkoutPurpose)) {
+      return res.status(400).json({ error: 'checkoutPurpose inválido.' });
+    }
+if (!salonId || !planId) {
+      return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
+    }
 
-      const adminDb = getAdminDb();
-      const salonRef = adminDb.collection("salons").doc(salonId);
-      let salonDoc = await salonRef.get();
-      let salonData = salonDoc.exists ? salonDoc.data() : null;
+    // Rule 6: Plano inválido deve ser rejeitado
+    const validPlans = ["start", "performance", "network", "enterprise", "founder"];
+    if (!validPlans.includes(planId)) {
+      return res.status(400).json({ error: "O plano especificado é inválido." });
+    }
 
-      let legacyBusinessType = salonData?.businessType || 'salon';
-      if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
-      else if (businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
+    const adminDb = getAdminDb();
+    const salonRef = adminDb.collection("salons").doc(salonId);
+    let salonDoc = await salonRef.get();
+    let salonData = salonDoc.exists ? salonDoc.data() : null;
 
-      const now = Date.now();
-      const finalEmail = (email || salonData?.ownerEmail || "").trim().toLowerCase();
-
-      // Preparar dados de mesclagem do salão
-      const mergedSalonData: any = {
-        id: salonId,
-        name: salonName || salonData?.name || "LumièreOS Salon",
-        ownerEmail: finalEmail,
-        ownerName: ownerName || salonData?.ownerName || "",
-        phone: phone || salonData?.phone || "",
-        city: city || salonData?.city || "",
-        state: state || salonData?.state || "",
-        businessType: legacyBusinessType,
-        businessSegment: businessSegment || salonData?.businessSegment || "",
-        estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
-        plan: salonData?.plan || "start", // Plano definitivo só é alterado por webhook
-        subscriptionStatus: salonData?.subscriptionStatus || "pending",
-        activationStatus: salonData?.activationStatus || "pending",
-        isActive: salonData?.isActive || false,
-        createdAt: salonData?.createdAt || now,
-        updatedAt: now,
-        billingProvider: "cakto",
-      };
-
-      const isProduction = process.env.NODE_ENV === "production";
-      const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
-
-      // Carregar configurações dinâmicas da Cakto no Firestore usando o Cache do Servidor
-      let offerId = "";
-      let productId = "";
+    if (salonDoc.exists) {
+      // Rule 5: Endpoints de clientes existentes devem validar autenticação e propriedade do salão
+      let user;
       try {
-        const sData = await getCaktoSettingsCached();
-        productId = sData.productId || "";
-        switch (planId) {
-          case 'start':
-            offerId = sData.startOfferId || "";
-            break;
-          case 'founder':
-            offerId = sData.founderOfferId || "";
-            break;
-          case 'performance':
-            offerId = sData.performanceOfferId || "";
-            break;
-          case 'network':
-            offerId = sData.networkOfferId || "";
-            break;
-          case 'enterprise':
-            offerId = sData.enterpriseOfferId || "";
-            break;
-          default:
-            offerId = "";
-            break;
-        }
-
-        if (!offerId && isProduction) {
-          throw new Error(`A oferta para o plano '${planId}' não está configurada no painel.`);
-        }
-      } catch (err) {
-        console.error("[Cakto API] Erro ao carregar configurações dinâmicas usando cache do Firestore:", err);
+        user = await verifyIdToken(req);
+      } catch (authErr: any) {
+        console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
+        return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
       }
 
-      // Secure Logging (regras de Sprint de Segurança):
-      console.log("[Cakto API Secure Log] Iniciando criação de checkout público:");
-      console.log(`[Cakto API Secure Log] CAKTO_API_URL: ${getCaktoApiBaseUrl()}`);
-      console.log(`[Cakto API Secure Log] CAKTO_CLIENT_ID existe: ${!!process.env.CAKTO_CLIENT_ID}`);
-      console.log(`[Cakto API Secure Log] CAKTO_CLIENT_SECRET existe: ${!!process.env.CAKTO_CLIENT_SECRET}`);
-      console.log(`[Cakto API Secure Log] offerId usado: ${offerId}`);
+      const authResult = await canManageBilling(user, salonId, salonData);
+      if (!authResult.authorized) {
+        return res.status(403).json({ error: authResult.reason || "Não autorizado a gerenciar o faturamento deste salão." });
+      }
 
+      
+      // Rule: Protect Founder Plan
+      if (planId === 'founder') {
+        const isAuthorized = salonData?.plan === 'founder' || 
+                             salonData?.founderAuthorized === true || 
+                             salonData?.isFounder === true || 
+                             (user && user.email === 'galicioriefonseca@gmail.com') ||
+                             authResult.role === 'platform_admin';
+                             
+        if (!isAuthorized) {
+          return res.status(403).json({ error: 'O plano Founder é exclusivo para contas autorizadas.' });
+        }
+      }
+      
+      if (checkoutPurpose === 'activate_recurring' && planId !== salonData?.plan) {
+        return res.status(400).json({ error: 'A recorrência deve ser configurada para o plano atual da conta.' });
+      }
+// Check Real vs Manual subscription
+      const isRealCakto = salonData?.billingProvider === "cakto" &&
+        salonData?.subscriptionStatus === "active" &&
+        !!salonData?.caktoSubscriptionId &&
+        !salonData?.caktoSubscriptionId?.includes("homolog") &&
+        !salonData?.caktoSubscriptionId?.includes("simulated") &&
+        !salonData?.caktoSubscriptionId?.includes("test");
 
-      // 1. Remover modo simulado em produção. Se faltar CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET em produção, retornar erro 503 claro.
-      if (isProduction && !hasCaktoCredentials) {
-        console.error("[Cakto API Secure Log] Erro Crítico: Credenciais da Cakto ausentes no ambiente de produção.");
-        return res.status(503).json({
-          error: "Faturamento temporariamente indisponível."
+      const isManualActive = (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual_pix") &&
+        salonData?.subscriptionStatus === "active" &&
+        salonData?.paymentStatus === "paid" &&
+        !isRealCakto;
+
+      if (isRealCakto) {
+        return res.status(400).json({ 
+          error: "Este salão já possui uma assinatura ativa da Cakto. Para alterar, use a Central de Planos." 
         });
       }
 
-      // 2. Permitir simulação somente se NODE_ENV !== "production".
-      if (!isProduction && !hasCaktoCredentials) {
-        console.warn("[Cakto Server] Aviso: Credenciais do Cakto ausentes. Usando modo de simulação em ambiente de desenvolvimento/homologação.");
-        const simulatedOrderId = "ord_homolog_" + Math.random().toString(36).substring(2, 11).toUpperCase();
-        const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/faturamento?simulated_checkout=true&order_id=${simulatedOrderId}`;
-
-        const simulatedData = {
-          ...mergedSalonData,
-          homologationCustomerId: "cus_simulated_dev",
-          homologationOrderId: simulatedOrderId,
-          homologationSubscriptionId: "sub_simulated_dev",
-          homologationCheckoutUrl: simulatedCheckoutUrl,
-          homologationOfferId: offerId || "off_simulated",
-          homologationUpdatedAt: Date.now(),
-        };
-
-        await salonRef.set(simulatedData, { merge: true });
-
-        return res.json({
-          success: true,
-          checkoutUrl: simulatedCheckoutUrl,
-          orderId: simulatedOrderId,
-          subscriptionId: "sub_simulated_dev",
-          simulated: true
+      if (isManualActive && checkoutPurpose !== "activate_recurring") {
+        return res.status(400).json({ 
+          error: "Este salão possui uma assinatura manual ativa. Para ativar a recorrência, use checkoutPurpose: 'activate_recurring'." 
         });
       }
+    }
 
-      const checkoutEmail = finalEmail;
-      const params = new URLSearchParams({
-        name: ownerName || salonData?.ownerName || mergedSalonData.name || "Cliente",
-        email: checkoutEmail,
-        external_id: salonId,
-      });
+    let legacyBusinessType = salonData?.businessType || 'salon';
+    if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
+    else if (businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
 
-      const activePhone = phone || salonData?.phone;
-      if (activePhone) {
-        const digits = String(activePhone).replace(/\D/g, "");
-        const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
-        params.append("phone", withCountry);
+    const now = Date.now();
+    const finalEmail = (email || salonData?.ownerEmail || "").trim().toLowerCase();
+
+    // Fields to save initially
+    const mergedSalonData: any = {
+      id: salonId,
+      name: salonName || salonData?.name || "LumièreOS Salon",
+      ownerEmail: finalEmail,
+      ownerName: ownerName || salonData?.ownerName || "",
+      phone: phone || salonData?.phone || "",
+      city: city || salonData?.city || "",
+      state: state || salonData?.state || "",
+      businessType: legacyBusinessType,
+      businessSegment: businessSegment || salonData?.businessSegment || "",
+      estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
+      updatedAt: now,
+    };
+    
+    // We do NOT modify definitive plan/billingProvider/status fields here unless they are not set.
+    if (!salonData?.plan) mergedSalonData.plan = "start";
+    if (!salonData?.subscriptionStatus) mergedSalonData.subscriptionStatus = "pending";
+    if (!salonData?.activationStatus) mergedSalonData.activationStatus = "pending";
+    if (typeof salonData?.isActive !== "boolean") mergedSalonData.isActive = false;
+    if (!salonData?.createdAt) mergedSalonData.createdAt = now;
+
+    // 3. Buscar configurações dinâmicas
+    let offerId = "";
+    try {
+      const sData = await getCaktoSettingsCached();
+      switch (planId) {
+        case "start": offerId = sData.startOfferId || ""; break;
+        case "founder": offerId = sData.founderOfferId || ""; break;
+        case "performance": offerId = sData.performanceOfferId || ""; break;
+        case "network": offerId = sData.networkOfferId || ""; break;
+        case "enterprise": offerId = sData.enterpriseOfferId || ""; break;
+        default: 
+            return res.status(400).json({ error: "O plano especificado não possui oferta configurada." });
       }
+    } catch (err) {
+      console.error("[Cakto Checkout Serverless] Erro ao carregar configurações dinâmicas:", err);
+      return res.status(500).json({ error: "Erro ao carregar configurações de pagamento." });
+    }
 
-      const buildCheckoutUrl = (offerIdOrUrl: string, searchParams: URLSearchParams): string => {
-        if (!offerIdOrUrl) return "";
-        const baseUrl = offerIdOrUrl.trim();
-        if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
-          try {
-            const urlObj = new URL(baseUrl);
-            searchParams.forEach((value, key) => {
-              urlObj.searchParams.set(key, value);
-            });
-            return urlObj.toString();
-          } catch (e) {
-            const separator = baseUrl.includes("?") ? "&" : "?";
-            return `${baseUrl}${separator}${searchParams.toString()}`;
-          }
-        } else {
-          return `https://pay.cakto.com.br/${baseUrl}?${searchParams.toString()}`;
-        }
-      };
+    if (!offerId) {
+      return res.status(400).json({ error: "Oferta não configurada para o plano informado." });
+    }
 
-      const checkoutUrl = buildCheckoutUrl(offerId, params);
+    const isProduction = process.env.NODE_ENV === "production";
+    const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
 
-      const finalData = {
+    // 1. Em desenvolvimento sem credenciais, permitir simulação
+    if (!isProduction && !hasCaktoCredentials) {
+      console.warn("[Cakto Checkout Serverless] Aviso: Credenciais do Cakto ausentes. Usando simulação.");
+      const simulatedOrderId = "ord_" + Math.random().toString(36).substring(2, 11).toUpperCase();
+      const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/assinatura?simulated_checkout=true&order_id=${simulatedOrderId}`;
+
+      const simulatedData = {
         ...mergedSalonData,
-        billingProvider: "cakto",
-        caktoOfferId: offerId,
-        caktoCheckoutUrl: checkoutUrl,
-        caktoCheckoutEmail: checkoutEmail,
-        subscriptionStatus: salonData?.subscriptionStatus || "pending",
-        paymentStatus: salonData?.paymentStatus || "pending",
+        homologationCustomerId: "cus_simulated_dev",
+        homologationOrderId: simulatedOrderId,
+        homologationSubscriptionId: "sub_simulated_dev",
+        homologationCheckoutUrl: simulatedCheckoutUrl,
+        homologationOfferId: offerId || "off_simulated",
+        pendingPlan: planId,
+        pendingOfferId: offerId,
+        pendingCheckoutUrl: simulatedCheckoutUrl,
+        pendingCheckoutEmail: finalEmail,
+        pendingRequestedAt: Date.now(),
+        pendingCheckoutPurpose: checkoutPurpose,
+        pendingBillingActivation: true,
         updatedAt: Date.now(),
       };
+      await salonRef.set(simulatedData, { merge: true });
 
-      await salonRef.set(finalData, { merge: true });
-
-      console.log(`[Cakto Checkout] URL de checkout montada e salão registrado para o salão ${salonId}`);
-      return res.json({
+      return res.status(200).json({
         success: true,
-        checkoutUrl,
+        checkoutUrl: simulatedCheckoutUrl,
+        orderId: simulatedOrderId,
+        subscriptionId: "sub_simulated_dev",
+        simulated: true
       });
-
-    } catch (err: any) {
-      console.error("[Cakto Checkout] Erro ao criar checkout:", err);
-      return res.status(500).json({ error: err.message || "Falha ao iniciar faturamento via Cakto." });
     }
-  });
+
+    // Se estiver em produção e faltar credenciais, reportar erro
+    if (isProduction && !hasCaktoCredentials) {
+      console.error("[Cakto Checkout Serverless] Erro Crítico: Credenciais da Cakto ausentes no ambiente de produção.");
+      return res.status(503).json({
+        error: "Erro crítico: A integração com a Cakto não está configurada corretamente no ambiente de produção. Faltam as credenciais CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET."
+      });
+    }
+
+    // URL de checkout estática
+    const checkoutEmail = finalEmail;
+    const params = new URLSearchParams({
+      name: ownerName || salonData?.ownerName || mergedSalonData.name || "Cliente",
+      email: checkoutEmail,
+      external_id: salonId,
+    });
+    
+    const activePhone = phone || salonData?.phone;
+    if (activePhone) {
+      const digits = String(activePhone).replace(/\D/g, "");
+      const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
+      params.append("phone", withCountry);
+    }
+    
+    const buildCheckoutUrl = (offerIdOrUrl: string, searchParams: URLSearchParams): string => {
+      if (!offerIdOrUrl) return "";
+      const baseUrl = offerIdOrUrl.trim();
+      if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+        try {
+          const urlObj = new URL(baseUrl);
+          searchParams.forEach((value, key) => {
+            urlObj.searchParams.set(key, value);
+          });
+          return urlObj.toString();
+        } catch (e) {
+          const separator = baseUrl.includes("?") ? "&" : "?";
+          return `${baseUrl}${separator}${searchParams.toString()}`;
+        }
+      } else {
+        return `https://pay.cakto.com.br/${baseUrl}?${searchParams.toString()}`;
+      }
+    };
+
+    const checkoutUrl = buildCheckoutUrl(offerId, params);
+
+    // Mapear campos de checkout Cakto
+    const finalData = {
+      ...mergedSalonData,
+      pendingPlan: planId,
+      pendingOfferId: offerId,
+      pendingCheckoutUrl: checkoutUrl,
+      pendingCheckoutEmail: checkoutEmail,
+      pendingRequestedAt: Date.now(),
+      pendingCheckoutPurpose: checkoutPurpose,
+      pendingBillingActivation: true,
+      updatedAt: Date.now(),
+    };
+
+    await salonRef.set(finalData, { merge: true });
+
+    console.log(`[Cakto Checkout Serverless] URL de checkout montada e salão registrado para ID: ${salonId}`);
+    return res.status(200).json({
+      success: true,
+      checkoutUrl,
+    });
+
+  } catch (err: any) {
+    console.error("[Cakto Checkout Serverless] Falha ao processar requisição:", err);
+    return res.status(500).json({ error: err.message || "Falha ao iniciar faturamento via Cakto." });
+  }
+
+});;
 
   // Helper reutilizável para processar webhook da Cakto (Evitando duplicação de lógica)
-  async function processCaktoWebhookPayload(bodyData: any, skipTokenValidation: boolean = false) {
+  
+function buildHomologationWebhookUpdate(ev, offerId, bodyData) {
+  const updatePayload: any = { homologationUpdatedAt: Date.now() };
+  if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
+      updatePayload.homologationSubscriptionStatus = "active";
+      updatePayload.homologationActivationStatus = "active";
+      updatePayload.homologationPaymentStatus = "paid";
+      updatePayload.homologationNextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
+      updatePayload.homologationSubscriptionStatus = "pending";
+      updatePayload.homologationActivationStatus = "pending";
+      updatePayload.homologationPaymentStatus = "pending";
+  } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
+      updatePayload.homologationSubscriptionStatus = "canceled";
+      updatePayload.homologationActivationStatus = "canceled";
+      updatePayload.homologationPaymentStatus = "canceled";
+  } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
+      updatePayload.homologationSubscriptionStatus = "overdue";
+      updatePayload.homologationActivationStatus = "blocked";
+      updatePayload.homologationPaymentStatus = "refused";
+  }
+  return updatePayload;
+}
+
+
+async function verifyIdToken(req: express.Request) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new Error("Token ausente ou inválido");
+  }
+  const token = authHeader.split("Bearer ")[1];
+  const adminAuth = getAdminAuth();
+  return await adminAuth.verifyIdToken(token);
+}
+
+async function processCaktoWebhookPayload(bodyData: any, skipTokenValidation: boolean = false) {
     // Extrair metadados, suportando serialização em string
     let metadataObj = bodyData.metadata;
     if (typeof metadataObj === "string") {
@@ -1043,13 +1138,21 @@ async function startServer() {
       // 1. Ao receber evento aprovado/renovado:
       if (!skipTokenValidation && salonData) {
         if (salonData.pendingOfferId && offerId && salonData.pendingOfferId !== offerId) {
-          console.error(`[Cakto Webhook Helper] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonDoc.id}. Esperada: ${salonData.pendingOfferId}, Recebida: ${offerId}.`);
-          updatePayload.auditOfferMismatch = true;
-          updatePayload.auditExpectedOffer = salonData.pendingOfferId;
-          updatePayload.auditReceivedOffer = offerId;
+          console.error(`[Cakto Webhook Helper] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonId}. Esperada: ${salonData.pendingOfferId}, Recebida: ${offerId}.`);
+          
+          const historyRef = adminDb.collection("salons").doc(salonId).collection("billingHistory").doc();
+          await historyRef.set({
+            id: historyRef.id,
+            eventType: "webhook_offer_mismatch",
+            title: "Divergência de Oferta Bloqueada",
+            description: `A assinatura Cakto foi rejeitada por divergência de oferta (Esperada: ${salonData.pendingOfferId}, Recebida: ${offerId}).`,
+            timestamp: Date.now(),
+            recordedBy: "system"
+          });
+
+          return { status: 200, data: { success: false, requiresReview: true, reason: "offer_mismatch" } };
         }
       }
-
       updatePayload.subscriptionStatus = "active";
       updatePayload.caktoPaymentStatus = "paid";
       updatePayload.paymentStatus = "paid";
@@ -1462,35 +1565,9 @@ async function startServer() {
         }
 
         // Atualizar método na API Cakto se for Pix/Boleto ou Pix Automático
-        const caktoMethodMap: Record<string, string> = {
-          pix_automatic: "pix_automatic",
-          pix: "pix",
-          boleto: "boleto"
-        };
-        const targetCaktoMethod = caktoMethodMap[paymentMethod] || paymentMethod;
-
-        try {
-          console.log(`[Cakto API] PATCH atualizando método para ${targetCaktoMethod}`);
-          const updateRes = await fetch(caktoUrl, {
-            method: "PATCH",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              payment_method: targetCaktoMethod
-            })
-          });
-
-          if (updateRes.ok) {
-            apiUpdated = true;
-            const updateData = await updateRes.json();
-            authorizationUrl = updateData.authorization_url || updateData.authorizationUrl || "";
-          }
-        } catch (apiErr) {
-          console.warn("[Cakto API] Falha na chamada da API Cakto para atualizar método:", apiErr);
-        }
-      } else {
+      // REGRA: PATCH da Cakto suspenso e convertido em configuração assistida, sem endpoint oficial na API
+      return res.status(200).json({ success: false, requiresSupport: true, message: "A solicitação foi registrada. Esta forma de pagamento requer configuração assistida pela nossa equipe financeira para ser concluída (API Cakto pendente de endpoint oficial para troca autônoma)." });
+    } else {
         // Se for homologação e Platform Admin, tratamos as validações de simulação locais
         if (paymentMethod === "credit_card") {
           return res.json({

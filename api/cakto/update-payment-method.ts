@@ -154,34 +154,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // Atualizar método na API Cakto se for Pix/Boleto ou Pix Automático
-      const caktoMethodMap: Record<string, string> = {
-        pix_automatic: "pix_automatic",
-        pix: "pix",
-        boleto: "boleto"
-      };
-      const targetCaktoMethod = caktoMethodMap[paymentMethod] || paymentMethod;
-
-      try {
-        console.log(`[Cakto API Serverless] PATCH atualizando método para ${targetCaktoMethod}`);
-        const updateRes = await fetch(caktoUrl, {
-          method: "PATCH",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            payment_method: targetCaktoMethod
-          })
-        });
-
-        if (updateRes.ok) {
-          apiUpdated = true;
-          const updateData = await updateRes.json();
-          authorizationUrl = updateData.authorization_url || updateData.authorizationUrl || "";
-        }
-      } catch (apiErr) {
-        console.warn("[Cakto API Serverless] Falha na chamada da API Cakto para atualizar método:", apiErr);
-      }
+      // REGRA: PATCH da Cakto suspenso e convertido em configuração assistida, sem endpoint oficial na API
+      return res.status(200).json({ success: false, requiresSupport: true, message: "A solicitação foi registrada. Esta forma de pagamento requer configuração assistida pela nossa equipe financeira para ser concluída (API Cakto pendente de endpoint oficial para troca autônoma)." });
     } else {
       // Se for homologação e Platform Admin, tratamos as validações de simulação locais
       if (paymentMethod === "credit_card") {
