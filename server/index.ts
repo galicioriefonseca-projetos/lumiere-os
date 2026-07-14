@@ -925,26 +925,67 @@ if (!salonId || !planId) {
 
   // Helper reutilizável para processar webhook da Cakto (Evitando duplicação de lógica)
   
-function buildHomologationWebhookUpdate(ev, offerId, bodyData) {
-  const updatePayload: any = { homologationUpdatedAt: Date.now() };
+function buildHomologationWebhookUpdate({
+  eventName,
+  eventId,
+  orderId,
+  subscriptionId,
+  customerId,
+  offerId,
+  normalizedData
+}: {
+  eventName: string;
+  eventId: string;
+  orderId?: any;
+  subscriptionId?: any;
+  customerId?: any;
+  offerId?: string;
+  normalizedData?: any;
+}) {
+  const ev = String(eventName).toLowerCase();
+  const updatePayload: any = {
+    homologationLastEventId: eventId,
+    homologationLastEvent: eventName,
+    homologationUpdatedAt: Date.now()
+  };
+
+  if (orderId) updatePayload.homologationOrderId = String(orderId);
+  if (subscriptionId) updatePayload.homologationSubscriptionId = String(subscriptionId);
+  if (customerId) updatePayload.homologationCustomerId = String(customerId);
+  if (offerId) updatePayload.homologationOfferId = String(offerId);
+
+  // Determinar status de homologação
   if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
-      updatePayload.homologationSubscriptionStatus = "active";
-      updatePayload.homologationActivationStatus = "active";
-      updatePayload.homologationPaymentStatus = "paid";
-      updatePayload.homologationNextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    updatePayload.homologationSubscriptionStatus = "active";
+    updatePayload.homologationActivationStatus = "active";
+    updatePayload.homologationPaymentStatus = "paid";
+    
+    // Determinar data de faturamento de homologação caso venha no payload
+    const periodEnd = normalizedData?.current_period_end || normalizedData?.next_billing_date || normalizedData?.nextBillingDate;
+    let nextBillingDateVal = periodEnd ? new Date(periodEnd).getTime() : null;
+    if (nextBillingDateVal && !isNaN(nextBillingDateVal)) {
+      updatePayload.homologationNextBillingDate = nextBillingDateVal;
+    }
+    
+    updatePayload.homologationLastPaymentAt = Date.now();
+    updatePayload.homologationLastPaymentAmount = normalizedData?.amount || normalizedData?.value || normalizedData?.price || 0;
+
   } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
-      updatePayload.homologationSubscriptionStatus = "pending";
-      updatePayload.homologationActivationStatus = "pending";
-      updatePayload.homologationPaymentStatus = "pending";
+    updatePayload.homologationSubscriptionStatus = "pending";
+    updatePayload.homologationActivationStatus = "pending";
+    updatePayload.homologationPaymentStatus = "pending";
+
   } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
-      updatePayload.homologationSubscriptionStatus = "canceled";
-      updatePayload.homologationActivationStatus = "canceled";
-      updatePayload.homologationPaymentStatus = "canceled";
+    updatePayload.homologationSubscriptionStatus = "canceled";
+    updatePayload.homologationActivationStatus = "canceled";
+    updatePayload.homologationPaymentStatus = "canceled";
+
   } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
-      updatePayload.homologationSubscriptionStatus = "overdue";
-      updatePayload.homologationActivationStatus = "blocked";
-      updatePayload.homologationPaymentStatus = "refused";
+    updatePayload.homologationSubscriptionStatus = "overdue";
+    updatePayload.homologationActivationStatus = "blocked";
+    updatePayload.homologationPaymentStatus = "refused";
   }
+
   return updatePayload;
 }
 
@@ -959,259 +1000,461 @@ async function verifyIdToken(req: express.Request) {
   return await adminAuth.verifyIdToken(token);
 }
 
-async function processCaktoWebhookPayload(bodyData: any, skipTokenValidation: boolean = false) {
-    // Extrair metadados, suportando serialização em string
-    let metadataObj = bodyData.metadata;
-    if (typeof metadataObj === "string") {
-      try {
-        metadataObj = JSON.parse(metadataObj);
-      } catch (e) {
-        metadataObj = {};
+async function processCaktoWebhookPayload(
+  bodyData: any,
+  skipTokenValidation = false,
+  isSimulation = false
+) {
+  const homologationMode =
+    skipTokenValidation === true ||
+    isSimulation === true;
+
+  // 1. Normalizar a estrutura do corpo da requisição (lida com dados simples ou agrupados/data array)
+  let normalizedData = bodyData || {};
+  if (normalizedData.data) {
+    if (Array.isArray(normalizedData.data)) {
+      if (normalizedData.data.length > 0) {
+        normalizedData = { ...normalizedData, ...normalizedData.data[0] };
       }
+    } else if (typeof normalizedData.data === "object") {
+      normalizedData = { ...normalizedData, ...normalizedData.data };
     }
+  }
 
-    // Extrair propriedades relevantes de forma tolerante a falhas
-    const eventName = bodyData.event || bodyData.eventType || bodyData.status || bodyData.event_type || "purchase_approved";
-    const orderId = bodyData.order_id || bodyData.orderId || bodyData.id;
-    const subscriptionId = bodyData.subscription_id || bodyData.subscriptionId;
-    const customerId = bodyData.customer_id || bodyData.customerId || bodyData.customer?.id;
-    const salonId = bodyData.external_id || bodyData.externalId || metadataObj?.salonId;
-    const customerEmail = String(bodyData.customer?.email || bodyData.customerEmail || metadataObj?.email || "").trim().toLowerCase();
-    const offerId = String(bodyData.offer_id || bodyData.offerId || bodyData.checkout_offer_id || "").trim();
-
-    const isTestEvent = !orderId && !subscriptionId && !salonId && !customerEmail;
-    if (isTestEvent) {
-      console.log("[Cakto Webhook Helper] Recebido evento genérico de teste/ping da Cakto.");
-      return {
-        success: true,
-        info: "Webhook de teste/ping recebido com sucesso.",
-        testEvent: true,
-        salonFound: false
-      };
+  // Extrair metadados, suportando serialização em string
+  let metadataObj = normalizedData.metadata;
+  if (typeof metadataObj === "string") {
+    try {
+      metadataObj = JSON.parse(metadataObj);
+    } catch (e) {
+      metadataObj = {};
     }
+  }
 
-    const adminDb = getAdminDb();
-    let salonRef = null;
-    let salonDoc = null;
+  // Extrair propriedades relevantes de forma tolerante a falhas
+  const eventName = normalizedData.event || normalizedData.eventType || normalizedData.status || normalizedData.event_type || "purchase_approved";
+  const orderId = normalizedData.order_id || normalizedData.orderId || normalizedData.id;
+  const subscriptionId = normalizedData.subscription_id || normalizedData.subscriptionId;
+  const customerId = normalizedData.customer_id || normalizedData.customerId || normalizedData.customer?.id;
+  const salonId = normalizedData.external_id || normalizedData.externalId || metadataObj?.salonId;
+  const customerEmail = String(normalizedData.customer?.email || normalizedData.customerEmail || metadataObj?.email || "").trim().toLowerCase();
+  const offerId = String(normalizedData.offer_id || normalizedData.offerId || normalizedData.checkout_offer_id || "").trim();
 
-    // 4. Correlação do salão:
-    // a. Tentar localizar pelo salonId direto (external_id / externalId / metadata.salonId)
-    if (salonId) {
-      salonRef = adminDb.collection("salons").doc(String(salonId));
-      salonDoc = await salonRef.get();
+  const isTestEvent = !orderId && !subscriptionId && !salonId && !customerEmail;
+  if (isTestEvent) {
+    console.log("[Cakto Webhook Processor Express] Recebido evento genérico de teste/ping da Cakto.");
+    return {
+      success: true,
+      info: "Webhook de teste/ping recebido com sucesso.",
+      testEvent: true,
+      salonFound: false
+    };
+  }
+
+  const adminDb = getAdminDb();
+  let salonRef = null;
+  let salonDoc = null;
+
+  // 4. Correlação do salão:
+  // a. Tentar localizar pelo salonId direto (external_id / externalId / metadata.salonId)
+  if (salonId) {
+    salonRef = adminDb.collection("salons").doc(String(salonId));
+    salonDoc = await salonRef.get();
+  }
+
+  // b. Se não encontrado, buscar por caktoSubscriptionId
+  if ((!salonDoc || !salonDoc.exists) && subscriptionId) {
+    const snapshot = await adminDb.collection("salons").where("caktoSubscriptionId", "==", String(subscriptionId)).limit(1).get();
+    if (!snapshot.empty) {
+      salonDoc = snapshot.docs[0];
+      salonRef = salonDoc.ref;
     }
+  }
 
-    // b. Se não encontrado, buscar por caktoSubscriptionId
-    if ((!salonDoc || !salonDoc.exists) && subscriptionId) {
-      const snapshot = await adminDb.collection("salons").where("caktoSubscriptionId", "==", String(subscriptionId)).limit(1).get();
-      if (!snapshot.empty) {
-        salonDoc = snapshot.docs[0];
-        salonRef = salonDoc.ref;
-      }
+  // c. Se ainda não encontrado, buscar por caktoOrderId
+  if ((!salonDoc || !salonDoc.exists) && orderId) {
+    const snapshot = await adminDb.collection("salons").where("caktoOrderId", "==", String(orderId)).limit(1).get();
+    if (!snapshot.empty) {
+      salonDoc = snapshot.docs[0];
+      salonRef = salonDoc.ref;
     }
+  }
 
-    // c. Se ainda não encontrado, buscar por caktoOrderId
-    if ((!salonDoc || !salonDoc.exists) && orderId) {
-      const snapshot = await adminDb.collection("salons").where("caktoOrderId", "==", String(orderId)).limit(1).get();
-      if (!snapshot.empty) {
-        salonDoc = snapshot.docs[0];
-        salonRef = salonDoc.ref;
-      }
+  // d. Se ainda não encontrado, buscar por caktoOfferId + caktoCheckoutEmail
+  if ((!salonDoc || !salonDoc.exists) && offerId && customerEmail) {
+    const snapshot = await adminDb.collection("salons")
+      .where("caktoOfferId", "==", offerId)
+      .where("caktoCheckoutEmail", "==", customerEmail)
+      .limit(1).get();
+    if (!snapshot.empty) {
+      salonDoc = snapshot.docs[0];
+      salonRef = salonDoc.ref;
     }
+  }
 
-    // d. Se ainda não encontrado, buscar por caktoOfferId + caktoCheckoutEmail
-    if ((!salonDoc || !salonDoc.exists) && offerId && customerEmail) {
-      const snapshot = await adminDb.collection("salons")
-        .where("caktoOfferId", "==", offerId)
-        .where("caktoCheckoutEmail", "==", customerEmail)
-        .limit(1).get();
-      if (!snapshot.empty) {
-        salonDoc = snapshot.docs[0];
-        salonRef = salonDoc.ref;
-      }
+  // e. Se ainda não encontrado, buscar por e-mail normalizado do cliente (checkout ou owner e-mail)
+  if ((!salonDoc || !salonDoc.exists) && customerEmail) {
+    const snapshot = await adminDb.collection("salons")
+      .where("caktoCheckoutEmail", "==", customerEmail)
+      .limit(1).get();
+    if (!snapshot.empty) {
+      salonDoc = snapshot.docs[0];
+      salonRef = salonDoc.ref;
     }
+  }
 
-    // e. Se ainda não encontrado, buscar por e-mail normalizado do cliente (checkout ou owner email)
-    if ((!salonDoc || !salonDoc.exists) && customerEmail) {
-      const snapshot = await adminDb.collection("salons")
-        .where("caktoCheckoutEmail", "==", customerEmail)
-        .limit(1).get();
-      if (!snapshot.empty) {
-        salonDoc = snapshot.docs[0];
-        salonRef = salonDoc.ref;
-      }
+  if ((!salonDoc || !salonDoc.exists) && customerEmail) {
+    const snapshot = await adminDb.collection("salons")
+      .where("ownerEmail", "==", customerEmail)
+      .limit(1).get();
+    if (!snapshot.empty) {
+      salonDoc = snapshot.docs[0];
+      salonRef = salonDoc.ref;
     }
+  }
 
-    if ((!salonDoc || !salonDoc.exists) && customerEmail) {
-      const snapshot = await adminDb.collection("salons")
-        .where("ownerEmail", "==", customerEmail)
-        .limit(1).get();
-      if (!snapshot.empty) {
-        salonDoc = snapshot.docs[0];
-        salonRef = salonDoc.ref;
-      }
-    }
+  // 6. Adicionar logs seguros
+  console.log(`[Cakto Webhook Processor Express Secure Log] Processando evento:
+  - Evento: ${eventName}
+  - Offer ID: ${offerId || "N/A"}
+  - Order ID: ${orderId || "N/A"}
+  - Subscription ID: ${subscriptionId || "N/A"}
+  - Customer Email: ${customerEmail || "N/A"}
+  - Salon ID: ${salonId || "N/A"}
+  - Salão Encontrado no Firestore: ${!!(salonDoc && salonDoc.exists)} (${salonDoc?.id || "N/A"})`);
 
-    // 6. Adicionar logs seguros
-    console.log(`[Cakto Webhook Helper Secure Log] Processando evento:
-    - Evento: ${eventName}
-    - Offer ID: ${offerId || "N/A"}
-    - Order ID: ${orderId || "N/A"}
-    - Subscription ID: ${subscriptionId || "N/A"}
-    - Customer Email: ${customerEmail || "N/A"}
-    - Salon ID: ${salonId || "N/A"}
-    - Salão Encontrado no Firestore: ${!!(salonDoc && salonDoc.exists)} (${salonDoc?.id || "N/A"})`);
+  const eventId = normalizedData.event_id || normalizedData.eventId || `${eventName}_${orderId || "test"}_${Date.now()}`;
 
+  // ========================================
+  // 2. RETORNO ANTECIPADO (Homologação)
+  // ========================================
+  if (homologationMode) {
     if (!salonDoc || !salonDoc.exists || !salonRef) {
-      console.warn(`[Cakto Webhook Helper] Salão correspondente não localizado para os parâmetros informados.`);
       return {
-        success: true,
-        info: "Salão correspondente não localizado. Evento tratado com sucesso como caso de teste/integração.",
-        salonFound: false
+        success: false,
+        simulated: true,
+        salonFound: false,
+        reason: "salon_not_found"
       };
     }
 
-    const salonData = salonDoc.data();
-    const eventId = bodyData.event_id || bodyData.eventId || `${eventName}_${orderId || "test"}_${Date.now()}`;
+    const homologationPayload =
+      buildHomologationWebhookUpdate({
+        eventName,
+        eventId,
+        orderId,
+        subscriptionId,
+        customerId,
+        offerId,
+        normalizedData
+      });
 
-    // Evitar processamento de eventos duplicados se não for um teste simulado
-    if (!skipTokenValidation && salonData?.caktoLastEventId === eventId) {
-      console.log(`[Cakto Webhook Helper] Evento duplicado já processado anteriormente: ${eventId}. Ignorando.`);
+    await salonRef.set(homologationPayload, {
+      merge: true
+    });
+
+    return {
+      success: true,
+      simulated: true,
+      salonUpdated: true,
+      salonId: salonDoc.id
+    };
+  }
+
+  // Evitar processamento de eventos duplicados se não for homologação/teste
+  if (salonDoc?.exists) {
+    const sData = salonDoc.data();
+    if (sData?.caktoLastEventId === eventId) {
+      console.log(`[Cakto Webhook Processor Express] Evento duplicado já processado anteriormente: ${eventId}. Ignorando.`);
       return {
         success: true,
         info: "Evento duplicado já processado.",
         salonFound: true,
         salonId: salonDoc.id,
-        plan: salonData?.plan || "start",
-        status: salonData?.subscriptionStatus || "active",
+        plan: sData?.plan || "start",
+        status: sData?.subscriptionStatus || "active",
         firestorePath: `salons/${salonDoc.id}`
       };
     }
+  }
 
-    // Carregar configurações de ofertas para mapear o plano correto
-    const sData = await getCaktoSettingsCached();
-    let mappedPlan = null;
-    if (offerId) {
-      const offId = offerId.trim();
-      if (sData.startOfferId && sData.startOfferId.trim() === offId) mappedPlan = "start";
-      else if (sData.founderOfferId && sData.founderOfferId.trim() === offId) mappedPlan = "founder";
-      else if (sData.performanceOfferId && sData.performanceOfferId.trim() === offId) mappedPlan = "performance";
-      else if (sData.networkOfferId && sData.networkOfferId.trim() === offId) mappedPlan = "network";
-      else if (sData.enterpriseOfferId && sData.enterpriseOfferId.trim() === offId) mappedPlan = "enterprise";
+  // ========================================
+  // 4. FLUXO REAL
+  // ========================================
+  const realUpdatePayload: any = {
+    billingProvider: "cakto",
+    caktoLastEventId: eventId,
+    caktoLastEvent: eventName,
+    updatedAt: Date.now()
+  };
+
+  if (orderId) realUpdatePayload.caktoOrderId = String(orderId);
+  if (subscriptionId) realUpdatePayload.caktoSubscriptionId = String(subscriptionId);
+  if (customerId) realUpdatePayload.caktoCustomerId = String(customerId);
+  if (offerId) realUpdatePayload.caktoOfferId = offerId;
+
+  // Carregar configurações de ofertas para mapear o plano correto
+  const sData = await getCaktoSettingsCached();
+  let mappedPlan: "start" | "founder" | "performance" | "network" | "enterprise" | null = null;
+  if (offerId) {
+    const offId = offerId.trim();
+    if (sData.startOfferId && sData.startOfferId.trim() === offId) mappedPlan = "start";
+    else if (sData.founderOfferId && sData.founderOfferId.trim() === offId) mappedPlan = "founder";
+    else if (sData.performanceOfferId && sData.performanceOfferId.trim() === offId) mappedPlan = "performance";
+    else if (sData.networkOfferId && sData.networkOfferId.trim() === offId) mappedPlan = "network";
+    else if (sData.enterpriseOfferId && sData.enterpriseOfferId.trim() === offId) mappedPlan = "enterprise";
+  }
+
+  // ========================================
+  // 5. OFERTAS DESCONHECIDAS
+  // ========================================
+  if (!mappedPlan) {
+    if (salonRef && salonDoc && salonDoc.exists) {
+      await salonRef.update({
+        billingWebhookReview: {
+          status: "unknown_offer",
+          receivedOfferId: offerId || null,
+          eventId,
+          receivedAt: Date.now()
+        }
+      });
     }
-
-    // Fallback baseado em nome do checkout
-    if (!mappedPlan) {
-      const checkoutName = String(bodyData.checkout_name || bodyData.name || "").toLowerCase();
-      if (checkoutName.includes("start")) mappedPlan = "start";
-      else if (checkoutName.includes("founder") || checkoutName.includes("pioneiro")) mappedPlan = "founder";
-      else if (checkoutName.includes("performance")) mappedPlan = "performance";
-      else if (checkoutName.includes("network")) mappedPlan = "network";
-      else if (checkoutName.includes("enterprise")) mappedPlan = "enterprise";
-    }
-
-    const updatePayload: any = {
-      billingProvider: skipTokenValidation ? "homologation" : "cakto",
-      updatedAt: Date.now(),
+    return {
+      success: false,
+      requiresReview: true,
+      reason: "unknown_offer"
     };
-    
-    if (skipTokenValidation) {
-      updatePayload.homologationLastEventId = eventId;
-      updatePayload.homologationLastEvent = eventName;
-      if (orderId) updatePayload.homologationOrderId = String(orderId);
-      if (subscriptionId) updatePayload.homologationSubscriptionId = String(subscriptionId);
-      if (customerId) updatePayload.homologationCustomerId = String(customerId);
-      if (offerId) updatePayload.homologationOfferId = offerId;
-    } else {
-      updatePayload.caktoLastEventId = eventId;
-      updatePayload.caktoLastEvent = eventName;
-      if (orderId) updatePayload.caktoOrderId = String(orderId);
-      if (subscriptionId) updatePayload.caktoSubscriptionId = String(subscriptionId);
-      if (customerId) updatePayload.caktoCustomerId = String(customerId);
-      if (offerId) updatePayload.caktoOfferId = offerId;
-    }
+  }
 
-    const ev = String(eventName).toLowerCase();
+  const ev = String(eventName).toLowerCase();
 
-    // Regras de Status conforme especificado
-    if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
-      // 1. Ao receber evento aprovado/renovado:
-      if (!skipTokenValidation && salonData) {
-        if (salonData.pendingOfferId && offerId && salonData.pendingOfferId !== offerId) {
-          console.error(`[Cakto Webhook Helper] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonId}. Esperada: ${salonData.pendingOfferId}, Recebida: ${offerId}.`);
+  // ========================================
+  // 6. PENDING OFFER (Divergência)
+  // ========================================
+  if (salonDoc?.exists) {
+    const sData = salonDoc.data();
+    const pendingOfferId = sData?.pendingOfferId;
+    if (pendingOfferId) {
+      if (!offerId || offerId.trim() === "" || pendingOfferId !== offerId) {
+        if (salonRef) {
+          await salonRef.update({
+            billingWebhookReview: {
+              status: "offer_mismatch",
+              expectedOfferId: pendingOfferId,
+              receivedOfferId: offerId || null,
+              eventId,
+              receivedAt: Date.now()
+            }
+          });
           
-          const historyRef = adminDb.collection("salons").doc(salonId).collection("billingHistory").doc();
+          const historyRef = salonRef.collection("billingHistory").doc();
           await historyRef.set({
             id: historyRef.id,
             eventType: "webhook_offer_mismatch",
             title: "Divergência de Oferta Bloqueada",
-            description: `A assinatura Cakto foi rejeitada por divergência de oferta (Esperada: ${salonData.pendingOfferId}, Recebida: ${offerId}).`,
+            description: `A assinatura Cakto foi rejeitada por divergência de oferta (Esperada: ${pendingOfferId}, Recebida: ${offerId || "ausente"}).`,
             timestamp: Date.now(),
             recordedBy: "system"
           });
-
-          return { status: 200, data: { success: false, requiresReview: true, reason: "offer_mismatch" } };
         }
+        return {
+          success: false,
+          requiresReview: true,
+          reason: "offer_mismatch"
+        };
       }
-      updatePayload.subscriptionStatus = "active";
-      updatePayload.caktoPaymentStatus = "paid";
-      updatePayload.paymentStatus = "paid";
-      updatePayload.plan = mappedPlan || salonData?.plan || "start";
-      
-      if (!skipTokenValidation) {
-        updatePayload.pendingPlan = null;
-        updatePayload.pendingOfferId = null;
-        updatePayload.pendingCheckoutUrl = null;
-        updatePayload.pendingCheckoutEmail = null;
-        updatePayload.pendingRequestedAt = null;
-        updatePayload.pendingCheckoutPurpose = null;
-        updatePayload.pendingBillingActivation = null;
-      }
-      
-      const periodEnd = bodyData.current_period_end || bodyData.next_billing_date || bodyData.nextBillingDate;
-      let nextBillingDate = periodEnd ? new Date(periodEnd).getTime() : (Date.now() + 30 * 24 * 60 * 60 * 1000);
-      if (isNaN(nextBillingDate)) {
-        nextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
-      }
-      updatePayload.nextBillingDate = nextBillingDate;
-      if (periodEnd) {
-        updatePayload.currentPeriodEnd = periodEnd;
-      }
-      updatePayload.lastPaymentAt = Date.now();
-      updatePayload.lastPaymentAmount = bodyData.amount || bodyData.value || bodyData.price || 0;
+    }
+  }
 
-    } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
-      // 2. Ao receber cancelado/refund/chargeback:
-      updatePayload.subscriptionStatus = "canceled";
-      updatePayload.caktoPaymentStatus = "canceled";
-      updatePayload.paymentStatus = "canceled";
+  // Regras de Status conforme especificado
+  if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
+    realUpdatePayload.subscriptionStatus = "active";
+    realUpdatePayload.activationStatus = "active";
+    realUpdatePayload.caktoPaymentStatus = "paid";
+    realUpdatePayload.paymentStatus = "paid";
+    realUpdatePayload.plan = mappedPlan;
+    realUpdatePayload.isActive = true;
+    
+    // Clear pending fields
+    realUpdatePayload.pendingPlan = null;
+    realUpdatePayload.pendingOfferId = null;
+    realUpdatePayload.pendingCheckoutUrl = null;
+    realUpdatePayload.pendingCheckoutEmail = null;
+    realUpdatePayload.pendingRequestedAt = null;
+    realUpdatePayload.pendingCheckoutPurpose = null;
+    realUpdatePayload.pendingBillingActivation = null;
 
-    } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
-      // 3. Ao receber recusado/inadimplente:
-      updatePayload.subscriptionStatus = "overdue";
-      updatePayload.caktoPaymentStatus = "refused";
-      updatePayload.paymentStatus = "overdue";
+    if (customerEmail) {
+      realUpdatePayload.caktoCheckoutEmail = customerEmail;
+    }
 
-    } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
-      // Criação de assinatura
-      if (salonData?.subscriptionStatus !== "active") {
-        updatePayload.subscriptionStatus = "pending";
-        updatePayload.caktoPaymentStatus = "pending";
-        updatePayload.paymentStatus = "pending";
+    // ========================================
+    // 8. DATA REAL (Vencimento)
+    // ========================================
+    const periodEnd = normalizedData.current_period_end || normalizedData.next_billing_date || normalizedData.nextBillingDate;
+    let validDate = false;
+    let nextBillingDateVal: number | null = null;
+    
+    if (periodEnd) {
+      const parsedDate = new Date(periodEnd).getTime();
+      if (!isNaN(parsedDate)) {
+        nextBillingDateVal = parsedDate;
+        validDate = true;
       }
     }
 
-    await salonRef.update(updatePayload);
-    console.log(`[Cakto Webhook Helper] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${eventName})`);
+    if (validDate && nextBillingDateVal !== null) {
+      realUpdatePayload.nextBillingDate = nextBillingDateVal;
+      if (periodEnd) {
+        realUpdatePayload.currentPeriodEnd = periodEnd;
+      }
+    } else {
+      realUpdatePayload.billingSyncRequired = true;
+      realUpdatePayload.billingSyncReason = "missing_next_billing_date";
+    }
 
+    realUpdatePayload.lastPaymentAt = Date.now();
+    realUpdatePayload.lastPaymentAmount = normalizedData.amount || normalizedData.value || normalizedData.price || 0;
+
+  } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
+    realUpdatePayload.subscriptionStatus = "canceled";
+    realUpdatePayload.activationStatus = "canceled";
+    realUpdatePayload.caktoPaymentStatus = "canceled";
+    realUpdatePayload.paymentStatus = "canceled";
+    realUpdatePayload.isActive = false;
+
+  } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
+    realUpdatePayload.subscriptionStatus = "overdue";
+    realUpdatePayload.activationStatus = "blocked";
+    realUpdatePayload.caktoPaymentStatus = "refused";
+    realUpdatePayload.paymentStatus = "overdue";
+    realUpdatePayload.isActive = false;
+
+  } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
+    if (salonDoc?.exists && salonDoc.data()?.subscriptionStatus !== "active") {
+      realUpdatePayload.subscriptionStatus = "pending";
+      realUpdatePayload.caktoPaymentStatus = "pending";
+      realUpdatePayload.paymentStatus = "pending";
+    }
+  }
+
+  // Se o salão não existe e o faturamento é válido (real), criamos o salão!
+  if (!salonDoc || !salonDoc.exists || !salonRef) {
+    const finalSalonId = salonId || `salon_${Date.now()}`;
+    salonRef = adminDb.collection("salons").doc(String(finalSalonId));
+    
+    const isApproved = realUpdatePayload.subscriptionStatus === "active";
+    const newSalonData = {
+      id: String(finalSalonId),
+      name: normalizedData.customer?.name || "LumièreOS Salon",
+      ownerName: normalizedData.customer?.name || "",
+      plan: mappedPlan,
+      subscriptionStatus: realUpdatePayload.subscriptionStatus || "pending",
+      activationStatus: realUpdatePayload.activationStatus || "pending",
+      isActive: isApproved,
+      createdAt: Date.now(),
+      ...realUpdatePayload
+    };
+
+    await salonRef.set(newSalonData);
+    console.log(`[Cakto Webhook Processor Express] Salão novo criado e ativado com ID: ${finalSalonId}`);
+    
     return {
       success: true,
       salonUpdated: true,
-      plan: updatePayload.plan || salonData?.plan || "start",
-      status: updatePayload.subscriptionStatus || salonData?.subscriptionStatus || "active",
-      firestorePath: `salons/${salonDoc.id}`
+      plan: newSalonData.plan,
+      status: newSalonData.subscriptionStatus,
+      firestorePath: `salons/${finalSalonId}`
     };
   }
+
+  const salonData = salonDoc.data();
+
+  await salonRef.update(realUpdatePayload);
+  console.log(`[Cakto Webhook Processor Express] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${eventName})`);
+
+  // Salvar registro no histórico de cobrança (fluxo real)
+  try {
+    const historyRef = salonRef.collection("billingHistory").doc();
+    let histType = "charge_approved";
+    let histTitle = "Cobrança Aprovada";
+    let histDesc = `O pagamento da assinatura Cakto foi processado com sucesso.`;
+
+    const PLAN_NAMES_LOCAL: Record<string, string> = {
+      start: "Start",
+      founder: "Founder (Pioneiro)",
+      performance: "Performance",
+      network: "Network",
+      enterprise: "Enterprise"
+    };
+
+    const PLANS_PRICES_LOCAL: Record<string, number> = {
+      start: 197,
+      founder: 297,
+      performance: 397,
+      network: 797,
+      enterprise: 1997
+    };
+
+    const prevPlan = salonData?.plan || "start";
+    const nextPlan = realUpdatePayload.plan || prevPlan;
+    const prevStatus = salonData?.subscriptionStatus || "pending";
+
+    if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
+      if (prevStatus === "overdue") {
+        histType = "regularization";
+        histTitle = "Regularização de Faturamento";
+        histDesc = "A assinatura em atraso foi regularizada com sucesso após compensação.";
+      } else if (prevStatus === "preview" || prevStatus === "pending") {
+        histType = "activation";
+        histTitle = "Ativação de Assinatura";
+        histDesc = `Assinatura iniciada no plano ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan}.`;
+      } else if (prevPlan !== nextPlan) {
+        const isUp = (PLANS_PRICES_LOCAL[nextPlan] || 0) > (PLANS_PRICES_LOCAL[prevPlan] || 0);
+        histType = isUp ? "upgrade_applied" : "downgrade_applied";
+        histTitle = isUp ? "Upgrade de Plano Aplicado" : "Downgrade de Plano Aplicado";
+        histDesc = `Plano definitivo alterado de ${PLAN_NAMES_LOCAL[prevPlan] || prevPlan} para ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan}.`;
+      } else {
+        histType = "charge_approved";
+        histTitle = "Mensalidade Aprovada";
+        histDesc = `Cobrança mensal do plano ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan} aprovada com sucesso.`;
+      }
+    } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
+      histType = "canceled";
+      histTitle = "Assinatura Cancelada";
+      histDesc = `Assinatura do LumièreOS foi cancelada.`;
+    } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
+      histType = "charge_refused";
+      histTitle = "Cobrança Recusada";
+      histDesc = `O faturamento mensal da assinatura Cakto falhou ou foi recusado pela operadora.`;
+    } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
+      histType = "activation";
+      histTitle = "Nova Assinatura Registrada";
+      histDesc = `Faturamento recorrente registrado na Cakto, aguardando compensação inicial.`;
+    }
+
+    await historyRef.set({
+      id: historyRef.id,
+      eventType: histType,
+      title: histTitle,
+      description: histDesc,
+      amount: realUpdatePayload.lastPaymentAmount || normalizedData.amount || normalizedData.value || normalizedData.price || 0,
+      plan: nextPlan,
+      timestamp: Date.now(),
+      recordedBy: "Cakto Gateway"
+    });
+  } catch (err) {
+    console.error("[Cakto Webhook History Logger] Falha ao gravar histórico:", err);
+  }
+
+  return {
+    success: true,
+    salonUpdated: true,
+    plan: realUpdatePayload.plan || salonData?.plan || "start",
+    status: realUpdatePayload.subscriptionStatus || salonData?.subscriptionStatus || "active",
+    firestorePath: `salons/${salonDoc.id}`
+  };
+}
 
   app.post("/api/cakto/webhook", async (req, res) => {
     try {
@@ -1317,7 +1560,7 @@ async function processCaktoWebhookPayload(bodyData: any, skipTokenValidation: bo
       console.log(`[Cakto Webhook Test] Iniciando simulação de evento '${event}' para o salão ${salonId}...`);
 
       // Chamar a MESMA função utilizada pelo webhook oficial, pulando a validação de token
-      const result = await processCaktoWebhookPayload(simulatedPayload, true);
+      const result = await processCaktoWebhookPayload(simulatedPayload, true, true);
 
       return res.status(200).json(result);
     } catch (err: any) {
