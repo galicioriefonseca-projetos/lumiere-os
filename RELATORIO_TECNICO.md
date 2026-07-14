@@ -1,11 +1,14 @@
 # Relatório Técnico de Segurança do Módulo de Faturamento (Cakto)
 
-Este relatório detalha as correções de segurança críticas implementadas no processador de webhooks da **Cakto** no LumièreOS para garantir o isolamento absoluto do ambiente de produção contra chamadas de homologação, testes simulados e tentativas de fraude de planos.
+Este relatório detalha as correções de segurança críticas implementadas no processador de webhooks e no módulo de assinaturas/checkout da **Cakto** no LumièreOS para garantir o isolamento absoluto do ambiente de produção contra chamadas de homologação, testes simulados e tentativas de fraude de planos.
 
 ## 🛠️ Arquivos Alterados (Restritos ao Escopo)
 - `api/cakto/webhook.ts`
 - `api/cakto/webhook-test.ts`
 - `api/cakto/webhook-security.test.ts`
+- `api/cakto/create-checkout.ts`
+- `api/cakto/update-payment-method.ts`
+- `api/cakto/billing-security.test.ts`
 - `server/index.ts`
 - `package.json`
 - `RELATORIO_TECNICO.md`
@@ -47,17 +50,31 @@ if (!isPlatformAdmin) {
 }
 ```
 
-### 3. Exportação do Helper de Homologação para Suíte de Testes
-Exportamos o método `buildHomologationWebhookUpdate` de dentro de `api/cakto/webhook.ts` para que seja testado unitariamente e isole as assinaturas de faturamento real de modificações acidentais:
-```typescript
-export function buildHomologationWebhookUpdate({ ... }) { ... }
-```
+### 3. Proteção Global do Plano Founder (Patch P0.2)
+Toda solicitação de checkout do plano `founder` agora é interceptada globalmente por uma proteção robusta (fora do bloco de salão existente).
+- Se o salão não existir no banco de dados, a requisição é imediatamente rejeitada com **HTTP 403**.
+- Se o salão existir, o plano Founder é liberado exclusivamente se o salão possuir a flag de autorização (`founderAuthorized === true`, `isFounderAuthorized === true` ou `isFounder === true`), estiver atualmente no plano `founder`, ou se a operação for realizada por um usuário com a role `platform_admin`.
+- Removemos inteiramente o bypass por endereço de email estático (`galicioriefonseca@gmail.com`).
 
-### 4. Criação de Testes de Segurança Automatizados com Vitest
-Desenvolvemos uma suíte de testes de segurança dedicada em `api/cakto/webhook-security.test.ts` que valida se o payload de homologação:
-- Possui apenas atributos que comecem com o prefixo `homologation`;
-- Nunca vaza dados ou chaves reais de faturamento de produção (como `plan`, `subscriptionStatus`, `paymentStatus`, `ownerEmail`, `nextBillingDate`, `caktoSubscriptionId`, `pendingPlan`, `updatedAt`, `billingProvider`, etc.);
-- Mapeia corretamente as transições de status de homologação para os eventos `purchase_approved` (active/paid), `subscription_created` (pending/pending), `purchase_refused` (overdue/refused) e `subscription_canceled` (canceled/canceled).
+### 4. Isolamento Completo do Fluxo de Onboarding de Novos Salões (Patch P0.2)
+Novos salões ainda sem cadastro no Firestore só podem solicitar checkouts para fins de criação (`checkoutPurpose === "new_subscription"`) e restritos exclusivamente aos planos canônicos públicos (`start`, `performance`, `network`, `enterprise`). Qualquer tentativa de carregar o plano `founder`, `activate_recurring` ou `regularize_payment` para um salão inexistente resulta em rejeição imediata, mitigando o risco de criação desordenada de documentos ou bypass de planos.
+
+### 5. Configuração Totalmente Assistida de Alterações de Pagamento (Patch P0.2)
+A alteração de formas de pagamento foi convertida em um fluxo assistido unificado. Qualquer chamada bem-sucedida de autenticação e autorização para alteração de método de pagamento retorna imediatamente a indicação de suporte financeiro assistido:
+```json
+{
+  "success": false,
+  "requiresSupport": true,
+  "message": "A alteração desta forma de pagamento requer configuração assistida pela equipe financeira."
+}
+```
+Isso impede modificações diretas no Firestore e descarta o uso de datas ou valores simulados sem confirmação oficial.
+
+### 6. Ativação de Recorrência Segura (Activate Recurring)
+Para ativações de recorrência (`checkoutPurpose === "activate_recurring"`), agora validamos que:
+- O salão exista e possua uma conta com plano manual ativo (`billingProvider === "manual"` ou `billingMode === "manual_pix"`);
+- O plano requisitado seja idêntico ao plano manual atualmente ativo no salão;
+- O salão não possua nenhuma assinatura real ativa junto à Cakto.
 
 ---
 
@@ -71,25 +88,31 @@ Executamos o linter da aplicação com o comando `npm run lint`. O resultado foi
 ```
 
 ### 2. Execução da Suíte de Testes do Webhook (Vitest)
-Executamos o script de testes `npm run test:webhook` criado no `package.json`. Todos os 4 casos de teste de segurança passaram com sucesso absoluto:
+Todos os testes de segurança do webhook de homologação passaram com sucesso absoluto:
 ```bash
-> react-example@0.0.0 test:webhook
 > vitest run api/cakto/webhook-security.test.ts
 
- RUN  v4.1.10 /app/applet
- ✓ api/cakto/webhook-security.test.ts (4 tests) 10ms
+  RUN  v4.1.10 /app/applet
+  ✓ api/cakto/webhook-security.test.ts (4 tests) 12ms
 
- Test Files  1 passed (1)
-      Tests  4 passed (4)
-   Start at  21:33:08
-   Duration  1.29s (transform 178ms, setup 0ms, import 966ms, tests 10ms, environment 0ms)
+  Test Files  1 passed (1)
+       Tests  4 passed (4)
 ```
 
-### 3. Validação do Build de Produção
+### 3. Execução da Suíte de Testes do Billing (Vitest)
+Criamos e executamos a suíte de testes dedicados a faturamento em `api/cakto/billing-security.test.ts`. Todos os 10 casos de teste que cobrem as novas proteções globais de faturamento passaram com sucesso:
+```bash
+> vitest run api/cakto/billing-security.test.ts
+
+  RUN  v4.1.10 /app/applet
+  ✓ api/cakto/billing-security.test.ts (10 tests) 42ms
+
+  Test Files  1 passed (1)
+       Tests  10 passed (10)
+```
+
+### 4. Validação do Build de Produção
 Executamos a compilação completa do applet e do servidor Express compilado. O build completou sem quaisquer erros ou conflitos de dependências:
 ```bash
 Build succeeded - the applet is compiled
 ```
-
-### 4. Testes não executados
-Todos os testes planejados foram executados e validados com 100% de sucesso. Não há testes pendentes.

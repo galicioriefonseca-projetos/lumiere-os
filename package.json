@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run firestore.rules.test.ts\"",
-    "test:webhook": "vitest run api/cakto/webhook-security.test.ts"
+    "test:webhook": "vitest run api/cakto/webhook-security.test.ts",
+    "test:billing": "vitest run api/cakto/billing-security.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

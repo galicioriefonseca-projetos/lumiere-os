@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!['new_subscription', 'activate_recurring', 'regularize_payment'].includes(checkoutPurpose)) {
       return res.status(400).json({ error: 'checkoutPurpose inválido.' });
     }
-if (!salonId || !planId) {
+    if (!salonId || !planId) {
       return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
     }
 
@@ -90,19 +90,26 @@ if (!salonId || !planId) {
       return res.status(400).json({ error: "O plano especificado é inválido." });
     }
 
+    // 1. Autenticação Global do Checkout (Exigir usuário autenticado)
+    let user;
+    try {
+      user = await verifyIdToken(req);
+    } catch (authErr: any) {
+      console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
+      return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
+    }
+
     const adminDb = getAdminDb();
     const salonRef = adminDb.collection("salons").doc(salonId);
     let salonDoc = await salonRef.get();
     let salonData = salonDoc.exists ? salonDoc.data() : null;
 
-    if (salonDoc.exists) {
-      // Rule 5: Endpoints de clientes existentes devem validar autenticação e propriedade do salão
-      let user;
-      try {
-        user = await verifyIdToken(req);
-      } catch (authErr: any) {
-        console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
-        return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
+    // 2. Proteção Global Founder (Mover para fora de salonDoc.exists)
+    if (planId === "founder") {
+      if (!salonDoc.exists) {
+        return res.status(403).json({
+          error: "O plano Founder é exclusivo para contas autorizadas."
+        });
       }
 
       const authResult = await canManageBilling(user, salonId, salonData);
@@ -110,24 +117,29 @@ if (!salonId || !planId) {
         return res.status(403).json({ error: authResult.reason || "Não autorizado a gerenciar o faturamento deste salão." });
       }
 
-      
-      // Rule: Protect Founder Plan
-      if (planId === 'founder') {
-        const isAuthorized = salonData?.plan === 'founder' || 
-                             salonData?.founderAuthorized === true || 
-                             salonData?.isFounder === true || 
-                             (user && user.email === 'galicioriefonseca@gmail.com') ||
-                             authResult.role === 'platform_admin';
-                             
-        if (!isAuthorized) {
-          return res.status(403).json({ error: 'O plano Founder é exclusivo para contas autorizadas.' });
+      const isAuthorized = 
+        salonData?.plan === "founder" || 
+        salonData?.founderAuthorized === true || 
+        salonData?.isFounderAuthorized === true || 
+        salonData?.isFounder === true || 
+        authResult.role === "platform_admin";
+
+      if (!isAuthorized) {
+        return res.status(403).json({
+          error: "O plano Founder é exclusivo para contas autorizadas."
+        });
+      }
+    }
+
+    // 3. Validação baseada na Existência do Salão
+    if (salonDoc.exists) {
+      if (planId !== "founder") {
+        const authResult = await canManageBilling(user, salonId, salonData);
+        if (!authResult.authorized) {
+          return res.status(403).json({ error: authResult.reason || "Não autorizado a gerenciar o faturamento deste salão." });
         }
       }
-      
-      if (checkoutPurpose === 'activate_recurring' && planId !== salonData?.plan) {
-        return res.status(400).json({ error: 'A recorrência deve ser configurada para o plano atual da conta.' });
-      }
-// Check Real vs Manual subscription
+
       const isRealCakto = salonData?.billingProvider === "cakto" &&
         salonData?.subscriptionStatus === "active" &&
         !!salonData?.caktoSubscriptionId &&
@@ -140,7 +152,20 @@ if (!salonId || !planId) {
         salonData?.paymentStatus === "paid" &&
         !isRealCakto;
 
-      if (isRealCakto) {
+      // 4. Activate Recurring
+      if (checkoutPurpose === "activate_recurring") {
+        if (!isManualActive) {
+          return res.status(400).json({ error: "Apenas contas com plano manual ativo podem ativar a recorrência." });
+        }
+        if (planId !== salonData?.plan) {
+          return res.status(400).json({ error: "A recorrência deve ser configurada para o plano atual da conta. Não é permitida a troca de plano neste fluxo." });
+        }
+        if (isRealCakto) {
+          return res.status(400).json({ error: "Este salão já possui uma assinatura ativa da Cakto." });
+        }
+      }
+
+      if (isRealCakto && checkoutPurpose !== "activate_recurring") {
         return res.status(400).json({ 
           error: "Este salão já possui uma assinatura ativa da Cakto. Para alterar, use a Central de Planos." 
         });
@@ -150,6 +175,16 @@ if (!salonId || !planId) {
         return res.status(400).json({ 
           error: "Este salão possui uma assinatura manual ativa. Para ativar a recorrência, use checkoutPurpose: 'activate_recurring'." 
         });
+      }
+    } else {
+      // Salão inexistente
+      if (checkoutPurpose !== "new_subscription") {
+        return res.status(400).json({ error: "Para novos salões, o checkoutPurpose deve ser 'new_subscription'." });
+      }
+
+      const allowedPlansForNew = ["start", "performance", "network", "enterprise"];
+      if (!allowedPlansForNew.includes(planId)) {
+        return res.status(400).json({ error: "O plano solicitado não é permitido para novas inscrições." });
       }
     }
 
@@ -176,11 +211,13 @@ if (!salonId || !planId) {
     };
     
     // We do NOT modify definitive plan/billingProvider/status fields here unless they are not set.
-    if (!salonData?.plan) mergedSalonData.plan = "start";
-    if (!salonData?.subscriptionStatus) mergedSalonData.subscriptionStatus = "pending";
-    if (!salonData?.activationStatus) mergedSalonData.activationStatus = "pending";
-    if (typeof salonData?.isActive !== "boolean") mergedSalonData.isActive = false;
-    if (!salonData?.createdAt) mergedSalonData.createdAt = now;
+    if (salonDoc.exists) {
+      if (!salonData?.plan) mergedSalonData.plan = "start";
+      if (!salonData?.subscriptionStatus) mergedSalonData.subscriptionStatus = "pending";
+      if (!salonData?.activationStatus) mergedSalonData.activationStatus = "pending";
+      if (typeof salonData?.isActive !== "boolean") mergedSalonData.isActive = false;
+      if (!salonData?.createdAt) mergedSalonData.createdAt = now;
+    }
 
     // 3. Buscar configurações dinâmicas
     let offerId = "";
@@ -229,7 +266,12 @@ if (!salonId || !planId) {
         pendingBillingActivation: true,
         updatedAt: Date.now(),
       };
-      await salonRef.set(simulatedData, { merge: true });
+      
+      if (salonDoc.exists) {
+        await salonRef.set(simulatedData, { merge: true });
+      } else {
+        await adminDb.collection("onboarding").doc(salonId).set(simulatedData);
+      }
 
       return res.status(200).json({
         success: true,
@@ -297,7 +339,11 @@ if (!salonId || !planId) {
       updatedAt: Date.now(),
     };
 
-    await salonRef.set(finalData, { merge: true });
+    if (salonDoc.exists) {
+      await salonRef.set(finalData, { merge: true });
+    } else {
+      await adminDb.collection("onboarding").doc(salonId).set(finalData);
+    }
 
     console.log(`[Cakto Checkout Serverless] URL de checkout montada e salão registrado para ID: ${salonId}`);
     return res.status(200).json({
