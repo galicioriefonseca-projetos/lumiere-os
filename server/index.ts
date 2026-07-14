@@ -1041,10 +1041,29 @@ async function startServer() {
     // Regras de Status conforme especificado
     if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
       // 1. Ao receber evento aprovado/renovado:
+      if (!skipTokenValidation && salonData) {
+        if (salonData.pendingOfferId && offerId && salonData.pendingOfferId !== offerId) {
+          console.error(`[Cakto Webhook Helper] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonDoc.id}. Esperada: ${salonData.pendingOfferId}, Recebida: ${offerId}.`);
+          updatePayload.auditOfferMismatch = true;
+          updatePayload.auditExpectedOffer = salonData.pendingOfferId;
+          updatePayload.auditReceivedOffer = offerId;
+        }
+      }
+
       updatePayload.subscriptionStatus = "active";
       updatePayload.caktoPaymentStatus = "paid";
       updatePayload.paymentStatus = "paid";
       updatePayload.plan = mappedPlan || salonData?.plan || "start";
+      
+      if (!skipTokenValidation) {
+        updatePayload.pendingPlan = null;
+        updatePayload.pendingOfferId = null;
+        updatePayload.pendingCheckoutUrl = null;
+        updatePayload.pendingCheckoutEmail = null;
+        updatePayload.pendingRequestedAt = null;
+        updatePayload.pendingCheckoutPurpose = null;
+        updatePayload.pendingBillingActivation = null;
+      }
       
       const periodEnd = bodyData.current_period_end || bodyData.next_billing_date || bodyData.nextBillingDate;
       let nextBillingDate = periodEnd ? new Date(periodEnd).getTime() : (Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -1485,7 +1504,20 @@ async function startServer() {
 
       // Gerar simulação de URL de autorização caso seja Pix Automático e a API não retorne link direto
       if (paymentMethod === "pix_automatic" && !authorizationUrl) {
-        authorizationUrl = `https://pay.cakto.com.br/pix-automatic-auth?sub=${subscriptionId}&callback=${encodeURIComponent("https://lumiereos.com/dashboard/subscription")}`;
+        return res.status(200).json({
+          success: false,
+          requiresSupport: true,
+          message: "Esta forma de pagamento requer configuração assistida. Nossa equipe enviará instruções para concluir a ativação."
+        });
+      }
+
+      // Só prossegue para salvar se a API Cakto realmente aprovou ou se for homologação
+      if (!apiUpdated && !isHomolog) {
+         return res.status(200).json({
+          success: false,
+          requiresSupport: true,
+          message: "A solicitação foi registrada. Esta forma de pagamento requer configuração assistida para ser concluída."
+        });
       }
 
       // Atualizar Firestore preservando todos os dados da assinatura (sem novas assinaturas, pedidos ou cobranças)
@@ -1497,12 +1529,12 @@ async function startServer() {
       // Mapear provedores do sistema dependendo do tipo de cobrança
       if (paymentMethod === "pix_automatic") {
         updates.billingProvider = "cakto";
-        updates.billingMode = "recurring_card"; // recorrente
+        updates.billingMode = "pix_automatic";
       } else if (paymentMethod === "pix") {
         updates.billingProvider = "manual_pix";
         updates.billingMode = "manual_pix";
       } else if (paymentMethod === "boleto") {
-        updates.billingProvider = "manual_pix"; // Usa motor de faturamento manual
+        updates.billingProvider = "manual_pix";
         updates.billingMode = "manual_pix";
       }
 
@@ -1510,13 +1542,14 @@ async function startServer() {
 
       // Registrar histórico
       const historyRef = salonRef.collection("billingHistory").doc();
+      const activeAmount = salonData?.lastPaymentAmount || 297;
       await historyRef.set({
         id: historyRef.id,
         eventType: "payment_method_updated",
         title: "Forma de Pagamento Autorizada",
         description: `Autorizada com sucesso a forma de pagamento futura para: ${
           paymentMethod === "pix_automatic" ? "Pix Automático" : paymentMethod === "pix" ? "Pix manual" : "Boleto manual"
-        }. A próxima cobrança de R$ 297,00 ocorrerá somente no dia ${new Date(realNextBillingDate).toLocaleDateString("pt-BR")}.`,
+        }.`,
         paymentMethod: paymentMethod,
         timestamp: Date.now(),
         recordedBy: user.email || "Cliente"

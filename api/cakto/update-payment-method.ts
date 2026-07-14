@@ -196,7 +196,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Gerar simulação de URL de autorização caso seja Pix Automático e a API não retorne link direto
     if (paymentMethod === "pix_automatic" && !authorizationUrl) {
-      authorizationUrl = `https://pay.cakto.com.br/pix-automatic-auth?sub=${subscriptionId}&callback=${encodeURIComponent("https://lumiereos.com/dashboard/subscription")}`;
+      return res.status(200).json({
+        success: false,
+        requiresSupport: true,
+        message: "Esta forma de pagamento requer configuração assistida. Nossa equipe enviará instruções para concluir a ativação."
+      });
+    }
+
+    // Só prossegue para salvar se a API Cakto realmente aprovou ou se for homologação
+    if (!apiUpdated && !isHomolog) {
+       return res.status(200).json({
+        success: false,
+        requiresSupport: true,
+        message: "A solicitação foi registrada. Esta forma de pagamento requer configuração assistida para ser concluída."
+      });
     }
 
     // Atualizar Firestore preservando todos os dados da assinatura (sem novas assinaturas, pedidos ou cobranças)
@@ -208,12 +221,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Mapear provedores do sistema dependendo do tipo de cobrança
     if (paymentMethod === "pix_automatic") {
       updates.billingProvider = "cakto";
-      updates.billingMode = "recurring_card"; // recorrente
+      // Removed the wrong billingMode = "recurring_card", kept billingMode unchanged or map to recurring_pix if it existed, but let's just keep it cakto
+      updates.billingMode = "pix_automatic";
     } else if (paymentMethod === "pix") {
       updates.billingProvider = "manual_pix";
       updates.billingMode = "manual_pix";
     } else if (paymentMethod === "boleto") {
-      updates.billingProvider = "manual_pix"; // Usa motor de faturamento manual
+      updates.billingProvider = "manual_pix"; 
       updates.billingMode = "manual_pix";
     }
 
@@ -221,13 +235,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Registrar histórico
     const historyRef = salonRef.collection("billingHistory").doc();
+    const activeAmount = salonData?.lastPaymentAmount || 297;
     await historyRef.set({
       id: historyRef.id,
       eventType: "payment_method_updated",
       title: "Forma de Pagamento Autorizada",
       description: `Autorizada com sucesso a forma de pagamento futura para: ${
         paymentMethod === "pix_automatic" ? "Pix Automático" : paymentMethod === "pix" ? "Pix manual" : "Boleto manual"
-      }. A próxima cobrança de R$ 297,00 ocorrerá somente no dia ${new Date(realNextBillingDate).toLocaleDateString("pt-BR")}.`,
+      }.`,
       paymentMethod: paymentMethod,
       timestamp: Date.now(),
       recordedBy: user.email || "Cliente"

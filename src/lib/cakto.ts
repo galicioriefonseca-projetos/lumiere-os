@@ -132,24 +132,28 @@ export async function cancelPlanChange(salonId: string): Promise<{ success: bool
 }
 
 /**
- * Simulates immediate confirmation of a scheduled plan change (homologation mode)
+ * Helper to determine if a salon has a real, active Cakto subscription
  */
-export async function simulateConfirmPlanChange(
-  salonId: string
-): Promise<{ success: boolean; message: string; newPlan: string }> {
-  if (!salonId) {
-    throw new Error('O campo salonId é obrigatório para simulação.');
-  }
+export function isRealCaktoSubscription(salonData: any): boolean {
+  if (!salonData) return false;
+  return (
+    salonData.billingProvider === "cakto" &&
+    salonData.subscriptionStatus === "active" &&
+    !!salonData.caktoSubscriptionId &&
+    !salonData.caktoSubscriptionId.includes("homolog") &&
+    !salonData.caktoSubscriptionId.includes("simulated") &&
+    !salonData.caktoSubscriptionId.includes("test")
+  );
+}
 
-  const headers = await getAuthHeaders();
-  const response = await fetch('/api/cakto/change-plan', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      salonId,
-      action: 'simulate_confirm'
-    })
-  });
-
-  return handleResponse(response, 'Erro ao simular confirmação imediata da mudança de plano.');
+/**
+ * Helper to determine if a salon is manually active (without real Cakto subscription)
+ */
+export function isManualActiveSubscription(salonData: any): boolean {
+  if (!salonData) return false;
+  const isManualProvider = salonData.billingProvider === "manual" || salonData.billingMode === "manual_pix";
+  const isActive = salonData.subscriptionStatus === "active" && salonData.paymentStatus === "paid";
+  const hasRealCakto = isRealCaktoSubscription(salonData);
+  
+  return isManualProvider && isActive && !hasRealCakto;
 }

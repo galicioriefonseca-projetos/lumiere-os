@@ -66,7 +66,7 @@ export class CaktoProvider implements BillingProvider {
         salonId,
         planId: data.planId,
         paymentMethod: data.paymentMethod || 'credit_card',
-        email: customerId, // Aqui passamos o email ou ID do cliente para referência
+        email: customerId, checkoutPurpose: (data as any).checkoutPurpose || "new_subscription" // Aqui passamos o email ou ID do cliente para referência
       })
     });
     return this.handleResponse(response, "Erro ao criar checkout na Cakto");

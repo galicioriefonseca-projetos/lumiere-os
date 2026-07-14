@@ -72,7 +72,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       city,
       state,
       businessSegment,
-      estimatedProfessionals
+      estimatedProfessionals,
+      checkoutPurpose = "new_subscription"
     } = req.body || {};
 
     if (!salonId || !planId) {
@@ -105,10 +106,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(403).json({ error: authResult.reason || "Não autorizado a gerenciar o faturamento deste salão." });
       }
 
-      // Rule 2: Abrir checkout nunca sobrescreve uma assinatura ativa
-      if (salonData?.subscriptionStatus === "active" || salonData?.isActive === true) {
+      // Check Real vs Manual subscription
+      const isRealCakto = salonData?.billingProvider === "cakto" &&
+        salonData?.subscriptionStatus === "active" &&
+        !!salonData?.caktoSubscriptionId &&
+        !salonData?.caktoSubscriptionId?.includes("homolog") &&
+        !salonData?.caktoSubscriptionId?.includes("simulated") &&
+        !salonData?.caktoSubscriptionId?.includes("test");
+
+      const isManualActive = (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual_pix") &&
+        salonData?.subscriptionStatus === "active" &&
+        salonData?.paymentStatus === "paid" &&
+        !isRealCakto;
+
+      if (isRealCakto) {
         return res.status(400).json({ 
-          error: "Este salão já possui uma assinatura ativa. Não é permitido criar um novo checkout. Contate o suporte para alterações." 
+          error: "Este salão já possui uma assinatura ativa da Cakto. Para alterar, use a Central de Planos." 
+        });
+      }
+
+      if (isManualActive && checkoutPurpose !== "activate_recurring") {
+        return res.status(400).json({ 
+          error: "Este salão possui uma assinatura manual ativa. Para ativar a recorrência, use checkoutPurpose: 'activate_recurring'." 
         });
       }
     }
@@ -120,7 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const now = Date.now();
     const finalEmail = (email || salonData?.ownerEmail || "").trim().toLowerCase();
 
-    // Preparar dados de mesclagem do salão
+    // Fields to save initially
     const mergedSalonData: any = {
       id: salonId,
       name: salonName || salonData?.name || "LumièreOS Salon",
@@ -132,15 +151,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       businessType: legacyBusinessType,
       businessSegment: businessSegment || salonData?.businessSegment || "",
       estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
-      plan: salonData?.plan || "start",
-      pendingPlan: planId,
-      subscriptionStatus: salonData?.subscriptionStatus || "pending",
-      activationStatus: salonData?.activationStatus || "pending",
-      isActive: salonData?.isActive || false,
-      createdAt: salonData?.createdAt || now,
       updatedAt: now,
-      billingProvider: "cakto",
     };
+    
+    // We do NOT modify definitive plan/billingProvider/status fields here unless they are not set.
+    if (!salonData?.plan) mergedSalonData.plan = "start";
+    if (!salonData?.subscriptionStatus) mergedSalonData.subscriptionStatus = "pending";
+    if (!salonData?.activationStatus) mergedSalonData.activationStatus = "pending";
+    if (typeof salonData?.isActive !== "boolean") mergedSalonData.isActive = false;
+    if (!salonData?.createdAt) mergedSalonData.createdAt = now;
 
     // 3. Buscar configurações dinâmicas
     let offerId = "";
@@ -175,15 +194,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const simulatedData = {
         ...mergedSalonData,
-        billingProvider: "cakto",
         homologationCustomerId: "cus_simulated_dev",
         homologationOrderId: simulatedOrderId,
         homologationSubscriptionId: "sub_simulated_dev",
         homologationCheckoutUrl: simulatedCheckoutUrl,
         homologationOfferId: offerId || "off_simulated",
-        subscriptionStatus: salonData?.subscriptionStatus || "pending",
-        paymentStatus: salonData?.paymentStatus || "pending",
-        nextBillingDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        pendingPlan: planId,
+        pendingOfferId: offerId,
+        pendingCheckoutUrl: simulatedCheckoutUrl,
+        pendingCheckoutEmail: finalEmail,
+        pendingRequestedAt: Date.now(),
+        pendingCheckoutPurpose: checkoutPurpose,
+        pendingBillingActivation: true,
         updatedAt: Date.now(),
       };
       await salonRef.set(simulatedData, { merge: true });
@@ -244,11 +266,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Mapear campos de checkout Cakto
     const finalData = {
       ...mergedSalonData,
-      caktoOfferId: offerId,
-      caktoCheckoutUrl: checkoutUrl,
-      caktoCheckoutEmail: checkoutEmail,
-      subscriptionStatus: salonData?.subscriptionStatus || "pending",
-      paymentStatus: salonData?.paymentStatus || "pending",
+      pendingPlan: planId,
+      pendingOfferId: offerId,
+      pendingCheckoutUrl: checkoutUrl,
+      pendingCheckoutEmail: checkoutEmail,
+      pendingRequestedAt: Date.now(),
+      pendingCheckoutPurpose: checkoutPurpose,
+      pendingBillingActivation: true,
       updatedAt: Date.now(),
     };
 

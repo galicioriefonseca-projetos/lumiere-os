@@ -127,51 +127,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, message: "Mudança programada cancelada com sucesso." });
     }
 
-    // Ação 2: Simular Confirmação Segura de Mudança (para fins de Homologação/Simulação)
-    if (action === "simulate_confirm") {
-      const pending = salonData?.pendingPlanChange;
-      if (!pending || pending.status !== "scheduled") {
-        return res.status(400).json({ error: "Não há nenhuma mudança programada ativa para aplicar." });
-      }
-
-      const isSimulated = salonData?.caktoSubscriptionId === 'sub_simulated_dev' || 
-                          salonData?.caktoSubscriptionId?.includes('simulated') || 
-                          salonData?.caktoSubscriptionId?.includes('homolog') ||
-                          process.env.NODE_ENV !== "production";
-
-      if (!isSimulated) {
-        return res.status(400).json({ error: "Apenas assinaturas em modo de homologação podem simular a confirmação imediata." });
-      }
-
-      const planDiff = (PLANS_PRICES[pending.toPlan] || 0) - (PLANS_PRICES[pending.fromPlan] || 0);
-      const isUp = planDiff > 0;
-
-      // Executar a mudança no salão
-      await salonRef.update({
-        plan: pending.toPlan,
-        caktoOfferId: pending.targetOfferId || salonData?.caktoOfferId || "",
-        pendingPlanChange: null,
-        updatedAt: Date.now()
-      });
-
-      // Registrar histórico de aplicação da mudança
-      const historyRef = salonRef.collection("billingHistory").doc();
-      await historyRef.set({
-        id: historyRef.id,
-        eventType: isUp ? "upgrade_applied" : "downgrade_applied",
-        title: isUp ? "Upgrade de Plano Aplicado" : "Downgrade de Plano Aplicado",
-        description: `Plano definitivo alterado com sucesso de ${PLAN_NAMES[pending.fromPlan]} para ${PLAN_NAMES[pending.toPlan]}.`,
-        plan: pending.toPlan,
-        timestamp: Date.now(),
-        recordedBy: "Sistema (Homologação)"
-      });
-
-      return res.status(200).json({ 
-        success: true, 
-        message: "Mudança de plano aplicada com sucesso na homologação.",
-        newPlan: pending.toPlan
-      });
-    }
 
     // Ação 3: Programar/Agendar mudança de plano
     if (action === "schedule") {
@@ -250,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         targetOfferId: targetOfferId || `off_simulated_${planId}`,
         requestedAt: Date.now(),
         effectiveAt,
-        status: "scheduled"
+        status: "awaiting_gateway"
       };
 
       await salonRef.update({
@@ -264,7 +219,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         id: historyRef.id,
         eventType: "change_requested",
         title: "Mudança de Plano Solicitada",
-        description: `Solicitada alteração de plano de ${PLAN_NAMES[currentPlan]} para ${PLAN_NAMES[planId]} (Vigência: ${new Date(effectiveAt).toLocaleDateString("pt-BR")}).`,
+        description: `Solicitada alteração de plano de ${PLAN_NAMES[currentPlan]} para ${PLAN_NAMES[planId]}. Aguardando processamento do gateway.`,
         plan: planId,
         timestamp: Date.now(),
         recordedBy: user.email || "Usuário"
@@ -272,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({ 
         success: true, 
-        message: "Mudança de plano programada com sucesso.",
+        message: "Solicitação registrada. A mudança será confirmada após processamento do gateway.",
         pendingPlanChange
       });
     }

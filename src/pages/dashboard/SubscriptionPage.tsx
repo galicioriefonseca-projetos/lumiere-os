@@ -31,7 +31,7 @@ import { BILLING_CONFIG } from '../../config/billing';
 import { toast } from 'sonner';
 import { billingService } from '../../services/billing/BillingService';
 import { collection, query, onSnapshot, where, doc } from 'firebase/firestore';
-import { schedulePlanChange, cancelPlanChange } from '../../lib/cakto';
+import { schedulePlanChange, cancelPlanChange, isRealCaktoSubscription, isManualActiveSubscription } from '../../lib/cakto';
 
 const PLANS_PRICES: Record<string, number> = {
   start: 197,
@@ -444,10 +444,13 @@ export default function SubscriptionPage() {
     try {
       toast.info('Sincronizando com o gateway Cakto...');
       
+      const purpose = isManualActiveSubscription(salonData) ? 'activate_recurring' : 'new_subscription';
+
       const subResult = await billingService.createSubscription(salonData.id, salonData.ownerEmail || '', {
         planId: selectedPlan,
         paymentMethod: paymentMethod,
-      }) as any;
+        checkoutPurpose: purpose
+      } as any) as any;
 
       await refreshUserData();
       
@@ -458,7 +461,7 @@ export default function SubscriptionPage() {
       if (url) {
         window.open(url, '_blank');
       } else {
-        toast.error("URL de checkout não gerada pelo gateway.");
+        toast.warning('O gateway não retornou a URL de checkout.');
       }
     } catch (err: any) {
       console.error("[Billing Page] Erro na ativação:", err);
@@ -476,7 +479,7 @@ export default function SubscriptionPage() {
       toast.info('Programando alteração de plano...');
       await schedulePlanChange(salonData.id, targetPlanId);
 
-      toast.success('Alteração de plano programada com sucesso!');
+      toast.success('Solicitação registrada. A mudança será confirmada após processamento do gateway.');
       setConfirmTargetPlan(null);
       setAwareOfDowngradeLimits(false);
       setActiveTab('overview');
@@ -712,7 +715,7 @@ export default function SubscriptionPage() {
         <div className="space-y-6">
           
           {/* MUDANÇA PROGRAMADA BANNER */}
-          {salonData.pendingPlanChange && salonData.pendingPlanChange.status === 'scheduled' && (
+          {salonData.pendingPlanChange && salonData.pendingPlanChange.status === 'awaiting_gateway' && (
             <div className="bg-blue-950/40 border border-blue-500/20 rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-blue-400 font-bold text-xs uppercase tracking-wider">
@@ -834,16 +837,29 @@ export default function SubscriptionPage() {
                 </div>
 
                 <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-900 space-y-3">
-                  <div className="flex items-center gap-2 text-[#D4AF37] font-semibold text-xs uppercase tracking-wider">
-                    <ShieldCheck className="w-4 h-4 text-[#D4AF37]" /> Conexão Cakto Ativa
-                  </div>
-                  <p className="text-[11px] text-zinc-400 leading-relaxed">
-                    Sua assinatura está protegida e integrada à Cakto. Não coletamos nem armazenamos os seus dados de cartão de crédito.
-                  </p>
+                  {isManualActiveSubscription(salonData) ? (
+                    <>
+                      <div className="flex items-center gap-2 text-zinc-300 font-semibold text-xs uppercase tracking-wider">
+                        <Coins className="w-4 h-4 text-zinc-400" /> Faturamento Manual
+                      </div>
+                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                        Sua licença foi ativada manualmente. Para automatizar o pagamento da sua próxima mensalidade, você pode configurar uma assinatura na Cakto.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 text-[#D4AF37] font-semibold text-xs uppercase tracking-wider">
+                        <ShieldCheck className="w-4 h-4 text-[#D4AF37]" /> Conexão Cakto Ativa
+                      </div>
+                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                        Sua assinatura está protegida e integrada à Cakto. Não coletamos nem armazenamos os seus dados de cartão de crédito.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-2.5 pt-2">
-                  {false ? (
+                  {isManualActiveSubscription(salonData) ? (
                     <>
                       <button 
                         type="button"
@@ -853,7 +869,7 @@ export default function SubscriptionPage() {
                         }}
                         className="w-full bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold h-11 rounded-xl flex items-center justify-center gap-2 text-xs transition-colors"
                       >
-                        <Zap className="w-4 h-4 fill-black" /> Ativar assinatura real
+                        <Zap className="w-4 h-4 fill-black" /> Configurar pagamento das próximas mensalidades
                       </button>
 
                       <a 

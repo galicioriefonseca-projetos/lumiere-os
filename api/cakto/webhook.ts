@@ -202,6 +202,16 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
   // Regras de Status conforme especificado
   if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
     // 1. Ao receber evento aprovado/renovado:
+    if (!isSimulation && salonDoc?.exists) {
+      const data = salonDoc.data();
+      if (data?.pendingOfferId && offerId && data.pendingOfferId !== offerId) {
+        console.error(`[Cakto Webhook] ALERTA DE SEGURANÇA: Oferta divergente detectada para o salão ${salonDoc.id}. Esperada: ${data.pendingOfferId}, Recebida: ${offerId}. Auditoria necessária.`);
+        updatePayload.auditOfferMismatch = true;
+        updatePayload.auditExpectedOffer = data.pendingOfferId;
+        updatePayload.auditReceivedOffer = offerId;
+      }
+    }
+
     if (isSimulation) {
       updatePayload.homologationSubscriptionStatus = "active";
       updatePayload.homologationActivationStatus = "active";
@@ -213,6 +223,15 @@ export async function processCaktoWebhookPayload(bodyData: any, skipTokenValidat
       updatePayload.paymentStatus = "paid";
       updatePayload.plan = mappedPlan || (salonDoc?.exists ? salonDoc.data()?.plan : null) || "start";
       updatePayload.isActive = true;
+      
+      // Clear pending fields
+      updatePayload.pendingPlan = null;
+      updatePayload.pendingOfferId = null;
+      updatePayload.pendingCheckoutUrl = null;
+      updatePayload.pendingCheckoutEmail = null;
+      updatePayload.pendingRequestedAt = null;
+      updatePayload.pendingCheckoutPurpose = null;
+      updatePayload.pendingBillingActivation = null;
     }
     updatePayload.ownerEmail = customerEmail || (salonDoc?.exists ? salonDoc.data()?.ownerEmail : null) || "";
     
