@@ -497,7 +497,7 @@ export async function processCaktoWebhookPayload(
 }
 
 
-function buildHomologationWebhookUpdate({
+export function buildHomologationWebhookUpdate({
   eventName,
   eventId,
   orderId,

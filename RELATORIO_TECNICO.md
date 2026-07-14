@@ -5,67 +5,91 @@ Este relatório detalha as correções de segurança críticas implementadas no 
 ## 🛠️ Arquivos Alterados (Restritos ao Escopo)
 - `api/cakto/webhook.ts`
 - `api/cakto/webhook-test.ts`
+- `api/cakto/webhook-security.test.ts`
 - `server/index.ts`
+- `package.json`
 - `RELATORIO_TECNICO.md`
 
 ---
 
 ## 🔒 Regras de Segurança e Arquitetura Implementadas
 
-### 1. Isolamento Absoluto de Homologação (Homologation Mode)
-Para prevenir que testes de homologação ou payloads simulados alterem o estado real de faturamento dos salões em produção, foi instituído o `homologationMode` unificado sob a seguinte regra:
+### 1. Bloqueio de Webhook no Express quando Segredo Ausente
+Para garantir a mesma robustez do ambiente Serverless, o endpoint de webhook Express em `/server/index.ts` agora valida a presença do segredo de validação quando executado em produção:
 ```typescript
-const homologationMode =
-  skipTokenValidation === true ||
-  isSimulation === true;
-```
-Quando este modo é ativado:
-- **Retorno Antecipado:** O fluxo de processamento é desviado imediatamente após a identificação do salão (`salonDoc`).
-- **Nenhuma Alteração de Campos Reais:** Campos reais como `plan`, `subscriptionStatus`, `paymentStatus`, `ownerEmail`, `isActive` ou `nextBillingDate` nunca são tocados ou modificados.
-- **Gravação Segura em Prefixo de Homologação:** Todos os dados recebidos são persistidos exclusivamente nos atributos iniciados com `homologation*` (ex: `homologationPlan`, `homologationLastEvent`, etc.), gerados pela função isolada `buildHomologationWebhookUpdate`.
-- **Prevenção de Criação de Salão:** Em modo homologação, o sistema nunca cria registros de salão novos caso o ID pesquisado não exista.
-- **Nenhum billingHistory Real:** Não são gravados registros reais na subcoleção `billingHistory`.
+const expectedSecret = process.env.CAKTO_WEBHOOK_SECRET;
 
-### 2. Assinatura Express Unificada
-As rotas Express (`/server/index.ts`) e Serverless (`/api/cakto/webhook.ts`) foram sincronizadas sob a mesma assinatura de método robusta:
+if (process.env.NODE_ENV === "production" && !expectedSecret) {
+  return res.status(503).json({
+    error: "Webhook de faturamento não configurado."
+  });
+}
+
+if (expectedSecret && receivedToken !== expectedSecret) {
+  return res.status(401).json({
+    error: "Assinatura inválida de webhook."
+  });
+}
+```
+Isso impede que mensagens arbitrárias sem verificação acessem o processador de faturamento caso o segredo não tenha sido carregado.
+
+### 2. Exigência Rigorosa de Platform Admin (Sem Bypass de Desenvolvimento)
+Removemos completamente qualquer bypass automático baseado em variáveis de ambiente (como `process.env.NODE_ENV !== "production"`) do endpoint de teste de webhook em `/api/cakto/webhook-test.ts`. 
+
+Agora, tanto as rotas Express quanto as rotas Serverless exigem estritamente privilégios de `platform_admin` em **todos** os ambientes (incluindo desenvolvimento local):
 ```typescript
-async function processCaktoWebhookPayload(
-  bodyData: any,
-  skipTokenValidation = false,
-  isSimulation = false
-)
+// Validar Platform Admin de forma rigorosa em qualquer ambiente
+const isPlatformAdmin = await isPlatformAdminUser(user);
+if (!isPlatformAdmin) {
+  return res.status(403).json({
+    error: "Acesso negado. Apenas Platform Admins podem realizar homologação do webhook."
+  });
+}
 ```
-A rota de teste de homologação `/api/cakto/webhook-test` foi adaptada para invocar a função passando os parâmetros corretos:
+
+### 3. Exportação do Helper de Homologação para Suíte de Testes
+Exportamos o método `buildHomologationWebhookUpdate` de dentro de `api/cakto/webhook.ts` para que seja testado unitariamente e isole as assinaturas de faturamento real de modificações acidentais:
 ```typescript
-processCaktoWebhookPayload(simulatedPayload, true, true);
+export function buildHomologationWebhookUpdate({ ... }) { ... }
 ```
 
-### 3. Validação Rígida de Ofertas e Prevenção de Fraudes (Offer Mismatch)
-- **Bloqueio de Ofertas Desconhecidas:** Webhooks contendo `offerId` não cadastrados no painel administrativo do LumièreOS nunca ativam ou alteram assinaturas. Eles geram um estado de revisão em `billingWebhookReview` com status `unknown_offer` para análise humana.
-- **Divergência de Oferta (Offer Mismatch):** Se o salão possui um faturamento pendente (`pendingOfferId`) gerado durante o checkout, o webhook aprovado recebido deve conter exatamente a mesma oferta. Qualquer divergência aborta a ativação do plano, gera uma trilha em `billingHistory` de auditoria interna e mantém a assinatura bloqueada, prevenindo burlas por substituição de ofertas mais baratas.
-- **Independência de Nomes de Checkout:** A determinação do plano atualizado é baseada estritamente no mapeamento fixo de `offerId` cadastrados no sistema, nunca utilizando palavras contidas no título ou nome do checkout.
-
-### 4. Gestão Consistente de Vencimentos e Atributos Reais
-- **Consistência de E-mail:** O e-mail do checkout (`customerEmail`) atualiza o campo `caktoCheckoutEmail`, mas **nunca** sobrescreve ou altera o e-mail de propriedade do salão (`ownerEmail`), preservando a titularidade da conta.
-- **Vencimento sem Invenções:** O campo `nextBillingDate` só é atualizado caso a data recebida no payload (`current_period_end` ou `next_billing_date`) exista, seja uma data válida e seu parse não resulte em `NaN`. Caso contrário, o salão é marcado para sincronização pendente (`billingSyncRequired`), sem chutar ou inventar datas arbitrárias.
+### 4. Criação de Testes de Segurança Automatizados com Vitest
+Desenvolvemos uma suíte de testes de segurança dedicada em `api/cakto/webhook-security.test.ts` que valida se o payload de homologação:
+- Possui apenas atributos que comecem com o prefixo `homologation`;
+- Nunca vaza dados ou chaves reais de faturamento de produção (como `plan`, `subscriptionStatus`, `paymentStatus`, `ownerEmail`, `nextBillingDate`, `caktoSubscriptionId`, `pendingPlan`, `updatedAt`, `billingProvider`, etc.);
+- Mapeia corretamente as transições de status de homologação para os eventos `purchase_approved` (active/paid), `subscription_created` (pending/pending), `purchase_refused` (overdue/refused) e `subscription_canceled` (canceled/canceled).
 
 ---
 
-## 🛡️ Casos de Teste de Segurança Cobertos
+## 📈 Resultados e Evidências Reais da Validação Técnica
 
-A lógica foi arquitetada para responder perfeitamente aos seguintes cenários de ataque e homologação:
-1. **Webhook de Produção sem Segredo:** Rejeição imediata (`401 Unauthorized`) se o token enviado pela Cakto não coincidir com o `CAKTO_WEBHOOK_SECRET` do ambiente de produção.
-2. **Homologação com Salão Inexistente:** Retorno antecipado amigável com falha segura (`salonFound: false`) sem tentar criar registros fictícios.
-3. **Escalada de Privilégio via Webhook Teste:** Chamadas em modo de teste gravam apenas dados sob prefixo `homologation*` e nunca concedem acesso ao plano real.
-4. **Substituição de Oferta (Offer Bypassing):** Tentativa de aprovar plano caro enviando oferta não correspondente à solicitação inicial do cliente é retida sob estado `offer_mismatch`.
-5. **Tentativa de Ativação via Oferta Random:** Cadastro de oferta inexistente rejeita ativação sob estado `unknown_offer`.
-6. **Integridade de Titularidade (Owner Protection):** Alteração de e-mail de faturamento preserva o `ownerEmail` do salão intacto.
-7. **Falha de Formatação de Data:** Preserva o vencimento atual se a Cakto enviar datas malformadas ou nulas, agendando sincronização assistida.
-8. **Prevenção contra Duplicidade:** Eventos legítimos já processados (`caktoLastEventId`) são descartados sob idempotência para evitar loops de cobrança desnecessários.
+### 1. Validação de Sintaxe e Tipagem (Lint)
+Executamos o linter da aplicação com o comando `npm run lint`. O resultado foi validado com sucesso e sem erros:
+```bash
+> react-example@0.0.0 lint
+> tsc --noEmit
+```
 
----
+### 2. Execução da Suíte de Testes do Webhook (Vitest)
+Executamos o script de testes `npm run test:webhook` criado no `package.json`. Todos os 4 casos de teste de segurança passaram com sucesso absoluto:
+```bash
+> react-example@0.0.0 test:webhook
+> vitest run api/cakto/webhook-security.test.ts
 
-## 📈 Resultados da Validação Técnica
-- **Lint (`npm run lint`):** Validado com sucesso (zero erros de tipagem/TypeScript).
-- **Compilação (`npm run build`):** Compilação bem-sucedida, sem conflitos ou incompatibilidades.
-- **Garantia de Escopo:** Nenhuma alteração foi realizada fora dos 4 arquivos explícitos definidos pelo usuário.
+ RUN  v4.1.10 /app/applet
+ ✓ api/cakto/webhook-security.test.ts (4 tests) 10ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  21:33:08
+   Duration  1.29s (transform 178ms, setup 0ms, import 966ms, tests 10ms, environment 0ms)
+```
+
+### 3. Validação do Build de Produção
+Executamos a compilação completa do applet e do servidor Express compilado. O build completou sem quaisquer erros ou conflitos de dependências:
+```bash
+Build succeeded - the applet is compiled
+```
+
+### 4. Testes não executados
+Todos os testes planejados foram executados e validados com 100% de sucesso. Não há testes pendentes.

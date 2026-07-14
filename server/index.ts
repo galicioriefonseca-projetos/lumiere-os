@@ -1475,6 +1475,12 @@ async function processCaktoWebhookPayload(
 
       const expectedSecret = process.env.CAKTO_WEBHOOK_SECRET;
 
+      if (process.env.NODE_ENV === "production" && !expectedSecret) {
+        return res.status(503).json({
+          error: "Webhook de faturamento não configurado."
+        });
+      }
+
       if (expectedSecret && receivedToken !== expectedSecret) {
         console.warn("[Cakto Webhook] Token ou assinatura de webhook inválida.");
         return res.status(401).json({ error: "Assinatura inválida de webhook." });
