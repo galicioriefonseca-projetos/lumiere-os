@@ -3,7 +3,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging } from "./firebaseAdmin";
+import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging, isFirebaseAdminCredentialError } from "./firebaseAdmin";
+import { processCaktoWebhookPayload } from "../api/cakto/webhook";
 
 
 // Carregar variáveis de ambiente
@@ -14,83 +15,71 @@ console.log("[Lumière Server] NODE_ENV:", process.env.NODE_ENV);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  app.disable("x-powered-by");
+  const PORT = Number(process.env.PORT || 3000);
 
   // Middleware básico JSON
   app.use(express.json());
 
-  // Habilitar CORS de forma nativa e segura
+  // CORS restritivo: APIs autenticadas devem operar no mesmo domínio da aplicação.
+  const configuredOrigins = [
+    process.env.APP_URL,
+    ...(process.env.ALLOWED_ORIGINS || "").split(","),
+    process.env.NODE_ENV !== "production" ? "http://localhost:3000" : "",
+    process.env.NODE_ENV !== "production" ? "http://localhost:5173" : "",
+  ]
+    .map((value) => value?.trim())
+    .filter(Boolean) as string[];
+
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    const origin = req.headers.origin;
+    const requestHost = req.headers.host;
+    const isSameHost = origin && requestHost
+      ? (() => {
+          try { return new URL(origin).host === requestHost; } catch { return false; }
+        })()
+      : false;
+    const isAllowed = !origin || isSameHost || configuredOrigins.includes(origin);
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: "Origem não autorizada." });
+    }
+
+    if (origin) {
+      res.header("Access-Control-Allow-Origin", origin);
+      res.header("Vary", "Origin");
+    }
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Cakto-Token");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("X-Content-Type-Options", "nosniff");
+    res.header("Referrer-Policy", "strict-origin-when-cross-origin");
     if (req.method === "OPTIONS") {
-      return res.status(200).end();
+      return res.status(204).end();
     }
     next();
   });
 
-  // Rota de Health Check
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });
+  // Rota pública de saúde sem exposição de segredos.
+  app.get("/api/health", (_req, res) => {
+    const firebaseConfigured = Boolean(
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+      (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY)
+    );
+    const caktoConfigured = Boolean(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      status: firebaseConfigured && caktoConfigured ? "ok" : "degraded",
+      service: "Lumiere Backend API",
+      checks: {
+        firebaseAdminConfigured: firebaseConfigured,
+        caktoConfigured,
+        webhookSecretConfigured: Boolean(process.env.CAKTO_WEBHOOK_SECRET),
+      },
+      timestamp: new Date().toISOString(),
+    });
   });
 
-  // ==========================================
-  // INTEGRAÇÃO DE BACKEND SEGURO ASAAS BILLING
-  // ==========================================
-
-  // Helper de requisições seguras para a API do Asaas no backend (nunca expõe as chaves no cliente)
-  async function asaasRequest(method: string, endpoint: string, body?: any) {
-    const apiKey = process.env.ASAAS_API_KEY;
-    const baseUrl = process.env.ASAAS_API_URL || "https://sandbox.asaas.com/api/v3";
-
-    if (!apiKey) {
-      throw new Error("Chave de API do Asaas (ASAAS_API_KEY) não configurada no servidor.");
-    }
-
-    const url = `${baseUrl}${endpoint}`;
-    
-    // --- INÍCIO LOG TEMPORÁRIO ---
-    const maskedKey = apiKey.substring(0, 12) + "*".repeat(Math.max(0, apiKey.length - 12));
-    console.log(`[Diagnostic Log] ASAAS_API_URL=${baseUrl}`);
-    console.log(`[Diagnostic Log] ASAAS_API_KEY=${maskedKey}`);
-    console.log(`[Diagnostic Log] URL final chamada: ${method} ${url}`);
-    // --- FIM LOG TEMPORÁRIO ---
-    
-    const response = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "access_token": apiKey,
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    const text = await response.text();
-
-    // --- INÍCIO LOG RESPOSTA TEMPORÁRIO ---
-    console.log(`[Diagnostic Log] HTTP status retornado pelo Asaas: ${response.status}`);
-    if (!response.ok) {
-      console.log(`[Diagnostic Log] Corpo bruto (response.text()): ${text}`);
-    }
-    // --- FIM LOG RESPOSTA TEMPORÁRIO ---
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error(`Resposta HTTP do Asaas inválida ou malformada: ${text}`);
-    }
-
-    if (!response.ok) {
-      const errorMsg = data?.errors?.[0]?.description || data?.message || text;
-      throw new Error(`Erro na API do Asaas (${response.status}): ${errorMsg}`);
-    }
-
-    return data;
-  }
-
-  // Middleware de autenticação segura para as rotas Asaas
+  // Middleware de autenticação segura para rotas administrativas e financeiras.
   const authenticateRequest = async (req: any, res: any, next: any) => {
     try {
       const authHeader = req.headers.authorization;
@@ -103,7 +92,13 @@ async function startServer() {
       req.user = decodedToken;
       next();
     } catch (err: any) {
-      console.error("[Asaas Auth] Erro de autenticação:", err);
+      console.error("[API Auth] Erro de autenticação:", err);
+      if (isFirebaseAdminCredentialError(err)) {
+        return res.status(503).json({
+          error: "O serviço está temporariamente indisponível. Tente novamente em alguns minutos.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED"
+        });
+      }
       return res.status(401).json({ error: "Sessão inválida ou expirada." });
     }
   };
@@ -120,6 +115,7 @@ async function startServer() {
       const platformAdminSnap = await adminDb.collection("platformAdmins").doc(user.uid).get();
       if (platformAdminSnap.exists) return true;
     } catch (err) {
+      if (isFirebaseAdminCredentialError(err)) throw err;
       console.warn(`[Platform Admin Check] Erro ao consultar platformAdmins/${user.uid}:`, err);
     }
 
@@ -130,6 +126,7 @@ async function startServer() {
         return true;
       }
     } catch (err) {
+      if (isFirebaseAdminCredentialError(err)) throw err;
       console.warn(`[Platform Admin Check] Erro ao consultar users/${user.uid}:`, err);
     }
 
@@ -186,139 +183,6 @@ async function startServer() {
 
     return { authorized: false, reason: "Você não tem permissão para gerenciar o faturamento deste salão." };
   }
-  // Endpoint de Webhook de faturamento e sincronização do Asaas
-  app.post("/api/asaas/webhook", async (req, res) => {
-    try {
-      const receivedToken = req.headers["asaas-access-token"];
-      const expectedToken = process.env.ASAAS_WEBHOOK_SECRET;
-
-      if (!expectedToken || receivedToken !== expectedToken) {
-        console.warn("[Asaas Webhook] Assinatura/token de webhook inválido.");
-        return res.status(401).json({ error: "Chave secreta de webhook inválida." });
-      }
-
-      const { event, payment, subscription } = req.body;
-      console.log(`[Asaas Webhook] Evento recebido: ${event}`);
-
-      let customerId = payment?.customer || subscription?.customer;
-      let subscriptionId = payment?.subscription || subscription?.id;
-
-      if (!customerId) {
-        console.warn("[Asaas Webhook] Sem ID do cliente no payload recebido.");
-        return res.status(200).json({ received: true, info: "Sem ID do cliente, ignorando." });
-      }
-
-      const adminDb = getAdminDb();
-      // Localizar o salão no Firestore pelo asaasCustomerId
-      let salonSnapshot = await adminDb.collection("salons")
-        .where("asaasCustomerId", "==", customerId)
-        .limit(1)
-        .get();
-
-      // Fallback: Localizar pelo asaasSubscriptionId se a busca anterior falhar
-      if (salonSnapshot.empty && subscriptionId) {
-        salonSnapshot = await adminDb.collection("salons")
-          .where("asaasSubscriptionId", "==", subscriptionId)
-          .limit(1)
-          .get();
-      }
-
-      if (salonSnapshot.empty) {
-        console.warn(`[Asaas Webhook] Salão não localizado para customerId ${customerId} ou subscriptionId ${subscriptionId}`);
-        return res.status(200).json({ received: true, info: "Salão correspondente não localizado." });
-      }
-
-      const salonDoc = salonSnapshot.docs[0];
-      const salonRef = salonDoc.ref;
-      const salonData = salonDoc.data();
-
-      // Proteção contra webhook duplicado (idempotência avançada de processamento de evento):
-      // Se o último evento e ID de pagamento salvos forem idênticos, evitamos processar novamente.
-      if (
-        salonData?.asaasLastEvent === event && 
-        payment?.id && 
-        salonData?.asaasLastPaymentId === payment.id
-      ) {
-        console.log(`[Asaas Webhook] Evento duplicado já processado anteriormente para o pagamento ${payment.id}. Ignorando.`);
-        return res.status(200).json({ success: true, info: "Evento duplicado já processado." });
-      }
-
-      const updatePayload: any = {
-        updatedAt: Date.now(),
-        asaasLastEvent: event,
-      };
-
-      if (payment?.id) {
-        updatePayload.asaasLastPaymentId = payment.id;
-      }
-
-      switch (event) {
-        case "PAYMENT_CREATED":
-          updatePayload.paymentStatus = "pending";
-          break;
-
-        case "PAYMENT_CONFIRMED":
-        case "PAYMENT_RECEIVED":
-          updatePayload.paymentStatus = "paid";
-          updatePayload.subscriptionStatus = "active";
-          updatePayload.lastPaymentAt = Date.now();
-          updatePayload.lastPaymentAmount = payment.value;
-          updatePayload.lastPaymentMethod = payment.billingType;
-          if (payment.dueDate) {
-            updatePayload.nextBillingDate = new Date(payment.dueDate).getTime();
-          }
-          break;
-
-        case "PAYMENT_OVERDUE":
-          updatePayload.paymentStatus = "overdue";
-          updatePayload.subscriptionStatus = "overdue";
-          break;
-
-        case "PAYMENT_DELETED":
-          updatePayload.paymentStatus = "canceled";
-          break;
-
-        case "SUBSCRIPTION_CREATED":
-          updatePayload.asaasSubscriptionId = subscription.id;
-          updatePayload.subscriptionStatus = subscription.status === "ACTIVE" ? "active" : "trial";
-          if (subscription.nextDueDate) {
-            updatePayload.nextBillingDate = new Date(subscription.nextDueDate).getTime();
-          }
-          break;
-
-        case "SUBSCRIPTION_UPDATED":
-          if (subscription.status === "ACTIVE") {
-            updatePayload.subscriptionStatus = "active";
-          } else if (subscription.status === "OVERDUE") {
-            updatePayload.subscriptionStatus = "overdue";
-          } else if (subscription.status === "INACTIVE" || subscription.status === "CANCELED" || subscription.status === "EXPIRED") {
-            updatePayload.subscriptionStatus = "canceled";
-          }
-          if (subscription.nextDueDate) {
-            updatePayload.nextBillingDate = new Date(subscription.nextDueDate).getTime();
-          }
-          break;
-
-        case "SUBSCRIPTION_DELETED":
-          updatePayload.subscriptionStatus = "canceled";
-          break;
-
-        default:
-          console.log(`[Asaas Webhook] Evento recebido não necessita de tratamento direto: ${event}`);
-          break;
-      }
-
-      // Persistir mutações de faturamento diretamente no Firestore usando privilégios admin
-      await salonRef.update(updatePayload);
-      console.log(`[Asaas Webhook] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${event})`);
-
-      return res.status(200).json({ success: true, eventProcessed: event });
-    } catch (err: any) {
-      console.error("[Asaas Webhook] Falha ao processar evento de webhook do Asaas:", err);
-      return res.status(500).json({ error: err.message || "Erro interno no servidor de webhook." });
-    }
-  });
-
   // ==========================================
   // INTEGRAÇÃO DE BACKEND SEGURO CAKTO BILLING
   // ==========================================
@@ -377,6 +241,7 @@ async function startServer() {
 
       return settingsData;
     } catch (err) {
+      if (isFirebaseAdminCredentialError(err)) throw err;
       console.error("[Cakto Settings Cache] Erro ao buscar dados do Firestore, retornando fallback vazio:", err);
       return {
         productId: "",
@@ -448,11 +313,7 @@ async function startServer() {
 
       const responseStatus = response.status;
       const text = await response.text();
-      const safeText = text
-        .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
-        .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
-
-      console.log(`[Cakto API Secure Log] URL: ${url} | Status: ${responseStatus} | Resposta: ${safeText}`);
+      console.log(`[Cakto API Secure Log] Token endpoint respondeu com status ${responseStatus}.`);
 
       if (response.ok) {
         const data = JSON.parse(text);
@@ -466,10 +327,10 @@ async function startServer() {
           return data.access_token;
         }
       }
-      throw new Error(`Status: ${responseStatus} | Resposta: ${safeText}`);
+      throw new Error(`Token endpoint respondeu com status ${responseStatus}.`);
     } catch (err: any) {
       console.warn(`[Cakto API] Erro ao obter token para ${url}:`, err);
-      throw new Error(`Falha ao autenticar com a API Cakto (OAuth2). Detalhes: ${err.message}`);
+      throw new Error("Falha ao autenticar com a API Cakto (OAuth2).");
     }
   }
 
@@ -491,7 +352,7 @@ async function startServer() {
       return res.json(settings);
     } catch (err: any) {
       console.error("[Cakto Settings API] Erro ao obter configurações:", err);
-      return res.status(500).json({ error: err.message || "Erro interno do servidor." });
+      return res.status(500).json({ error: "Erro interno do servidor." });
     }
   });
 
@@ -525,7 +386,7 @@ async function startServer() {
       return res.json({ success: true, settings: updatedSettings });
     } catch (err: any) {
       console.error("[Cakto Settings API] Erro ao salvar configurações:", err);
-      return res.status(500).json({ error: err.message || "Erro interno do servidor." });
+      return res.status(500).json({ error: "Erro interno do servidor." });
     }
   });
 
@@ -671,7 +532,7 @@ async function startServer() {
 
     } catch (err: any) {
       console.error("[Cakto Sync Express Error] Erro:", err);
-      return res.status(500).json({ error: err.message || "Erro interno de sincronização." });
+      return res.status(500).json({ error: "Erro interno de sincronização." });
     }
   });
 
@@ -698,6 +559,12 @@ async function startServer() {
       if (!salonId || !planId) {
         return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
       }
+      if (typeof salonId !== "string" || !/^[A-Za-z0-9_-]{3,128}$/.test(salonId)) {
+        return res.status(400).json({ error: "salonId inválido." });
+      }
+      if (email && (typeof email !== "string" || email.length > 254)) {
+        return res.status(400).json({ error: "E-mail de faturamento inválido." });
+      }
 
       // Rule 6: Plano inválido deve ser rejeitado
       const validPlans = ["start", "performance", "network", "enterprise", "founder"];
@@ -711,7 +578,13 @@ async function startServer() {
         user = await verifyIdToken(req);
       } catch (authErr: any) {
         console.error("[Cakto Checkout Express] Erro de autenticação:", authErr);
-        return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
+        if (isFirebaseAdminCredentialError(authErr)) {
+          return res.status(503).json({
+            error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor.",
+            code: "FIREBASE_ADMIN_AUTH_FAILED"
+          });
+        }
+        return res.status(401).json({ error: "Sessão inválida ou expirada." });
       }
 
       const adminDb = getAdminDb();
@@ -1013,9 +886,18 @@ async function startServer() {
 
     } catch (err: any) {
       console.error("[Cakto Checkout Express] Falha ao processar requisição:", err);
-      return res.status(500).json({ error: "Falha ao iniciar faturamento via Cakto. Por favor, verifique sua conexão ou contate o suporte." });
+      if (isFirebaseAdminCredentialError(err)) {
+        return res.status(503).json({
+          error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED"
+        });
+      }
+      return res.status(500).json({
+        error: "Não foi possível iniciar o faturamento neste momento.",
+        code: "BILLING_CHECKOUT_FAILED"
+      });
     }
-  });;
+  });
 
   // Helper reutilizável para processar webhook da Cakto (Evitando duplicação de lógica)
   
@@ -1094,464 +976,7 @@ async function verifyIdToken(req: express.Request) {
   return await adminAuth.verifyIdToken(token);
 }
 
-async function processCaktoWebhookPayload(
-  bodyData: any,
-  skipTokenValidation = false,
-  isSimulation = false
-) {
-  const homologationMode =
-    skipTokenValidation === true ||
-    isSimulation === true;
-
-  // 1. Normalizar a estrutura do corpo da requisição (lida com dados simples ou agrupados/data array)
-  let normalizedData = bodyData || {};
-  if (normalizedData.data) {
-    if (Array.isArray(normalizedData.data)) {
-      if (normalizedData.data.length > 0) {
-        normalizedData = { ...normalizedData, ...normalizedData.data[0] };
-      }
-    } else if (typeof normalizedData.data === "object") {
-      normalizedData = { ...normalizedData, ...normalizedData.data };
-    }
-  }
-
-  // Extrair metadados, suportando serialização em string
-  let metadataObj = normalizedData.metadata;
-  if (typeof metadataObj === "string") {
-    try {
-      metadataObj = JSON.parse(metadataObj);
-    } catch (e) {
-      metadataObj = {};
-    }
-  }
-
-  // Extrair propriedades relevantes de forma tolerante a falhas
-  const eventName = normalizedData.event || normalizedData.eventType || normalizedData.status || normalizedData.event_type || "purchase_approved";
-  const orderId = normalizedData.order_id || normalizedData.orderId || normalizedData.id;
-  const subscriptionId = normalizedData.subscription_id || normalizedData.subscriptionId;
-  const customerId = normalizedData.customer_id || normalizedData.customerId || normalizedData.customer?.id;
-  const salonId = normalizedData.external_id || normalizedData.externalId || metadataObj?.salonId;
-  const customerEmail = String(normalizedData.customer?.email || normalizedData.customerEmail || metadataObj?.email || "").trim().toLowerCase();
-  const offerId = String(normalizedData.offer_id || normalizedData.offerId || normalizedData.checkout_offer_id || "").trim();
-
-  const isTestEvent = !orderId && !subscriptionId && !salonId && !customerEmail;
-  if (isTestEvent) {
-    console.log("[Cakto Webhook Processor Express] Recebido evento genérico de teste/ping da Cakto.");
-    return {
-      success: true,
-      info: "Webhook de teste/ping recebido com sucesso.",
-      testEvent: true,
-      salonFound: false
-    };
-  }
-
-  const adminDb = getAdminDb();
-  let salonRef = null;
-  let salonDoc = null;
-
-  // 4. Correlação do salão:
-  // a. Tentar localizar pelo salonId direto (external_id / externalId / metadata.salonId)
-  if (salonId) {
-    salonRef = adminDb.collection("salons").doc(String(salonId));
-    salonDoc = await salonRef.get();
-  }
-
-  // b. Se não encontrado, buscar por caktoSubscriptionId
-  if ((!salonDoc || !salonDoc.exists) && subscriptionId) {
-    const snapshot = await adminDb.collection("salons").where("caktoSubscriptionId", "==", String(subscriptionId)).limit(1).get();
-    if (!snapshot.empty) {
-      salonDoc = snapshot.docs[0];
-      salonRef = salonDoc.ref;
-    }
-  }
-
-  // c. Se ainda não encontrado, buscar por caktoOrderId
-  if ((!salonDoc || !salonDoc.exists) && orderId) {
-    const snapshot = await adminDb.collection("salons").where("caktoOrderId", "==", String(orderId)).limit(1).get();
-    if (!snapshot.empty) {
-      salonDoc = snapshot.docs[0];
-      salonRef = salonDoc.ref;
-    }
-  }
-
-  // d. Se ainda não encontrado, buscar por caktoOfferId + caktoCheckoutEmail
-  if ((!salonDoc || !salonDoc.exists) && offerId && customerEmail) {
-    const snapshot = await adminDb.collection("salons")
-      .where("caktoOfferId", "==", offerId)
-      .where("caktoCheckoutEmail", "==", customerEmail)
-      .limit(1).get();
-    if (!snapshot.empty) {
-      salonDoc = snapshot.docs[0];
-      salonRef = salonDoc.ref;
-    }
-  }
-
-  // e. Se ainda não encontrado, buscar por e-mail normalizado do cliente (checkout ou owner e-mail)
-  if ((!salonDoc || !salonDoc.exists) && customerEmail) {
-    const snapshot = await adminDb.collection("salons")
-      .where("caktoCheckoutEmail", "==", customerEmail)
-      .limit(1).get();
-    if (!snapshot.empty) {
-      salonDoc = snapshot.docs[0];
-      salonRef = salonDoc.ref;
-    }
-  }
-
-  if ((!salonDoc || !salonDoc.exists) && customerEmail) {
-    const snapshot = await adminDb.collection("salons")
-      .where("ownerEmail", "==", customerEmail)
-      .limit(1).get();
-    if (!snapshot.empty) {
-      salonDoc = snapshot.docs[0];
-      salonRef = salonDoc.ref;
-    }
-  }
-
-  // 6. Adicionar logs seguros
-  console.log(`[Cakto Webhook Processor Express Secure Log] Processando evento:
-  - Evento: ${eventName}
-  - Offer ID: ${offerId || "N/A"}
-  - Order ID: ${orderId || "N/A"}
-  - Subscription ID: ${subscriptionId || "N/A"}
-  - Customer Email: ${customerEmail || "N/A"}
-  - Salon ID: ${salonId || "N/A"}
-  - Salão Encontrado no Firestore: ${!!(salonDoc && salonDoc.exists)} (${salonDoc?.id || "N/A"})`);
-
-  const eventId = normalizedData.event_id || normalizedData.eventId || `${eventName}_${orderId || "test"}_${Date.now()}`;
-
-  // ========================================
-  // 2. RETORNO ANTECIPADO (Homologação)
-  // ========================================
-  if (homologationMode) {
-    if (!salonDoc || !salonDoc.exists || !salonRef) {
-      return {
-        success: false,
-        simulated: true,
-        salonFound: false,
-        reason: "salon_not_found"
-      };
-    }
-
-    const homologationPayload =
-      buildHomologationWebhookUpdate({
-        eventName,
-        eventId,
-        orderId,
-        subscriptionId,
-        customerId,
-        offerId,
-        normalizedData
-      });
-
-    await salonRef.set(homologationPayload, {
-      merge: true
-    });
-
-    return {
-      success: true,
-      simulated: true,
-      salonUpdated: true,
-      salonId: salonDoc.id
-    };
-  }
-
-  // Evitar processamento de eventos duplicados se não for homologação/teste
-  if (salonDoc?.exists) {
-    const sData = salonDoc.data();
-    if (sData?.caktoLastEventId === eventId) {
-      console.log(`[Cakto Webhook Processor Express] Evento duplicado já processado anteriormente: ${eventId}. Ignorando.`);
-      return {
-        success: true,
-        info: "Evento duplicado já processado.",
-        salonFound: true,
-        salonId: salonDoc.id,
-        plan: sData?.plan || "start",
-        status: sData?.subscriptionStatus || "active",
-        firestorePath: `salons/${salonDoc.id}`
-      };
-    }
-  }
-
-  // ========================================
-  // 4. FLUXO REAL
-  // ========================================
-  const realUpdatePayload: any = {
-    caktoLastEventId: eventId,
-    caktoLastEvent: eventName,
-    updatedAt: Date.now()
-  };
-
-  if (orderId) realUpdatePayload.caktoOrderId = String(orderId);
-  if (subscriptionId) realUpdatePayload.caktoSubscriptionId = String(subscriptionId);
-  if (customerId) realUpdatePayload.caktoCustomerId = String(customerId);
-  if (offerId) realUpdatePayload.caktoOfferId = offerId;
-
-  // Carregar configurações de ofertas para mapear o plano correto
-  const sData = await getCaktoSettingsCached();
-  let mappedPlan: "start" | "founder" | "performance" | "network" | "enterprise" | null = null;
-  if (offerId) {
-    const offId = offerId.trim();
-    if (sData.startOfferId && sData.startOfferId.trim() === offId) mappedPlan = "start";
-    else if (sData.founderOfferId && sData.founderOfferId.trim() === offId) mappedPlan = "founder";
-    else if (sData.performanceOfferId && sData.performanceOfferId.trim() === offId) mappedPlan = "performance";
-    else if (sData.networkOfferId && sData.networkOfferId.trim() === offId) mappedPlan = "network";
-    else if (sData.enterpriseOfferId && sData.enterpriseOfferId.trim() === offId) mappedPlan = "enterprise";
-  }
-
-  // ========================================
-  // 5. OFERTAS DESCONHECIDAS
-  // ========================================
-  if (!mappedPlan) {
-    if (salonRef && salonDoc && salonDoc.exists) {
-      await salonRef.update({
-        billingWebhookReview: {
-          status: "unknown_offer",
-          receivedOfferId: offerId || null,
-          eventId,
-          receivedAt: Date.now()
-        }
-      });
-    }
-    return {
-      success: false,
-      requiresReview: true,
-      reason: "unknown_offer"
-    };
-  }
-
-  const ev = String(eventName).toLowerCase();
-
-  // ========================================
-  // 6. PENDING OFFER (Divergência)
-  // ========================================
-  if (salonDoc?.exists) {
-    const sData = salonDoc.data();
-    const pendingOfferId = sData?.pendingOfferId;
-    if (pendingOfferId) {
-      if (!offerId || offerId.trim() === "" || pendingOfferId !== offerId) {
-        if (salonRef) {
-          await salonRef.update({
-            billingWebhookReview: {
-              status: "offer_mismatch",
-              expectedOfferId: pendingOfferId,
-              receivedOfferId: offerId || null,
-              eventId,
-              receivedAt: Date.now()
-            }
-          });
-          
-          const historyRef = salonRef.collection("billingHistory").doc();
-          await historyRef.set({
-            id: historyRef.id,
-            eventType: "webhook_offer_mismatch",
-            title: "Divergência de Oferta Bloqueada",
-            description: `A assinatura Cakto foi rejeitada por divergência de oferta (Esperada: ${pendingOfferId}, Recebida: ${offerId || "ausente"}).`,
-            timestamp: Date.now(),
-            recordedBy: "system"
-          });
-        }
-        return {
-          success: false,
-          requiresReview: true,
-          reason: "offer_mismatch"
-        };
-      }
-    }
-  }
-
-  // Regras de Status conforme especificado
-  if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
-    realUpdatePayload.billingProvider = "cakto";
-    realUpdatePayload.subscriptionStatus = "active";
-    realUpdatePayload.activationStatus = "active";
-    realUpdatePayload.caktoPaymentStatus = "paid";
-    realUpdatePayload.paymentStatus = "paid";
-    realUpdatePayload.plan = mappedPlan;
-    realUpdatePayload.isActive = true;
-    
-    // Clear pending fields
-    realUpdatePayload.pendingPlan = null;
-    realUpdatePayload.pendingOfferId = null;
-    realUpdatePayload.pendingCheckoutUrl = null;
-    realUpdatePayload.pendingCheckoutEmail = null;
-    realUpdatePayload.pendingRequestedAt = null;
-    realUpdatePayload.pendingCheckoutPurpose = null;
-    realUpdatePayload.pendingBillingActivation = null;
-
-    if (customerEmail) {
-      realUpdatePayload.caktoCheckoutEmail = customerEmail;
-    }
-
-    // ========================================
-    // 8. DATA REAL (Vencimento)
-    // ========================================
-    const periodEnd = normalizedData.current_period_end || normalizedData.next_billing_date || normalizedData.nextBillingDate;
-    let validDate = false;
-    let nextBillingDateVal: number | null = null;
-    
-    if (periodEnd) {
-      const parsedDate = new Date(periodEnd).getTime();
-      if (!isNaN(parsedDate)) {
-        nextBillingDateVal = parsedDate;
-        validDate = true;
-      }
-    }
-
-    if (validDate && nextBillingDateVal !== null) {
-      realUpdatePayload.nextBillingDate = nextBillingDateVal;
-      if (periodEnd) {
-        realUpdatePayload.currentPeriodEnd = periodEnd;
-      }
-    } else {
-      realUpdatePayload.billingSyncRequired = true;
-      realUpdatePayload.billingSyncReason = "missing_next_billing_date";
-    }
-
-    realUpdatePayload.lastPaymentAt = Date.now();
-    realUpdatePayload.lastPaymentAmount = normalizedData.amount || normalizedData.value || normalizedData.price || 0;
-
-  } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
-    realUpdatePayload.subscriptionStatus = "canceled";
-    realUpdatePayload.activationStatus = "canceled";
-    realUpdatePayload.caktoPaymentStatus = "canceled";
-    realUpdatePayload.paymentStatus = "canceled";
-    realUpdatePayload.isActive = false;
-
-  } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
-    realUpdatePayload.subscriptionStatus = "overdue";
-    realUpdatePayload.activationStatus = "blocked";
-    realUpdatePayload.caktoPaymentStatus = "refused";
-    realUpdatePayload.paymentStatus = "overdue";
-    realUpdatePayload.isActive = false;
-
-  } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
-    if (salonDoc?.exists) {
-      const currentStatus = salonDoc.data()?.subscriptionStatus;
-      if (currentStatus !== "active" && currentStatus !== "preview") {
-        realUpdatePayload.subscriptionStatus = "pending";
-      }
-      realUpdatePayload.caktoPaymentStatus = "pending";
-      realUpdatePayload.paymentStatus = "pending";
-    }
-  }
-
-  // Se o salão não existe e o faturamento é válido (real), criamos o salão!
-  if (!salonDoc || !salonDoc.exists || !salonRef) {
-    const finalSalonId = salonId || `salon_${Date.now()}`;
-    salonRef = adminDb.collection("salons").doc(String(finalSalonId));
-    
-    const isApproved = realUpdatePayload.subscriptionStatus === "active";
-    const newSalonData = {
-      id: String(finalSalonId),
-      name: normalizedData.customer?.name || "LumièreOS Salon",
-      ownerName: normalizedData.customer?.name || "",
-      plan: mappedPlan,
-      subscriptionStatus: realUpdatePayload.subscriptionStatus || "pending",
-      activationStatus: realUpdatePayload.activationStatus || "pending",
-      isActive: isApproved,
-      createdAt: Date.now(),
-      ...realUpdatePayload
-    };
-
-    await salonRef.set(newSalonData);
-    console.log(`[Cakto Webhook Processor Express] Salão novo criado e ativado com ID: ${finalSalonId}`);
-    
-    return {
-      success: true,
-      salonUpdated: true,
-      plan: newSalonData.plan,
-      status: newSalonData.subscriptionStatus,
-      firestorePath: `salons/${finalSalonId}`
-    };
-  }
-
-  const salonData = salonDoc.data();
-
-  await salonRef.update(realUpdatePayload);
-  console.log(`[Cakto Webhook Processor Express] Sincronização concluída com sucesso para o salão ${salonDoc.id} (Evento: ${eventName})`);
-
-  // Salvar registro no histórico de cobrança (fluxo real)
-  try {
-    const historyRef = salonRef.collection("billingHistory").doc();
-    let histType = "charge_approved";
-    let histTitle = "Cobrança Aprovada";
-    let histDesc = `O pagamento da assinatura Cakto foi processado com sucesso.`;
-
-    const PLAN_NAMES_LOCAL: Record<string, string> = {
-      start: "Start",
-      founder: "Founder (Pioneiro)",
-      performance: "Performance",
-      network: "Network",
-      enterprise: "Enterprise"
-    };
-
-    const PLANS_PRICES_LOCAL: Record<string, number> = {
-      start: 197,
-      founder: 297,
-      performance: 397,
-      network: 797,
-      enterprise: 1997
-    };
-
-    const prevPlan = salonData?.plan || "start";
-    const nextPlan = realUpdatePayload.plan || prevPlan;
-    const prevStatus = salonData?.subscriptionStatus || "pending";
-
-    if (ev === "purchase_approved" || ev === "subscription_renewed" || ev.includes("approved") || ev.includes("paid") || ev === "active") {
-      if (prevStatus === "overdue") {
-        histType = "regularization";
-        histTitle = "Regularização de Faturamento";
-        histDesc = "A assinatura em atraso foi regularizada com sucesso após compensação.";
-      } else if (prevStatus === "preview" || prevStatus === "pending") {
-        histType = "activation";
-        histTitle = "Ativação de Assinatura";
-        histDesc = `Assinatura iniciada no plano ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan}.`;
-      } else if (prevPlan !== nextPlan) {
-        const isUp = (PLANS_PRICES_LOCAL[nextPlan] || 0) > (PLANS_PRICES_LOCAL[prevPlan] || 0);
-        histType = isUp ? "upgrade_applied" : "downgrade_applied";
-        histTitle = isUp ? "Upgrade de Plano Aplicado" : "Downgrade de Plano Aplicado";
-        histDesc = `Plano definitivo alterado de ${PLAN_NAMES_LOCAL[prevPlan] || prevPlan} para ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan}.`;
-      } else {
-        histType = "charge_approved";
-        histTitle = "Mensalidade Aprovada";
-        histDesc = `Cobrança mensal do plano ${PLAN_NAMES_LOCAL[nextPlan] || nextPlan} aprovada com sucesso.`;
-      }
-    } else if (ev === "subscription_canceled" || ev === "refund" || ev === "chargeback" || ev.includes("cancel") || ev.includes("refund") || ev.includes("chargeback")) {
-      histType = "canceled";
-      histTitle = "Assinatura Cancelada";
-      histDesc = `Assinatura do LumièreOS foi cancelada.`;
-    } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
-      histType = "charge_refused";
-      histTitle = "Cobrança Recusada";
-      histDesc = `O faturamento mensal da assinatura Cakto falhou ou foi recusado pela operadora.`;
-    } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
-      histType = "activation";
-      histTitle = "Nova Assinatura Registrada";
-      histDesc = `Faturamento recorrente registrado na Cakto, aguardando compensação inicial.`;
-    }
-
-    await historyRef.set({
-      id: historyRef.id,
-      eventType: histType,
-      title: histTitle,
-      description: histDesc,
-      amount: realUpdatePayload.lastPaymentAmount || normalizedData.amount || normalizedData.value || normalizedData.price || 0,
-      plan: nextPlan,
-      timestamp: Date.now(),
-      recordedBy: "Cakto Gateway"
-    });
-  } catch (err) {
-    console.error("[Cakto Webhook History Logger] Falha ao gravar histórico:", err);
-  }
-
-  return {
-    success: true,
-    salonUpdated: true,
-    plan: realUpdatePayload.plan || salonData?.plan || "start",
-    status: realUpdatePayload.subscriptionStatus || salonData?.subscriptionStatus || "active",
-    firestorePath: `salons/${salonDoc.id}`
-  };
-}
+  // O processador do webhook é compartilhado com a função serverless para evitar divergências.
 
   app.post("/api/cakto/webhook", async (req, res) => {
     try {
@@ -1599,7 +1024,7 @@ async function processCaktoWebhookPayload(
       return res.status(200).json(result);
     } catch (err: any) {
       console.error("[Cakto Webhook Error] Falha de processamento:", err);
-      return res.status(500).json({ error: err.message || "Erro interno no processamento do webhook." });
+      return res.status(500).json({ error: "Erro interno no processamento do webhook." });
     }
   });
 
@@ -1668,7 +1093,7 @@ async function processCaktoWebhookPayload(
       return res.status(200).json(result);
     } catch (err: any) {
       console.error("[Cakto Webhook Test Error] Falha de processamento:", err);
-      return res.status(500).json({ error: err.message || "Erro interno no processamento do teste de webhook." });
+      return res.status(500).json({ error: "Erro interno no processamento do teste de webhook." });
     }
   });
 
@@ -1709,11 +1134,11 @@ async function processCaktoWebhookPayload(
       });
     } catch (err: any) {
       console.error("[Cakto Status] Erro ao obter status da assinatura:", err);
-      return res.status(500).json({ error: err.message || "Erro interno ao obter status." });
+      return res.status(500).json({ error: "Erro interno ao obter status." });
     }
   });
 
-  // GET /api/cakto/real-subscription - Consulta a assinatura real na API Cakto
+  // GET /api/cakto/real-subscription - Consulta somente assinaturas Cakto reais.
   app.get("/api/cakto/real-subscription", authenticateRequest, async (req, res) => {
     try {
       const { salonId } = req.query;
@@ -1730,87 +1155,105 @@ async function processCaktoWebhookPayload(
       }
 
       const salonData = salonDoc.data();
-
-      // Autorização
       const authResult = await canManageBilling(user, String(salonId), salonData);
       if (!authResult.authorized) {
         return res.status(403).json({ error: authResult.reason || "Não autorizado." });
       }
 
       const subscriptionId = salonData?.caktoSubscriptionId;
-      if (!subscriptionId) {
-        return res.status(400).json({ error: "Nenhuma assinatura Cakto configurada para este salão." });
-      }
+      const billingProvider = salonData?.billingProvider;
+      const isManualActive = (billingProvider === "manual" || salonData?.billingMode === "manual_pix") &&
+        salonData?.subscriptionStatus === "active" &&
+        salonData?.paymentStatus === "paid";
 
-      // Proteger contra IDs simulados / homologados
-      const isHomolog = subscriptionId.toLowerCase().includes("homolog") || 
-                        subscriptionId.toLowerCase().includes("simulated") || 
-                        subscriptionId === "sub_simulated_dev";
-      if (isHomolog) {
-        // Se for Platform Admin (verificado via authResult.role), retornamos dados simulados com sucesso para permitir testes e desenvolvimento.
-        // Clientes reais nunca visualizam dados simulados.
-        const isUserPlatformAdmin = authResult.role === "platform_admin";
-        if (isUserPlatformAdmin) {
-          return res.json({
-            status: "active",
-            amount: 297.00,
-            paymentMethod: salonData?.paymentMethod || "credit_card",
-            next_payment_date: "2026-08-05T12:00:00.000Z",
-            offer: "offer_founder_297",
-            recurrence_period: "monthly",
-            isSimulated: true
-          });
-        }
-
-        return res.status(400).json({ 
-          error: "Sua assinatura está em modo de homologação/simulação. Migre a conta para produção antes de prosseguir.",
-          isHomolog: true
+      if (isManualActive && !subscriptionId) {
+        return res.status(200).json({
+          hasRealSubscription: false,
+          billingProvider: "manual",
+          status: "active",
+          paymentStatus: "paid",
+          next_payment_date: salonData?.nextBillingDate || null,
         });
       }
 
-      // Fazer a chamada real para a Cakto
+      if (billingProvider === "cakto" && !subscriptionId) {
+        return res.status(409).json({
+          error: "A assinatura Cakto ainda não foi confirmada.",
+          requiresCheckout: true,
+        });
+      }
+
+      if (!subscriptionId) {
+        return res.status(200).json({
+          hasRealSubscription: false,
+          billingProvider: billingProvider || "manual",
+          status: salonData?.subscriptionStatus || "unknown",
+          paymentStatus: salonData?.paymentStatus || "unknown",
+          next_payment_date: salonData?.nextBillingDate || null,
+        });
+      }
+
+      const normalizedSubscriptionId = String(subscriptionId).toLowerCase();
+      const isHomolog = /(homolog|simulated|test)/i.test(normalizedSubscriptionId);
+      if (isHomolog) {
+        if (authResult.role === "platform_admin") {
+          return res.status(200).json({
+            status: salonData?.homologationSubscriptionStatus || "pending",
+            amount: salonData?.homologationLastPaymentAmount || salonData?.lastPaymentAmount || null,
+            paymentMethod: salonData?.paymentMethod || null,
+            next_payment_date: salonData?.homologationNextBillingDate || null,
+            offer: salonData?.homologationOfferId || null,
+            recurrence_period: "monthly",
+            isSimulated: true,
+          });
+        }
+
+        return res.status(409).json({
+          error: "A assinatura de produção ainda não foi confirmada.",
+          requiresCheckout: true,
+        });
+      }
+
       const accessToken = await getCaktoAccessToken();
       const apiUrl = getCaktoApiBaseUrl();
-      const caktoUrl = `${apiUrl}/public_api/subscriptions/${subscriptionId}/`;
-
-      console.log(`[Cakto Real Sub] Chamando API Cakto: GET ${caktoUrl}`);
-      const response = await fetch(caktoUrl, {
+      const response = await fetch(`${apiUrl}/public_api/subscriptions/${encodeURIComponent(String(subscriptionId))}/`, {
         method: "GET",
         headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json"
-        }
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error(`[Cakto Real Sub] Erro na API Cakto (${response.status}):`, errText);
-        return res.status(response.status).json({ 
-          error: `Erro ao obter detalhes da assinatura na API Cakto: ${errText}` 
+        console.error(`[Cakto Real Sub] Erro upstream (${response.status}):`, errText.slice(0, 1000));
+        return res.status(502).json({
+          error: "Não foi possível consultar o gateway de pagamento neste momento.",
+          code: "CAKTO_UPSTREAM_ERROR",
         });
       }
 
       const caktoSub = await response.json();
-      console.log(`[Cakto Real Sub] Resposta da API Cakto para ${subscriptionId}:`, JSON.stringify(caktoSub, null, 2));
-
-      const status = caktoSub.status || caktoSub.subscriptionStatus || "unknown";
-      const amount = caktoSub.amount || caktoSub.value || 0;
-      const paymentMethod = caktoSub.paymentMethod || caktoSub.payment_method || caktoSub.billingType || "credit_card";
-      const next_payment_date = caktoSub.next_payment_date || caktoSub.next_billing_date || caktoSub.nextBillingDate || null;
-      const offer = caktoSub.offer || caktoSub.offer_id || caktoSub.offerId || null;
-      const recurrence_period = caktoSub.recurrence_period || caktoSub.recurrencePeriod || "monthly";
-
-      return res.json({
-        status,
-        amount,
-        paymentMethod,
-        next_payment_date,
-        offer,
-        recurrence_period
+      return res.status(200).json({
+        status: caktoSub.status || caktoSub.subscriptionStatus || "unknown",
+        amount: caktoSub.amount || caktoSub.value || 0,
+        paymentMethod: caktoSub.paymentMethod || caktoSub.payment_method || caktoSub.billingType || "credit_card",
+        next_payment_date: caktoSub.next_payment_date || caktoSub.next_billing_date || caktoSub.nextBillingDate || null,
+        offer: caktoSub.offer || caktoSub.offer_id || caktoSub.offerId || null,
+        recurrence_period: caktoSub.recurrence_period || caktoSub.recurrencePeriod || "monthly",
       });
     } catch (err: any) {
       console.error("[Cakto Real Sub] Erro ao obter assinatura real:", err);
-      return res.status(500).json({ error: "Erro interno ao processar sua solicitação no gateway de pagamento. Por favor, contate o suporte." });
+      if (isFirebaseAdminCredentialError(err)) {
+        return res.status(503).json({
+          error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED",
+        });
+      }
+      return res.status(500).json({
+        error: "Não foi possível consultar os detalhes de faturamento neste momento.",
+        code: "BILLING_LOOKUP_FAILED",
+      });
     }
   });
 
@@ -1852,7 +1295,7 @@ async function processCaktoWebhookPayload(
 
     } catch (err: any) {
       console.error("[Cakto Payment Method] Erro ao atualizar forma de pagamento:", err);
-      return res.status(500).json({ error: err.message || "Erro interno ao atualizar método de pagamento." });
+      return res.status(500).json({ error: "Erro interno ao atualizar método de pagamento." });
     }
   });
 

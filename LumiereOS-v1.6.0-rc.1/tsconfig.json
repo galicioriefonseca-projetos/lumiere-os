@@ -18,14 +18,10 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "./*"
+        "./src/*"
       ]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  },
-  "exclude": [
-    "LumiereOS-v1.6.0-rc.1",
-    "node_modules"
-  ]
+  }
 }

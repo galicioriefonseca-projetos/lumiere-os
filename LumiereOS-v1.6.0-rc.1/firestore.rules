@@ -1,0 +1,540 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Safety Net - Allow Platform Admin globally, deny others by default
+    match /{document=**} {
+      allow read, write: if isPlatformAdmin();
+    }
+
+    // --- Global Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userEmail() {
+      return request.auth.token.get('email', '');
+    }
+
+    // Helper for role field
+    function userRole() {
+      return exists(userDoc()) ? get(userDoc()).data.get('role', 'none') : 'none';
+    }
+
+    // Helper for salonId field
+    function userSalonId() {
+      return exists(userDoc()) ? get(userDoc()).data.get('salonId', 'none') : 'none';
+    }
+
+    // Super Admin global role helper
+    function isPlatformAdmin() {
+      return isSignedIn() && (
+        request.auth.token.get('role', 'none') == "platform_admin" ||
+        request.auth.token.get('platform_admin', false) == true ||
+        exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
+        (exists(userDoc()) && get(userDoc()).data.get('role', 'none') == "platform_admin")
+      );
+    }
+
+    function isOwnerOfUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Specific salon level checks
+    function isSalonOwner(salonId) {
+      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin");
+    }
+
+    function isSalonManager(salonId) {
+      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "manager";
+    }
+
+    function isSalonReceptionist(salonId) {
+      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "receptionist";
+    }
+
+    // Helper for managers, receptionists, etc.
+    function isSalonAttendant(salonId) {
+      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "attendant";
+    }
+
+    function isSalonProfessional(salonId) {
+      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "professional";
+    }
+
+    function isSalonMember(salonId) {
+      return isSignedIn() && (
+        isPlatformAdmin() ||
+        canUseTutorialDemo(salonId) ||
+        (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId) ||
+        exists(/databases/$(database)/documents/salons/$(salonId)/professionals/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && get(/databases/$(database)/documents/salons/$(salonId)).data.get('ownerId', '') == request.auth.uid)
+      );
+    }
+
+    // --- Demo/Tutorial User Helpers ---
+    function isTutorialDemoSalon(salonId) {
+      return salonId == "tutorial_lumiere_studio";
+    }
+
+    function isTutorialDemoUser() {
+      return isSignedIn() && request.auth.token.get('is_demo', false) == true;
+    }
+
+    function canUseTutorialDemo(salonId) {
+      return isTutorialDemoUser() && isTutorialDemoSalon(salonId);
+    }
+
+    // Permission gates
+    function canManageSalon(salonId) {
+      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        exists(userDoc()) && 
+        get(userDoc()).data.get('salonId', 'none') == salonId && 
+        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")
+      );
+    }
+
+    function canOperateFrontDesk(salonId) {
+      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        exists(userDoc()) && 
+        get(userDoc()).data.get('salonId', 'none') == salonId && 
+        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist" || get(userDoc()).data.get('role', 'none') == "attendant")
+      );
+    }
+
+    function canModifyCrmStage(salonId) {
+      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        exists(userDoc()) && 
+        get(userDoc()).data.get('salonId', 'none') == salonId && 
+        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist")
+      );
+    }
+
+    // --- End Permission gates ---
+    function canEvaluateTeam(salonId) {
+      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        exists(userDoc()) && 
+        get(userDoc()).data.get('salonId', 'none') == salonId && 
+        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")
+      );
+    }
+
+    function canRecordEvaluation(salonId) {
+      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        exists(userDoc()) && 
+        get(userDoc()).data.get('salonId', 'none') == salonId && 
+        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist" || get(userDoc()).data.get('role', 'none') == "attendant")
+      );
+    }
+
+    function canManageBilling(salonId) {
+      return isSignedIn() && (
+        isPlatformAdmin() ||
+        canUseTutorialDemo(salonId) ||
+        (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")) ||
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && get(/databases/$(database)/documents/salons/$(salonId)).data.get('ownerId', '') == request.auth.uid)
+      );
+    }
+
+    // --- Collection Rules ---
+
+    // platformAdmins collection
+    match /platformAdmins/{userId} {
+      allow read: if isOwnerOfUser(userId) || isPlatformAdmin();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // User can read their own profile, or platform admins can read any
+      allow get: if isOwnerOfUser(userId) || isPlatformAdmin();
+      
+      // Members of the same salon can read salon professionals / members lists
+      allow list: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        resource.data.salonId == userSalonId()
+      );
+      
+      // Client creation check
+      allow create: if isOwnerOfUser(userId) && (
+        request.resource.data.role != 'platform_admin' ||
+        exists(/databases/$(database)/documents/platformAdmins/$(userId))
+      );
+      
+      // Client updates protect role-escalation and salon spoofing
+      allow update: if isPlatformAdmin() || (
+        isOwnerOfUser(userId) && 
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId']) ||
+          (
+            isTutorialDemoUser() && 
+            request.resource.data.salonId == "tutorial_lumiere_studio" && 
+            (request.resource.data.role == "owner" || request.resource.data.role == "manager")
+          )
+        )
+      );
+    }
+
+    // Salons collection
+    match /salons/{salonId} {
+      // Creator must assign themselves as the owner or be superadmin
+      allow create: if (isSignedIn() && request.resource.data.ownerId == request.auth.uid) || isPlatformAdmin();
+      
+      // Leitura pública do salão para agendamento online
+      allow read: if resource.data.bookingEnabled == true;
+      
+      // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
+      allow get: if isPlatformAdmin() || (
+        isSignedIn() && (
+          resource.data.ownerId == request.auth.uid || 
+          (exists(userDoc()) && userSalonId() == salonId) ||
+          canUseTutorialDemo(salonId)
+        )
+      );
+      
+      // Only platformAdmins can list all salons, but allow demo list for the authorized demo user, or owners to query their own salons
+      allow list: if isPlatformAdmin() || (
+        isSignedIn() && (
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.get('ownerEmail', '') == userEmail() ||
+          (isTutorialDemoUser() && isTutorialDemoSalon(resource.id))
+        )
+      );
+      
+      // Updates allowed for platform_admin, owners, or managers, shielding sensitive pricing/billing/config fields
+      allow update: if isPlatformAdmin() || (
+        isSignedIn() && 
+        (
+          resource.data.ownerId == request.auth.uid || 
+          (exists(userDoc()) && userSalonId() == salonId && (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")) ||
+          canUseTutorialDemo(salonId)
+        ) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'professionalLimit', 'maxProfessionals', 'deletedAt', 'ownerId', 'ownerEmail', 'isDemo', 'isTutorial', 'platformAdmins', 'billingProvider', 'subscriptionId'
+        ])
+      );
+                     
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Bug Reports
+    match /bugReports/{bugReportId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow get: if isPlatformAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isPlatformAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow update: if isPlatformAdmin();
+      allow delete: if isPlatformAdmin();
+    }
+
+    // Invites collection (Hardened)
+    match /invites/{inviteId} {
+      // Get is public only for pending invites (not expired check on front-end)
+      allow get: if isPlatformAdmin() || (
+        resource.data.status == "pending"
+      );
+      
+      // Only platform admin and salon managers/owners can list invitations
+      allow list: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == resource.data.salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
+      );
+      
+      // Managers, owners, or admins can create invites
+      allow create: if isSignedIn() && (
+        isPlatformAdmin() || (
+          exists(userDoc()) && 
+          request.resource.data.salonId == userSalonId() && 
+          (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") && 
+          (request.resource.data.role == "manager" || request.resource.data.role == "receptionist" || request.resource.data.role == "attendant" || request.resource.data.role == "professional")
+        )
+      );
+      
+      // Accept invite or manage cancellations (Hardened)
+      allow update: if isPlatformAdmin() || (
+        isSignedIn() && (
+          // Cancellation by salon owner/manager (only pending -> canceled, no field mutations)
+          (
+            exists(userDoc()) && 
+            userSalonId() == resource.data.salonId && 
+            (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") &&
+            resource.data.status == "pending" &&
+            request.resource.data.status == "canceled" &&
+            request.resource.data.salonId == resource.data.salonId && 
+            request.resource.data.role == resource.data.role && 
+            request.resource.data.inviteType == resource.data.inviteType && 
+            request.resource.data.email == resource.data.email && 
+            request.resource.data.createdAt == resource.data.createdAt
+          ) ||
+          // Sealed state transaction: accepting a pending invite
+          (
+            resource.data.status == "pending" && 
+            request.resource.data.status == "accepted" && 
+            request.resource.data.acceptedByUserId == request.auth.uid && 
+            request.resource.data.salonId == resource.data.salonId && 
+            request.resource.data.role == resource.data.role && 
+            request.resource.data.inviteType == resource.data.inviteType && 
+            request.resource.data.email == resource.data.email && 
+            request.resource.data.createdAt == resource.data.createdAt
+          ) ||
+          // Sealed state transaction: accepting a pending function-based multi-use invite
+          (
+            resource.data.inviteType == "function_link" &&
+            resource.data.status == "pending" &&
+            resource.data.usesCount < resource.data.maxUses &&
+            request.resource.data.salonId == resource.data.salonId && 
+            request.resource.data.role == resource.data.role && 
+            request.resource.data.inviteType == resource.data.inviteType && 
+            request.resource.data.category == resource.data.category &&
+            request.resource.data.specialty == resource.data.specialty &&
+            request.resource.data.professionalFunction == resource.data.professionalFunction &&
+            request.resource.data.maxUses == resource.data.maxUses &&
+            request.resource.data.createdAt == resource.data.createdAt &&
+            request.resource.data.usesCount == resource.data.usesCount + 1 &&
+            (
+              (request.resource.data.usesCount < resource.data.maxUses && request.resource.data.status == "pending") ||
+              (request.resource.data.usesCount == resource.data.maxUses && request.resource.data.status == "used_limit_reached")
+            )
+          )
+        )
+      );
+      
+      allow delete: if isPlatformAdmin();
+    }
+
+    // --- Salons Subcollections (Hardened & Granular RBAC) ---
+
+    // Payments
+    match /salons/{salonId}/payments/{paymentId} {
+      allow read: if canManageBilling(salonId);
+      allow create: if canManageBilling(salonId) && 
+        request.resource.data.status == "reported" &&
+        request.resource.data.salonId == salonId &&
+        request.resource.data.method == "pix";
+      allow update, delete: if isPlatformAdmin();
+    }
+
+    // Subscriptions (Mercado Pago)
+    match /salons/{salonId}/subscriptions/{subscriptionId} {
+      allow read: if canManageBilling(salonId);
+      allow write: if isPlatformAdmin();
+    }
+
+    // Billing History
+    match /salons/{salonId}/billingHistory/{historyId} {
+      allow read: if canManageBilling(salonId);
+      allow write: if isPlatformAdmin();
+    }
+
+    // 1. Professionals & Staff
+    match /salons/{salonId}/professionals/{professionalId} {
+      allow read: if isSalonMember(salonId) ||
+        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      
+      allow create: if canManageSalon(salonId) || (
+        isSignedIn() && 
+        professionalId == request.auth.uid &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userSalonId() == salonId &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.professionalId == request.auth.uid &&
+        request.resource.data.role == userRole() &&
+        request.resource.data.isActive == true &&
+        request.resource.data.status == "active"
+      );
+      
+      allow update: if canManageSalon(salonId) || (
+        isSignedIn() && 
+        professionalId == request.auth.uid &&
+        userSalonId() == salonId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'role', 'salonId', 'userId', 'professionalId', 'isActive', 'status', 'joinedByInvite', 'inviteId', 'inviteType', 'createdAt', 'commissionRate'
+        ])
+      );
+      allow delete: if canManageSalon(salonId);
+    }
+
+    // 2. Appointments & Appointments Scheduling
+    match /salons/{salonId}/appointments/{appointmentId} {
+      allow read: if isSalonMember(salonId) ||
+        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow create, update, delete: if canOperateFrontDesk(salonId);
+      
+      allow create: if
+        resource == null &&
+        request.resource.data.source == 'client_booking' &&
+        request.resource.data.salonId == salonId &&
+        request.resource.data.status == 'scheduled' &&
+        request.resource.data.clientName is string &&
+        request.resource.data.clientName.size() > 0 &&
+        request.resource.data.date is string &&
+        request.resource.data.time is string &&
+        request.resource.data.professionalId is string &&
+        request.resource.data.serviceId is string;
+    }
+
+    // 3. Checklist Configurations (Templates)
+    match /salons/{salonId}/checklists/{checklistId} {
+      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 4. Checklist Daily Runs (Avaliações Operacionais)
+    match /salons/{salonId}/checklistRuns/{runId} {
+      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+      allow create, update: if canRecordEvaluation(salonId);
+      allow delete: if false;
+    }
+
+    // 5. Monthly Goals
+    match /salons/{salonId}/goals/{goalId} {
+      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 6. Professional-assigned Goals
+    match /salons/{salonId}/professionalGoals/{goalId} {
+      allow read: if canManageSalon(salonId) || (
+        isSalonProfessional(salonId) && resource.data.professionalId == request.auth.uid
+      );
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
+    // 7. Clients
+    match /salons/{salonId}/clients/{clientId} {
+      allow get: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow list: if canOperateFrontDesk(salonId);
+      allow create: if canOperateFrontDesk(salonId);
+      allow update: if canOperateFrontDesk(salonId) && (
+        request.resource.data.crmStage == resource.data.crmStage || 
+        canModifyCrmStage(salonId)
+      );
+      allow delete: if false;
+
+      // History logs subcollection
+      match /history/{historyId} {
+        allow get, list: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+        allow create, update: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+        allow delete: if false;
+      }
+    }
+
+    // 8. Services Catalogue
+    match /salons/{salonId}/services/{serviceId} {
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ||
+        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
+    // 9. Categories
+    match /salons/{salonId}/categories/{categoryId} {
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ||
+        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
+    // 10. Audit Logs (Append-Only, restricted read)
+    match /salons/{salonId}/auditLogs/{logId} {
+      allow read: if canManageSalon(salonId);
+      allow create: if isSignedIn() && exists(userDoc()) && userSalonId() == salonId;
+      allow update, delete: if false;
+    }
+
+    // 11. Financial Transactions
+    match /salons/{salonId}/financialTransactions/{transactionId} {
+      allow read, write: if canManageSalon(salonId);
+    }
+
+    // 12. Inventory / Stock Management
+    match /salons/{salonId}/inventory/{itemId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 13. Marketing Coupons
+    match /salons/{salonId}/marketingCoupons/{couponId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 14. Membership Plans
+    match /salons/{salonId}/membershipPlans/{planId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 15. Membership Subscribers
+    match /salons/{salonId}/membershipSubscribers/{subId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 16. Pricing Calculations
+    match /salons/{salonId}/pricing_calculations/{calculationId} {
+      allow read, write: if isAuthenticated() && isSalonMember(salonId);
+    }
+
+    // 17. Comandas / Active Bills
+    match /salons/{salonId}/comandas/{comandaId} {
+      allow read, write: if isAuthenticated() && isSalonMember(salonId);
+    }
+
+    // 18. Gamification Campaigns
+    match /salons/{salonId}/gamification_campaigns/{campaignId} {
+      allow read, write: if isAuthenticated() && isSalonMember(salonId);
+    }
+
+    // 20. Gamification Profiles and History
+    match /salons/{salonId}/gamification/{document=**} {
+      allow read, write: if isAuthenticated() && isSalonMember(salonId);
+    }
+
+    // 19. Production Error Logs
+    match /salons/{salonId}/productionLogs/{logId} {
+      allow create: if isAuthenticated() && isSalonMember(salonId);
+      allow read, update, delete: if isPlatformAdmin();
+    }
+
+    // Fallback Catch-All for any other subcollections under salons
+    match /salons/{salonId}/{collectionName}/{docId} {
+      allow read, write: if isPlatformAdmin();
+    }
+
+    // 21. Auth Audit Logs
+    match /authAuditLogs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow create: if isSignedIn() && 
+        request.resource.data.keys().hasOnly([
+          'id',
+          'userIdentifier',
+          'action',
+          'ip',
+          'userAgent',
+          'origin',
+          'details',
+          'createdAt'
+        ]) &&
+        request.resource.data.userIdentifier is string &&
+        request.resource.data.userIdentifier.size() <= 200 &&
+        request.resource.data.userIdentifier in [request.auth.uid, userEmail()] &&
+        request.resource.data.action is string &&
+        request.resource.data.action.size() <= 200 &&
+        request.resource.data.createdAt is int &&
+        (!('id' in request.resource.data.keys()) || (request.resource.data.id is string && request.resource.data.id.size() <= 100)) &&
+        (!('ip' in request.resource.data.keys()) || (request.resource.data.ip is string && request.resource.data.ip.size() <= 100)) &&
+        (!('userAgent' in request.resource.data.keys()) || (request.resource.data.userAgent is string && request.resource.data.userAgent.size() <= 500)) &&
+        (!('origin' in request.resource.data.keys()) || (request.resource.data.origin is string && request.resource.data.origin.size() <= 200)) &&
+        (!('details' in request.resource.data.keys()) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000));
+      allow update, delete: if false;
+    }
+  }
+}
