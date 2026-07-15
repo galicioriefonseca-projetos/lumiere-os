@@ -9,7 +9,6 @@ const founderCheckCode = `
         const isAuthorized = salonData?.plan === 'founder' || 
                              salonData?.founderAuthorized === true || 
                              salonData?.isFounder === true || 
-                             (user && user.email === 'galicioriefonseca@gmail.com') ||
                              authResult.role === 'platform_admin';
                              
         if (!isAuthorized) {

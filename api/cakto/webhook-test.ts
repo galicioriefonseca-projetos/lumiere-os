@@ -1,31 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb } from "../_shared/firebaseAdmin.js";
-import { verifyIdToken } from "../_shared/auth.js";
+import { verifyIdToken, resolvePlatformAdmin } from "../_shared/auth.js";
 import { processCaktoWebhookPayload } from "./webhook.js";
-
-async function isPlatformAdminUser(user: any): Promise<boolean> {
-  if (!user || !user.uid) return false;
-  const email = user.email;
-  const uid = user.uid;
-  const platformAdminEmail = process.env.VITE_PLATFORM_ADMIN_EMAIL || process.env.PLATFORM_ADMIN_EMAIL || "admin@lumiereos.com";
-  if (email && email === platformAdminEmail) {
-    return true;
-  }
-  const adminDb = getAdminDb();
-  try {
-    const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
-    if (platformAdminSnap.exists) {
-      return true;
-    }
-    const userSnap = await adminDb.collection("users").doc(uid).get();
-    if (userSnap.exists && userSnap.data()?.role === "platform_admin") {
-      return true;
-    }
-  } catch (err) {
-    console.warn(`[Cakto Admin Check Serverless] Erro ao consultar privilégios de plataforma para ${uid}:`, err);
-  }
-  return false;
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -44,10 +20,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2. Validar Platform Admin
-    const isPlatformAdmin = await isPlatformAdminUser(user);
-    if (!isPlatformAdmin) {
+    const adminDb = getAdminDb();
+    const platformAdmin = await resolvePlatformAdmin(user, adminDb);
+    if (!platformAdmin) {
       return res.status(403).json({
-        error: "Acesso negado. Apenas Platform Admins podem realizar homologação do webhook."
+        error: "Acesso restrito a administradores da plataforma."
       });
     }
 
@@ -73,7 +50,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: `O evento informado é inválido ou não suportado. Eventos válidos: ${allowedEvents.join(", ")}` });
     }
 
-    const adminDb = getAdminDb();
     const salonSnap = await adminDb.collection("salons").doc(String(salonId)).get();
 
     if (!salonSnap.exists) {

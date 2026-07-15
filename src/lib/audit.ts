@@ -1,5 +1,5 @@
 import { collection, doc, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { AuditLog } from '../types';
 
 export async function logAuditEvent(
@@ -77,22 +77,32 @@ export async function logAuthAuditEvent(
     return;
   }
 
+  const currentUser = auth?.currentUser;
+  if (!currentUser) {
+    console.warn('[AuthAuditLog] No authenticated user, skipping logAuthAuditEvent for action:', action);
+    return;
+  }
+
   try {
     const ip = await getPublicIp();
     const logRef = doc(collection(db, 'authAuditLogs'));
-    const logData = {
+    
+    const logData: Record<string, any> = {
       id: logRef.id,
-      userIdentifier,
+      userIdentifier: currentUser.email || currentUser.uid,
       action,
       ip,
-      userAgent: navigator.userAgent || 'Unknown',
-      origin: window.location.origin || 'Unknown',
-      details: details ? JSON.parse(JSON.stringify(details)) : null,
+      userAgent: typeof navigator !== 'undefined' ? (navigator.userAgent || 'Unknown') : 'Unknown',
+      origin: typeof window !== 'undefined' ? (window.location.origin || 'Unknown') : 'Unknown',
       createdAt: Date.now()
     };
 
+    if (details !== undefined && details !== null) {
+      logData.details = JSON.stringify(details).slice(0, 2000);
+    }
+
     await setDoc(logRef, logData);
-    console.log(`[AuthAuditLog] Saved log for ${action} (${userIdentifier})`);
+    console.log(`[AuthAuditLog] Saved log for ${action} (${logData.userIdentifier})`);
   } catch (error) {
     console.error('[AuthAuditLog] Failed to write auth audit log:', error);
   }

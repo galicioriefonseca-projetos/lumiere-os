@@ -2,9 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Safety Net - Deny Everything By Default
+    // Safety Net - Allow Platform Admin globally, deny others by default
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if isPlatformAdmin();
     }
 
     // --- Global Helper Functions ---
@@ -37,6 +37,8 @@ service cloud.firestore {
     // Super Admin global role helper
     function isPlatformAdmin() {
       return isSignedIn() && (
+        request.auth.token.get('role', 'none') == "platform_admin" ||
+        request.auth.token.get('platform_admin', false) == true ||
         exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
         (exists(userDoc()) && get(userDoc()).data.get('role', 'none') == "platform_admin")
       );
@@ -84,7 +86,7 @@ service cloud.firestore {
     }
 
     function isTutorialDemoUser() {
-      return isSignedIn() && userEmail() == "leandropfonseca20@gmail.com";
+      return isSignedIn() && request.auth.token.get('is_demo', false) == true;
     }
 
     function canUseTutorialDemo(salonId) {
@@ -505,6 +507,34 @@ service cloud.firestore {
     // Fallback Catch-All for any other subcollections under salons
     match /salons/{salonId}/{collectionName}/{docId} {
       allow read, write: if isPlatformAdmin();
+    }
+
+    // 21. Auth Audit Logs
+    match /authAuditLogs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow create: if isSignedIn() && 
+        request.resource.data.keys().hasOnly([
+          'id',
+          'userIdentifier',
+          'action',
+          'ip',
+          'userAgent',
+          'origin',
+          'details',
+          'createdAt'
+        ]) &&
+        request.resource.data.userIdentifier is string &&
+        request.resource.data.userIdentifier.size() <= 200 &&
+        request.resource.data.userIdentifier in [request.auth.uid, userEmail()] &&
+        request.resource.data.action is string &&
+        request.resource.data.action.size() <= 200 &&
+        request.resource.data.createdAt is int &&
+        (!('id' in request.resource.data.keys()) || (request.resource.data.id is string && request.resource.data.id.size() <= 100)) &&
+        (!('ip' in request.resource.data.keys()) || (request.resource.data.ip is string && request.resource.data.ip.size() <= 100)) &&
+        (!('userAgent' in request.resource.data.keys()) || (request.resource.data.userAgent is string && request.resource.data.userAgent.size() <= 500)) &&
+        (!('origin' in request.resource.data.keys()) || (request.resource.data.origin is string && request.resource.data.origin.size() <= 200)) &&
+        (!('details' in request.resource.data.keys()) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000));
+      allow update, delete: if false;
     }
   }
 }

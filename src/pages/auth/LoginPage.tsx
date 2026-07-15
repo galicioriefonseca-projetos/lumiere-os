@@ -29,7 +29,7 @@ export default function LoginPage() {
   const { signInWithGoogle, currentUser, userData, isPlatformAdmin, refreshUserData } = useAuth();
 
   const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
-  const isPlatform = isPlatformAdmin || userData?.role === 'platform_admin' || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+  const isPlatform = isPlatformAdmin || userData?.role === 'platform_admin';
   const showSimulator = isDevelopment || isPlatform;
 
   // Mode state
@@ -72,7 +72,7 @@ export default function LoginPage() {
   // Session persistence and intelligent redirection on load
   useEffect(() => {
     if (currentUser && userData) {
-      if (isPlatformAdmin || userData.role === 'platform_admin' || currentUser.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
+      if (isPlatformAdmin || userData.role === 'platform_admin') {
         navigate('/master', { replace: true });
       } else if (userData.role === 'professional') {
         navigate('/dashboard/meu-painel', { replace: true });
@@ -151,8 +151,7 @@ export default function LoginPage() {
 
       // Fallback for demo users
       if (!isPlatform && !isOwner) {
-        if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) isPlatform = true;
-        else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
+        if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
       }
 
       if (userSnap.exists()) {
@@ -247,8 +246,7 @@ export default function LoginPage() {
       let isOwner = userSnap.exists() && userSnap.data()?.role === 'owner';
 
       if (!isPlatform && !isOwner) {
-        if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) isPlatform = true;
-        else if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
+        if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
       }
 
       if (userSnap.exists()) {
@@ -336,11 +334,8 @@ export default function LoginPage() {
 
     try {
       await sendPasswordResetEmail(auth, email.trim());
-      try {
-        await logAuthAuditEvent(email.trim(), 'Reset solicitado');
-      } catch (logErr) {
-        console.warn('Failed to register audit log:', logErr);
-      }
+      // Auditoria pré-login (Reset solicitado) foi removida do client-side direto no Firestore.
+      // Futuramente, esta auditoria pré-login deve ser implementada por endpoint backend protegido com App Check e rate limiting.
       setLoading(false);
       setRecoverySuccess(true);
     } catch (err: any) {

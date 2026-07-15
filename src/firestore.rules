@@ -2,15 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Safety Net - Deny Everything By Default
+    // Safety Net - Allow Platform Admin globally, deny others by default
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // authAuditLogs collection
-    match /authAuditLogs/{logId} {
-      allow create: if true;
-      allow read, update, delete: if isPlatformAdmin();
+      allow read, write: if isPlatformAdmin();
     }
 
     // --- Global Helper Functions ---
@@ -43,6 +37,8 @@ service cloud.firestore {
     // Super Admin global role helper
     function isPlatformAdmin() {
       return isSignedIn() && (
+        request.auth.token.get('role', 'none') == "platform_admin" ||
+        request.auth.token.get('platform_admin', false) == true ||
         exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
         (exists(userDoc()) && get(userDoc()).data.get('role', 'none') == "platform_admin")
       );
@@ -57,7 +53,6 @@ service cloud.firestore {
       return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin");
     }
 
-    // Helper for managers, receptionists, etc.
     function isSalonManager(salonId) {
       return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "manager";
     }
@@ -66,6 +61,7 @@ service cloud.firestore {
       return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "receptionist";
     }
 
+    // Helper for managers, receptionists, etc.
     function isSalonAttendant(salonId) {
       return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "attendant";
     }
@@ -90,7 +86,7 @@ service cloud.firestore {
     }
 
     function isTutorialDemoUser() {
-      return isSignedIn() && userEmail() == "leandropfonseca20@gmail.com";
+      return isSignedIn() && request.auth.token.get('is_demo', false) == true;
     }
 
     function canUseTutorialDemo(salonId) {
@@ -106,7 +102,6 @@ service cloud.firestore {
       );
     }
 
-    // Front-desk, booking, checklist operation gates
     function canOperateFrontDesk(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
         exists(userDoc()) && 
@@ -137,6 +132,15 @@ service cloud.firestore {
         exists(userDoc()) && 
         get(userDoc()).data.get('salonId', 'none') == salonId && 
         (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist" || get(userDoc()).data.get('role', 'none') == "attendant")
+      );
+    }
+
+    function canManageBilling(salonId) {
+      return isSignedIn() && (
+        isPlatformAdmin() ||
+        canUseTutorialDemo(salonId) ||
+        (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")) ||
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && get(/databases/$(database)/documents/salons/$(salonId)).data.get('ownerId', '') == request.auth.uid)
       );
     }
 
@@ -311,43 +315,23 @@ service cloud.firestore {
 
     // Payments
     match /salons/{salonId}/payments/{paymentId} {
-      allow read: if isPlatformAdmin() || (
-        isSignedIn() && 
-        exists(userDoc()) && 
-        userSalonId() == salonId && 
-        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
-      );
-      allow create: if isPlatformAdmin() || (
-        isSignedIn() && 
-        exists(userDoc()) && 
-        userSalonId() == salonId && 
-        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") && 
+      allow read: if canManageBilling(salonId);
+      allow create: if canManageBilling(salonId) && 
         request.resource.data.status == "reported" &&
         request.resource.data.salonId == salonId &&
-        request.resource.data.method == "pix"
-      );
+        request.resource.data.method == "pix";
       allow update, delete: if isPlatformAdmin();
     }
 
     // Subscriptions (Mercado Pago)
     match /salons/{salonId}/subscriptions/{subscriptionId} {
-      allow read: if isPlatformAdmin() || (
-        isSignedIn() && 
-        exists(userDoc()) && 
-        userSalonId() == salonId && 
-        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
-      );
+      allow read: if canManageBilling(salonId);
       allow write: if isPlatformAdmin();
     }
 
     // Billing History
     match /salons/{salonId}/billingHistory/{historyId} {
-      allow read: if isPlatformAdmin() || (
-        isSignedIn() && 
-        exists(userDoc()) && 
-        userSalonId() == salonId && 
-        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
-      );
+      allow read: if canManageBilling(salonId);
       allow write: if isPlatformAdmin();
     }
 
@@ -428,7 +412,7 @@ service cloud.firestore {
     // 7. Clients
     match /salons/{salonId}/clients/{clientId} {
       allow get: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
-      allow list: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow list: if canOperateFrontDesk(salonId);
       allow create: if canOperateFrontDesk(salonId);
       allow update: if canOperateFrontDesk(salonId) && (
         request.resource.data.crmStage == resource.data.crmStage || 
@@ -472,7 +456,7 @@ service cloud.firestore {
 
     // 12. Inventory / Stock Management
     match /salons/{salonId}/inventory/{itemId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow read: if canOperateFrontDesk(salonId);
       allow write: if canManageSalon(salonId);
     }
 
@@ -523,6 +507,34 @@ service cloud.firestore {
     // Fallback Catch-All for any other subcollections under salons
     match /salons/{salonId}/{collectionName}/{docId} {
       allow read, write: if isPlatformAdmin();
+    }
+
+    // 21. Auth Audit Logs
+    match /authAuditLogs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow create: if isSignedIn() && 
+        request.resource.data.keys().hasOnly([
+          'id',
+          'userIdentifier',
+          'action',
+          'ip',
+          'userAgent',
+          'origin',
+          'details',
+          'createdAt'
+        ]) &&
+        request.resource.data.userIdentifier is string &&
+        request.resource.data.userIdentifier.size() <= 200 &&
+        request.resource.data.userIdentifier in [request.auth.uid, userEmail()] &&
+        request.resource.data.action is string &&
+        request.resource.data.action.size() <= 200 &&
+        request.resource.data.createdAt is int &&
+        (!('id' in request.resource.data.keys()) || (request.resource.data.id is string && request.resource.data.id.size() <= 100)) &&
+        (!('ip' in request.resource.data.keys()) || (request.resource.data.ip is string && request.resource.data.ip.size() <= 100)) &&
+        (!('userAgent' in request.resource.data.keys()) || (request.resource.data.userAgent is string && request.resource.data.userAgent.size() <= 500)) &&
+        (!('origin' in request.resource.data.keys()) || (request.resource.data.origin is string && request.resource.data.origin.size() <= 200)) &&
+        (!('details' in request.resource.data.keys()) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000));
+      allow update, delete: if false;
     }
   }
 }

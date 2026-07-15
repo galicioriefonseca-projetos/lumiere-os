@@ -108,35 +108,59 @@ async function startServer() {
     }
   };
 
+  async function resolvePlatformAdmin(user: any, adminDb: any): Promise<boolean> {
+    if (!user || !user.uid) return false;
+
+    // 1. Custom Claims
+    if (user.role === "platform_admin") return true;
+    if (user.platform_admin === true) return true;
+
+    // 2. platformAdmins/{uid}
+    try {
+      const platformAdminSnap = await adminDb.collection("platformAdmins").doc(user.uid).get();
+      if (platformAdminSnap.exists) return true;
+    } catch (err) {
+      console.warn(`[Platform Admin Check] Erro ao consultar platformAdmins/${user.uid}:`, err);
+    }
+
+    // 3. users/{uid}.role === "platform_admin"
+    try {
+      const userSnap = await adminDb.collection("users").doc(user.uid).get();
+      if (userSnap.exists && userSnap.data()?.role === "platform_admin") {
+        return true;
+      }
+    } catch (err) {
+      console.warn(`[Platform Admin Check] Erro ao consultar users/${user.uid}:`, err);
+    }
+
+    // 4. Fallback PLATFORM_ADMIN_EMAIL (sem VITE_*)
+    const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL;
+    if (user.email && platformAdminEmail && user.email === platformAdminEmail) {
+      return true;
+    }
+
+    return false;
+  }
+
   // Função auxiliar para verificar as permissões de gerenciamento de faturamento do salão
   async function canManageBilling(user: any, salonId: string, salonData: any): Promise<{ authorized: boolean; role?: string; reason?: string }> {
     const uid = user?.uid;
-    const email = user?.email;
 
     if (!uid) {
       return { authorized: false, reason: "ID de usuário ausente." };
     }
 
-    // 1. Proprietário direto do salão no Firestore (salonData.ownerId)
-    if (salonData?.ownerId === uid) {
-      return { authorized: true, role: "owner" };
-    }
+    const adminDb = getAdminDb();
 
-    // 2. Platform Admin via e-mail configurado na variável de ambiente (fallback temporário documentado) ou na coleção platformAdmins
-    const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL || process.env.VITE_PLATFORM_ADMIN_EMAIL;
-    if (email && platformAdminEmail && email === platformAdminEmail) {
+    // 1. Primeiro resolve platform admin globalmente
+    const platformAdmin = await resolvePlatformAdmin(user, adminDb);
+    if (platformAdmin) {
       return { authorized: true, role: "platform_admin" };
     }
 
-    const adminDb = getAdminDb();
-    
-    try {
-      const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
-      if (platformAdminSnap.exists) {
-        return { authorized: true, role: "platform_admin" };
-      }
-    } catch (err) {
-      console.warn(`[Billing Auth] Erro ao consultar platformAdmins/${uid}:`, err);
+    // 2. Proprietário direto do salão no Firestore (salonData.ownerId)
+    if (salonData?.ownerId === uid) {
+      return { authorized: true, role: "owner" };
     }
 
     // 3. Usuário registrado com role autorizada ("owner", "admin", "manager") associada ao salão correspondente
@@ -450,27 +474,8 @@ async function startServer() {
   }
 
   async function isPlatformAdminUser(user: any): Promise<boolean> {
-    if (!user || !user.uid) return false;
-    const email = user.email;
-    const uid = user.uid;
-    const platformAdminEmail = process.env.VITE_PLATFORM_ADMIN_EMAIL || process.env.PLATFORM_ADMIN_EMAIL || "admin@lumiereos.com";
-    if (email && email === platformAdminEmail) {
-      return true;
-    }
     const adminDb = getAdminDb();
-    try {
-      const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
-      if (platformAdminSnap.exists) {
-        return true;
-      }
-      const userSnap = await adminDb.collection("users").doc(uid).get();
-      if (userSnap.exists && userSnap.data()?.role === "platform_admin") {
-        return true;
-      }
-    } catch (err) {
-      console.warn(`[Cakto Admin Check] Erro ao consultar privilégios de plataforma para ${uid}:`, err);
-    }
-    return false;
+    return resolvePlatformAdmin(user, adminDb);
   }
 
   // Endpoints para gerenciar configurações dinâmicas da Cakto no Firestore (Master Panel)

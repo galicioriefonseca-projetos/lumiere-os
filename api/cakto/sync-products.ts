@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb } from "../_shared/firebaseAdmin.js";
-import { verifyIdToken } from "../_shared/auth.js";
+import { verifyIdToken, resolvePlatformAdmin } from "../_shared/auth.js";
 
 interface CaktoSettings {
   productId: string;
@@ -56,30 +56,6 @@ async function getCaktoAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-async function isPlatformAdminUser(user: any): Promise<boolean> {
-  if (!user || !user.uid) return false;
-  const email = user.email;
-  const uid = user.uid;
-  const platformAdminEmail = process.env.VITE_PLATFORM_ADMIN_EMAIL || process.env.PLATFORM_ADMIN_EMAIL || "admin@lumiereos.com";
-  if (email && email === platformAdminEmail) {
-    return true;
-  }
-  const adminDb = getAdminDb();
-  try {
-    const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
-    if (platformAdminSnap.exists) {
-      return true;
-    }
-    const userSnap = await adminDb.collection("users").doc(uid).get();
-    if (userSnap.exists && userSnap.data()?.role === "platform_admin") {
-      return true;
-    }
-  } catch (err) {
-    console.warn(`[Cakto Admin Check Sync] Erro ao consultar privilégios para ${uid}:`, err);
-  }
-  return false;
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -95,8 +71,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
     }
 
-    const isPlatformAdmin = await isPlatformAdminUser(user);
-    if (!isPlatformAdmin) {
+    const adminDb = getAdminDb();
+    const platformAdmin = await resolvePlatformAdmin(user, adminDb);
+    if (!platformAdmin) {
       return res.status(403).json({ error: "Acesso restrito a administradores da plataforma." });
     }
 
@@ -104,7 +81,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const accessToken = await getCaktoAccessToken();
     const apiUrl = getCaktoApiBaseUrl();
 
-    const adminDb = getAdminDb();
     const docRef = adminDb.collection("settings").doc("cakto");
     const docSnap = await docRef.get();
 

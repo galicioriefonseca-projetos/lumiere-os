@@ -288,7 +288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const adminRef = doc(db, 'platformAdmins', uid);
       const adminSnap = await getDoc(adminRef);
-      const isPlatformAdminFromColl = adminSnap.exists() || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+      const isPlatformAdminFromColl = adminSnap.exists();
       setIsPlatformAdmin(isPlatformAdminFromColl);
 
       if (currentUser?.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
@@ -352,16 +352,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        if (isPlatformAdminFromColl || uData.role === 'platform_admin' || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
+        if (isPlatformAdminFromColl || uData.role === 'platform_admin') {
           uData.role = 'platform_admin';
           uData.salonId = '';
           userSalonId = '';
         }
-      } else if (isPlatformAdminFromColl || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
+      } else if (isPlatformAdminFromColl) {
         uData = {
           id: uid,
           fullName: currentUser?.displayName || 'Gali Ciório Fonseca',
-          email: currentUser?.email || import.meta.env.VITE_PLATFORM_ADMIN_EMAIL || '',
+          email: currentUser?.email || '',
           phone: '',
           role: 'platform_admin',
           isActive: true,
@@ -680,15 +680,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const adminRef = doc(db, 'platformAdmins', user.uid);
           const adminSnap = await getDoc(adminRef);
-          isPlatformAdminFromColl = adminSnap.exists() || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+          isPlatformAdminFromColl = adminSnap.exists();
           setIsPlatformAdmin(isPlatformAdminFromColl);
           console.log("[AuthInit] PlatformAdmin doc existe em platformAdmins/", user.uid, "?", isPlatformAdminFromColl);
         } catch (err) {
           console.error("[AuthInit] Erro ao buscar platformAdmins document:", err);
-          if (user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
-            isPlatformAdminFromColl = true;
-            setIsPlatformAdmin(true);
-          }
         }
 
         // TEMPORARY BOOTSTRAP FALLBACK para leandropfonseca20@gmail.com
@@ -756,17 +752,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 return;
               }
 
-              if (isPlatformAdminFromColl || uData.role === 'platform_admin' || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
+              if (isPlatformAdminFromColl || uData.role === 'platform_admin') {
                 uData.role = 'platform_admin';
                 uData.salonId = '';
                 userSalonId = '';
               }
-            } else if (isPlatformAdminFromColl || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL) {
+            } else if (isPlatformAdminFromColl) {
               console.log("[AuthInit] users doc não existe, mas platform admin. Gerando perfil virtual...");
               uData = {
                 id: user.uid,
                 fullName: user.displayName || 'Gali Ciório Fonseca',
-                email: user.email || import.meta.env.VITE_PLATFORM_ADMIN_EMAIL || '',
+                email: user.email || '',
                 phone: '',
                 role: 'platform_admin',
                 isActive: true,
@@ -1241,7 +1237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Check if user is platform admin in platformAdmins/{uid} OR if users/{uid}.role === 'platform_admin'
-    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin') || user.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+    const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin');
     console.log("[PlatformAuth] Usuário é platform_admin detectado?", isPlatformAdminExplicit);
 
     const isDemoOwner = user.email === import.meta.env.VITE_DEMO_USER_EMAIL;

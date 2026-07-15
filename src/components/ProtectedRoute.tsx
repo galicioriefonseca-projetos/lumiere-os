@@ -22,7 +22,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
   }
 
   if (syncError) {
-    const showDiagnostics = isPlatformAdmin || currentUser?.email === import.meta.env.VITE_PLATFORM_ADMIN_EMAIL;
+    const showDiagnostics = isPlatformAdmin;
 
     return (
       <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">

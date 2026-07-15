@@ -477,4 +477,89 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       });
     });
   });
+
+  describe("canManageBilling real implementation and resolvePlatformAdmin", () => {
+    it("deve reconhecer Platform Admin por custom claim role ou platform_admin, mas NÃO por admin", async () => {
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      const adminDb = {
+        collection: vi.fn().mockReturnValue({
+          doc: vi.fn().mockReturnValue({
+            get: vi.fn().mockResolvedValue({ exists: false })
+          })
+        })
+      };
+
+      // Custom Claim: role === "platform_admin"
+      expect(await rpa({ uid: "123", role: "platform_admin" }, adminDb)).toBe(true);
+
+      // Custom Claim: platform_admin === true
+      expect(await rpa({ uid: "123", platform_admin: true }, adminDb)).toBe(true);
+
+      // Custom Claim: admin === true -> deve ser falso
+      expect(await rpa({ uid: "123", admin: true }, adminDb)).toBe(false);
+    });
+
+    it("deve reconhecer Platform Admin se UID existir na coleção platformAdmins", async () => {
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      
+      const adminDb = {
+        collection: vi.fn().mockImplementation((col) => {
+          if (col === "platformAdmins") {
+            return {
+              doc: (id: string) => ({
+                get: vi.fn().mockResolvedValue({ exists: id === "admin_uid" })
+              })
+            };
+          }
+          return {
+            doc: () => ({
+              get: vi.fn().mockResolvedValue({ exists: false })
+            })
+          };
+        })
+      };
+
+      expect(await rpa({ uid: "admin_uid" }, adminDb)).toBe(true);
+      expect(await rpa({ uid: "normal_uid" }, adminDb)).toBe(false);
+    });
+
+    it("deve reconhecer Platform Admin se role for platform_admin no documento users/{uid}", async () => {
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+
+      const adminDb = {
+        collection: vi.fn().mockImplementation((col) => {
+          if (col === "users") {
+            return {
+              doc: (id: string) => ({
+                get: vi.fn().mockResolvedValue({
+                  exists: id === "admin_uid",
+                  data: () => ({ role: "platform_admin" })
+                })
+              })
+            };
+          }
+          return {
+            doc: () => ({
+              get: vi.fn().mockResolvedValue({ exists: false })
+            })
+          };
+        })
+      };
+
+      expect(await rpa({ uid: "admin_uid" }, adminDb)).toBe(true);
+    });
+
+    it("deve autorizar Platform Admin globalmente mesmo sem salonId ou com salonId divergente", async () => {
+      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../_shared/auth.js");
+
+      // Mock do Firestore para simular Platform Admin via Custom Claim
+      const user = { uid: "admin_uid", role: "platform_admin" };
+      const salonData = { ownerId: "owner_uid" };
+
+      // Caso com salonId ausente ou divergente
+      const result = await realCanManageBilling(user, "salon_123", salonData);
+      expect(result.authorized).toBe(true);
+      expect(result.role).toBe("platform_admin");
+    });
+  });
 });
