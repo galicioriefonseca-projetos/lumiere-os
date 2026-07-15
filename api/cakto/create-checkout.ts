@@ -188,35 +188,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    let legacyBusinessType = salonData?.businessType || 'salon';
-    if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
-    else if (businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
+    // Verificar se já existe onboarding/{salonId} e se pertence a outro usuário
+    const onboardingRef = adminDb.collection("onboarding").doc(salonId);
+    const onboardingSnap = await onboardingRef.get();
+    if (!salonDoc.exists && onboardingSnap.exists) {
+      const obData = onboardingSnap.data();
+      const authResult = await canManageBilling(user, salonId, salonData);
+      const isPlatformAdmin = authResult.role === "platform_admin";
+      if (obData?.ownerId !== user.uid && !isPlatformAdmin) {
+        return res.status(403).json({ error: "Este onboarding pertence a outro usuário." });
+      }
+    }
 
     const now = Date.now();
-    const finalEmail = (email || salonData?.ownerEmail || "").trim().toLowerCase();
-
-    // Fields to save initially
-    const mergedSalonData: any = {
-      id: salonId,
-      name: salonName || salonData?.name || "LumièreOS Salon",
-      ownerEmail: finalEmail,
-      ownerName: ownerName || salonData?.ownerName || "",
-      phone: phone || salonData?.phone || "",
-      city: city || salonData?.city || "",
-      state: state || salonData?.state || "",
-      businessType: legacyBusinessType,
-      businessSegment: businessSegment || salonData?.businessSegment || "",
-      estimatedProfessionals: estimatedProfessionals || salonData?.estimatedProfessionals || "",
-      updatedAt: now,
-    };
-    
-    // We do NOT modify definitive plan/billingProvider/status fields here unless they are not set.
+    let checkoutEmail = "";
     if (salonDoc.exists) {
-      if (!salonData?.plan) mergedSalonData.plan = "start";
-      if (!salonData?.subscriptionStatus) mergedSalonData.subscriptionStatus = "pending";
-      if (!salonData?.activationStatus) mergedSalonData.activationStatus = "pending";
-      if (typeof salonData?.isActive !== "boolean") mergedSalonData.isActive = false;
-      if (!salonData?.createdAt) mergedSalonData.createdAt = now;
+      if (salonData?.billingEmail) {
+        checkoutEmail = salonData.billingEmail;
+      } else if (email && typeof email === "string" && email.includes("@")) {
+        checkoutEmail = email;
+      } else if (salonData?.ownerEmail) {
+        checkoutEmail = salonData.ownerEmail;
+      } else {
+        checkoutEmail = user.email || "";
+      }
+    } else {
+      checkoutEmail = (email && typeof email === "string" && email.includes("@")) ? email : (user.email || "");
+    }
+    checkoutEmail = checkoutEmail.trim().toLowerCase();
+
+    // Dados de Onboarding (salão inexistente)
+    let onboardingData: any = null;
+    if (!salonDoc.exists) {
+      const createdNow = onboardingSnap.exists ? (onboardingSnap.data()?.createdAt || now) : now;
+      let legacyBusinessType = 'salon';
+      if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
+      else if (businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
+
+      const onboardingEmail = user.email || "";
+      const bodyEmail = (email && typeof email === "string" && email.includes("@")) ? email.trim().toLowerCase() : "";
+
+      onboardingData = {
+        id: salonId,
+        name: salonName || "LumièreOS Salon",
+        ownerEmail: onboardingEmail,
+        ownerName: ownerName || "",
+        phone: phone || "",
+        city: city || "",
+        state: state || "",
+        businessType: legacyBusinessType,
+        businessSegment: businessSegment || "",
+        estimatedProfessionals: estimatedProfessionals || "",
+        ownerId: user.uid,
+        createdBy: user.uid,
+        createdAt: createdNow,
+        updatedAt: now,
+        // Campos pending*
+        pendingPlan: planId,
+        pendingOfferId: "", // será preenchido após carregar as ofertas
+        pendingCheckoutUrl: "", // será preenchido após gerar
+        pendingCheckoutEmail: bodyEmail || onboardingEmail,
+        pendingRequestedAt: now,
+        pendingCheckoutPurpose: checkoutPurpose,
+        pendingBillingActivation: true,
+      };
     }
 
     // 3. Buscar configurações dinâmicas
@@ -241,36 +276,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Oferta não configurada para o plano informado." });
     }
 
-    const isProduction = process.env.NODE_ENV === "production";
-    const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
+    if (onboardingData) {
+      onboardingData.pendingOfferId = offerId;
+    }
 
-    // 1. Em desenvolvimento sem credenciais, permitir simulação
-    if (!isProduction && !hasCaktoCredentials) {
-      console.warn("[Cakto Checkout Serverless] Aviso: Credenciais do Cakto ausentes. Usando simulação.");
+    const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
+    const isSimulationAllowed = 
+      process.env.VITE_CAKTO_SANDBOX_MODE === "true" ||
+      process.env.CAKTO_SANDBOX_MODE === "true" ||
+      !!process.env.FIRESTORE_EMULATOR_HOST;
+
+    if (!hasCaktoCredentials && !isSimulationAllowed) {
+      return res.status(503).json({
+        error: "Credenciais de faturamento não configuradas."
+      });
+    }
+
+    const useSimulation = !hasCaktoCredentials || isSimulationAllowed;
+
+    // 1. Em desenvolvimento sem credenciais ou em sandbox mode explícito, permitir simulação
+    if (useSimulation) {
+      console.warn("[Cakto Checkout Serverless] Aviso: Usando simulação.");
       const simulatedOrderId = "ord_" + Math.random().toString(36).substring(2, 11).toUpperCase();
       const simulatedCheckoutUrl = `${process.env.APP_URL || 'http://localhost:3000'}/dashboard/assinatura?simulated_checkout=true&order_id=${simulatedOrderId}`;
 
-      const simulatedData = {
-        ...mergedSalonData,
-        homologationCustomerId: "cus_simulated_dev",
-        homologationOrderId: simulatedOrderId,
-        homologationSubscriptionId: "sub_simulated_dev",
-        homologationCheckoutUrl: simulatedCheckoutUrl,
-        homologationOfferId: offerId || "off_simulated",
-        pendingPlan: planId,
-        pendingOfferId: offerId,
-        pendingCheckoutUrl: simulatedCheckoutUrl,
-        pendingCheckoutEmail: finalEmail,
-        pendingRequestedAt: Date.now(),
-        pendingCheckoutPurpose: checkoutPurpose,
-        pendingBillingActivation: true,
-        updatedAt: Date.now(),
-      };
-      
       if (salonDoc.exists) {
+        const simulatedData = {
+          pendingPlan: planId,
+          pendingOfferId: offerId,
+          pendingCheckoutUrl: simulatedCheckoutUrl,
+          pendingCheckoutEmail: checkoutEmail,
+          pendingRequestedAt: now,
+          pendingCheckoutPurpose: checkoutPurpose,
+          pendingBillingActivation: true,
+          updatedAt: now,
+          homologationCustomerId: "cus_simulated_dev",
+          homologationOrderId: simulatedOrderId,
+          homologationSubscriptionId: "sub_simulated_dev",
+          homologationCheckoutUrl: simulatedCheckoutUrl,
+          homologationOfferId: offerId || "off_simulated"
+        };
         await salonRef.set(simulatedData, { merge: true });
       } else {
-        await adminDb.collection("onboarding").doc(salonId).set(simulatedData);
+        onboardingData.pendingCheckoutUrl = simulatedCheckoutUrl;
+        onboardingData.homologationCustomerId = "cus_simulated_dev";
+        onboardingData.homologationOrderId = simulatedOrderId;
+        onboardingData.homologationSubscriptionId = "sub_simulated_dev";
+        onboardingData.homologationCheckoutUrl = simulatedCheckoutUrl;
+        onboardingData.homologationOfferId = offerId || "off_simulated";
+        await onboardingRef.set(onboardingData);
       }
 
       return res.status(200).json({
@@ -282,18 +336,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Se estiver em produção e faltar credenciais, reportar erro
-    if (isProduction && !hasCaktoCredentials) {
-      console.error("[Cakto Checkout Serverless] Erro Crítico: Credenciais da Cakto ausentes no ambiente de produção.");
-      return res.status(503).json({
-        error: "Erro crítico: A integração com a Cakto não está configurada corretamente no ambiente de produção. Faltam as credenciais CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET."
-      });
-    }
-
     // URL de checkout estática
-    const checkoutEmail = finalEmail;
     const params = new URLSearchParams({
-      name: ownerName || salonData?.ownerName || mergedSalonData.name || "Cliente",
+      name: ownerName || salonData?.ownerName || (salonDoc.exists ? salonData?.name : (salonName || "Cliente")),
       email: checkoutEmail,
       external_id: salonId,
     });
@@ -326,23 +371,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const checkoutUrl = buildCheckoutUrl(offerId, params);
 
-    // Mapear campos de checkout Cakto
-    const finalData = {
-      ...mergedSalonData,
-      pendingPlan: planId,
-      pendingOfferId: offerId,
-      pendingCheckoutUrl: checkoutUrl,
-      pendingCheckoutEmail: checkoutEmail,
-      pendingRequestedAt: Date.now(),
-      pendingCheckoutPurpose: checkoutPurpose,
-      pendingBillingActivation: true,
-      updatedAt: Date.now(),
-    };
-
     if (salonDoc.exists) {
+      const finalData = {
+        pendingPlan: planId,
+        pendingOfferId: offerId,
+        pendingCheckoutUrl: checkoutUrl,
+        pendingCheckoutEmail: checkoutEmail,
+        pendingRequestedAt: now,
+        pendingCheckoutPurpose: checkoutPurpose,
+        pendingBillingActivation: true,
+        updatedAt: now,
+      };
       await salonRef.set(finalData, { merge: true });
     } else {
-      await adminDb.collection("onboarding").doc(salonId).set(finalData);
+      onboardingData.pendingCheckoutUrl = checkoutUrl;
+      await onboardingRef.set(onboardingData);
     }
 
     console.log(`[Cakto Checkout Serverless] URL de checkout montada e salão registrado para ID: ${salonId}`);

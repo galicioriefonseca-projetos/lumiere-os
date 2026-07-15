@@ -28,12 +28,11 @@ export async function canManageBilling(
     return { authorized: true, role: "owner" };
   }
 
-  // 2. Platform Admin via e-mail configurado ou na coleção platformAdmins
+  // 2. Platform Admin via e-mail configurado na variável de ambiente (fallback temporário documentado) ou na coleção platformAdmins
   const platformAdminEmail =
-    process.env.VITE_PLATFORM_ADMIN_EMAIL ||
     process.env.PLATFORM_ADMIN_EMAIL ||
-    "admin@lumiereos.com";
-  if (email && (email === platformAdminEmail || email === "galicioriefonseca@gmail.com")) {
+    process.env.VITE_PLATFORM_ADMIN_EMAIL;
+  if (email && platformAdminEmail && email === platformAdminEmail) {
     return { authorized: true, role: "platform_admin" };
   }
 

@@ -74,14 +74,33 @@ Isso impede modificações diretas no Firestore e descarta o uso de datas ou val
 Para ativações de recorrência (`checkoutPurpose === "activate_recurring"`), agora validamos que:
 - O salão exista e possua uma conta com plano manual ativo (`billingProvider === "manual"` ou `billingMode === "manual_pix"`);
 - O plano requisitado seja idêntico ao plano manual atualmente ativo no salão;
-- O salão não possua nenhuma assinatura real ativa junto à Cakto.
+- O salão não possua nenhuma assinatura real activa junto à Cakto.
+
+### 7. Imutabilidade e Segurança de Dados no Checkout (Patch P0.3)
+Implementamos uma barreira intransponível contra a modificação acidental ou fraudulenta de dados cadastrais definitivos do salão durante o fluxo de checkout:
+- **Gravação Estrita (Salão Existente)**: A criação de um link de checkout para um salão existente grava **única e exclusivamente** os campos `pendingPlan`, `pendingOfferId`, `pendingCheckoutUrl`, `pendingCheckoutEmail`, `pendingRequestedAt`, `pendingCheckoutPurpose`, `pendingBillingActivation` e `updatedAt`. Campos definitivos como `plan`, `subscriptionStatus`, `billingProvider` ou `ownerEmail` nunca são modificados ou inicializados neste estágio.
+- **Hierarquia de E-mail de Cobrança**: Para manter a soberania e evitar o sequestro de faturamento, o e-mail enviado ao checkout da Cakto segue esta ordem prioritária:
+  1. `salonData.billingEmail` (se existente)
+  2. E-mail explicitamente fornecido na requisição de checkout
+  3. `salonData.ownerEmail`
+  4. `user.email` (fallback final)
+
+### 8. Isolamento de Onboarding e Propriedade de Contas (Patch P0.3)
+Estabelecemos um modelo isolado e à prova de colisão para a criação de novos salões:
+- **Coleção Onboarding Exclusiva**: Nenhum documento é criado na coleção principal `salons/` antes da aprovação do webhook. Novos fluxos criam registros exclusivamente na coleção `onboarding/{salonId}`.
+- **Atribuição Rígida de Propriedade**: O documento de onboarding é carimbado com `ownerId: user.uid`, `createdBy: user.uid`, `createdAt` e `updatedAt`.
+- **E-mail do Proprietário**: O e-mail do proprietário definitivo é estritamente o `user.email` (do token de autenticação verificado). Se o corpo da requisição fornecer outro e-mail, este é gravado apenas como `pendingCheckoutEmail` (para a cobrança) e nunca é considerado como o proprietário da conta.
+- **Proteção contra Sobrescrita**: Um onboarding já iniciado por um usuário só pode ser alterado ou continuado pelo mesmo `ownerId` ou por um `platform_admin`, bloqueando qualquer tentativa de apropriação ou colisão por outros usuários.
+
+### 9. Desativação Estrita de Simulações em Produção (Patch P0.3)
+As simulações de faturamento foram blindadas no backend: só são permitidas sob condições de Sandbox explícitas (`VITE_CAKTO_SANDBOX_MODE === "true"`, `CAKTO_SANDBOX_MODE === "true"`) ou quando conectados ao Firestore Emulator local (`FIRESTORE_EMULATOR_HOST`). Em qualquer outra situação, a ausência de credenciais reais da Cakto resulta em rejeição com **HTTP 503 ("Credenciais de faturamento não configuradas.")**.
 
 ---
 
 ## 📈 Resultados e Evidências Reais da Validação Técnica
 
 ### 1. Validação de Sintaxe e Tipagem (Lint)
-Executamos o linter da aplicação com o comando `npm run lint`. O resultado foi validado com sucesso e sem erros:
+Executamos o linter da aplicação com o comando `npm run lint`. O resultado foi totalmente limpo e livre de qualquer erro:
 ```bash
 > react-example@0.0.0 lint
 > tsc --noEmit
@@ -100,19 +119,19 @@ Todos os testes de segurança do webhook de homologação passaram com sucesso a
 ```
 
 ### 3. Execução da Suíte de Testes do Billing (Vitest)
-Criamos e executamos a suíte de testes dedicados a faturamento em `api/cakto/billing-security.test.ts`. Todos os 10 casos de teste que cobrem as novas proteções globais de faturamento passaram com sucesso:
+A suíte de testes dedicados a faturamento foi ampliada para **18 casos de teste exaustivos e abrangentes**, cobrindo todas as novas regras de imutabilidade de dados, hierarquias de e-mail, proteções de onboarding e segurança de simulação. Todos os testes passaram com sucesso:
 ```bash
 > vitest run api/cakto/billing-security.test.ts
 
   RUN  v4.1.10 /app/applet
-  ✓ api/cakto/billing-security.test.ts (10 tests) 42ms
+  ✓ api/cakto/billing-security.test.ts (18 tests) 86ms
 
   Test Files  1 passed (1)
-       Tests  10 passed (10)
+       Tests  18 passed (18)
 ```
 
 ### 4. Validação do Build de Produção
-Executamos a compilação completa do applet e do servidor Express compilado. O build completou sem quaisquer erros ou conflitos de dependências:
+Executamos a compilação completa do applet e do servidor Express compilado. O build completou com sucesso sem quaisquer erros ou conflitos de dependências:
 ```bash
 Build succeeded - the applet is compiled
 ```

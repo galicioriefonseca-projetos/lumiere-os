@@ -561,7 +561,7 @@ export default function SubscriptionPage() {
   const isFounderEligible = salonData?.founderAuthorized === true || 
                             salonData?.isFounderAuthorized === true || 
                             currentPlan === 'founder' ||
-                            auth.currentUser?.email === 'galicioriefonseca@gmail.com';
+                            isPlatformAdmin;
 
   return (
     <div className="relative min-h-screen bg-background space-y-6 pb-12 select-none text-white">

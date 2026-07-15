@@ -91,9 +91,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       subscriptionId.toLowerCase().includes("simulated") || 
                       subscriptionId === "sub_simulated_dev";
     if (isHomolog) {
-      // Se for Platform Admin (por exemplo, galicioriefonseca@gmail.com ou role de admin), retornamos dados simulados com sucesso para permitir testes e desenvolvimento.
+      // Se for Platform Admin (verificado via authResult.role), retornamos dados simulados com sucesso para permitir testes e desenvolvimento.
       // Clientes reais nunca visualizam dados simulados.
-      const isUserPlatformAdmin = user.email === "galicioriefonseca@gmail.com" || authResult.role === "platform_admin";
+      const isUserPlatformAdmin = authResult.role === "platform_admin";
       if (isUserPlatformAdmin) {
         return res.status(200).json({
           status: "active",

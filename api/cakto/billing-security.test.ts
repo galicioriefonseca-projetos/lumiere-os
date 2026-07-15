@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mocks do Firestore estruturados para diferenciar "settings" de "salons"
+// Mocks do Firestore estruturados para diferenciar "settings", "salons" e "onboarding"
 const mockSettingsGet = vi.fn().mockResolvedValue({
   exists: true,
   data: () => ({
@@ -15,6 +15,8 @@ const mockSettingsGet = vi.fn().mockResolvedValue({
 
 const mockSalonGet = vi.fn();
 const mockSalonSet = vi.fn();
+const mockOnboardingGet = vi.fn().mockResolvedValue({ exists: false });
+const mockOnboardingSet = vi.fn();
 
 vi.mock("../_shared/firebaseAdmin.js", () => {
   return {
@@ -24,6 +26,14 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
           return {
             doc: () => ({
               get: mockSettingsGet
+            })
+          };
+        }
+        if (colName === "onboarding") {
+          return {
+            doc: () => ({
+              get: mockOnboardingGet,
+              set: mockOnboardingSet
             })
           };
         }
@@ -57,8 +67,15 @@ function createMockRes() {
 }
 
 describe("Testes de Segurança de Faturamento (Billing Security)", () => {
+  const originalEnv = process.env;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(verifyIdToken).mockReset();
+    vi.mocked(canManageBilling).mockReset();
+    process.env = { ...originalEnv };
+    process.env.CAKTO_SANDBOX_MODE = "true"; // Ativar simulação por padrão nos testes
+    mockOnboardingGet.mockResolvedValue({ exists: false });
   });
 
   describe("create-checkout.ts", () => {
@@ -224,6 +241,214 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
         error: "Apenas contas com plano manual ativo podem ativar a recorrência."
+      });
+    });
+
+    // 9. Ordem de busca de e-mail: Preferir billingEmail
+    it("deve preferir billingEmail quando determinado o e-mail de cobrança para salão existente", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "start", email: "extra@test.com" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "user@test.com" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "start", ownerEmail: "owner@test.com", billingEmail: "billing@test.com" }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockSalonSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pendingCheckoutEmail: "billing@test.com"
+        }),
+        { merge: true }
+      );
+    });
+
+    // 10. Ordem de busca de e-mail: Usar e-mail informado se billingEmail não existir
+    it("deve usar o e-mail informado quando billingEmail não existir para salão existente", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "start", email: "extra@test.com" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "user@test.com" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "start", ownerEmail: "owner@test.com" }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockSalonSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pendingCheckoutEmail: "extra@test.com"
+        }),
+        { merge: true }
+      );
+    });
+
+    // 11. Ordem de busca de e-mail: Usar ownerEmail se billingEmail e e-mail informado não existirem
+    it("deve usar o ownerEmail quando billingEmail e email informado não existirem para salão existente", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "start" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "user@test.com" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "start", ownerEmail: "owner@test.com" }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockSalonSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pendingCheckoutEmail: "owner@test.com"
+        }),
+        { merge: true }
+      );
+    });
+
+    // 12. Ordem de busca de e-mail: Usar user.email como fallback
+    it("deve usar user.email como fallback final quando nenhuma outra opção existir para salão existente", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "start" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "user@test.com" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "start" }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockSalonSet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pendingCheckoutEmail: "user@test.com"
+        }),
+        { merge: true }
+      );
+    });
+
+    // 13. Rejeitar simulação se Sandbox/Emulator não estiverem ativos e credenciais Cakto ausentes
+    it("deve retornar 503 se simulação for desativada e credenciais da Cakto estiverem ausentes", async () => {
+      process.env.CAKTO_SANDBOX_MODE = "false";
+      process.env.VITE_CAKTO_SANDBOX_MODE = "false";
+      delete process.env.FIRESTORE_EMULATOR_HOST;
+      delete process.env.CAKTO_CLIENT_ID;
+      delete process.env.CAKTO_CLIENT_SECRET;
+
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "start" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "start" }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Credenciais de faturamento não configuradas."
+      });
+    });
+
+    // 14. Gravação estrita para salão existente: salvar somente campos pending* e updatedAt
+    it("deve salvar apenas campos pending* e updatedAt para salão existente, preservando ownerEmail e plano atual", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "start" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "user@test.com" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "performance", ownerEmail: "owner@test.com" }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockSalonSet).toHaveBeenCalledOnce();
+      
+      const savedKeys = Object.keys(mockSalonSet.mock.calls[0][0]);
+      const unexpectedKeys = savedKeys.filter(
+        key => !key.startsWith("pending") && key !== "updatedAt" && !key.startsWith("homologation")
+      );
+      
+      // Deve salvar apenas pending*, updatedAt ou homologation*
+      expect(unexpectedKeys.length).toBe(0);
+    });
+
+    // 15. Salvar onboarding com regras estritas: preferir user.email, salvar em onboarding/ e ter ownerId
+    it("deve salvar somente em onboarding/{salonId} com ownerId, createdBy, createdAt, updatedAt se salão não existir, preferindo user.email como proprietário", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { 
+          salonId: "salon_new", 
+          planId: "start", 
+          email: "extra@test.com",
+          salonName: "Novo Salão"
+        } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValue({ uid: "user_123", email: "owner@test.com" } as any);
+      mockSalonGet.mockResolvedValueOnce({ exists: false });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockOnboardingSet).toHaveBeenCalledOnce();
+      
+      const savedData = mockOnboardingSet.mock.calls[0][0];
+      expect(savedData.ownerEmail).toBe("owner@test.com"); // Prefere user.email como proprietário definitivo
+      expect(savedData.pendingCheckoutEmail).toBe("extra@test.com"); // Corpo salvou como pending
+      expect(savedData.ownerId).toBe("user_123");
+      expect(savedData.createdBy).toBe("user_123");
+      expect(savedData.createdAt).toBeDefined();
+      expect(savedData.updatedAt).toBeDefined();
+    });
+
+    // 16. Impedir sobrescrever onboarding pertencente a outro usuário
+    it("deve impedir sobrescrever onboarding se o documento já existir e pertencer a outro usuário", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_new", planId: "start" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      mockSalonGet.mockResolvedValueOnce({ exists: false });
+      mockOnboardingGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ ownerId: "user_different" })
+      });
+      vi.mocked(canManageBilling).mockResolvedValue({ authorized: false });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Este onboarding pertence a outro usuário."
       });
     });
   });

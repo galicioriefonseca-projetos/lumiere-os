@@ -37,7 +37,6 @@ service cloud.firestore {
     // Super Admin global role helper
     function isPlatformAdmin() {
       return isSignedIn() && (
-        userEmail() == "galicioriefonseca@gmail.com" ||
         exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
         (exists(userDoc()) && get(userDoc()).data.get('role', 'none') == "platform_admin")
       );
@@ -71,7 +70,6 @@ service cloud.firestore {
 
     function isSalonMember(salonId) {
       return isSignedIn() && (
-        userEmail() == "galicioriefonseca@gmail.com" ||
         isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
         (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId) ||
@@ -137,7 +135,6 @@ service cloud.firestore {
 
     function canManageBilling(salonId) {
       return isSignedIn() && (
-        userEmail() == "galicioriefonseca@gmail.com" ||
         isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
         (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")) ||
