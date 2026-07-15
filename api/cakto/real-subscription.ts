@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 function getCaktoApiBaseUrl() {
@@ -63,6 +63,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       user = await verifyIdToken(req);
     } catch (authErr: any) {
+      if (isFirebaseAdminCredentialError(authErr)) {
+        throw authErr;
+      }
       return res.status(401).json({ error: "Sessão inválida ou expirada." });
     }
 
@@ -82,6 +85,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const subscriptionId = salonData?.caktoSubscriptionId;
+    const billingProvider = salonData?.billingProvider;
+
+    const isManualActive = (billingProvider === "manual" || salonData?.billingMode === "manual_pix") &&
+      salonData?.subscriptionStatus === "active" &&
+      salonData?.paymentStatus === "paid";
+
+    if (isManualActive && !subscriptionId) {
+      return res.status(200).json({
+        hasRealSubscription: false,
+        billingProvider: "manual",
+        status: "active",
+        paymentStatus: "paid",
+        next_payment_date: salonData?.nextBillingDate || null
+      });
+    }
+
+    if (billingProvider === "cakto" && !subscriptionId) {
+      return res.status(409).json({
+        error: "A assinatura Cakto ainda não foi confirmada.",
+        requiresCheckout: true
+      });
+    }
+
     if (!subscriptionId) {
       return res.status(400).json({ error: "Nenhuma assinatura Cakto configurada para este salão." });
     }
@@ -151,6 +177,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (err: any) {
+    if (isFirebaseAdminCredentialError(err)) {
+      console.error("[LumièreOS SERVER ERROR] Firebase Admin credential error caught in real-sub:", err);
+      return res.status(503).json({
+        error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor.",
+        code: "FIREBASE_ADMIN_AUTH_FAILED"
+      });
+    }
     console.error("[Cakto Real Sub Serverless] Erro ao obter assinatura real:", err);
     return res.status(500).json({ error: err.message || "Falha ao obter assinatura real na Cakto." });
   }

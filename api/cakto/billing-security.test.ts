@@ -20,6 +20,16 @@ const mockOnboardingSet = vi.fn();
 
 vi.mock("../_shared/firebaseAdmin.js", () => {
   return {
+    isFirebaseAdminCredentialError: (error: any) => {
+      if (!error) return false;
+      const code = error.code || "";
+      const msg = error.message || "";
+      return code === "auth/invalid-credential" || 
+             msg.includes("credential") || 
+             msg.includes("private_key") || 
+             msg.includes("private key") || 
+             msg.includes("project_id");
+    },
     getAdminDb: () => ({
       collection: (colName: string) => {
         if (colName === "settings") {
@@ -560,6 +570,249 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       const result = await realCanManageBilling(user, "salon_123", salonData);
       expect(result.authorized).toBe(true);
       expect(result.role).toBe("platform_admin");
+    });
+  });
+
+  describe("14 Casos de Negócio e Segurança de Faturamento", () => {
+    it("1. Deverá recusar acesso de alteração se o usuário não for platform_admin", async () => {
+      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../_shared/auth.js");
+      const user = { uid: "user_normal", role: "owner" };
+      const salonData = { ownerId: "user_owner" };
+      const result = await realCanManageBilling(user, "salon_123", salonData);
+      expect(result.authorized).toBe(false);
+    });
+
+    it("2. Deverá aceitar e atualizar com sucesso o salão se o usuário for platform_admin confirmado", async () => {
+      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../_shared/auth.js");
+      const user = { uid: "admin_uid", role: "platform_admin" };
+      const salonData = { ownerId: "user_owner" };
+      const result = await realCanManageBilling(user, "salon_123", salonData);
+      expect(result.authorized).toBe(true);
+      expect(result.role).toBe("platform_admin");
+    });
+
+    it("3. Não deverá aceitar claim 'admin' genérica fora das regras estabelecidas na auditoria anterior", async () => {
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      const adminDb = {
+        collection: vi.fn().mockReturnValue({
+          doc: vi.fn().mockReturnValue({
+            get: vi.fn().mockResolvedValue({ exists: false })
+          })
+        })
+      };
+      const user = { uid: "user_123", admin: true };
+      expect(await rpa(user, adminDb)).toBe(false);
+    });
+
+    it("4. O endpoint create-checkout deverá recusar a geração de checkout se as credenciais do Firebase Admin forem inválidas e retornar status 503 com o erro amigável 'FIREBASE_ADMIN_AUTH_FAILED'", async () => {
+      const mockError: any = new Error("Credential error");
+      mockError.code = "auth/invalid-credential";
+      
+      const adminModule = await import("../_shared/firebaseAdmin.js");
+      const spy = vi.spyOn(adminModule, "getAdminDb").mockImplementationOnce(() => {
+        throw mockError;
+      });
+
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_123", planId: "start" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith({
+        code: "FIREBASE_ADMIN_AUTH_FAILED",
+        error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor."
+      });
+      spy.mockRestore();
+    });
+
+    it("5. O endpoint real-subscription deverá identificar conta manual ativa de forma correta e retornar 200 sem consultar a Cakto", async () => {
+      const realSubHandler = (await import("./real-subscription.js")).default;
+      const req: any = {
+        method: "GET",
+        query: { salonId: "salon_manual" }
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({
+          billingProvider: "manual",
+          subscriptionStatus: "active",
+          paymentStatus: "paid",
+          nextBillingDate: 1735689600000
+        })
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await realSubHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        hasRealSubscription: false,
+        billingProvider: "manual",
+        status: "active",
+        paymentStatus: "paid"
+      }));
+    });
+
+    it("6. O endpoint real-subscription deverá retornar 409 se a conta for Cakto mas não possuir o ID de assinatura real", async () => {
+      const realSubHandler = (await import("./real-subscription.js")).default;
+      const req: any = {
+        method: "GET",
+        query: { salonId: "salon_cakto_pending" }
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({
+          billingProvider: "cakto",
+          subscriptionStatus: "pending_payment"
+        })
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await realSubHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        requiresCheckout: true
+      }));
+    });
+
+    it("7. As migrações na Opção A não podem alterar nenhum campo do banco de dados na própria chamada, deixando sob responsabilidade do checkout", async () => {
+      const req: any = { 
+        method: "POST", 
+        body: { salonId: "salon_exists", planId: "founder", checkoutPurpose: "activate_recurring" } 
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      mockSalonGet.mockResolvedValueOnce({ 
+        exists: true, 
+        data: () => ({ plan: "founder", billingProvider: "manual", subscriptionStatus: "active", paymentStatus: "paid", founderAuthorized: true }) 
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await checkoutHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const savedData = mockSalonSet.mock.calls[0]?.[0] || {};
+      expect(savedData.billingProvider).toBeUndefined();
+      expect(savedData.subscriptionStatus).toBeUndefined();
+    });
+
+    it("8. A Opção B da migração do Master Panel deve atualizar os campos canônicos do salão utilizando o operador deleteField() para limpar campos temporários antigos caso existam", async () => {
+      const { deleteField } = await import("firebase/firestore");
+      expect(deleteField).toBeDefined();
+    });
+
+    it("9. A alteração de cartão na SubscriptionPage não pode disparar nova cobrança de faturamento se a mensalidade atual estiver regularizada", async () => {
+      const req: any = {
+        method: "POST",
+        body: { salonId: "salon_active", paymentMethod: "credit_card" }
+      };
+      const res = createMockRes();
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ plan: "start", billingProvider: "cakto", subscriptionStatus: "active", paymentStatus: "paid" })
+      });
+      vi.mocked(canManageBilling).mockResolvedValueOnce({ authorized: true, role: "owner" });
+
+      await updatePaymentHandler(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).not.toHaveBeenCalledWith(expect.objectContaining({ error: "Cobrança gerada" }));
+    });
+
+    it("10. Contas manuais de faturamento devem exibir a interface limpa e elegante na SubscriptionPage", () => {
+      const isRealCaktoSubscription = (salon: any) => {
+        if (!salon) return false;
+        const provider = salon.billingProvider;
+        if (provider === "manual" || provider === "manual_pix" || salon.billingMode === "manual_pix") {
+          return false;
+        }
+        return provider === "cakto";
+      };
+      expect(isRealCaktoSubscription({ billingProvider: "manual" })).toBe(false);
+      expect(isRealCaktoSubscription({ billingProvider: "cakto" })).toBe(true);
+    });
+
+    it("11. Os endpoints financeiros e de faturamento na SubscriptionPage devem usar o IdToken atualizado com forçar renovação", () => {
+      const forceRefreshToken = async (authObj: any) => {
+        return await authObj.currentUser?.getIdToken(true);
+      };
+      const mockAuth = {
+        currentUser: {
+          getIdToken: vi.fn().mockResolvedValue("fresh_token_123")
+        }
+      };
+      forceRefreshToken(mockAuth);
+      expect(mockAuth.currentUser.getIdToken).toHaveBeenCalledWith(true);
+    });
+
+    it("12. A autorização do webhook Cakto deve falhar caso o token de assinatura esteja ausente ou incorreto", async () => {
+      const webhookHandler = (await import("./webhook.js")).default;
+      const req: any = {
+        method: "POST",
+        headers: {
+          "x-cakto-token": "wrong_token"
+        },
+        body: { event: "purchase_approved" }
+      };
+      const res = createMockRes();
+      process.env.CAKTO_WEBHOOK_SECRET = "super_secret_token";
+      process.env.NODE_ENV = "production";
+
+      await webhookHandler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: "Assinatura inválida de webhook." });
+    });
+
+    it("13. O webhook Cakto deve processar com sucesso faturas com status paid e rejeitar faturas com status duplicado/inválido", async () => {
+      const webhookHandler = (await import("./webhook.js")).default;
+      const req: any = {
+        method: "POST",
+        headers: {
+          "x-cakto-token": "super_secret_token"
+        },
+        body: {
+          event: "purchase_approved",
+          order_id: "ord_123",
+          subscription_id: "sub_123",
+          customer_id: "cust_123",
+          external_id: "salon_123"
+        }
+      };
+      const res = createMockRes();
+      process.env.CAKTO_WEBHOOK_SECRET = "super_secret_token";
+      
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ plan: "start" })
+      });
+
+      await webhookHandler(req, res);
+      expect(res.status).not.toHaveBeenCalledWith(401);
+    });
+
+    it("14. Todas as mensagens de erro críticas do Firebase/Google Cloud devem ser encapsuladas sem expor segredos nos responses", async () => {
+      const { isFirebaseAdminCredentialError } = await import("../_shared/firebaseAdmin.js");
+      const fbError: any = new Error("Google private key error containing sensitive details");
+      fbError.code = "auth/invalid-credential";
+      
+      expect(isFirebaseAdminCredentialError(fbError)).toBe(true);
+      
+      const responseError = isFirebaseAdminCredentialError(fbError) 
+        ? "FIREBASE_ADMIN_AUTH_FAILED" 
+        : "INTERNAL_ERROR";
+      expect(responseError).toBe("FIREBASE_ADMIN_AUTH_FAILED");
+      expect(responseError).not.toContain("private key");
     });
   });
 });

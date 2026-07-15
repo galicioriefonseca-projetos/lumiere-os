@@ -267,7 +267,7 @@ export default function SubscriptionPage() {
     setIsLoadingRealSub(true);
     setRealSubError(null);
     try {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await auth.currentUser?.getIdToken(true);
       const res = await fetch(`/api/cakto/real-subscription?salonId=${salonData.id}`, {
         headers: {
           Authorization: `Bearer ${token}`
@@ -288,7 +288,8 @@ export default function SubscriptionPage() {
   };
 
   useEffect(() => {
-    if (activeTab === 'payment') {
+    const hasRealCakto = isRealCaktoSubscription(salonData);
+    if (activeTab === 'payment' && hasRealCakto) {
       fetchRealSub();
     }
   }, [activeTab, salonData?.id]);
@@ -297,7 +298,7 @@ export default function SubscriptionPage() {
     if (!salonData?.id) return;
     setIsUpdatingMethod(true);
     try {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await auth.currentUser?.getIdToken(true);
       const res = await fetch('/api/cakto/update-payment-method', {
         method: 'POST',
         headers: {
@@ -1309,59 +1310,37 @@ export default function SubscriptionPage() {
       {/* TAB CONTENT: 4. PAYMENT */}
       {activeTab === 'payment' && (
         <div className="max-w-2xl mx-auto space-y-6">
-          
-          {isLoadingRealSub ? (
-            <div className="rounded-2xl border border-zinc-800 bg-black/40 text-white p-12 flex flex-col items-center justify-center space-y-4">
-              <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
-              <p className="text-xs text-zinc-400">Consultando status real da assinatura na API Cakto...</p>
-            </div>
-          ) : realSubError ? (
-            <div className="rounded-2xl border border-red-900/40 bg-red-950/10 text-white p-6 space-y-4">
-              <div className="flex gap-3 items-start">
-                <div className="p-2 bg-red-950/30 rounded-lg text-red-500 shrink-0">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-white">Falha ao consultar assinatura</h4>
-                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                    Não foi possível consultar os detalhes de faturamento junto à Cakto:
-                  </p>
-                  <p className="text-xs text-red-400 font-mono mt-2 bg-red-950/20 p-3 rounded-lg border border-red-950/40">
-                    {realSubError}
-                  </p>
-                </div>
-              </div>
-              <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-zinc-900 pt-3">
-                Para a sua segurança, o gerenciamento de pagamento está temporariamente indisponível. Por favor, entre em contato com nosso suporte financeiro.
-              </p>
-            </div>
-          ) : (
+          {!isRealCaktoSubscription(salonData) ? (
             <div className="space-y-6">
               {/* Cobertura Atual Block */}
-              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 animate-fade-in">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 shrink-0">
                     <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-white">Mensalidade Atual Garantida</h3>
+                    <h3 className="text-sm font-semibold text-white">Mensalidade atual paga</h3>
                     <p className="text-xs text-emerald-500/90 font-medium">Acesso coberto de forma integral</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Garantia de Acesso</span>
-                    <span className="text-xs font-semibold text-zinc-300">Seu acesso está garantido até:</span>
-                    <span className="text-sm font-bold text-white block pt-1">
-                      {realSub?.next_payment_date ? new Date(realSub.next_payment_date).toLocaleDateString("pt-BR") : "Vigência ativa"}
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Plano</span>
+                    <span className="text-xs font-bold text-white block pt-1">
+                      Plano Founder (Pioneiro)
                     </span>
                   </div>
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Próximo Faturamento</span>
-                    <span className="text-xs font-semibold text-zinc-300">Próxima cobrança programada:</span>
-                    <span className="text-sm font-bold text-[#D4AF37] block pt-1">
-                      {realSub?.next_payment_date ? new Date(realSub.next_payment_date).toLocaleDateString("pt-BR") : "Vigência ativa"}
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Faturamento</span>
+                    <span className="text-xs font-bold text-white block pt-1">
+                      Faturamento manual
+                    </span>
+                  </div>
+                  <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Garantia de Acesso</span>
+                    <span className="text-xs font-bold text-white block pt-1">
+                      Seu acesso está garantido até: {salonData.nextBillingDate ? formatDate(salonData.nextBillingDate) : "Vigência ativa"}
                     </span>
                   </div>
                 </div>
@@ -1369,164 +1348,7 @@ export default function SubscriptionPage() {
                 <div className="flex items-start gap-2 bg-[#D4AF37]/5 border border-[#D4AF37]/10 p-3 rounded-lg text-xs text-zinc-400">
                   <Info className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
                   <p className="leading-relaxed">
-                    Como a sua mensalidade atual está paga, a escolha de um novo método <strong>não gera cobrança imediata</strong>. Nenhuma nova assinatura ou pedido de compra será gerado. Apenas a sua preferência para as próximas cobranças será programada na Cakto.
-                  </p>
-                </div>
-              </div>
-
-              {/* Forma de Pagamento das Próximas Cobranças */}
-              <div className="rounded-2xl border border-zinc-800 bg-black/40 text-white p-6 space-y-6">
-                <div className="space-y-1 border-b border-zinc-900 pb-4">
-                  <h3 className="text-lg font-semibold text-white">Forma de pagamento das próximas cobranças</h3>
-                  <p className="text-xs text-zinc-500">Selecione o método preferido para os próximos vencimentos de {formatMoney(planInfo.monthlyAmount)}/mês.</p>
-                </div>
-
-                {/* Métodos de Pagamento */}
-                <div className="grid grid-cols-1 gap-3">
-                  
-                  {/* Cartão de Crédito */}
-                  <label 
-                    onClick={() => setSelectedNextMethod('credit_card')}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
-                      selectedNextMethod === 'credit_card' 
-                        ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
-                        : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
-                    }`}
-                  >
-                    <input 
-                      type="radio" 
-                      name="next_payment_method" 
-                      checked={selectedNextMethod === 'credit_card'}
-                      onChange={() => {}} 
-                      className="sr-only" 
-                    />
-                    <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'credit_card' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
-                      <CreditCard className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        Cartão de Crédito Recorrente
-                        <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Automático</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Cobrança recorrente no dia do vencimento. Não consome o limite total do cartão, apenas a mensalidade individual de R$ 297.
-                      </p>
-                    </div>
-                  </label>
-
-                  {/* Pix Automático */}
-                  <label 
-                    onClick={() => setSelectedNextMethod('pix_automatic')}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
-                      selectedNextMethod === 'pix_automatic' 
-                        ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
-                        : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
-                    }`}
-                  >
-                    <input 
-                      type="radio" 
-                      name="next_payment_method" 
-                      checked={selectedNextMethod === 'pix_automatic'}
-                      onChange={() => {}} 
-                      className="sr-only" 
-                    />
-                    <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'pix_automatic' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
-                      <Zap className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        Pix Automático (Débito)
-                        <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Automático</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Débito em conta de forma programada pelo seu banco parceiro. Sem esquecimento e sem taxas extras.
-                      </p>
-                    </div>
-                  </label>
-
-                  {/* Pix Manual */}
-                  <label 
-                    onClick={() => setSelectedNextMethod('pix')}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
-                      selectedNextMethod === 'pix' 
-                        ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
-                        : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
-                    }`}
-                  >
-                    <input 
-                      type="radio" 
-                      name="next_payment_method" 
-                      checked={selectedNextMethod === 'pix'}
-                      onChange={() => {}} 
-                      className="sr-only" 
-                    />
-                    <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'pix' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
-                      <Coins className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        Pix Avulso (Manual)
-                        <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Manual</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Você receberá um lembrete com a chave copia-e-cola via WhatsApp e e-mail no dia do vencimento para efetuar o pagamento manualmente.
-                      </p>
-                    </div>
-                  </label>
-
-                  {/* Boleto Manual */}
-                  <label 
-                    onClick={() => setSelectedNextMethod('boleto')}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
-                      selectedNextMethod === 'boleto' 
-                        ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
-                        : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
-                    }`}
-                  >
-                    <input 
-                      type="radio" 
-                      name="next_payment_method" 
-                      checked={selectedNextMethod === 'boleto'}
-                      onChange={() => {}} 
-                      className="sr-only" 
-                    />
-                    <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'boleto' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        Boleto Bancário (Manual)
-                        <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Manual</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Emissão de boleto enviada para o seu e-mail cadastrado 5 dias antes de vencer.
-                      </p>
-                    </div>
-                  </label>
-
-                </div>
-
-                {/* Painel de Confirmação Dinâmico */}
-                <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-950 space-y-4">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-zinc-500">Valor Recorrente:</span>
-                    <span className="font-semibold text-white">R$ 297,00 / mês</span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs border-t border-zinc-900 pt-3">
-                    <span className="text-zinc-500">Próxima data de cobrança:</span>
-                    <span className="font-semibold text-[#D4AF37]">
-                      {realSub?.next_payment_date ? new Date(realSub.next_payment_date).toLocaleDateString("pt-BR") : "Vigência ativa"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs border-t border-zinc-900 pt-3">
-                    <span className="text-zinc-500">Cobrança Imediata:</span>
-                    <span className="font-semibold text-emerald-500 uppercase tracking-wide flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> R$ 0,00 (Nenhuma)
-                    </span>
-                  </div>
-
-                  <p className="text-[10px] text-zinc-500 text-center italic pt-1 leading-relaxed">
-                    Nenhum valor será cobrado hoje do seu limite ou saldo. O faturamento ocorrerá estritamente na data de vencimento confirmada.
+                    Sua licença foi ativada manualmente. Para automatizar o pagamento da sua próxima mensalidade, você pode configurar uma assinatura na Cakto.
                   </p>
                 </div>
 
@@ -1534,28 +1356,267 @@ export default function SubscriptionPage() {
                 <div className="pt-2">
                   <button 
                     type="button"
-                    onClick={handleUpdatePaymentMethod}
-                    disabled={isUpdatingMethod}
-                    className="w-full bg-[#D4AF37] hover:bg-[#Bca032] disabled:opacity-50 text-black font-semibold text-sm py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                    onClick={() => {
+                      setSelectedPlan(currentPlan);
+                      setShowActivationModal(true);
+                    }}
+                    className="w-full bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold text-xs py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
                   >
-                    {isUpdatingMethod ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin text-black" />
-                        Processando Autorização...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4 text-black font-bold" />
-                        Autorizar para próximas cobranças
-                      </>
-                    )}
+                    <Zap className="w-4 h-4 fill-black" />
+                    Configurar pagamento das próximas mensalidades
                   </button>
                 </div>
-
               </div>
             </div>
-          )}
+          ) : (
+            <>
+              {isLoadingRealSub ? (
+                <div className="rounded-2xl border border-zinc-800 bg-black/40 text-white p-12 flex flex-col items-center justify-center space-y-4">
+                  <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+                  <p className="text-xs text-zinc-400">Consultando status real da assinatura na API Cakto...</p>
+                </div>
+              ) : realSubError ? (
+                <div className="rounded-2xl border border-red-900/40 bg-red-950/10 text-white p-6 space-y-4">
+                  <div className="flex gap-3 items-start">
+                    <div className="p-2 bg-red-950/30 rounded-lg text-red-500 shrink-0">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-white">Falha ao consultar assinatura</h4>
+                      <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                        Não foi possível consultar os detalhes de faturamento junto à Cakto:
+                      </p>
+                      <p className="text-xs text-red-400 font-mono mt-2 bg-red-950/20 p-3 rounded-lg border border-red-950/40">
+                        {realSubError}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed border-t border-zinc-900 pt-3">
+                    Para a sua segurança, o gerenciamento de pagamento está temporariamente indisponível. Por favor, entre em contato com nosso suporte financeiro.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Cobertura Atual Block */}
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-500 shrink-0">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-white">Mensalidade Atual Garantida</h3>
+                        <p className="text-xs text-emerald-500/90 font-medium">Acesso coberto de forma integral</p>
+                      </div>
+                    </div>
 
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Garantia de Acesso</span>
+                        <span className="text-xs font-semibold text-zinc-300">Seu acesso está garantido até:</span>
+                        <span className="text-sm font-bold text-white block pt-1">
+                          {realSub?.next_payment_date ? new Date(realSub.next_payment_date).toLocaleDateString("pt-BR") : "Vigência ativa"}
+                        </span>
+                      </div>
+                      <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Próximo Faturamento</span>
+                        <span className="text-xs font-semibold text-zinc-300">Próxima cobrança programada:</span>
+                        <span className="text-sm font-bold text-[#D4AF37] block pt-1">
+                          {realSub?.next_payment_date ? new Date(realSub.next_payment_date).toLocaleDateString("pt-BR") : "Vigência ativa"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2 bg-[#D4AF37]/5 border border-[#D4AF37]/10 p-3 rounded-lg text-xs text-zinc-400">
+                      <Info className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
+                      <p className="leading-relaxed">
+                        Como a sua mensalidade atual está paga, a escolha de um novo método <strong>não gera cobrança imediata</strong>. Nenhuma nova assinatura ou pedido de compra será gerado. Apenas a sua preferência para as próximas cobranças será programada na Cakto.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Forma de Pagamento das Próximas Cobranças */}
+                  <div className="rounded-2xl border border-zinc-800 bg-black/40 text-white p-6 space-y-6">
+                    <div className="space-y-1 border-b border-zinc-900 pb-4">
+                      <h3 className="text-lg font-semibold text-white">Forma de pagamento das próximas cobranças</h3>
+                      <p className="text-xs text-zinc-500">Selecione o método preferido para os próximos vencimentos de {formatMoney(planInfo.monthlyAmount)}/mês.</p>
+                    </div>
+
+                    {/* Métodos de Pagamento */}
+                    <div className="grid grid-cols-1 gap-3">
+                      
+                      {/* Cartão de Crédito */}
+                      <label 
+                        onClick={() => setSelectedNextMethod('credit_card')}
+                        className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
+                          selectedNextMethod === 'credit_card' 
+                            ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
+                            : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        <input 
+                          type="radio" 
+                          name="next_payment_method" 
+                          checked={selectedNextMethod === 'credit_card'}
+                          onChange={() => {}} 
+                          className="sr-only" 
+                        />
+                        <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'credit_card' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
+                          <CreditCard className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            Cartão de Crédito Recorrente
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Automático</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Cobrança recorrente no dia do vencimento. Não consome o limite total do cartão, apenas a mensalidade individual de R$ 297.
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Pix Automático */}
+                      <label 
+                        onClick={() => setSelectedNextMethod('pix_automatic')}
+                        className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
+                          selectedNextMethod === 'pix_automatic' 
+                            ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
+                            : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        <input 
+                          type="radio" 
+                          name="next_payment_method" 
+                          checked={selectedNextMethod === 'pix_automatic'}
+                          onChange={() => {}} 
+                          className="sr-only" 
+                        />
+                        <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'pix_automatic' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
+                          <Zap className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            Pix Automático (Débito)
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Automático</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Débito em conta de forma programada pelo seu banco parceiro. Sem esquecimento e sem taxas extras.
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Pix Manual */}
+                      <label 
+                        onClick={() => setSelectedNextMethod('pix')}
+                        className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
+                          selectedNextMethod === 'pix' 
+                            ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
+                            : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        <input 
+                          type="radio" 
+                          name="next_payment_method" 
+                          checked={selectedNextMethod === 'pix'}
+                          onChange={() => {}} 
+                          className="sr-only" 
+                        />
+                        <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'pix' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
+                          <Coins className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            Pix Avulso (Manual)
+                            <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Manual</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Você receberá um lembrete com a chave copia-e-cola via WhatsApp e e-mail no dia do vencimento para efetuar o pagamento manualmente.
+                          </p>
+                        </div>
+                      </label>
+
+                      {/* Boleto Manual */}
+                      <label 
+                        onClick={() => setSelectedNextMethod('boleto')}
+                        className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
+                          selectedNextMethod === 'boleto' 
+                            ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
+                            : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
+                        }`}
+                      >
+                        <input 
+                          type="radio" 
+                          name="next_payment_method" 
+                          checked={selectedNextMethod === 'boleto'}
+                          onChange={() => {}} 
+                          className="sr-only" 
+                        />
+                        <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'boleto' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                            Boleto Bancário (Manual)
+                            <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Manual</span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Emissão de boleto enviada para o seu e-mail cadastrado 5 dias antes de vencer.
+                          </p>
+                        </div>
+                      </label>
+
+                    </div>
+
+                    {/* Painel de Confirmação Dinâmico */}
+                    <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-950 space-y-4">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-zinc-500">Valor Recorrente:</span>
+                        <span className="font-semibold text-white">R$ 297,00 / mês</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs border-t border-zinc-900 pt-3">
+                        <span className="text-zinc-500">Próxima data de cobrança:</span>
+                        <span className="font-semibold text-[#D4AF37]">
+                          {realSub?.next_payment_date ? new Date(realSub.next_payment_date).toLocaleDateString("pt-BR") : "Vigência ativa"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs border-t border-zinc-900 pt-3">
+                        <span className="text-zinc-500">Cobrança Imediata:</span>
+                        <span className="font-semibold text-emerald-500 uppercase tracking-wide flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5" /> R$ 0,00 (Nenhuma)
+                        </span>
+                      </div>
+
+                      <p className="text-[10px] text-zinc-500 text-center italic pt-1 leading-relaxed">
+                        Nenhum valor será cobrado hoje do seu limite ou saldo. O faturamento ocorrerá estritamente na data de vencimento confirmada.
+                      </p>
+                    </div>
+
+                    {/* Botão de Ação */}
+                    <div className="pt-2">
+                      <button 
+                        type="button"
+                        onClick={handleUpdatePaymentMethod}
+                        disabled={isUpdatingMethod}
+                        className="w-full bg-[#D4AF37] hover:bg-[#Bca032] disabled:opacity-50 text-black font-semibold text-sm py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                      >
+                        {isUpdatingMethod ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-black" />
+                            Processando Autorização...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4 text-black font-bold" />
+                            Autorizar para próximas cobranças
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

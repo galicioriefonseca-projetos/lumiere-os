@@ -53,7 +53,7 @@ export class CaktoProvider implements BillingProvider {
   }
 
   async createSubscription(salonId: string, customerId: string, data: Partial<BillingSubscription>): Promise<BillingSubscription> {
-    const idToken = auth?.currentUser ? await auth.currentUser.getIdToken() : null;
+    const idToken = auth?.currentUser ? await auth.currentUser.getIdToken(true) : null;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (idToken) {
       headers['Authorization'] = `Bearer ${idToken}`;

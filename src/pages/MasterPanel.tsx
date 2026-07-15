@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, query, getDocs, doc, updateDoc, onSnapshot, where } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, onSnapshot, where, deleteField } from 'firebase/firestore';
 import { Salon, PlanType, ActivationStatus } from '../types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -366,27 +366,75 @@ export default function MasterPanel() {
           break;
         case 'migrate_founder':
           if (founderMigrationOption === 'A') {
-            updates.billingProvider = 'cakto';
-            updates.caktoSubscriptionId = '';
-            updates.caktoOrderId = '';
-            updates.caktoCustomerId = '';
-            updates.caktoCheckoutUrl = '';
-            updates.subscriptionStatus = 'pending_payment';
-            updates.paymentStatus = 'pending';
-            updates.isActive = false; // aguardar pagamento real
-            updates.billingRequiresMigration = false;
+            if (!currentUser) {
+              toast.error("Usuário não autenticado.");
+              return;
+            }
+            try {
+              const token = await currentUser.getIdToken(true);
+              const response = await fetch('/api/cakto/create-checkout', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  salonId: selectedSalon.id,
+                  planId: 'founder',
+                  checkoutPurpose: 'activate_recurring'
+                })
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                let errJson;
+                try { errJson = JSON.parse(text); } catch (e) {}
+                const errorMsg = errJson?.error || text || "Falha ao gerar o checkout de migração.";
+                throw new Error(errorMsg);
+              }
+              const data = await response.json();
+              if (data.checkoutUrl) {
+                window.open(data.checkoutUrl, '_blank');
+                toast.success("Checkout gerado. O acesso atual permanecerá ativo até a confirmação do pagamento.");
+                setIsDialogOpen(false);
+                setSelectedSalon(null);
+                return;
+              } else {
+                throw new Error("checkoutUrl não retornada pelo servidor.");
+              }
+            } catch (err: any) {
+              console.error("Option A migration error:", err);
+              toast.error(`Erro: ${err.message || "Falha ao gerar faturamento Cakto."}`);
+              return;
+            }
           } else {
             // Opção B: Manter faturamento manual
-            updates.billingProvider = 'manual_pix';
+            updates.billingProvider = 'manual';
             updates.billingMode = 'manual_pix';
+            updates.subscriptionStatus = 'active'; // faturamento manual ativo
+            updates.paymentStatus = 'paid';
+            updates.isActive = true;
+            updates.activationStatus = 'active';
+            updates.plan = 'founder';
+
+            const existingNextBillingDate = selectedSalon.nextBillingDate;
+            const isValidDate = existingNextBillingDate && typeof existingNextBillingDate === 'number' && existingNextBillingDate > Date.now() - 365 * 24 * 60 * 60 * 1000;
+            if (!isValidDate) {
+              updates.nextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
+            }
+
+            (updates as any).pendingPlan = deleteField();
+            (updates as any).pendingOfferId = deleteField();
+            (updates as any).pendingCheckoutUrl = deleteField();
+            (updates as any).pendingCheckoutEmail = deleteField();
+            (updates as any).pendingRequestedAt = deleteField();
+            (updates as any).pendingCheckoutPurpose = deleteField();
+            (updates as any).pendingBillingActivation = deleteField();
+
             updates.caktoSubscriptionId = '';
             updates.caktoOrderId = '';
             updates.caktoCustomerId = '';
             updates.caktoCheckoutUrl = '';
             updates.caktoOfferId = '';
-            updates.subscriptionStatus = 'active'; // faturamento manual ativo
-            updates.paymentStatus = 'paid';
-            updates.isActive = true;
             updates.billingRequiresMigration = false;
           }
           break;

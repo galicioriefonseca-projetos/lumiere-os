@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 interface CaktoSettings {
@@ -95,6 +95,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       user = await verifyIdToken(req);
     } catch (authErr: any) {
+      if (isFirebaseAdminCredentialError(authErr)) {
+        throw authErr;
+      }
       console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
       return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
     }
@@ -268,6 +271,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ error: "O plano especificado não possui oferta configurada." });
       }
     } catch (err) {
+      if (isFirebaseAdminCredentialError(err)) {
+        throw err;
+      }
       console.error("[Cakto Checkout Serverless] Erro ao carregar configurações dinâmicas:", err);
       return res.status(500).json({ error: "Erro ao carregar configurações de pagamento." });
     }
@@ -395,6 +401,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
   } catch (err: any) {
+    if (isFirebaseAdminCredentialError(err)) {
+      console.error("[LumièreOS SERVER ERROR] Firebase Admin credential error caught:", err);
+      return res.status(503).json({
+        error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor.",
+        code: "FIREBASE_ADMIN_AUTH_FAILED"
+      });
+    }
     console.error("[Cakto Checkout Serverless] Falha ao processar requisição:", err);
     return res.status(500).json({ error: err.message || "Falha ao iniciar faturamento via Cakto." });
   }

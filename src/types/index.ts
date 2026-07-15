@@ -68,7 +68,7 @@ export interface Salon {
   updatedAt: number;
   deletedAt?: number;
   // Stripe & Billing properties (Active providers: manual_pix, cakto. Others are deprecated)
-  billingProvider?: 'manual_pix' | 'cakto' | 'stripe' | 'asaas' | 'mercadopago';
+  billingProvider?: 'manual' | 'manual_pix' | 'cakto' | 'stripe' | 'asaas' | 'mercadopago';
   billingMode?: 'manual_pix' | 'recurring_card';
   /** @deprecated Use Cakto instead */
   stripeCustomerId?: string;
