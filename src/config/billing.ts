@@ -1,18 +1,13 @@
+const readPublicEnv = (key: string, fallback = '') => {
+  return typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env[key] || fallback : fallback;
+};
+
 export const BILLING_CONFIG = {
-  pixKey: "leandropfonseca20@gmail.com",
-  pixKeyType: "email",
-  receiverName: "Galiciori e Fonseca Estratégia Digital",
-  supportWhatsApp: "5517996140963",
-  paymentInstructions: "Após realizar o pagamento via PIX, clique em Informar pagamento para nossa equipe validar sua assinatura.",
-  
-  // Asaas Configuration (DEPRECATED - Mantido apenas para compatibilidade histórica)
-  /** @deprecated */
-  asaas: {
-    apiUrl: import.meta.env.VITE_ASAAS_API_URL || 'https://sandbox.asaas.com/api/v3',
-    // Configurações do comportamento do checkout
-    chargeType: 'RECURRING', // Padrão recorrente
-    paymentMethods: ['CREDIT_CARD', 'PIX'], // Métodos seguros aceitos
-    sandboxMode: (import.meta.env.DEV === true) || (import.meta.env.VITE_CAKTO_SANDBOX_MODE === "true"), // Homologação ativa apenas em dev ou se explicitamente forçada por variável
-  }
+  pixKey: readPublicEnv('VITE_BILLING_PIX_KEY', ''),
+  pixKeyType: readPublicEnv('VITE_BILLING_PIX_KEY_TYPE', ''),
+  receiverName: readPublicEnv('VITE_BILLING_RECEIVER_NAME', ''),
+  supportWhatsApp: readPublicEnv('VITE_SUPPORT_WHATSAPP', ''),
+  supportEmail: readPublicEnv('VITE_SUPPORT_EMAIL', ''),
+  paymentInstructions: readPublicEnv('VITE_BILLING_PAYMENT_INSTRUCTIONS', 'Após realizar o pagamento via PIX, clique em Informar pagamento para nossa equipe validar sua assinatura.')
 };
 

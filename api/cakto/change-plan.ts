@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 interface CaktoSettings {
@@ -236,6 +236,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err: any) {
     console.error("[Cakto ChangePlan Serverless API Error] Falha:", err);
-    return res.status(500).json({ error: err.message || "Erro interno do servidor ao processar mudança de plano." });
+    if (isFirebaseAdminCredentialError(err)) {
+       return res.status(503).json({
+          error: "O serviço de faturamento está temporariamente indisponível.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED"
+       });
+    }
+    return res.status(500).json({ 
+       error: "Erro interno ao processar mudança de plano.",
+       code: "PLAN_CHANGE_FAILED"
+    });
   }
 }

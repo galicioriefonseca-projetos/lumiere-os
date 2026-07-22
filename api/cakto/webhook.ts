@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 
 interface CaktoSettings {
   productId: string;
@@ -365,10 +365,23 @@ export async function processCaktoWebhookPayload(
 
   } else if (ev === "purchase_refused" || ev === "subscription_renewal_refused" || ev.includes("refused") || ev.includes("failed") || ev.includes("rejected") || ev.includes("overdue")) {
     realUpdatePayload.subscriptionStatus = "overdue";
-    realUpdatePayload.activationStatus = "blocked";
     realUpdatePayload.caktoPaymentStatus = "refused";
     realUpdatePayload.paymentStatus = "overdue";
-    realUpdatePayload.isActive = false;
+    realUpdatePayload.billingSyncRequired = true;
+    realUpdatePayload.billingSyncReason = "payment_refused";
+    
+    const currentEnd = salonDoc?.exists ? salonDoc.data()?.currentPeriodEnd : null;
+    let isPeriodActive = false;
+    if (currentEnd) {
+       const ms = new Date(currentEnd).getTime();
+       if (!isNaN(ms) && ms > Date.now()) {
+          isPeriodActive = true;
+       }
+    }
+
+    if (!isPeriodActive) {
+      realUpdatePayload.activationStatus = "blocked";
+    }
 
   } else if (ev === "subscription_created" || ev.includes("trial") || ev.includes("created")) {
     if (salonDoc?.exists) {
@@ -381,33 +394,73 @@ export async function processCaktoWebhookPayload(
     }
   }
 
-  // Se o salão não existe e o faturamento é válido (real), criamos o salão!
+  // Se o salão não existe, promovemos do onboarding
   if (!salonDoc || !salonDoc.exists || !salonRef) {
-    const finalSalonId = salonId || `salon_${Date.now()}`;
-    salonRef = adminDb.collection("salons").doc(String(finalSalonId));
+    if (!salonId || !/^[A-Za-z0-9_-]{3,128}$/.test(String(salonId))) {
+      return { success: false, requiresReview: true, reason: "invalid_or_missing_salon_id" };
+    }
     
-    const isApproved = realUpdatePayload.subscriptionStatus === "active";
+    const onboardingRef = adminDb.collection("onboarding").doc(String(salonId));
+    const onboardingDoc = await onboardingRef.get();
+    
+    if (!onboardingDoc.exists) {
+      return { success: false, requiresReview: true, reason: "onboarding_not_found" };
+    }
+    
+    const onboardingData = onboardingDoc.data() || {};
+    
+    if (!onboardingData.ownerId) {
+       return { success: false, requiresReview: true, reason: "onboarding_missing_owner" };
+    }
+    if (!onboardingData.pendingOfferId) {
+       return { success: false, requiresReview: true, reason: "onboarding_missing_offer" };
+    }
+    if (onboardingData.pendingOfferId !== offerId) {
+      return { success: false, requiresReview: true, reason: "offer_mismatch" };
+    }
+    if (onboardingData.pendingPlan !== mappedPlan) {
+      return { success: false, requiresReview: true, reason: "plan_mismatch" };
+    }
+    if (ev !== "purchase_approved" && !ev.includes("approved") && !ev.includes("paid") && ev !== "active") {
+      return { success: false, requiresReview: true, reason: "payment_not_approved" };
+    }
+    
+    const batch = adminDb.batch();
+    salonRef = adminDb.collection("salons").doc(String(salonId));
+    
     const newSalonData = {
-      id: String(finalSalonId),
-      name: normalizedData.customer?.name || "LumièreOS Salon",
-      ownerName: normalizedData.customer?.name || "",
+      id: String(salonId),
+      name: normalizedData.customer?.name || onboardingData.name || "LumièreOS Salon",
+      ownerName: normalizedData.customer?.name || onboardingData.ownerName || "",
+      ownerEmail: onboardingData.ownerEmail || customerEmail || "",
+      ownerId: onboardingData.ownerId,
       plan: mappedPlan,
-      subscriptionStatus: realUpdatePayload.subscriptionStatus || "pending",
-      activationStatus: realUpdatePayload.activationStatus || "pending",
-      isActive: isApproved,
-      createdAt: Date.now(),
+      subscriptionStatus: "active",
+      activationStatus: "active",
+      isActive: true,
+      createdAt: onboardingData.createdAt || Date.now(),
       ...realUpdatePayload
     };
-
-    await salonRef.set(newSalonData);
-    console.log(`[Cakto Webhook Processor] Salão novo criado e ativado com ID: ${finalSalonId}`);
+    
+    batch.set(salonRef, newSalonData);
+    
+    const userRef = adminDb.collection("users").doc(onboardingData.ownerId);
+    batch.update(userRef, {
+      salonId: String(salonId),
+      role: "owner"
+    });
+    
+    batch.delete(onboardingRef);
+    await batch.commit();
+    
+    console.log(`[Cakto Webhook Processor] Onboarding promovido e Salão criado com ID: ${salonId}`);
     
     return {
       success: true,
       salonUpdated: true,
       plan: newSalonData.plan,
       status: newSalonData.subscriptionStatus,
-      firestorePath: `salons/${finalSalonId}`
+      firestorePath: `salons/${salonId}`
     };
   }
 
@@ -610,6 +663,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json(result);
   } catch (err: any) {
     console.error("[Cakto Webhook Serverless Error] Falha de processamento:", err);
-    return res.status(500).json({ error: err.message || "Erro interno no processamento do webhook." });
+    if (isFirebaseAdminCredentialError(err)) {
+       return res.status(503).json({
+          error: "O serviço de faturamento está temporariamente indisponível.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED"
+       });
+    }
+    return res.status(500).json({ 
+       error: "Erro interno no processamento do webhook.",
+       code: "WEBHOOK_PROCESSING_FAILED"
+    });
   }
 }

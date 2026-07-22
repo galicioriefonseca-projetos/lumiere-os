@@ -11,7 +11,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
-import { createDemoSalon, deleteDemoSalon } from '@/lib/seedDemoSalon';
 import { APP_INFO } from '../config/appInfo';
 
 export default function MasterPanel() {
@@ -339,37 +338,14 @@ export default function MasterPanel() {
           updates.isActive = true;
           updates.activationStatus = 'active';
           break;
-        case 'cakto_activate':
-          updates.billingProvider = 'cakto';
-          updates.subscriptionStatus = 'active';
-          updates.paymentStatus = 'paid';
-          updates.isActive = true;
-          updates.activationStatus = 'active';
-          updates.caktoCustomerId = 'cus_ck_' + Math.random().toString(36).substring(2, 11).toUpperCase();
-          updates.caktoSubscriptionId = 'sub_ck_' + Math.random().toString(36).substring(2, 11).toUpperCase();
-          updates.caktoCheckoutUrl = 'https://cakto.com.br/checkout/simulated';
-          updates.nextBillingDate = Date.now() + (30 * 24 * 60 * 60 * 1000);
-          break;
-        case 'cakto_simulate_overdue':
-          updates.billingProvider = 'cakto';
-          updates.subscriptionStatus = 'overdue';
-          updates.paymentStatus = 'overdue';
-          updates.nextBillingDate = Date.now() - (5 * 24 * 60 * 60 * 1000);
-          break;
-        case 'cakto_clear':
-          updates.billingProvider = 'manual_pix';
-          updates.caktoCustomerId = '';
-          updates.caktoSubscriptionId = '';
-          updates.caktoCheckoutUrl = '';
-          updates.subscriptionStatus = 'preview';
-          updates.paymentStatus = 'none';
-          break;
         case 'migrate_founder':
           if (founderMigrationOption === 'A') {
             if (!currentUser) {
               toast.error("Usuário não autenticado.");
               return;
             }
+            const checkoutWindow = window.open('about:blank', '_blank');
+            if (checkoutWindow) checkoutWindow.opener = null;
             try {
               const token = await currentUser.getIdToken(true);
               const response = await fetch('/api/cakto/create-checkout', {
@@ -381,7 +357,8 @@ export default function MasterPanel() {
                 body: JSON.stringify({
                   salonId: selectedSalon.id,
                   planId: 'founder',
-                  checkoutPurpose: 'activate_recurring'
+                  checkoutPurpose: 'activate_recurring',
+                  email: selectedSalon.billingEmail || selectedSalon.ownerEmail || currentUser.email || ''
                 })
               });
               if (!response.ok) {
@@ -393,7 +370,8 @@ export default function MasterPanel() {
               }
               const data = await response.json();
               if (data.checkoutUrl) {
-                window.open(data.checkoutUrl, '_blank');
+                if (checkoutWindow) checkoutWindow.location.href = data.checkoutUrl;
+                else window.location.assign(data.checkoutUrl);
                 toast.success("Checkout gerado. O acesso atual permanecerá ativo até a confirmação do pagamento.");
                 setIsDialogOpen(false);
                 setSelectedSalon(null);
@@ -402,40 +380,58 @@ export default function MasterPanel() {
                 throw new Error("checkoutUrl não retornada pelo servidor.");
               }
             } catch (err: any) {
+              checkoutWindow?.close();
               console.error("Option A migration error:", err);
               toast.error(`Erro: ${err.message || "Falha ao gerar faturamento Cakto."}`);
               return;
             }
           } else {
-            // Opção B: Manter faturamento manual
+            // Opção B: manter a licença já paga em faturamento manual.
+            // Não inventar vencimento, pagamento ou período; esses dados são preservados.
             updates.billingProvider = 'manual';
             updates.billingMode = 'manual_pix';
-            updates.subscriptionStatus = 'active'; // faturamento manual ativo
+            updates.subscriptionStatus = 'active';
             updates.paymentStatus = 'paid';
             updates.isActive = true;
             updates.activationStatus = 'active';
-            updates.plan = 'founder';
-
-            const existingNextBillingDate = selectedSalon.nextBillingDate;
-            const isValidDate = existingNextBillingDate && typeof existingNextBillingDate === 'number' && existingNextBillingDate > Date.now() - 365 * 24 * 60 * 60 * 1000;
-            if (!isValidDate) {
-              updates.nextBillingDate = Date.now() + 30 * 24 * 60 * 60 * 1000;
-            }
-
-            (updates as any).pendingPlan = deleteField();
-            (updates as any).pendingOfferId = deleteField();
-            (updates as any).pendingCheckoutUrl = deleteField();
-            (updates as any).pendingCheckoutEmail = deleteField();
-            (updates as any).pendingRequestedAt = deleteField();
-            (updates as any).pendingCheckoutPurpose = deleteField();
-            (updates as any).pendingBillingActivation = deleteField();
-
-            updates.caktoSubscriptionId = '';
-            updates.caktoOrderId = '';
-            updates.caktoCustomerId = '';
-            updates.caktoCheckoutUrl = '';
-            updates.caktoOfferId = '';
             updates.billingRequiresMigration = false;
+
+            const fieldsToDelete = [
+              'pendingPlan',
+              'pendingOfferId',
+              'pendingCheckoutUrl',
+              'pendingCheckoutEmail',
+              'pendingRequestedAt',
+              'pendingCheckoutPurpose',
+              'pendingBillingActivation',
+              'homologationCustomerId',
+              'homologationOrderId',
+              'homologationSubscriptionId',
+              'homologationCheckoutUrl',
+              'homologationOfferId',
+              'homologationLastEventId',
+              'homologationLastEvent',
+              'homologationSubscriptionStatus',
+              'homologationActivationStatus',
+              'homologationPaymentStatus',
+              'homologationNextBillingDate',
+              'homologationLastPaymentAt',
+              'homologationLastPaymentAmount',
+              'homologationUpdatedAt'
+            ];
+
+            fieldsToDelete.forEach((field) => {
+              (updates as any)[field] = deleteField();
+            });
+
+            const isNonProductionId = (value?: string | null) =>
+              typeof value === 'string' && /(simulated|homolog|test)/i.test(value);
+
+            if (isNonProductionId(selectedSalon.caktoSubscriptionId)) (updates as any).caktoSubscriptionId = deleteField();
+            if (isNonProductionId(selectedSalon.caktoOrderId)) (updates as any).caktoOrderId = deleteField();
+            if (isNonProductionId(selectedSalon.caktoCustomerId)) (updates as any).caktoCustomerId = deleteField();
+            if (isNonProductionId(selectedSalon.caktoOfferId)) (updates as any).caktoOfferId = deleteField();
+            if (selectedSalon.caktoCheckoutUrl?.includes('simulated_checkout')) (updates as any).caktoCheckoutUrl = deleteField();
           }
           break;
         default:
@@ -776,9 +772,6 @@ export default function MasterPanel() {
                                   <SelectItem value="payment_reactivate">Reativar Assinatura</SelectItem>
                                   {import.meta.env.DEV && (
                                     <>
-                                      <SelectItem value="cakto_activate">Ativar Cakto (Simular Link)</SelectItem>
-                                      <SelectItem value="cakto_simulate_overdue">Simular 5 dias de atraso (Cakto)</SelectItem>
-                                      <SelectItem value="cakto_clear">Limpar Dados Cakto</SelectItem>
                                     </>
                                   )}
                                 </SelectContent>
@@ -1198,7 +1191,7 @@ export default function MasterPanel() {
                       />
                       <div>
                         <span className="font-semibold text-white block">Opção A: Gerar checkout real Founder</span>
-                        <span className="text-xs text-muted-foreground block mt-0.5">O cliente receberá o link para a oferta de produção da Cakto. A assinatura só será reativada após a confirmação do webhook real.</span>
+                        <span className="text-xs text-muted-foreground block mt-0.5">Gera o checkout de produção da Cakto sem alterar o acesso atual. A conta permanece ativa e manual até a confirmação do webhook real.</span>
                       </div>
                     </label>
 

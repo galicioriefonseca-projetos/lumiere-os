@@ -83,6 +83,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!salonId || !planId) {
       return res.status(400).json({ error: "salonId e planId são campos obrigatórios." });
     }
+    if (typeof salonId !== "string" || !/^[A-Za-z0-9_-]{3,128}$/.test(salonId)) {
+      return res.status(400).json({ error: "salonId inválido." });
+    }
+    if (email && (typeof email !== "string" || email.length > 254)) {
+      return res.status(400).json({ error: "E-mail de faturamento inválido." });
+    }
 
     // Rule 6: Plano inválido deve ser rejeitado
     const validPlans = ["start", "performance", "network", "enterprise", "founder"];
@@ -99,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         throw authErr;
       }
       console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
-      return res.status(401).json({ error: authErr.message || "Sessão inválida ou expirada." });
+      return res.status(401).json({ error: "Sessão inválida ou expirada." });
     }
 
     const adminDb = getAdminDb();
@@ -287,18 +293,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const hasCaktoCredentials = !!(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET);
-    const isSimulationAllowed = 
-      process.env.VITE_CAKTO_SANDBOX_MODE === "true" ||
-      process.env.CAKTO_SANDBOX_MODE === "true" ||
-      !!process.env.FIRESTORE_EMULATOR_HOST;
+    const isProduction = process.env.NODE_ENV === "production";
+    const sandboxRequested = process.env.CAKTO_SANDBOX_MODE === "true" || !!process.env.FIRESTORE_EMULATOR_HOST;
+    const isSimulationAllowed = !isProduction && sandboxRequested;
 
     if (!hasCaktoCredentials && !isSimulationAllowed) {
       return res.status(503).json({
-        error: "Credenciais de faturamento não configuradas."
+        error: "Credenciais de faturamento não configuradas.",
+        code: "CAKTO_NOT_CONFIGURED"
       });
     }
 
-    const useSimulation = !hasCaktoCredentials || isSimulationAllowed;
+    const useSimulation = isSimulationAllowed;
 
     // 1. Em desenvolvimento sem credenciais ou em sandbox mode explícito, permitir simulação
     if (useSimulation) {
@@ -409,6 +415,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
     console.error("[Cakto Checkout Serverless] Falha ao processar requisição:", err);
-    return res.status(500).json({ error: "Falha ao iniciar faturamento via Cakto. Por favor, verifique sua conexão ou contate o suporte." });
+    return res.status(500).json({ error: "Falha ao iniciar faturamento.", code: "CHECKOUT_START_FAILED" });
   }
 }

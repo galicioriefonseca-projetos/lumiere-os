@@ -110,6 +110,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } catch (err: any) {
     console.error("[Cakto Settings Serverless API] Erro no manipulador:", err);
-    return res.status(500).json({ error: err.message || "Erro interno do servidor." });
+    return res.status(500).json({ error: "Erro interno do servidor.", code: "CAKTO_SETTINGS_FAILED" });
   }
 }

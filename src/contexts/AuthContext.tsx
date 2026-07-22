@@ -3,7 +3,7 @@ import { User as AuthUser, onAuthStateChanged, signOut, GoogleAuthProvider, sign
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { User, Salon, Role } from '../types';
-import { ensureTutorialSalonForLeandro } from '@/lib/seedTutorialSalon';
+import { ensureTutorialSalon } from '@/lib/seedTutorialSalon';
 import { logAuthAuditEvent } from '../lib/audit';
 
 interface AuthContextType {
@@ -89,6 +89,9 @@ const isOfflineError = (error: any): boolean => {
     errMsg.toLowerCase().includes('failed to get document')
   );
 };
+
+const DEMO_MODE_ENABLED = import.meta.env.VITE_ENABLE_DEMO_MODE === "true";
+const DEMO_USER_EMAIL = import.meta.env.VITE_DEMO_USER_EMAIL || "";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -236,13 +239,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log("[TEMPORARY BOOTSTRAP FALLBACK] Iniciando para", email, "UID:", uid);
     const demoSalonId = 'tutorial_lumiere_studio';
     try {
-      await ensureTutorialSalonForLeandro(uid);
+      await ensureTutorialSalon(uid);
       const userSnap = await getDoc(doc(db, 'users', uid));
       const uData = userSnap.exists() ? { ...userSnap.data(), id: uid } : null;
       console.log("[TEMPORARY BOOTSTRAP FALLBACK] Processo de bootstrap operado com sucesso de ponta a ponta!");
       return { uData, demoSalonId };
     } catch (err) {
-      console.error("[TEMPORARY BOOTSTRAP FALLBACK] Erro no bootstrap de Leandro Fonseca:", err);
+      console.error("[TEMPORARY BOOTSTRAP FALLBACK] Erro no bootstrap de Administrador de Demonstração:", err);
       throw err;
     }
   };
@@ -291,7 +294,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const isPlatformAdminFromColl = adminSnap.exists();
       setIsPlatformAdmin(isPlatformAdminFromColl);
 
-      if (currentUser?.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
+      if (DEMO_MODE_ENABLED === true && currentUser?.email === DEMO_USER_EMAIL) {
         await runDemoBootstrapFallback(uid, currentUser.email, currentUser.displayName);
       }
 
@@ -360,7 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (isPlatformAdminFromColl) {
         uData = {
           id: uid,
-          fullName: currentUser?.displayName || 'Gali Ciório Fonseca',
+          fullName: currentUser?.displayName || 'Administrador da Plataforma',
           email: currentUser?.email || '',
           phone: '',
           role: 'platform_admin',
@@ -687,12 +690,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("[AuthInit] Erro ao buscar platformAdmins document:", err);
         }
 
-        // TEMPORARY BOOTSTRAP FALLBACK para leandropfonseca20@gmail.com
-        if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) {
+        // TEMPORARY BOOTSTRAP FALLBACK para demo@lumiereos.com.br
+        if (DEMO_MODE_ENABLED === true && user.email === DEMO_USER_EMAIL) {
           try {
             await runDemoBootstrapFallback(user.uid, user.email, user.displayName);
           } catch (err) {
-            console.error("[AuthInit] Falha ao rodar bootstrap Leandro Fonseca:", err);
+            console.error("[AuthInit] Falha ao rodar bootstrap Administrador de Demonstração:", err);
           }
         }
 
@@ -761,7 +764,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               console.log("[AuthInit] users doc não existe, mas platform admin. Gerando perfil virtual...");
               uData = {
                 id: user.uid,
-                fullName: user.displayName || 'Gali Ciório Fonseca',
+                fullName: user.displayName || 'Administrador da Plataforma',
                 email: user.email || '',
                 phone: '',
                 role: 'platform_admin',
@@ -1240,7 +1243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isPlatformAdminExplicit = (adminDocSnap && adminDocSnap.exists()) || (userDocSnap && userDocSnap.exists() && userDocSnap.data()?.role === 'platform_admin');
     console.log("[PlatformAuth] Usuário é platform_admin detectado?", isPlatformAdminExplicit);
 
-    const isDemoOwner = user.email === import.meta.env.VITE_DEMO_USER_EMAIL;
+    const isDemoOwner = DEMO_MODE_ENABLED === true && user.email === DEMO_USER_EMAIL;
 
     if (!userDocSnap || !userDocSnap.exists()) {
       if (isPlatformAdminExplicit) {
@@ -1248,7 +1251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const now = Date.now();
         const newProfile = {
           id: user.uid,
-          fullName: user.displayName || 'Gali Ciório Fonseca',
+          fullName: user.displayName || 'Administrador da Plataforma',
           email: user.email || '',
           phone: user.phoneNumber || '',
           role: 'platform_admin',
@@ -1267,9 +1270,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const now = Date.now();
         const newProfile = {
           id: user.uid,
-          fullName: user.displayName || 'Leandro Fonseca',
+          fullName: user.displayName || 'Administrador de Demonstração',
           email: user.email || '',
-          phone: user.phoneNumber || '17996140963',
+          phone: user.phoneNumber || '',
           role: 'owner',
           salonId: demoSalonId,
           createdAt: now,
@@ -1600,7 +1603,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user;
   };
 
-  const isDemoActive = currentUser?.email === import.meta.env.VITE_DEMO_USER_EMAIL && salonData?.isDemo === true;
+  const isDemoActive = DEMO_MODE_ENABLED && currentUser?.email === DEMO_USER_EMAIL && salonData?.isDemo === true;
   const simulatedUserData = (userData && isDemoActive && demoRole) ? {
     ...userData,
     role: demoRole

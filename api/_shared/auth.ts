@@ -1,4 +1,4 @@
-import { getAdminAuth, getAdminDb } from "./firebaseAdmin.js";
+import { getAdminAuth, getAdminDb, isFirebaseAdminCredentialError } from "./firebaseAdmin.js";
 
 export async function verifyIdToken(req: any): Promise<any> {
   const authHeader = req.headers.authorization;
@@ -23,6 +23,7 @@ export async function resolvePlatformAdmin(user: any, adminDb: any): Promise<boo
     const platformAdminSnap = await adminDb.collection("platformAdmins").doc(user.uid).get();
     if (platformAdminSnap.exists) return true;
   } catch (err) {
+    if (isFirebaseAdminCredentialError(err)) throw err;
     console.warn(`[Platform Admin] Erro ao consultar platformAdmins/${user.uid}:`, err);
   }
 
@@ -36,6 +37,7 @@ export async function resolvePlatformAdmin(user: any, adminDb: any): Promise<boo
       }
     }
   } catch (err) {
+    if (isFirebaseAdminCredentialError(err)) throw err;
     console.warn(`[Platform Admin] Erro ao consultar users/${user.uid}:`, err);
   }
 
@@ -94,6 +96,7 @@ export async function canManageBilling(
       }
     }
   } catch (err) {
+    if (isFirebaseAdminCredentialError(err)) throw err;
     console.error(
       `[Billing Auth] Erro ao consultar documento do usuário users/${uid}:`,
       err

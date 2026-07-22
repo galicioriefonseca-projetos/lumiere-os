@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 import { verifyIdToken, resolvePlatformAdmin } from "../_shared/auth.js";
 
 interface CaktoSettings {
@@ -243,6 +243,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err: any) {
     console.error("[Cakto Sync API Error] Falha de sincronização:", err);
-    return res.status(500).json({ error: err.message || "Erro interno de sincronização." });
+    if (isFirebaseAdminCredentialError(err)) {
+       return res.status(503).json({
+          error: "O serviço de faturamento está temporariamente indisponível.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED"
+       });
+    }
+    return res.status(500).json({ 
+       error: "Erro interno de sincronização.",
+       code: "CAKTO_SYNC_FAILED"
+    });
   }
 }

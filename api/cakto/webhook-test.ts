@@ -82,6 +82,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json(result);
   } catch (err: any) {
     console.error("[Cakto Webhook Test Serverless Error] Falha de processamento:", err);
-    return res.status(500).json({ error: err.message || "Erro interno no processamento do teste de webhook." });
+    return res.status(500).json({ error: "Erro interno no processamento do teste de webhook.", code: "WEBHOOK_TEST_FAILED" });
   }
 }

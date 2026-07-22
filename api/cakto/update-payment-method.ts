@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -24,6 +24,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       user = await verifyIdToken(req);
     } catch (authErr: any) {
+      if (isFirebaseAdminCredentialError(authErr)) {
+        throw authErr;
+      }
       return res.status(401).json({ error: "Sessão inválida ou expirada." });
     }
 
@@ -52,6 +55,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err: any) {
     console.error("[Cakto Payment Method Serverless] Erro:", err);
-    return res.status(500).json({ error: err.message || "Erro interno ao atualizar método de pagamento." });
+    if (isFirebaseAdminCredentialError(err)) {
+       return res.status(503).json({
+          error: "O serviço de faturamento está temporariamente indisponível.",
+          code: "FIREBASE_ADMIN_AUTH_FAILED"
+       });
+    }
+    return res.status(500).json({ 
+       error: "Erro interno ao atualizar método de pagamento.",
+       code: "PAYMENT_METHOD_FAILED"
+    });
   }
 }

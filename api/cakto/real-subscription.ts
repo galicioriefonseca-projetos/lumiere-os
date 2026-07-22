@@ -117,31 +117,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                       subscriptionId.toLowerCase().includes("simulated") || 
                       subscriptionId === "sub_simulated_dev";
     if (isHomolog) {
-      // Se for Platform Admin (verificado via authResult.role), retornamos dados simulados com sucesso para permitir testes e desenvolvimento.
-      // Clientes reais nunca visualizam dados simulados.
-      const isUserPlatformAdmin = authResult.role === "platform_admin";
-      if (isUserPlatformAdmin) {
-        return res.status(200).json({
-          status: "active",
-          amount: 297.00,
-          paymentMethod: salonData?.paymentMethod || "credit_card",
-          next_payment_date: "2026-08-05T12:00:00.000Z",
-          offer: "offer_founder_297",
-          recurrence_period: "monthly",
-          isSimulated: true
-        });
-      }
-
-      return res.status(400).json({ 
-        error: "Sua assinatura está em modo de homologação/simulação. Migre a conta para produção antes de prosseguir.",
-        isHomolog: true
+      return res.status(200).json({
+        isHomolog: true,
+        hasRealSubscription: false,
+        status: salonData?.homologationSubscriptionStatus || "unknown",
+        amount: salonData?.homologationLastPaymentAmount || 0,
+        paymentMethod: salonData?.homologationPaymentStatus || "unknown",
+        next_payment_date: salonData?.homologationNextBillingDate || null,
+        offer: salonData?.homologationOfferId || null
       });
     }
 
     // Fazer a chamada real para a Cakto
     const accessToken = await getCaktoAccessToken();
     const apiUrl = getCaktoApiBaseUrl();
-    const caktoUrl = `${apiUrl}/public_api/subscriptions/${subscriptionId}/`;
+    const caktoUrl = `${apiUrl}/public_api/subscriptions/${encodeURIComponent(subscriptionId)}/`;
 
     const response = await fetch(caktoUrl, {
       method: "GET",
@@ -180,11 +170,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (isFirebaseAdminCredentialError(err)) {
       console.error("[LumièreOS SERVER ERROR] Firebase Admin credential error caught in real-sub:", err);
       return res.status(503).json({
-        error: "O serviço de faturamento está temporariamente indisponível. Nossa equipe técnica já pode verificar a configuração do servidor.",
+        error: "O serviço de faturamento está temporariamente indisponível.",
         code: "FIREBASE_ADMIN_AUTH_FAILED"
       });
     }
     console.error("[Cakto Real Sub Serverless] Erro ao obter assinatura real:", err);
-    return res.status(500).json({ error: err.message || "Falha ao obter assinatura real na Cakto." });
+    return res.status(502).json({ 
+       error: "Não foi possível consultar o gateway de pagamento neste momento.",
+       code: "CAKTO_UPSTREAM_ERROR"
+    });
   }
 }

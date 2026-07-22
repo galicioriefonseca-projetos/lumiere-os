@@ -54,6 +54,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err: any) {
     console.error("[Cakto Status Serverless] Erro ao obter status:", err);
-    return res.status(500).json({ error: err.message || "Falha ao obter status de faturamento." });
+    return res.status(500).json({ error: "Falha ao obter status de faturamento.", code: "SUBSCRIPTION_STATUS_FAILED" });
   }
 }

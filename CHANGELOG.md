@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.6.0-rc.1 (2026-07-15)
+### Release candidate comercial e consolidação de segurança
+
+- Fluxo Founder manual para recorrência Cakto sem suspensão antecipada da conta.
+- Checkout grava somente campos pendentes; confirmação definitiva ocorre pelo webhook validado.
+- Homologação isolada em campos próprios e protegida por Platform Admin.
+- Onboarding só é promovido para salão após pagamento aprovado e correlação segura.
+- Firebase Admin aceita conta de serviço em JSON e retorna erros públicos sanitizados.
+- Estrutura consolidada em `src/components/ui`, `src/lib` e uma única `firestore.rules`.
+- Endpoints legados de Asaas e Mercado Pago removidos dos fluxos ativos.
+- Testes de Billing, webhook, build e verificação estrutural ampliados.
+- Links legais, identidade pública e canais de suporte configuráveis por ambiente.
+
 ## v1.5.7-founder (2026-06-08)
 ### Gerente como braço direito operacional
 

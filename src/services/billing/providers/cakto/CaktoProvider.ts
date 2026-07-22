@@ -53,11 +53,16 @@ export class CaktoProvider implements BillingProvider {
   }
 
   async createSubscription(salonId: string, customerId: string, data: Partial<BillingSubscription>): Promise<BillingSubscription> {
-    const idToken = auth?.currentUser ? await auth.currentUser.getIdToken(true) : null;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (idToken) {
-      headers['Authorization'] = `Bearer ${idToken}`;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error("Sessão expirada. Entre novamente para continuar.");
     }
+
+    const idToken = await currentUser.getIdToken(true);
+    const headers: Record<string, string> = { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    };
 
     const response = await fetch('/api/cakto/create-checkout', {
       method: 'POST',

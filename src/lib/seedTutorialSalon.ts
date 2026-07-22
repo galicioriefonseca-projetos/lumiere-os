@@ -415,3 +415,5 @@ export async function ensureTutorialSalon(uid: string): Promise<{ success: boole
     return { success: false, message: error.message || 'Erro ao sintonizar salão tutorial.' };
   }
 }
+
+export const ensureTutorialSalonForLeandro = ensureTutorialSalon;

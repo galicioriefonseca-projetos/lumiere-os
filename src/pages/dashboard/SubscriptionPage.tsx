@@ -262,22 +262,39 @@ export default function SubscriptionPage() {
   const [realSubError, setRealSubError] = useState<string | null>(null);
   const [isUpdatingMethod, setIsUpdatingMethod] = useState(false);
 
+  const getFreshIdToken = async (): Promise<string> => {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("Sessão expirada. Entre novamente para continuar.");
+    }
+    return user.getIdToken(true);
+  };
+
+  const getFriendlyBillingError = (data: any, fallback: string): string => {
+    if (data?.code === 'FIREBASE_ADMIN_AUTH_FAILED') {
+      return 'O serviço de faturamento está temporariamente indisponível. Tente novamente em alguns minutos ou fale com o suporte.';
+    }
+    if (data?.code === 'CAKTO_UPSTREAM_ERROR') {
+      return 'Não foi possível consultar o gateway de pagamento neste momento. Tente novamente mais tarde.';
+    }
+    return data?.error || fallback;
+  };
+
   const fetchRealSub = async () => {
     if (!salonData?.id) return;
     setIsLoadingRealSub(true);
     setRealSubError(null);
     try {
-      const token = await auth.currentUser?.getIdToken(true);
-      const res = await fetch(`/api/cakto/real-subscription?salonId=${salonData.id}`, {
+      const token = await getFreshIdToken();
+      const res = await fetch(`/api/cakto/real-subscription?salonId=${encodeURIComponent(salonData.id)}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Falha ao obter detalhes reais da assinatura.");
+        throw new Error(getFriendlyBillingError(data, "Falha ao obter detalhes da assinatura."));
       }
-      const data = await res.json();
       setRealSub(data);
     } catch (err: any) {
       console.error("[fetchRealSub] Erro:", err);
@@ -290,15 +307,24 @@ export default function SubscriptionPage() {
   useEffect(() => {
     const hasRealCakto = isRealCaktoSubscription(salonData);
     if (activeTab === 'payment' && hasRealCakto) {
-      fetchRealSub();
+      void fetchRealSub();
+      return;
     }
-  }, [activeTab, salonData?.id]);
+
+    // Contas manuais não possuem assinatura real na Cakto; limpar estados antigos
+    // evita exibir uma falha armazenada de uma consulta anterior.
+    if (!hasRealCakto) {
+      setRealSub(null);
+      setRealSubError(null);
+      setIsLoadingRealSub(false);
+    }
+  }, [activeTab, salonData?.id, salonData?.billingProvider, salonData?.subscriptionStatus, salonData?.caktoSubscriptionId]);
 
   const handleUpdatePaymentMethod = async () => {
     if (!salonData?.id) return;
     setIsUpdatingMethod(true);
     try {
-      const token = await auth.currentUser?.getIdToken(true);
+      const token = await getFreshIdToken();
       const res = await fetch('/api/cakto/update-payment-method', {
         method: 'POST',
         headers: {
@@ -326,7 +352,9 @@ export default function SubscriptionPage() {
       }
 
       await refreshUserData();
-      await fetchRealSub();
+      if (isRealCaktoSubscription(salonData)) {
+        await fetchRealSub();
+      }
     } catch (err: any) {
       console.error("[handleUpdatePaymentMethod] Erro:", err);
       toast.error(err.message || "Falha ao atualizar forma de pagamento.");
@@ -441,30 +469,46 @@ export default function SubscriptionPage() {
   const handleActivate = async () => {
     if (!salonData.id) return;
 
+    // Abre a aba dentro do clique do usuário para evitar bloqueio de pop-up em celulares.
+    const checkoutWindow = window.open('about:blank', '_blank');
+    if (checkoutWindow) checkoutWindow.opener = null;
+
     setIsActivating(true);
     try {
-      toast.info('Sincronizando com o gateway Cakto...');
-      
+      toast.info('Preparando checkout seguro...');
       const purpose = isManualActiveSubscription(salonData) ? 'activate_recurring' : 'new_subscription';
 
-      const subResult = await billingService.createSubscription(salonData.id, salonData.ownerEmail || '', {
-        planId: selectedPlan,
-        paymentMethod: paymentMethod,
-        checkoutPurpose: purpose
-      } as any) as any;
-
-      await refreshUserData();
-      
-      toast.success('Assinatura iniciada com sucesso! Redirecionando...');
-      setShowActivationModal(false);
+      const subResult = await billingService.createSubscription(
+        salonData.id,
+        salonData.billingEmail || salonData.ownerEmail || '',
+        {
+          planId: selectedPlan,
+          paymentMethod,
+          checkoutPurpose: purpose
+        } as any
+      ) as any;
 
       const url = subResult.checkoutUrl;
-      if (url) {
-        window.open(url, '_blank');
-      } else {
-        toast.warning('O gateway não retornou a URL de checkout.');
+      if (!url) {
+        checkoutWindow?.close();
+        throw new Error('O gateway não retornou a URL de checkout.');
       }
+
+      if (checkoutWindow) {
+        checkoutWindow.location.href = url;
+      } else {
+        window.location.assign(url);
+      }
+
+      setShowActivationModal(false);
+      toast.success(
+        isManualActiveSubscription(salonData)
+          ? 'Checkout gerado. Seu acesso atual continuará ativo até a confirmação do pagamento.'
+          : 'Checkout gerado com sucesso.'
+      );
+      await refreshUserData();
     } catch (err: any) {
+      checkoutWindow?.close();
       console.error("[Billing Page] Erro na ativação:", err);
       toast.error(err.message || 'Falha ao processar assinatura via Cakto.');
     } finally {
@@ -1253,51 +1297,101 @@ export default function SubscriptionPage() {
               <div className="rounded-2xl border border-zinc-800 bg-black/40 text-white p-6 space-y-4">
                 <div className="flex justify-between items-center">
                   <h3 className="font-semibold text-zinc-200">Histórico de Cobranças</h3>
-                  <span className="text-[10px] text-zinc-500 uppercase">Valores integrados via Cakto</span>
+                  <span className="text-[10px] text-zinc-500 uppercase">
+                    {salonData.billingProvider === 'cakto' ? 'Valores integrados via Cakto' : 'Lançamentos de Cobrança'}
+                  </span>
                 </div>
 
-                {payments.length === 0 ? (
-                  <div className="py-12 text-center text-zinc-500 border border-dashed border-zinc-800 rounded-xl space-y-2">
-                    <FileText className="w-8 h-8 text-zinc-600 mx-auto" />
-                    <p className="text-xs">Nenhuma fatura ou transação registrada anteriormente.</p>
-                    <p className="text-[10px] text-zinc-600">Sua assinatura atual pode estar utilizando o período de avaliação gratuita.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto border border-zinc-900 rounded-xl">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-500 uppercase font-semibold text-[10px] tracking-wider">
-                          <th className="p-3">Data</th>
-                          <th className="p-3">ID Pedido / Transação</th>
-                          <th className="p-3">Método</th>
-                          <th className="p-3">Valor</th>
-                          <th className="p-3 text-right">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-900">
-                        {payments.map((p) => (
-                          <tr key={p.id} className="hover:bg-zinc-900/40">
-                            <td className="p-3 text-zinc-400">{formatDate(p.createdAt)}</td>
-                            <td className="p-3 font-mono font-bold text-zinc-300 text-[11px] select-all">{p.id}</td>
-                            <td className="p-3 text-zinc-400 uppercase">{p.method === 'pix' ? '💸 Pix' : '💳 Cartão'}</td>
-                            <td className="p-3 text-white font-bold">{formatMoney(p.amount)}</td>
-                            <td className="p-3 text-right">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                p.status === 'paid' 
-                                  ? 'bg-green-500/10 text-green-400' 
-                                  : p.status === 'rejected' 
-                                    ? 'bg-red-500/10 text-red-400' 
-                                    : 'bg-yellow-500/10 text-yellow-400'
-                              }`}>
-                                {p.status === 'paid' ? 'Pago' : p.status === 'rejected' ? 'Recusado' : p.status}
-                              </span>
-                            </td>
+                {(() => {
+                  const filteredPayments = payments.filter((p) => {
+                    if (import.meta.env.PROD) {
+                      return !p.isTest && p.environment !== 'homologation' && !p.isHomologation;
+                    }
+                    return true;
+                  });
+
+                  if (filteredPayments.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-zinc-500 border border-dashed border-zinc-800 rounded-xl space-y-2">
+                        <FileText className="w-8 h-8 text-zinc-600 mx-auto" />
+                        <p className="text-xs">Nenhuma cobrança ou transação registrada nesta conta.</p>
+                        <p className="text-[10px] text-zinc-600">
+                          {salonData.billingProvider === 'cakto'
+                            ? 'Faturas e liquidações processadas via Cakto serão listadas aqui.'
+                            : 'Cobranças geradas e confirmações de faturamento serão listadas aqui.'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="overflow-x-auto border border-zinc-900 rounded-xl">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-zinc-950 border-b border-zinc-900 text-zinc-500 uppercase font-semibold text-[10px] tracking-wider">
+                            <th className="p-3">Data</th>
+                            <th className="p-3">ID Transação / Ref</th>
+                            <th className="p-3">Origem</th>
+                            <th className="p-3">Método</th>
+                            <th className="p-3">Valor</th>
+                            <th className="p-3 text-right">Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody className="divide-y divide-zinc-900">
+                          {filteredPayments.map((p) => {
+                            const transactionId = p.transactionId || p.caktoOrderId || p.orderId;
+                            // Não trata o ID interno do Firestore como ID de transação real se for Cakto sem transactionId (embora fallback se não for)
+                            const displayId = transactionId ? transactionId : `Ref. ${p.id.slice(0, 8)}`;
+                            
+                            const isCaktoPayment = p.provider === 'cakto' || !!p.caktoOrderId || !!p.caktoTransactionId || p.webhookProvider === 'cakto';
+                            
+                            let provider = 'Sistema';
+                            if (isCaktoPayment) {
+                              provider = 'Cakto Gateway';
+                            } else if (p.provider === 'manual' || p.provider === 'manual_pix' || p.status === 'reported' || p.manual) {
+                              provider = 'Pagamento manual informado';
+                            }
+
+                            return (
+                              <tr key={p.id} className="hover:bg-zinc-900/40">
+                                <td className="p-3 text-zinc-400">{formatDate(p.createdAt || p.timestamp)}</td>
+                                <td className="p-3 font-mono font-bold text-zinc-300 text-[11px] select-all" title={p.id}>
+                                  {displayId}
+                                </td>
+                                <td className="p-3 text-zinc-400 text-[11px]">{provider}</td>
+                                <td className="p-3 text-zinc-400 uppercase">
+                                  {p.method === 'pix' ? '💸 Pix' : p.method === 'credit_card' ? '💳 Cartão' : (p.method ? p.method.toUpperCase() : 'Manual')}
+                                </td>
+                                <td className="p-3 text-white font-bold">{formatMoney(p.amount || 0)}</td>
+                                <td className="p-3 text-right">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    p.status === 'paid' 
+                                      ? 'bg-green-500/10 text-green-400' 
+                                      : p.status === 'reported'
+                                        ? 'bg-blue-500/10 text-blue-400'
+                                        : p.status === 'rejected' 
+                                          ? 'bg-red-500/10 text-red-400' 
+                                          : 'bg-yellow-500/10 text-yellow-400'
+                                  }`}>
+                                    {p.status === 'paid' 
+                                      ? 'Pago' 
+                                      : p.status === 'reported' 
+                                        ? 'Pagamento manual informado' 
+                                        : p.status === 'rejected' 
+                                          ? 'Recusado' 
+                                          : p.status === 'pending'
+                                            ? 'Pendente'
+                                            : p.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
 
               </div>
             </div>
@@ -1310,7 +1404,7 @@ export default function SubscriptionPage() {
       {/* TAB CONTENT: 4. PAYMENT */}
       {activeTab === 'payment' && (
         <div className="max-w-2xl mx-auto space-y-6">
-          {!isRealCaktoSubscription(salonData) ? (
+          {isManualActiveSubscription(salonData) ? (
             <div className="space-y-6">
               {/* Cobertura Atual Block */}
               <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 animate-fade-in">
@@ -1328,7 +1422,7 @@ export default function SubscriptionPage() {
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
                     <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Plano</span>
                     <span className="text-xs font-bold text-white block pt-1">
-                      Plano Founder (Pioneiro)
+                      {planInfo.name} — {formatMoney(planInfo.monthlyAmount)}/mês
                     </span>
                   </div>
                   <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-1">
@@ -1368,6 +1462,40 @@ export default function SubscriptionPage() {
                 </div>
               </div>
             </div>
+          ) : !isRealCaktoSubscription(salonData) ? (
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-5 animate-fade-in">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-[#D4AF37]/10 rounded-lg text-[#D4AF37] shrink-0">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Pagamento recorrente ainda não configurado</h3>
+                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                    Conclua a configuração no checkout seguro. Seu acesso só será alterado após a confirmação válida do pagamento pelo gateway.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Plano selecionado</span>
+                  <span className="text-xs font-bold text-white block pt-1">{planInfo.name} — {formatMoney(planInfo.monthlyAmount)}/mês</span>
+                </div>
+                <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider block">Status</span>
+                  <span className="text-xs font-bold text-white block pt-1">{getStatusText(salonData.subscriptionStatus)}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPlan(currentPlan);
+                  setShowActivationModal(true);
+                }}
+                className="w-full bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold text-xs py-3.5 rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                <ExternalLink className="w-4 h-4" /> Continuar configuração do pagamento
+              </button>
+            </div>
           ) : (
             <>
               {isLoadingRealSub ? (
@@ -1384,7 +1512,7 @@ export default function SubscriptionPage() {
                     <div>
                       <h4 className="text-sm font-semibold text-white">Falha ao consultar assinatura</h4>
                       <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
-                        Não foi possível consultar os detalhes de faturamento junto à Cakto:
+                        Não foi possível consultar os detalhes de faturamento neste momento:
                       </p>
                       <p className="text-xs text-red-400 font-mono mt-2 bg-red-950/20 p-3 rounded-lg border border-red-950/40">
                         {realSubError}
@@ -1724,7 +1852,11 @@ export default function SubscriptionPage() {
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-[#D4AF37]" /> Ativar Faturamento LumièreOS
                 </h3>
-                <p className="text-xs text-zinc-500 mt-1">Inicie sua assinatura recorrente segura via Cakto.</p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  {isManualActiveSubscription(salonData)
+                    ? 'Configure as próximas mensalidades sem interromper o acesso atual.'
+                    : 'Inicie sua assinatura recorrente segura via Cakto.'}
+                </p>
               </div>
               <button 
                 type="button" 
@@ -1741,6 +1873,7 @@ export default function SubscriptionPage() {
                 <select 
                   value={selectedPlan} 
                   onChange={(e) => setSelectedPlan(e.target.value)}
+                  disabled={isManualActiveSubscription(salonData)}
                   className="bg-zinc-950 border border-zinc-800 text-white text-xs h-10 rounded-xl px-3 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
                 >
                   <option value="start">Start (R$ 197/mês)</option>
@@ -1783,7 +1916,7 @@ export default function SubscriptionPage() {
                 disabled={isActivating || (!!salonData.caktoSubscriptionId && salonData.subscriptionStatus === 'active')}
                 className="bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold rounded-xl flex items-center justify-center gap-2 px-5 h-10 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Ir para Pagamento'}
+                {isActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : (isManualActiveSubscription(salonData) ? 'Configurar próximas mensalidades' : 'Ir para Pagamento')}
               </button>
             </div>
           </div>

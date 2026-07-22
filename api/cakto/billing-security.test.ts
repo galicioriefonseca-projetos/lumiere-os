@@ -13,10 +13,10 @@ const mockSettingsGet = vi.fn().mockResolvedValue({
   })
 });
 
-const mockSalonGet = vi.fn();
-const mockSalonSet = vi.fn();
+const mockSalonGet = vi.fn().mockResolvedValue({ exists: false, data: () => ({}) });
+const mockSalonSet = vi.fn().mockResolvedValue(undefined);
 const mockOnboardingGet = vi.fn().mockResolvedValue({ exists: false });
-const mockOnboardingSet = vi.fn();
+const mockOnboardingSet = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../_shared/firebaseAdmin.js", () => {
   return {
@@ -51,7 +51,8 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
         return {
           doc: () => ({
             get: mockSalonGet,
-            set: mockSalonSet
+            set: mockSalonSet,
+            update: mockSalonSet
           })
         };
       }
@@ -101,7 +102,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
 
       expect(res.status).toHaveBeenCalledWith(401);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        error: "Token inválido"
+        error: "Sessão inválida ou expirada."
       }));
     });
 
@@ -378,7 +379,8 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
 
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
-        error: "Credenciais de faturamento não configuradas."
+        error: "Credenciais de faturamento não configuradas.",
+        code: "CAKTO_NOT_CONFIGURED"
       });
     });
 

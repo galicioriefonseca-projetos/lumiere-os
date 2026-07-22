@@ -3,53 +3,135 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { getMessaging } from "firebase-admin/messaging";
 
+interface FirebaseServiceAccountConfig {
+  projectId: string;
+  clientEmail: string;
+  privateKey: string;
+  source: "FIREBASE_SERVICE_ACCOUNT_JSON" | "split_env";
+}
+
 let adminApp: App | null = null;
 
-export const isFirebaseAdminCredentialError = (error: any): boolean => {
+class FirebaseAdminConfigurationError extends Error {
+  code = "FIREBASE_ADMIN_CONFIGURATION_ERROR";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "FirebaseAdminConfigurationError";
+  }
+}
+
+const normalizePrivateKey = (value: string): string => value.replace(/\\n/g, "\n").trim();
+
+const decodeServiceAccountJson = (rawValue: string): Record<string, unknown> => {
+  const raw = rawValue.trim();
+  const candidates = [raw];
+
+  try {
+    candidates.push(Buffer.from(raw, "base64").toString("utf8"));
+  } catch {
+    // A variável pode estar em JSON puro; o fallback base64 é opcional.
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Tenta o próximo formato sem expor o conteúdo do segredo.
+    }
+  }
+
+  throw new FirebaseAdminConfigurationError(
+    "FIREBASE_SERVICE_ACCOUNT_JSON não contém um JSON de conta de serviço válido."
+  );
+};
+
+const validateCredentialConfig = (config: FirebaseServiceAccountConfig): FirebaseServiceAccountConfig => {
+  if (!config.projectId.trim()) {
+    throw new FirebaseAdminConfigurationError("FIREBASE_PROJECT_ID está vazio.");
+  }
+
+  if (!config.clientEmail.includes("@") || !config.clientEmail.endsWith(".iam.gserviceaccount.com")) {
+    throw new FirebaseAdminConfigurationError("FIREBASE_CLIENT_EMAIL não é um e-mail de conta de serviço válido.");
+  }
+
+  const normalizedKey = normalizePrivateKey(config.privateKey);
+  if (!normalizedKey.includes("-----BEGIN PRIVATE KEY-----") || !normalizedKey.includes("-----END PRIVATE KEY-----")) {
+    throw new FirebaseAdminConfigurationError("FIREBASE_PRIVATE_KEY não possui os marcadores esperados.");
+  }
+
+  const expectedProjectId = process.env.FIREBASE_EXPECTED_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+  if (expectedProjectId && expectedProjectId.trim() !== config.projectId.trim()) {
+    throw new FirebaseAdminConfigurationError(
+      "O projeto da conta de serviço não corresponde ao projeto Firebase configurado no aplicativo."
+    );
+  }
+
+  return {
+    ...config,
+    projectId: config.projectId.trim(),
+    clientEmail: config.clientEmail.trim(),
+    privateKey: normalizedKey,
+  };
+};
+
+export const getFirebaseAdminCredentialConfig = (): FirebaseServiceAccountConfig => {
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+  if (serviceAccountJson?.trim()) {
+    const parsed = decodeServiceAccountJson(serviceAccountJson);
+    return validateCredentialConfig({
+      projectId: String(parsed.project_id || parsed.projectId || ""),
+      clientEmail: String(parsed.client_email || parsed.clientEmail || ""),
+      privateKey: String(parsed.private_key || parsed.privateKey || ""),
+      source: "FIREBASE_SERVICE_ACCOUNT_JSON",
+    });
+  }
+
+  return validateCredentialConfig({
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
+    privateKey: process.env.FIREBASE_PRIVATE_KEY || "",
+    source: "split_env",
+  });
+};
+
+export const isFirebaseAdminCredentialError = (error: unknown): boolean => {
   if (!error) return false;
-  if (error.code === 16 || error.code === "16") return true;
-  const msg = String(error.message || "").toLowerCase();
-  const code = String(error.code || "").toLowerCase();
-  const stack = String(error.stack || "").toLowerCase();
-  const strErr = String(error).toLowerCase();
+
+  const candidate = error as { code?: unknown; message?: unknown; stack?: unknown; name?: unknown };
+  const rawCode = String(candidate.code || "").toLowerCase();
+  const combined = [candidate.name, candidate.message, candidate.stack, String(error)]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (rawCode === "16" || rawCode === "unauthenticated") return true;
 
   const checks = [
-    "16",
     "unauthenticated",
     "invalid authentication credentials",
     "invalid_grant",
     "invalid jwt signature",
+    "invalid-credential",
+    "credential error",
     "service account credentials",
+    "firebase_admin_configuration_error",
+    "firebase_service_account_json",
     "firebase_project_id",
     "firebase_client_email",
     "firebase_private_key",
-    "lumièreos internal log"
+    "account has been disabled",
   ];
 
-  return checks.some(check => 
-    msg.includes(check) || 
-    code.includes(check) || 
-    stack.includes(check) || 
-    strErr.includes(check)
-  );
+  return checks.some((check) => rawCode.includes(check) || combined.includes(check));
 };
 
 export const getFirebaseAdmin = (): App => {
   if (adminApp) return adminApp;
-
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-  if (!projectId || projectId.trim() === "") {
-    throw new Error("[LumièreOS Internal Log] FIREBASE_PROJECT_ID is empty.");
-  }
-  if (!clientEmail || !clientEmail.includes("@") || !clientEmail.includes("iam.gserviceaccount.com")) {
-    throw new Error("[LumièreOS Internal Log] FIREBASE_CLIENT_EMAIL is invalid.");
-  }
-  if (!privateKey || !privateKey.includes("BEGIN PRIVATE KEY") || !privateKey.includes("END PRIVATE KEY")) {
-    throw new Error("[LumièreOS Internal Log] FIREBASE_PRIVATE_KEY is invalid (missing markers).");
-  }
 
   const existingApps = getApps();
   if (existingApps.length > 0) {
@@ -57,17 +139,20 @@ export const getFirebaseAdmin = (): App => {
     return adminApp;
   }
 
-  const normalizedKey = privateKey.replace(/\\n/g, "\n").trim();
+  const credentialConfig = getFirebaseAdminCredentialConfig();
 
   adminApp = initializeApp({
     credential: cert({
-      projectId,
-      clientEmail,
-      privateKey: normalizedKey,
+      projectId: credentialConfig.projectId,
+      clientEmail: credentialConfig.clientEmail,
+      privateKey: credentialConfig.privateKey,
     }),
+    projectId: credentialConfig.projectId,
   });
 
-  console.log(`[LumièreOS] Firebase Admin inicializado. Project: ${projectId}`);
+  console.info(
+    `[LumièreOS] Firebase Admin inicializado para o projeto ${credentialConfig.projectId} via ${credentialConfig.source}.`
+  );
   return adminApp;
 };
 

@@ -1,2 +1,0 @@
-sed -i -e 's/<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">/<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">\n              <div className="lg:col-span-2 space-y-6">/g' src/pages/dashboard/DashboardHome.tsx
-sed -i -e 's/<LumiRecommendationsList recommendations={lumiRecommendations} \/>/<LumiRecommendationsList recommendations={lumiRecommendations} \/>\n              <\/div>\n              <div className="lg:col-span-1 space-y-6">\n                <LumiTimeline events={timelineEvents} \/>\n              <\/div>/g' src/pages/dashboard/DashboardHome.tsx

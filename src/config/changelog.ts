@@ -126,7 +126,7 @@ export const CHANGELOG: ChangelogItem[] = [
     title: 'Ambiente de Demonstração & Seletor de Perfil Seguro',
     description: 'Implementado o ambiente oficial demo/tutorial do LumiereOS com seletor de perfil e seed automatizado para simulações e treinamentos.',
     highlights: [
-      'Ambiente demo dedicado e seguro para leandropfonseca20@gmail.com operando no salão exclusivo Lumiere Beauty Studio - Demo.',
+      'Ambiente demo dedicado e seguro para demo@lumiereos.com.br operando no salão exclusivo Lumiere Beauty Studio - Demo.',
       'Sincronização de 10 profissionais fictícios com nomes bíblicos, metas mensais de faturamento realistas e agendamentos distribuídos no tempo.',
       'Histórico completo do Checklist Lumière avaliando os profissionais ativos no mesmo dia.',
       'Seletor de perfis inteligente (DemoRoleSwitcher) que permite alternar a visualização como Proprietário, Gerente, Recepcionista, Atendente ou Profissional.',

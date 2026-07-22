@@ -162,12 +162,6 @@ describe('LumièreOS Firestore Rules Tests', () => {
     ).rejects.toThrow();
   });
 
-  it('garante que firestore.rules e src/firestore.rules são idênticos byte-a-byte', () => {
-    const rootRules = readFileSync('firestore.rules', 'utf8');
-    const srcRules = readFileSync('src/firestore.rules', 'utf8');
-    expect(rootRules).toBe(srcRules);
-  });
-
   it('garante que apenas Platform Admins conseguem ler ou listar a coleção authAuditLogs', async () => {
     // Grava um log com privilégios desativados para o teste de leitura
     await testEnv.withSecurityRulesDisabled(async (context) => {
@@ -497,11 +491,5 @@ describe('LumièreOS Firestore Rules Tests', () => {
     await expect(
       setDoc(doc(dbUser, 'authAuditLogs', 'mock_log_id_456'), simulatedPayloadWithDetails)
     ).resolves.toBeDefined();
-  });
-
-  it('garante que firestore.rules e src/firestore.rules permanecem idênticos', () => {
-    const rootRules = readFileSync('firestore.rules', 'utf8');
-    const srcRules = readFileSync('src/firestore.rules', 'utf8');
-    expect(rootRules).toBe(srcRules);
   });
 });

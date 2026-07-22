@@ -11,8 +11,8 @@ import {
   getDoc 
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Salon, Professional, Service, Appointment } from '@/src/types';
-import { getAvailableSlots, getAvailableDays } from '@/src/lib/availability';
+import { Salon, Professional, Service, Appointment } from '@/types';
+import { getAvailableSlots, getAvailableDays } from '@/lib/availability';
 import { 
   Calendar, 
   Clock, 

@@ -45,28 +45,6 @@ export async function logAuditEvent(
   }
 }
 
-let cachedIp: string | null = null;
-
-async function getPublicIp(): Promise<string> {
-  if (cachedIp) return cachedIp;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout max
-    
-    const response = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-    clearTimeout(timeoutId);
-    
-    if (response.ok) {
-      const data = await response.json();
-      cachedIp = data.ip;
-      return data.ip;
-    }
-  } catch (e) {
-    // Fail silently, returning local/unknown
-  }
-  return 'IP Indisponível';
-}
-
 export async function logAuthAuditEvent(
   userIdentifier: string, // Email or UID
   action: 'Conta criada' | 'Conta ativada' | 'Primeiro Login' | 'Login Google' | 'Senha criada' | 'Senha alterada' | 'Logout' | 'Reset solicitado' | 'Reset concluído',
@@ -84,14 +62,12 @@ export async function logAuthAuditEvent(
   }
 
   try {
-    const ip = await getPublicIp();
     const logRef = doc(collection(db, 'authAuditLogs'));
     
     const logData: Record<string, any> = {
       id: logRef.id,
       userIdentifier: currentUser.email || currentUser.uid,
       action,
-      ip,
       userAgent: typeof navigator !== 'undefined' ? (navigator.userAgent || 'Unknown') : 'Unknown',
       origin: typeof window !== 'undefined' ? (window.location.origin || 'Unknown') : 'Unknown',
       createdAt: Date.now()
