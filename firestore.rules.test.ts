@@ -17,7 +17,7 @@ describe('LumièreOS Firestore Rules Tests', () => {
           rules: readFileSync('firestore.rules', 'utf8'),
           // Support either local host/port or fallback configuration
           host: '127.0.0.1',
-          port: 8080,
+          port: parseInt(process.env.FIRESTORE_EMULATOR_PORT || '8085', 10),
         }
       });
     } catch (error: any) {
@@ -492,4 +492,109 @@ describe('LumièreOS Firestore Rules Tests', () => {
       setDoc(doc(dbUser, 'authAuditLogs', 'mock_log_id_456'), simulatedPayloadWithDetails)
     ).resolves.toBeDefined();
   });
+
+  it('impede criação fraudulenta de user admin e salão fraudulento', async () => {
+    const userContext = testEnv.authenticatedContext('hacker', { uid: 'hacker' } as any);
+    const db = userContext.firestore();
+    
+    // Fraude de usuário
+    await expect(setDoc(doc(db, 'users', 'hacker'), {
+      role: 'admin',
+      salonId: 'outro_salao'
+    })).rejects.toThrow();
+    
+    // Fraude de salão
+    await expect(setDoc(doc(db, 'salons', 'meu_salao_falso'), {
+      ownerId: 'hacker',
+      plan: 'enterprise',
+      subscriptionStatus: 'active',
+      paymentStatus: 'paid',
+      isActive: true
+    })).rejects.toThrow();
+  });
+
+  it('impede alteração de founderAuthorized e paymentStatus', async () => {
+    // Setup inicial pelo Admin
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'salons', 'salon_finance'), {
+        ownerId: 'owner_finance',
+        founderAuthorized: false,
+        paymentStatus: 'pending',
+        plan: 'starter'
+      });
+      await setDoc(doc(db, 'users', 'owner_finance'), {
+        salonId: 'salon_finance',
+        role: 'owner'
+      });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_finance', { uid: 'owner_finance' } as any);
+    const db = ownerContext.firestore();
+
+    await expect(updateDoc(doc(db, 'salons', 'salon_finance'), {
+      founderAuthorized: true
+    })).rejects.toThrow();
+
+    await expect(updateDoc(doc(db, 'salons', 'salon_finance'), {
+      paymentStatus: 'paid'
+    })).rejects.toThrow();
+  });
+
+  it('impede leitura pública de appointments e salão', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'salons', 'salon_public'), {
+        bookingEnabled: true
+      });
+      await setDoc(doc(db, 'salons', 'salon_public', 'appointments', 'app1'), {
+        status: 'scheduled'
+      });
+    });
+
+    const unauthContext = testEnv.unauthenticatedContext();
+    const db = unauthContext.firestore();
+
+    await expect(getDoc(doc(db, 'salons', 'salon_public'))).rejects.toThrow();
+    await expect(getDoc(doc(db, 'salons', 'salon_public', 'appointments', 'app1'))).rejects.toThrow();
+  });
+
+  it('impede convite de outro e-mail e pagamento com campos extras', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'invites', 'invite123'), {
+        email: 'certo@email.com',
+        type: 'email',
+        status: 'pending'
+      });
+      await setDoc(doc(db, 'salons', 'salon_pay'), {
+        ownerId: 'owner_pay'
+      });
+      await setDoc(doc(db, 'users', 'owner_pay'), {
+        salonId: 'salon_pay',
+        role: 'owner'
+      });
+    });
+
+    // Convite errado
+    const wrongContext = testEnv.authenticatedContext('wrong', { email: 'errado@email.com' } as any);
+    const dbWrong = wrongContext.firestore();
+    await expect(getDoc(doc(dbWrong, 'invites', 'invite123'))).rejects.toThrow();
+
+    // Pagamento fraudulento
+    const ownerContext = testEnv.authenticatedContext('owner_pay', { uid: 'owner_pay' } as any);
+    const db = ownerContext.firestore();
+    
+    // Campos extras ou status incorreto
+    await expect(setDoc(doc(db, 'salons', 'salon_pay', 'payments', 'pay1'), {
+      status: 'paid', // deveria ser reported
+      method: 'pix',
+      provider: 'manual_pix',
+      salonId: 'salon_pay',
+      amount: 100,
+      createdAt: Date.now(),
+      extraField: 'hacker'
+    })).rejects.toThrow();
+  });
+
 });

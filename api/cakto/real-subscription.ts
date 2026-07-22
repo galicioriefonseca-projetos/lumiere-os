@@ -35,14 +35,10 @@ async function getCaktoAccessToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(`Falha ao obter token da Cakto. Status: ${response.status}`);
+    throw new Error("CAKTO_UPSTREAM_ERROR");
   }
 
   const data = await response.json();
-  if (!data || !data.access_token) {
-    throw new Error("Token de acesso não encontrado na resposta do Cakto.");
-  }
-
   return data.access_token;
 }
 
@@ -51,112 +47,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Allow", ["GET"]);
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
   }
-
+  
   try {
-    const { salonId } = req.query || {};
+    const { salonId } = req.query;
     if (!salonId) {
       return res.status(400).json({ error: "O parâmetro salonId é obrigatório." });
     }
-
-    // 1. Autenticação
+    
     let user;
     try {
       user = await verifyIdToken(req);
-    } catch (authErr: any) {
-      if (isFirebaseAdminCredentialError(authErr)) {
-        throw authErr;
-      }
-      return res.status(401).json({ error: "Sessão inválida ou expirada." });
+    } catch (e: any) {
+      return res.status(401).json({ error: e.message || "Não autenticado." });
     }
-
+    
     const adminDb = getAdminDb();
     const salonDoc = await adminDb.collection("salons").doc(String(salonId)).get();
-
+    
     if (!salonDoc.exists) {
       return res.status(404).json({ error: "Salão não encontrado." });
     }
-
+    
     const salonData = salonDoc.data();
-
-    // 2. Autorização
+    
     const authResult = await canManageBilling(user, String(salonId), salonData);
     if (!authResult.authorized) {
       return res.status(403).json({ error: authResult.reason || "Não autorizado." });
     }
-
-    const subscriptionId = salonData?.caktoSubscriptionId;
-    const billingProvider = salonData?.billingProvider;
-
-    const isManualActive = (billingProvider === "manual" || salonData?.billingMode === "manual_pix") &&
-      salonData?.subscriptionStatus === "active" &&
-      salonData?.paymentStatus === "paid";
-
-    if (isManualActive && !subscriptionId) {
+    
+    if (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual" || (salonData?.billingProvider === "cakto" && salonData?.subscriptionId && salonData.subscriptionId.startsWith("sub_manual"))) {
       return res.status(200).json({
-        hasRealSubscription: false,
-        billingProvider: "manual",
-        status: "active",
-        paymentStatus: "paid",
-        next_payment_date: salonData?.nextBillingDate || null
+         status: salonData?.paymentStatus === "paid" ? "active" : "pending",
+         amount: salonData?.lastPaymentAmount || 0,
+         paymentMethod: "manual",
+         next_payment_date: salonData?.nextBillingDate || null,
+         offer: null,
+         recurrence_period: "monthly",
+         hasRealSubscription: false,
+         billingProvider: "manual",
+         paymentStatus: salonData?.paymentStatus || "paid"
       });
     }
-
-    if (billingProvider === "cakto" && !subscriptionId) {
-      return res.status(409).json({
-        error: "A assinatura Cakto ainda não foi confirmada.",
+    
+    const subscriptionId = salonData?.caktoSubscriptionId;
+    if (!subscriptionId) {
+      return res.status(409).json({ 
+        error: "Nenhuma assinatura Cakto configurada para este salão.",
         requiresCheckout: true
       });
     }
-
-    if (!subscriptionId) {
-      return res.status(400).json({ error: "Nenhuma assinatura Cakto configurada para este salão." });
-    }
-
-    // Proteger contra IDs simulados / homologados
-    const isHomolog = subscriptionId.toLowerCase().includes("homolog") || 
-                      subscriptionId.toLowerCase().includes("simulated") || 
-                      subscriptionId === "sub_simulated_dev";
-    if (isHomolog) {
+    
+    if (subscriptionId.toLowerCase().includes("homolog") || subscriptionId.toLowerCase().includes("simulated") || process.env.CAKTO_SANDBOX_MODE === "true" || process.env.VITE_CAKTO_SANDBOX_MODE === "true") {
       return res.status(200).json({
-        isHomolog: true,
-        hasRealSubscription: false,
-        status: salonData?.homologationSubscriptionStatus || "unknown",
-        amount: salonData?.homologationLastPaymentAmount || 0,
-        paymentMethod: salonData?.homologationPaymentStatus || "unknown",
-        next_payment_date: salonData?.homologationNextBillingDate || null,
-        offer: salonData?.homologationOfferId || null
+        status: salonData?.subscriptionStatus || "active",
+        amount: salonData?.lastPaymentAmount || 0,
+        paymentMethod: "simulated",
+        next_payment_date: salonData?.nextBillingDate || null,
+        offer: salonData?.caktoOfferId || null,
+        recurrence_period: "monthly"
       });
     }
-
-    // Fazer a chamada real para a Cakto
+    
     const accessToken = await getCaktoAccessToken();
     const apiUrl = getCaktoApiBaseUrl();
-    const caktoUrl = `${apiUrl}/public_api/subscriptions/${encodeURIComponent(subscriptionId)}/`;
-
-    const response = await fetch(caktoUrl, {
+    const subUrl = `${apiUrl}/public_api/subscriptions/${subscriptionId}/`;
+    
+    const response = await fetch(subUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json"
       }
     });
-
+    
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ 
-        error: `Erro ao obter detalhes da assinatura na API Cakto: ${errText}` 
+      console.error("[Cakto Real Subscription Error] Falha upstream:", errText);
+      return res.status(502).json({ 
+        error: "Não foi possível consultar o gateway de pagamento neste momento.",
+        code: "CAKTO_UPSTREAM_ERROR"
       });
     }
-
+    
     const caktoSub = await response.json();
-
     const status = caktoSub.status || caktoSub.subscriptionStatus || "unknown";
     const amount = caktoSub.amount || caktoSub.value || 0;
     const paymentMethod = caktoSub.paymentMethod || caktoSub.payment_method || caktoSub.billingType || "credit_card";
     const next_payment_date = caktoSub.next_payment_date || caktoSub.next_billing_date || caktoSub.nextBillingDate || null;
     const offer = caktoSub.offer || caktoSub.offer_id || caktoSub.offerId || null;
     const recurrence_period = caktoSub.recurrence_period || caktoSub.recurrencePeriod || "monthly";
-
+    
     return res.status(200).json({
       status,
       amount,
@@ -165,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       offer,
       recurrence_period
     });
-
+    
   } catch (err: any) {
     if (isFirebaseAdminCredentialError(err)) {
       console.error("[LumièreOS SERVER ERROR] Firebase Admin credential error caught in real-sub:", err);
@@ -176,8 +156,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     console.error("[Cakto Real Sub Serverless] Erro ao obter assinatura real:", err);
     return res.status(502).json({ 
-       error: "Não foi possível consultar o gateway de pagamento neste momento.",
-       code: "CAKTO_UPSTREAM_ERROR"
+      error: "Não foi possível consultar o gateway de pagamento neste momento.",
+      code: "CAKTO_UPSTREAM_ERROR"
     });
   }
 }

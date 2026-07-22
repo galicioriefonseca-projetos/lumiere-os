@@ -12,7 +12,6 @@ const mockSettingsGet = vi.fn().mockResolvedValue({
     enterpriseOfferId: "off_enterprise"
   })
 });
-
 const mockSalonGet = vi.fn().mockResolvedValue({ exists: false, data: () => ({}) });
 const mockSalonSet = vi.fn().mockResolvedValue(undefined);
 const mockOnboardingGet = vi.fn().mockResolvedValue({ exists: false });
@@ -31,6 +30,17 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
              msg.includes("project_id");
     },
     getAdminDb: () => ({
+      runTransaction: async (cb) => cb({
+        get: vi.fn().mockResolvedValue({ exists: false, data: () => ({}) }),
+        set: vi.fn(),
+        update: vi.fn()
+      }),
+      batch: () => ({
+        set: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+        commit: vi.fn().mockResolvedValue(undefined)
+      }),
       collection: (colName: string) => {
         if (colName === "settings") {
           return {
@@ -47,14 +57,21 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
             })
           };
         }
+
         // Para "salons" ou outros
-        return {
+
+        const chainable = {
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
+          get: vi.fn().mockResolvedValue({ empty: true, size: 0, docs: [] }),
           doc: () => ({
             get: mockSalonGet,
-            set: mockSalonSet,
-            update: mockSalonSet
+            update: mockSalonSet,
+            set: mockSalonSet
           })
         };
+        return chainable;
+        //
       }
     })
   };
@@ -776,8 +793,11 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       expect(res.json).toHaveBeenCalledWith({ error: "Assinatura inválida de webhook." });
     });
 
-    it("13. O webhook Cakto deve processar com sucesso faturas com status paid e rejeitar faturas com status duplicado/inválido", async () => {
+    
+    it("13. O webhook Cakto deve processar com sucesso faturas", async () => {
       const webhookHandler = (await import("./webhook.js")).default;
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+
       const req: any = {
         method: "POST",
         headers: {
@@ -788,7 +808,8 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
           order_id: "ord_123",
           subscription_id: "sub_123",
           customer_id: "cust_123",
-          external_id: "salon_123"
+          external_id: "salon_123",
+          checkout_offer_id: "off_start"
         }
       };
       const res = createMockRes();
@@ -796,12 +817,52 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
-        data: () => ({ plan: "start" })
+        data: () => ({ plan: "start" }),
+        ref: { update: vi.fn(), set: vi.fn() }
       });
 
+      // Call it using the real processCaktoWebhookPayload (wait, we can just use handler)
       await webhookHandler(req, res);
-      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(res.status).toHaveBeenCalledWith(200);
+      const resJson = res.json.mock.calls[0][0];
+      expect(resJson.success).toBe(true);
+      expect(resJson.salonUpdated).toBe(true);
     });
+
+    it("falha quando evento ausente", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const res = await processCaktoWebhookPayload({ order_id: "ord_123", external_id: "salon_123" });
+      expect(res.success).toBe(false);
+      expect(res.reason).toBe("missing_event_name");
+    });
+
+    it("falha quando payment_not_paid ou desconhecido", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const res = await processCaktoWebhookPayload({ event: "unknown_weird", order_id: "ord_123", external_id: "salon_123", checkout_offer_id: "off_start" });
+      expect(res.success).toBe(false);
+      expect(res.reason).toBe("unknown_event");
+    });
+
+    it("e-mail sozinho não escolhe salão", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+ 
+      // We will need to check what happen when only email is provided
+      const res = await processCaktoWebhookPayload({ event: "purchase_approved", customer_email: "test@test.com" });
+      // Actually, since external_id, order_id, sub_id are missing, isTestEvent would be true if we don't send anything else.
+      // Send offer_id to avoid isTestEvent
+      const res2 = await processCaktoWebhookPayload({ event: "purchase_approved", customer: { email: "test@test.com" }, checkout_offer_id: "off_start" });
+      // Since it shouldn't find, it tries to create onboarding
+      expect(res2.success).toBe(false);
+      expect(res2.reason).toBe("invalid_or_missing_salon_id");
+    });
+
+    it("onboarding sem pagamento aprovado não é promovido", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const res = await processCaktoWebhookPayload({ event: "purchase_refused", external_id: "salon_123", offer_id: "offer_founder_297" });
+      // If it tries to promote onboarding
+      expect(res.success).toBe(false);
+    });
+
 
     it("14. Todas as mensagens de erro críticas do Firebase/Google Cloud devem ser encapsuladas sem expor segredos nos responses", async () => {
       const { isFirebaseAdminCredentialError } = await import("../_shared/firebaseAdmin.js");

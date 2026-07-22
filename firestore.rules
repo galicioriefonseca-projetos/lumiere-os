@@ -153,27 +153,24 @@ service cloud.firestore {
 
     // Users collection
     match /users/{userId} {
-      // User can read their own profile, or platform admins can read any
       allow get: if isOwnerOfUser(userId) || isPlatformAdmin();
-      
-      // Members of the same salon can read salon professionals / members lists
       allow list: if isPlatformAdmin() || (
         isSignedIn() && 
         exists(userDoc()) && 
         resource.data.salonId == userSalonId()
       );
       
-      // Client creation check
-      allow create: if isOwnerOfUser(userId) && (
-        request.resource.data.role != 'platform_admin' ||
-        exists(/databases/$(database)/documents/platformAdmins/$(userId))
+      allow create: if isPlatformAdmin() || (
+        isOwnerOfUser(userId) &&
+        request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl']) &&
+        request.resource.data.role == "pending" &&
+        (!('salonId' in request.resource.data) || request.resource.data.salonId == null || request.resource.data.salonId == "")
       );
       
-      // Client updates protect role-escalation and salon spoofing
       allow update: if isPlatformAdmin() || (
         isOwnerOfUser(userId) && 
         (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId']) ||
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId', 'permissions', 'privileges', 'platform_admin', 'admin']) ||
           (
             isTutorialDemoUser() && 
             request.resource.data.salonId == "tutorial_lumiere_studio" && 
@@ -182,14 +179,12 @@ service cloud.firestore {
         )
       );
     }
-
+    
     // Salons collection
     match /salons/{salonId} {
-      // Creator must assign themselves as the owner or be superadmin
-      allow create: if (isSignedIn() && request.resource.data.ownerId == request.auth.uid) || isPlatformAdmin();
+      allow create: if isPlatformAdmin();
       
-      // Leitura pública do salão para agendamento online
-      allow read: if resource.data.bookingEnabled == true;
+      // Leitura pública removida
       
       // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
       allow get: if isPlatformAdmin() || (
@@ -236,79 +231,35 @@ service cloud.firestore {
 
     // Invites collection (Hardened)
     match /invites/{inviteId} {
-      // Get is public only for pending invites (not expired check on front-end)
       allow get: if isPlatformAdmin() || (
-        resource.data.status == "pending"
+        isSignedIn() && request.auth.token.email == resource.data.email
       );
       
-      // Only platform admin and salon managers/owners can list invitations
       allow list: if isPlatformAdmin() || (
         isSignedIn() && 
         exists(userDoc()) && 
         userSalonId() == resource.data.salonId && 
         (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
       );
-      
-      // Managers, owners, or admins can create invites
-      allow create: if isSignedIn() && (
-        isPlatformAdmin() || (
-          exists(userDoc()) && 
-          request.resource.data.salonId == userSalonId() && 
-          (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") && 
-          (request.resource.data.role == "manager" || request.resource.data.role == "receptionist" || request.resource.data.role == "attendant" || request.resource.data.role == "professional")
-        )
-      );
-      
-      // Accept invite or manage cancellations (Hardened)
+
       allow update: if isPlatformAdmin() || (
         isSignedIn() && (
-          // Cancellation by salon owner/manager (only pending -> canceled, no field mutations)
           (
-            exists(userDoc()) && 
-            userSalonId() == resource.data.salonId && 
-            (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") &&
-            resource.data.status == "pending" &&
-            request.resource.data.status == "canceled" &&
-            request.resource.data.salonId == resource.data.salonId && 
-            request.resource.data.role == resource.data.role && 
-            request.resource.data.inviteType == resource.data.inviteType && 
-            request.resource.data.email == resource.data.email && 
-            request.resource.data.createdAt == resource.data.createdAt
+            resource.data.type == "email" &&
+            request.auth.token.email == resource.data.email &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'acceptedByUserId']) &&
+            request.resource.data.status == "accepted" &&
+            request.resource.data.acceptedByUserId == request.auth.uid
           ) ||
-          // Sealed state transaction: accepting a pending invite
           (
-            resource.data.status == "pending" && 
-            request.resource.data.status == "accepted" && 
-            request.resource.data.acceptedByUserId == request.auth.uid && 
-            request.resource.data.salonId == resource.data.salonId && 
-            request.resource.data.role == resource.data.role && 
-            request.resource.data.inviteType == resource.data.inviteType && 
-            request.resource.data.email == resource.data.email && 
-            request.resource.data.createdAt == resource.data.createdAt
-          ) ||
-          // Sealed state transaction: accepting a pending function-based multi-use invite
-          (
-            resource.data.inviteType == "function_link" &&
-            resource.data.status == "pending" &&
-            resource.data.usesCount < resource.data.maxUses &&
-            request.resource.data.salonId == resource.data.salonId && 
-            request.resource.data.role == resource.data.role && 
-            request.resource.data.inviteType == resource.data.inviteType && 
-            request.resource.data.category == resource.data.category &&
-            request.resource.data.specialty == resource.data.specialty &&
-            request.resource.data.professionalFunction == resource.data.professionalFunction &&
-            request.resource.data.maxUses == resource.data.maxUses &&
-            request.resource.data.createdAt == resource.data.createdAt &&
-            request.resource.data.usesCount == resource.data.usesCount + 1 &&
-            (
-              (request.resource.data.usesCount < resource.data.maxUses && request.resource.data.status == "pending") ||
-              (request.resource.data.usesCount == resource.data.maxUses && request.resource.data.status == "used_limit_reached")
-            )
+            resource.data.type == "function_link" &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'acceptedByUserId', 'usedCount']) &&
+            request.resource.data.status == "accepted" &&
+            request.resource.data.acceptedByUserId == request.auth.uid &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId', 'maxUses', 'category', 'createdAt'])
           )
         )
       );
-      
-      allow delete: if isPlatformAdmin();
     }
 
     // --- Salons Subcollections (Hardened & Granular RBAC) ---
@@ -337,8 +288,7 @@ service cloud.firestore {
 
     // 1. Professionals & Staff
     match /salons/{salonId}/professionals/{professionalId} {
-      allow read: if isSalonMember(salonId) ||
-        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow read: if isSalonMember(salonId) ;
       
       allow create: if canManageSalon(salonId) || (
         isSignedIn() && 
@@ -365,21 +315,11 @@ service cloud.firestore {
 
     // 2. Appointments & Appointments Scheduling
     match /salons/{salonId}/appointments/{appointmentId} {
-      allow read: if isSalonMember(salonId) ||
-        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow read: if isSalonMember(salonId) ;
       allow create, update, delete: if canOperateFrontDesk(salonId);
       
       allow create: if
-        resource == null &&
-        request.resource.data.source == 'client_booking' &&
-        request.resource.data.salonId == salonId &&
-        request.resource.data.status == 'scheduled' &&
-        request.resource.data.clientName is string &&
-        request.resource.data.clientName.size() > 0 &&
-        request.resource.data.date is string &&
-        request.resource.data.time is string &&
-        request.resource.data.professionalId is string &&
-        request.resource.data.serviceId is string;
+        false;
     }
 
     // 3. Checklist Configurations (Templates)
@@ -430,15 +370,13 @@ service cloud.firestore {
 
     // 8. Services Catalogue
     match /salons/{salonId}/services/{serviceId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ||
-        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ;
       allow create, update, delete: if canManageSalon(salonId);
     }
 
     // 9. Categories
     match /salons/{salonId}/categories/{categoryId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ||
-        get(/databases/$(database)/documents/salons/$(salonId)).data.bookingEnabled == true;
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ;
       allow create, update, delete: if canManageSalon(salonId);
     }
 
@@ -504,6 +442,26 @@ service cloud.firestore {
       allow read, update, delete: if isPlatformAdmin();
     }
 
+    // 22. Payments
+    match /salons/{salonId}/payments/{paymentId} {
+      allow read: if canManageSalon(salonId);
+      allow create: if (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == salonId && 
+        (userRole() == "owner" || userRole() == "admin")
+      ) && (
+        request.resource.data.keys().hasOnly(['status', 'method', 'provider', 'salonId', 'amount', 'createdAt']) &&
+        request.resource.data.status == "reported" &&
+        request.resource.data.method == "pix" &&
+        request.resource.data.provider == "manual_pix" &&
+        request.resource.data.salonId == salonId &&
+        request.resource.data.amount is number && request.resource.data.amount > 0 &&
+        request.resource.data.createdAt is int
+      );
+      allow update, delete: if isPlatformAdmin();
+    }
+    
     // Fallback Catch-All for any other subcollections under salons
     match /salons/{salonId}/{collectionName}/{docId} {
       allow read, write: if isPlatformAdmin();
