@@ -16,6 +16,9 @@ const mockSalonGet = vi.fn().mockResolvedValue({ exists: false, data: () => ({})
 const mockSalonSet = vi.fn().mockResolvedValue(undefined);
 const mockOnboardingGet = vi.fn().mockResolvedValue({ exists: false });
 const mockOnboardingSet = vi.fn().mockResolvedValue(undefined);
+const mockBatchSet = vi.fn();
+const mockBatchUpdate = vi.fn();
+const mockBatchDelete = vi.fn();
 
 vi.mock("../_shared/firebaseAdmin.js", () => {
   return {
@@ -36,9 +39,9 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
         update: vi.fn()
       }),
       batch: () => ({
-        set: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
+        set: mockBatchSet,
+        update: mockBatchUpdate,
+        delete: mockBatchDelete,
         commit: vi.fn().mockResolvedValue(undefined)
       }),
       collection: (colName: string) => {
@@ -876,6 +879,59 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         : "INTERNAL_ERROR";
       expect(responseError).toBe("FIREBASE_ADMIN_AUTH_FAILED");
       expect(responseError).not.toContain("private key");
+    });
+
+    it("deve definir billingMode: recurring e paymentMethod quando webhook aprovado possui subscription_id", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ plan: "start" }),
+        ref: { update: vi.fn(), set: vi.fn() }
+      });
+
+      const res = await processCaktoWebhookPayload({
+        event: "purchase_approved",
+        order_id: "ord_123",
+        subscription_id: "sub_123",
+        customer_id: "cust_123",
+        external_id: "salon_123",
+        checkout_offer_id: "off_start",
+        payment_method: "credit_card",
+        current_period_end: "2026-12-31T23:59:59Z"
+      });
+
+      expect(res.success).toBe(true);
+      expect(mockBatchUpdate).toHaveBeenCalled();
+      const updatedFields = mockBatchUpdate.mock.calls[0][1];
+      expect(updatedFields.billingMode).toBe("recurring");
+      expect(updatedFields.paymentMethod).toBe("credit_card");
+      expect(updatedFields.billingProvider).toBe("cakto");
+    });
+
+    it("não deve definir billingMode: recurring quando webhook aprovado não possui subscription_id (Pix ou Boleto comum)", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ plan: "start" }),
+        ref: { update: vi.fn(), set: vi.fn() }
+      });
+
+      const res = await processCaktoWebhookPayload({
+        event: "purchase_approved",
+        order_id: "ord_123",
+        customer_id: "cust_123",
+        external_id: "salon_123",
+        checkout_offer_id: "off_start",
+        payment_method: "pix",
+        current_period_end: "2026-12-31T23:59:59Z"
+      });
+
+      expect(res.success).toBe(true);
+      expect(mockBatchUpdate).toHaveBeenCalled();
+      const updatedFields = mockBatchUpdate.mock.calls[0][1];
+      expect(updatedFields.billingMode).not.toBe("recurring");
+      expect(updatedFields.paymentMethod).toBe("pix");
+      expect(updatedFields.billingProvider).toBe("cakto");
     });
   });
 });

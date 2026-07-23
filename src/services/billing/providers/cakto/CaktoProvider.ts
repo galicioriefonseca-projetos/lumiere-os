@@ -28,10 +28,13 @@ export class CaktoProvider implements BillingProvider {
       throw new Error(errorMessage);
     }
 
-    if (contentType && contentType.includes('application/json')) {
-      return response.json();
+    // Try parsing as JSON first to handle proxy headers, casing, or missing headers gracefully
+    try {
+      const data = await response.json();
+      return data;
+    } catch (e) {
+      throw new Error("O servidor retornou uma resposta não-JSON inesperada.");
     }
-    throw new Error("O servidor retornou uma resposta não-JSON inesperada.");
   }
 
   async createCustomer(salonId: string, data: Partial<BillingCustomer>): Promise<BillingCustomer> {
@@ -70,8 +73,8 @@ export class CaktoProvider implements BillingProvider {
       body: JSON.stringify({
         salonId,
         planId: data.planId,
-        paymentMethod: data.paymentMethod || 'credit_card',
-        email: customerId, checkoutPurpose: (data as any).checkoutPurpose || "new_subscription" // Aqui passamos o email ou ID do cliente para referência
+        email: customerId, 
+        checkoutPurpose: (data as any).checkoutPurpose || "new_subscription" // Aqui passamos o email ou ID do cliente para referência
       })
     });
     return this.handleResponse(response, "Erro ao criar checkout na Cakto");

@@ -1455,151 +1455,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const result = await signInWithPopup(activeAuth, provider);
     const user = result.user;
 
-    if (inviteData.email && inviteData.email.trim().toLowerCase() !== user.email?.trim().toLowerCase()) {
-      await signOut(activeAuth);
-      throw { code: 'auth/invite-email-mismatch', invitedEmail: inviteData.email };
-    }
+    const fullName = optionalFullName || user.displayName || inviteData.fullName || user.displayName || '';
 
-    const userDocRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userDocRef);
-    let existingData: any = null;
-    let isAlreadyInSameSalon = false;
+    const idToken = await user.getIdToken(true);
 
-    if (userSnap.exists()) {
-      existingData = userSnap.data();
-      if (existingData.salonId) {
-        if (existingData.salonId === inviteData.salonId) {
-          isAlreadyInSameSalon = true;
-        } else {
-          await signOut(activeAuth);
-          throw { code: 'auth/already-linked-to-other-salon' };
-        }
-      }
-    }
+    const response = await fetch('/api/invites/accept', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`
+      },
+      body: JSON.stringify({
+        inviteId: inviteData.inviteId || inviteData.id,
+        fullName: fullName,
+        phone: phone || "",
+        primaryFunction: choices?.primaryFunction || "",
+        additionalFunctions: choices?.additionalFunctions || []
+      })
+    });
 
-    const now = Date.now();
-    const fullName = optionalFullName || user.displayName || inviteData.fullName || userProfileName(user) || '';
-    
-    function userProfileName(u: any) {
-      return u.displayName || '';
-    }
-
-    const isTeamPublicLink = inviteData.inviteType === 'team_public_link';
-    const isFunctionLink = inviteData.inviteType === 'function_link';
-    const isProfInvite = inviteData.inviteType === 'professional';
-
-    const finalRole = isTeamPublicLink ? 'professional' : (isFunctionLink ? (inviteData.role || 'professional') : inviteData.inviteType);
-    const isProfRole = finalRole === 'professional' || isProfInvite || isTeamPublicLink;
-    const professionUID = isProfRole ? user.uid : '';
-
-    const primaryFunction = isTeamPublicLink 
-      ? (choices?.primaryFunction || 'Profissional') 
-      : (inviteData.specialty || inviteData.category || 'Profissional');
-    const extras = isTeamPublicLink ? (choices?.additionalFunctions || []) : [];
-    const allSpecialties = isTeamPublicLink 
-      ? Array.from(new Set([primaryFunction, ...extras])).filter(Boolean) 
-      : Array.from(new Set([primaryFunction])).filter(Boolean);
-
-    const userProfile: any = {
-      id: user.uid,
-      fullName: fullName,
-      email: user.email || '',
-      phone: phone || existingData?.phone || null,
-      role: finalRole,
-      salonId: inviteData.salonId,
-      professionalId: professionUID,
-      isActive: existingData?.isActive !== undefined ? existingData.isActive : true,
-      status: existingData?.status || 'active',
-      createdAt: existingData?.createdAt || now,
-      updatedAt: now,
-    };
-
-    if (isTeamPublicLink) {
-      userProfile.primaryFunction = primaryFunction;
-      userProfile.professionalFunction = primaryFunction;
-      userProfile.professionalCategory = primaryFunction;
-      userProfile.category = primaryFunction;
-      userProfile.specialty = primaryFunction;
-      userProfile.specialties = allSpecialties;
-      userProfile.additionalFunctions = extras;
-    } else if (isFunctionLink) {
-      userProfile.specialty = inviteData.specialty || '';
-      userProfile.professionalFunction = inviteData.professionalFunction || '';
-      userProfile.professionalCategory = inviteData.category || '';
-      userProfile.category = inviteData.category || '';
-    }
-
-    try {
-      await setDoc(doc(db, 'users', user.uid), userProfile, { merge: true });
-    } catch (e) {
-      console.error("Erro ao criar/atualizar usuário:", e);
-      throw e;
-    }
-
-    if (isTeamPublicLink || isFunctionLink || isProfInvite) {
-      const profRecord: any = {
-        userId: user.uid,
-        professionalId: user.uid,
-        name: fullName,
-        email: user.email || '',
-        phone: phone || existingData?.phone || null,
-        role: finalRole,
-        status: existingData?.status || 'active',
-        isActive: existingData?.isActive !== undefined ? existingData.isActive : true,
-        joinedByInvite: true,
-        inviteId: inviteData.id,
-        inviteType: inviteData.inviteType,
-        createdAt: existingData?.createdAt || now,
-        updatedAt: now,
-      };
-
-      if (isTeamPublicLink) {
-        profRecord.primaryFunction = primaryFunction;
-        profRecord.professionalFunction = primaryFunction;
-        profRecord.professionalCategory = primaryFunction;
-        profRecord.category = primaryFunction;
-        profRecord.specialty = primaryFunction;
-        profRecord.specialties = allSpecialties;
-        profRecord.additionalFunctions = extras;
-      } else {
-        profRecord.category = inviteData.category || 'Profissional';
-        profRecord.specialty = inviteData.specialty || inviteData.category || '';
-        profRecord.professionalFunction = inviteData.professionalFunction || inviteData.category || '';
-      }
-      
-      try {
-        await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord, { merge: true });
-      } catch (e) {
-        console.error("Erro ao criar/atualizar profissional no salão:", e);
-        throw e;
-      }
-    }
-
-    try {
-      if (isFunctionLink || isTeamPublicLink) {
-        const newUses = (inviteData.usesCount || 0) + 1;
-        const maxUses = inviteData.maxUses || 99999;
-        const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
-
-        await updateDoc(doc(db, 'invites', inviteData.id), {
-          usesCount: newUses,
-          status: finalStatus,
-          updatedAt: now,
-        });
-      } else {
-        await updateDoc(doc(db, 'invites', inviteData.id), {
-          status: 'accepted',
-          acceptedByUserId: user.uid,
-          usedAt: now,
-          updatedAt: now,
-        });
-      }
-    } catch (e) {
-      console.error("Erro ao atualizar convite:", e);
-      // Nao relancar erro pois o cadastro em si ja foi concluido com sucesso!
+    const data = await response.json();
+    if (!response.ok) {
+       await signOut(activeAuth);
+       const errorCode = data.code === 'auth/invite-email-mismatch' ? 'auth/invite-email-mismatch' : 'auth/invite-accept-failed';
+       throw Object.assign(new Error(data.error || 'Erro ao aceitar convite'), { code: errorCode, invitedEmail: inviteData.email || inviteData.maskedEmail });
     }
 
     sessionStorage.removeItem('demo_role');
+    await refreshUserData();
     return user;
   };
 

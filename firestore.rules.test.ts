@@ -597,4 +597,144 @@ describe('LumièreOS Firestore Rules Tests', () => {
     })).rejects.toThrow();
   });
 
+  it('bloqueia leitura do candidato pelo client SDK', async () => {
+    const candidateContext = testEnv.authenticatedContext('candidato', { uid: 'candidato', email: 'candidato@email.com' } as any);
+    const db = candidateContext.firestore();
+    
+    await expect(getDoc(doc(db, 'invites', 'invite123'))).rejects.toThrow();
+  });
+
+  it('bloqueia update de aceitação pelo client SDK', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'invites', 'invite_to_accept'), {
+        email: 'candidato@email.com',
+        type: 'email',
+        status: 'pending'
+      });
+    });
+
+    const candidateContext = testEnv.authenticatedContext('candidato', { uid: 'candidato', email: 'candidato@email.com' } as any);
+    const db = candidateContext.firestore();
+    
+    await expect(updateDoc(doc(db, 'invites', 'invite_to_accept'), {
+      status: 'accepted',
+      acceptedByUserId: 'candidato'
+    })).rejects.toThrow();
+  });
+
+  it('permite que owner, admin e manager criem convites do próprio salão', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
+      await setDoc(doc(db, 'users', 'manager_uid'), { salonId: 'salao_teste', role: 'manager' });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
+    const dbOwner = ownerContext.firestore();
+    await expect(setDoc(doc(dbOwner, 'invites', 'invite_owner'), {
+      salonId: 'salao_teste',
+      inviteType: 'professional',
+      role: 'professional',
+      status: 'pending'
+    })).resolves.toBeDefined();
+
+    const managerContext = testEnv.authenticatedContext('manager_uid', { uid: 'manager_uid' } as any);
+    const dbManager = managerContext.firestore();
+    await expect(setDoc(doc(dbManager, 'invites', 'invite_manager'), {
+      salonId: 'salao_teste',
+      inviteType: 'professional',
+      role: 'professional',
+      status: 'pending'
+    })).resolves.toBeDefined();
+  });
+
+  it('bloqueia owner de criar convite com roles privilegiadas', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
+    const dbOwner = ownerContext.firestore();
+    
+    // owner
+    await expect(setDoc(doc(dbOwner, 'invites', 'invite_priv_1'), {
+      salonId: 'salao_teste',
+      inviteType: 'professional',
+      role: 'owner',
+      status: 'pending'
+    })).rejects.toThrow();
+
+    // admin
+    await expect(setDoc(doc(dbOwner, 'invites', 'invite_priv_2'), {
+      salonId: 'salao_teste',
+      inviteType: 'professional',
+      role: 'admin',
+      status: 'pending'
+    })).rejects.toThrow();
+  });
+
+  it('bloqueia alteração de campos sensíveis de convites', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
+      await setDoc(doc(db, 'invites', 'invite_update_test'), {
+        salonId: 'salao_teste',
+        inviteType: 'professional',
+        role: 'professional',
+        status: 'pending',
+        maxUses: 1,
+        createdAt: 1000
+      });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
+    const dbOwner = ownerContext.firestore();
+    
+    await expect(updateDoc(doc(dbOwner, 'invites', 'invite_update_test'), {
+      salonId: 'novo_salao'
+    })).rejects.toThrow();
+    
+    await expect(updateDoc(doc(dbOwner, 'invites', 'invite_update_test'), {
+      role: 'manager'
+    })).rejects.toThrow();
+  });
+
+  it('permite que owner cancele convite pending', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
+      await setDoc(doc(db, 'invites', 'invite_cancel_test'), {
+        salonId: 'salao_teste',
+        status: 'pending',
+      });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
+    const dbOwner = ownerContext.firestore();
+    
+    await expect(updateDoc(doc(dbOwner, 'invites', 'invite_cancel_test'), {
+      status: 'canceled',
+      updatedAt: Date.now()
+    })).resolves.toBeDefined();
+  });
+
+  it('bloqueia criação de convite para outro salão', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
+    const dbOwner = ownerContext.firestore();
+    
+    await expect(setDoc(doc(dbOwner, 'invites', 'invite_other_salon'), {
+      salonId: 'outro_salao',
+      inviteType: 'professional',
+      role: 'professional',
+      status: 'pending'
+    })).rejects.toThrow();
+  });
+
 });

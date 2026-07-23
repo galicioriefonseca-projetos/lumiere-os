@@ -54,6 +54,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "O parâmetro salonId é obrigatório." });
     }
     
+    // Validar salonId: /^[A-Za-z0-9_-]{3,128}$/
+    if (!/^[A-Za-z0-9_-]{3,128}$/.test(String(salonId))) {
+      return res.status(400).json({ error: "Formato de salonId inválido." });
+    }
+    
     let user;
     try {
       user = await verifyIdToken(req);
@@ -75,9 +80,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: authResult.reason || "Não autorizado." });
     }
     
-    if (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual" || (salonData?.billingProvider === "cakto" && salonData?.subscriptionId && salonData.subscriptionId.startsWith("sub_manual"))) {
+    if (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual" || (salonData?.billingProvider === "cakto" && salonData?.caktoSubscriptionId && salonData.caktoSubscriptionId.startsWith("sub_manual"))) {
       return res.status(200).json({
-         status: salonData?.paymentStatus === "paid" ? "active" : "pending",
+         status: salonData?.subscriptionStatus || salonData?.activationStatus || (salonData?.isActive ? "active" : "canceled"),
          amount: salonData?.lastPaymentAmount || 0,
          paymentMethod: "manual",
          next_payment_date: salonData?.nextBillingDate || null,
@@ -92,12 +97,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const subscriptionId = salonData?.caktoSubscriptionId;
     if (!subscriptionId) {
       return res.status(409).json({ 
-        error: "Nenhuma assinatura Cakto configurada para este salão.",
+        error: "A assinatura Cakto ainda não foi confirmada.",
         requiresCheckout: true
       });
     }
     
-    if (subscriptionId.toLowerCase().includes("homolog") || subscriptionId.toLowerCase().includes("simulated") || process.env.CAKTO_SANDBOX_MODE === "true" || process.env.VITE_CAKTO_SANDBOX_MODE === "true") {
+    if (subscriptionId.toLowerCase().includes("homolog") || subscriptionId.toLowerCase().includes("simulated") || process.env.CAKTO_SANDBOX_MODE === "true") {
       return res.status(200).json({
         status: salonData?.subscriptionStatus || "active",
         amount: salonData?.lastPaymentAmount || 0,
@@ -110,7 +115,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     const accessToken = await getCaktoAccessToken();
     const apiUrl = getCaktoApiBaseUrl();
-    const subUrl = `${apiUrl}/public_api/subscriptions/${subscriptionId}/`;
+    const subUrl = `${apiUrl}/public_api/subscriptions/${encodeURIComponent(subscriptionId)}/`;
     
     const response = await fetch(subUrl, {
       method: "GET",

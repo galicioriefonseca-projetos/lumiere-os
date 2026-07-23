@@ -21,26 +21,26 @@ service cloud.firestore {
     }
 
     function userEmail() {
-      return request.auth.token.get('email', '');
+      return 'email' in request.auth.token ? request.auth.token.email : '';
     }
 
     // Helper for role field
     function userRole() {
-      return exists(userDoc()) ? get(userDoc()).data.get('role', 'none') : 'none';
+      return exists(userDoc()) && 'role' in get(userDoc()).data ? get(userDoc()).data.role : 'none';
     }
 
     // Helper for salonId field
     function userSalonId() {
-      return exists(userDoc()) ? get(userDoc()).data.get('salonId', 'none') : 'none';
+      return exists(userDoc()) && 'salonId' in get(userDoc()).data ? get(userDoc()).data.salonId : 'none';
     }
 
     // Super Admin global role helper
     function isPlatformAdmin() {
       return isSignedIn() && (
-        request.auth.token.get('role', 'none') == "platform_admin" ||
-        request.auth.token.get('platform_admin', false) == true ||
+        ('role' in request.auth.token && request.auth.token.role == "platform_admin") ||
+        ('platform_admin' in request.auth.token && request.auth.token.platform_admin == true) ||
         exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
-        (exists(userDoc()) && get(userDoc()).data.get('role', 'none') == "platform_admin")
+        (exists(userDoc()) && 'role' in get(userDoc()).data && get(userDoc()).data.role == "platform_admin")
       );
     }
 
@@ -50,33 +50,34 @@ service cloud.firestore {
 
     // Specific salon level checks
     function isSalonOwner(salonId) {
-      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin");
+      return isSignedIn() && exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 'role' in get(userDoc()).data && (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin");
     }
 
     function isSalonManager(salonId) {
-      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "manager";
+      return isSignedIn() && exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 'role' in get(userDoc()).data && get(userDoc()).data.role == "manager";
     }
 
     function isSalonReceptionist(salonId) {
-      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "receptionist";
+      return isSignedIn() && exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 'role' in get(userDoc()).data && get(userDoc()).data.role == "receptionist";
     }
 
     // Helper for managers, receptionists, etc.
     function isSalonAttendant(salonId) {
-      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "attendant";
+      return isSignedIn() && exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 'role' in get(userDoc()).data && get(userDoc()).data.role == "attendant";
     }
 
     function isSalonProfessional(salonId) {
-      return isSignedIn() && exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && get(userDoc()).data.get('role', 'none') == "professional";
+      return isSignedIn() && exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 'role' in get(userDoc()).data && get(userDoc()).data.role == "professional";
     }
 
     function isSalonMember(salonId) {
       return isSignedIn() && (
         isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
-        (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId) ||
+        (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId) ||
         exists(/databases/$(database)/documents/salons/$(salonId)/professionals/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/salons/$(salonId)) && get(/databases/$(database)/documents/salons/$(salonId)).data.get('ownerId', '') == request.auth.uid)
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
       );
     }
 
@@ -86,7 +87,7 @@ service cloud.firestore {
     }
 
     function isTutorialDemoUser() {
-      return isSignedIn() && request.auth.token.get('is_demo', false) == true;
+      return isSignedIn() && 'is_demo' in request.auth.token && request.auth.token.is_demo == true;
     }
 
     function canUseTutorialDemo(salonId) {
@@ -97,24 +98,27 @@ service cloud.firestore {
     function canManageSalon(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
         exists(userDoc()) && 
-        get(userDoc()).data.get('salonId', 'none') == salonId && 
-        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")
+        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+        'role' in get(userDoc()).data && 
+        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
       );
     }
 
     function canOperateFrontDesk(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
         exists(userDoc()) && 
-        get(userDoc()).data.get('salonId', 'none') == salonId && 
-        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist" || get(userDoc()).data.get('role', 'none') == "attendant")
+        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+        'role' in get(userDoc()).data && 
+        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist" || get(userDoc()).data.role == "attendant")
       );
     }
 
     function canModifyCrmStage(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
         exists(userDoc()) && 
-        get(userDoc()).data.get('salonId', 'none') == salonId && 
-        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist")
+        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+        'role' in get(userDoc()).data && 
+        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist")
       );
     }
 
@@ -122,16 +126,18 @@ service cloud.firestore {
     function canEvaluateTeam(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
         exists(userDoc()) && 
-        get(userDoc()).data.get('salonId', 'none') == salonId && 
-        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")
+        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+        'role' in get(userDoc()).data && 
+        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
       );
     }
 
     function canRecordEvaluation(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
         exists(userDoc()) && 
-        get(userDoc()).data.get('salonId', 'none') == salonId && 
-        (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager" || get(userDoc()).data.get('role', 'none') == "receptionist" || get(userDoc()).data.get('role', 'none') == "attendant")
+        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+        'role' in get(userDoc()).data && 
+        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist" || get(userDoc()).data.role == "attendant")
       );
     }
 
@@ -139,8 +145,18 @@ service cloud.firestore {
       return isSignedIn() && (
         isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
-        (exists(userDoc()) && get(userDoc()).data.get('salonId', 'none') == salonId && (get(userDoc()).data.get('role', 'none') == "owner" || get(userDoc()).data.get('role', 'none') == "admin" || get(userDoc()).data.get('role', 'none') == "manager")) ||
-        (exists(/databases/$(database)/documents/salons/$(salonId)) && get(/databases/$(database)/documents/salons/$(salonId)).data.get('ownerId', '') == request.auth.uid)
+        (
+          exists(userDoc()) && 
+          'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+          'role' in get(userDoc()).data && 
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+        ) ||
+        (
+          exists(/databases/$(database)/documents/salons/$(salonId)) && (
+            ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
+            ('ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
+          )
+        )
       );
     }
 
@@ -213,7 +229,7 @@ service cloud.firestore {
           canUseTutorialDemo(salonId)
         ) && 
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'plan', 'subscriptionStatus', 'activationStatus', 'isActive', 'professionalsLimit', 'professionalLimit', 'maxProfessionals', 'deletedAt', 'ownerId', 'ownerEmail', 'isDemo', 'isTutorial', 'platformAdmins', 'billingProvider', 'subscriptionId'
+          'plan', 'subscriptionStatus', 'activationStatus', 'paymentStatus', 'isActive', 'billingProvider', 'billingMode', 'professionalLimit', 'professionalsLimit', 'maxProfessionals', 'founderAuthorized', 'isFounderAuthorized', 'isFounder', 'caktoSubscriptionId', 'caktoOrderId', 'caktoCustomerId', 'caktoOfferId', 'caktoCheckoutUrl', 'caktoCheckoutEmail', 'nextBillingDate', 'currentPeriodStart', 'currentPeriodEnd', 'lastPaymentAt', 'lastPaymentAmount', 'billingSyncRequired', 'billingSyncReason', 'pendingPlan', 'pendingOfferId', 'pendingCheckoutUrl', 'pendingCheckoutEmail', 'pendingRequestedAt', 'pendingCheckoutPurpose', 'pendingBillingActivation', 'pendingPlanChange', 'ownerId', 'ownerEmail', 'deletedAt'
         ])
       );
                      
@@ -231,8 +247,20 @@ service cloud.firestore {
 
     // Invites collection (Hardened)
     match /invites/{inviteId} {
+      allow create: if isPlatformAdmin() || (
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == request.resource.data.salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") &&
+        request.resource.data.inviteType in ["manager", "receptionist", "attendant", "professional", "function_link", "team_public_link"] &&
+        !(request.resource.data.role in ["owner", "admin", "platform_admin"])
+      );
+
       allow get: if isPlatformAdmin() || (
-        isSignedIn() && request.auth.token.email == resource.data.email
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == resource.data.salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
       );
       
       allow list: if isPlatformAdmin() || (
@@ -243,46 +271,28 @@ service cloud.firestore {
       );
 
       allow update: if isPlatformAdmin() || (
-        isSignedIn() && (
-          (
-            resource.data.type == "email" &&
-            request.auth.token.email == resource.data.email &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'acceptedByUserId']) &&
-            request.resource.data.status == "accepted" &&
-            request.resource.data.acceptedByUserId == request.auth.uid
-          ) ||
-          (
-            resource.data.type == "function_link" &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedAt', 'acceptedByUserId', 'usedCount']) &&
-            request.resource.data.status == "accepted" &&
-            request.resource.data.acceptedByUserId == request.auth.uid &&
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId', 'maxUses', 'category', 'createdAt'])
-          )
-        )
+        isSignedIn() && 
+        exists(userDoc()) && 
+        userSalonId() == resource.data.salonId && 
+        (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
+        resource.data.status == "pending" &&
+        request.resource.data.status == "canceled" &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['salonId', 'role', 'inviteType', 'maxUses', 'createdAt', 'email'])
       );
     }
 
     // --- Salons Subcollections (Hardened & Granular RBAC) ---
 
-    // Payments
-    match /salons/{salonId}/payments/{paymentId} {
-      allow read: if canManageBilling(salonId);
-      allow create: if canManageBilling(salonId) && 
-        request.resource.data.status == "reported" &&
-        request.resource.data.salonId == salonId &&
-        request.resource.data.method == "pix";
-      allow update, delete: if isPlatformAdmin();
-    }
-
     // Subscriptions (Mercado Pago)
     match /salons/{salonId}/subscriptions/{subscriptionId} {
-      allow read: if canManageBilling(salonId);
+      allow read: if canManageSalon(salonId) || canManageBilling(salonId);
       allow write: if isPlatformAdmin();
     }
 
     // Billing History
     match /salons/{salonId}/billingHistory/{historyId} {
-      allow read: if canManageBilling(salonId);
+      allow read: if canManageSalon(salonId) || canManageBilling(salonId);
       allow write: if isPlatformAdmin();
     }
 

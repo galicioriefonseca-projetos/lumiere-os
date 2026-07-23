@@ -8,6 +8,8 @@ import caktoSubscriptionStatusHandler from "../api/cakto/subscription-status.js"
 import caktoRealSubscriptionHandler from "../api/cakto/real-subscription.js";
 import caktoUpdatePaymentMethodHandler from "../api/cakto/update-payment-method.js";
 import caktoChangePlanHandler from "../api/cakto/change-plan.js";
+import resolveInviteHandler from "../api/invites/resolve.js";
+import acceptInviteHandler from "../api/invites/accept.js";
 
 import express from "express";
 import path from "path";
@@ -46,28 +48,10 @@ async function startServer() {
     res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });
   });
 
-  // ==========================================
-  // INTEGRAÇÃO DE BACKEND SEGURO ASAAS BILLING
-  // ==========================================
 
-
-  // Middleware de autenticação segura para as rotas Asaas
-  const authenticateRequest = async (req: any, res: any, next: any) => {
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Autenticação requerida (Token ausente)." });
-      }
-      const token = authHeader.split("Bearer ")[1];
-      const adminAuth = getAdminAuth();
-      const decodedToken = await adminAuth.verifyIdToken(token);
-      req.user = decodedToken;
-      next();
-    } catch (err: any) {
-      console.error("[Asaas Auth] Erro de autenticação:", err);
-      return res.status(401).json({ error: "Sessão inválida ou expirada." });
-    }
-  };
+  // ==========================================
+  // AUTENTICAÇÃO E PERMISSÕES DE FATURAMENTO
+  // ==========================================
 
   async function resolvePlatformAdmin(user: any, adminDb: any): Promise<boolean> {
     if (!user || !user.uid) return false;
@@ -147,7 +131,6 @@ async function startServer() {
 
     return { authorized: false, reason: "Você não tem permissão para gerenciar o faturamento deste salão." };
   }
-  // Endpoint de Webhook de faturamento e sincronização do Asaas
 
   // ==========================================
   // INTEGRAÇÃO DE BACKEND SEGURO CAKTO BILLING
@@ -320,6 +303,8 @@ async function startServer() {
   app.get("/api/cakto/real-subscription", (req, res) => caktoRealSubscriptionHandler(req as any, res as any));
   app.post("/api/cakto/update-payment-method", (req, res) => caktoUpdatePaymentMethodHandler(req as any, res as any));
   app.post("/api/cakto/change-plan", (req, res) => caktoChangePlanHandler(req as any, res as any));
+  app.get("/api/invites/resolve", (req, res) => resolveInviteHandler(req as any, res as any));
+  app.post("/api/invites/accept", (req, res) => acceptInviteHandler(req as any, res as any));
 
   app.post("/api/auth/login", async (req, res) => {
     try {

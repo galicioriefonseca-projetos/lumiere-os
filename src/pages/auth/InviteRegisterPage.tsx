@@ -78,65 +78,22 @@ export default function InviteRegisterPage() {
 
     async function loadInvite() {
       try {
-        const docRef = doc(db, 'invites', inviteId as string);
-        const docSnap = await getDoc(docRef);
+        const response = await fetch(`/api/invites/resolve?inviteId=${inviteId}`);
+        const data = await response.json();
 
-        if (!docSnap.exists()) {
-          setInvalidReason('Convite não encontrado.');
-          setLoadingInvite(false);
-          return;
-        }
-
-        const data = docSnap.data() as Invite;
-
-        if (data.status !== 'pending') {
-          setInvalidReason('Este convite já foi utilizado ou cancelado.');
-          setLoadingInvite(false);
-          return;
-        }
-
-        if (data.inviteType === 'function_link' || data.inviteType === 'team_public_link') {
-          const uses = data.usesCount || 0;
-          const max = data.maxUses || 99999;
-          if (uses >= max) {
-            setInvalidReason('Este link de convite atingiu o limite máximo de cadastros de profissionais.');
-            setLoadingInvite(false);
-            return;
-          }
-        }
-
-        // Parse expiresAt cleanly
-        let expiresAtMillis = Infinity;
-        if (data.expiresAt) {
-          if (typeof data.expiresAt === 'object') {
-            if (typeof data.expiresAt.toMillis === 'function') {
-              expiresAtMillis = data.expiresAt.toMillis();
-            } else if (typeof data.expiresAt.seconds === 'number') {
-              expiresAtMillis = data.expiresAt.seconds * 1000;
-            }
-          } else {
-            expiresAtMillis = Number(data.expiresAt);
-          }
-        }
-
-        if (expiresAtMillis < Date.now()) {
-          setInvalidReason('Este convite expirou. Solicite um novo link.');
+        if (!response.ok) {
+          setInvalidReason(data.error || 'Convite não encontrado ou inválido.');
           setLoadingInvite(false);
           return;
         }
 
         setInviteData(data);
-        // Pre-fill email if configured
-        if (data.email) {
-          setFormData(prev => ({ ...prev, email: data.email || '' }));
+        if (data.hasEmail && data.maskedEmail) {
+          setFormData(prev => ({ ...prev, email: data.maskedEmail || '' }));
         }
       } catch (err: any) {
         console.error("Erro ao carregar convite:", err);
-        if (err?.code === 'permission-denied') {
-          setInvalidReason('Este convite expirou, já foi usado ou não está mais disponível.');
-        } else {
-          setInvalidReason('Erro ao conectar com o servidor e carregar o convite.');
-        }
+        setInvalidReason('Erro ao conectar com o servidor e carregar o convite.');
       } finally {
         setLoadingInvite(false);
       }
@@ -250,100 +207,32 @@ export default function InviteRegisterPage() {
 
       await updateProfile(user, { displayName: formData.fullName });
 
-      const now = Date.now();
-      const finalRole = isTeamPublic ? 'professional' : (inviteData.inviteType === 'function_link' ? (inviteData.role || 'professional') : inviteData.inviteType);
-      const isProfRole = finalRole === 'professional' || inviteData.inviteType === 'professional' || isTeamPublic;
-      const professionUID = isProfRole ? user.uid : '';
+      // 2. Chama a API para processar a aceitação do convite no backend
+      const idToken = await user.getIdToken(true);
 
-      // 2. Create the general user profile under Root `/users`
-      const userProfile: any = {
-        id: user.uid,
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone || null,
-        role: finalRole,
-        salonId: inviteData.salonId,
-        professionalId: professionUID,
-        isActive: true,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      if (isTeamPublic) {
-        userProfile.primaryFunction = finalPrimary;
-        userProfile.professionalFunction = finalPrimary;
-        userProfile.professionalCategory = finalPrimary;
-        userProfile.category = finalPrimary;
-        userProfile.specialty = finalPrimary;
-        userProfile.specialties = allSpecialties;
-        userProfile.additionalFunctions = cleanExtras;
-      } else if (inviteData.inviteType === 'function_link') {
-        userProfile.specialty = inviteData.specialty || '';
-        userProfile.professionalFunction = inviteData.professionalFunction || '';
-        userProfile.professionalCategory = inviteData.category || '';
-        userProfile.category = inviteData.category || '';
-      }
-
-      await setDoc(doc(db, 'users', user.uid), userProfile);
-
-      // 3. Create or Update Professional under Salon collection if Professional role
-      if (isTeamPublic || inviteData.inviteType === 'function_link' || inviteData.inviteType === 'professional') {
-        const profRecord: any = {
-          userId: user.uid,
-          professionalId: user.uid,
-          name: formData.fullName,
-          email: formData.email,
-          phone: formData.phone || null,
-          role: finalRole,
-          status: 'active',
-          isActive: true,
-          joinedByInvite: true,
+      const response = await fetch('/api/invites/accept', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
           inviteId: inviteData.id,
-          inviteType: inviteData.inviteType,
-          createdAt: now,
-          updatedAt: now,
-        };
+          fullName: formData.fullName,
+          phone: formData.phone || "",
+          primaryFunction: finalPrimary || "",
+          additionalFunctions: cleanExtras || []
+        })
+      });
 
-        if (isTeamPublic) {
-          profRecord.primaryFunction = finalPrimary;
-          profRecord.professionalFunction = finalPrimary;
-          profRecord.professionalCategory = finalPrimary;
-          profRecord.category = finalPrimary;
-          profRecord.specialty = finalPrimary;
-          profRecord.specialties = allSpecialties;
-          profRecord.additionalFunctions = cleanExtras;
-        } else {
-          profRecord.category = inviteData.category || 'Profissional';
-          profRecord.specialty = inviteData.specialty || inviteData.category || '';
-          profRecord.professionalFunction = inviteData.professionalFunction || inviteData.category || '';
-        }
-
-        await setDoc(doc(db, `salons/${inviteData.salonId}/professionals`, user.uid), profRecord);
-      }
-
-      // 4. Update Invite Document Status and usesCount
-      if (inviteData.inviteType === 'function_link' || isTeamPublic) {
-        const newUses = (inviteData.usesCount || 0) + 1;
-        const maxUses = inviteData.maxUses || 99999;
-        const finalStatus = newUses >= maxUses ? 'used_limit_reached' : 'pending';
-
-        await updateDoc(doc(db, 'invites', inviteData.id), {
-          usesCount: newUses,
-          status: finalStatus,
-          updatedAt: now,
-        });
-      } else {
-        await updateDoc(doc(db, 'invites', inviteData.id), {
-          status: 'accepted',
-          acceptedByUserId: user.uid,
-          usedAt: now,
-          updatedAt: now,
-        });
+      const data = await response.json();
+      
+      if (!response.ok) {
+         throw new Error(data.error || 'Erro ao processar aceitação do convite no servidor.');
       }
 
       sessionStorage.removeItem('demo_role');
-      toast.success(`Cadastro corporativo concluído! Bem-vindo(a) à equipe do ${inviteData.salonName}.`);
+      toast.success(`Cadastro corporativo concluído! Bem-vindo(a) à equipe do ${inviteData.salonName || 'salão'}.`);
       navigate('/dashboard/meu-painel', { replace: true });
     } catch (err: any) {
       console.error(err);
