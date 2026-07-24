@@ -74,7 +74,7 @@ export async function canManageBilling(
     return { authorized: true, role: "owner" };
   }
 
-  // 3. Usuário registrado com role autorizada ("owner", "admin", "manager") associada ao salão correspondente
+  // 3. Usuário registrado com role autorizada ("owner" ou "admin") associada ao salão correspondente
   try {
     const userSnap = await adminDb.collection("users").doc(uid).get();
     if (userSnap.exists) {
@@ -83,7 +83,7 @@ export async function canManageBilling(
       const userRole = uData?.role;
 
       if (userSalonId === salonId) {
-        const allowedRoles = ["owner", "admin", "manager"];
+        const allowedRoles = ["owner", "admin"];
         if (allowedRoles.includes(userRole)) {
           return { authorized: true, role: userRole };
         } else {

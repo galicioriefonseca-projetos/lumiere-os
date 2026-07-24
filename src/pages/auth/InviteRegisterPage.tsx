@@ -4,19 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sparkles, Loader2, ArrowRight, CheckCircle2, AlertTriangle, Chrome, Info, Check } from 'lucide-react';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { professionalSpecialties } from '../../data/professionalSpecialties';
 
 interface Invite {
-  id: string;
-  salonId: string;
+  inviteId: string;
   salonName: string;
-  invitedByUserId: string;
-  invitedByName: string;
   inviteType: 'manager' | 'receptionist' | 'attendant' | 'professional' | 'function_link' | 'team_public_link';
   role: string;
   category: string;
@@ -24,7 +20,8 @@ interface Invite {
   professionalFunction?: string;
   maxUses?: number;
   usesCount?: number;
-  email?: string;
+  maskedEmail?: string;
+  hasEmail?: boolean;
   status: 'pending' | 'accepted' | 'expired' | 'canceled';
   expiresAt: any;
   createdAt: number;
@@ -88,9 +85,7 @@ export default function InviteRegisterPage() {
         }
 
         setInviteData(data);
-        if (data.hasEmail && data.maskedEmail) {
-          setFormData(prev => ({ ...prev, email: data.maskedEmail || '' }));
-        }
+
       } catch (err: any) {
         console.error("Erro ao carregar convite:", err);
         setInvalidReason('Erro ao conectar com o servidor e carregar o convite.');
@@ -178,11 +173,6 @@ export default function InviteRegisterPage() {
       return;
     }
 
-    if (inviteData.email && inviteData.email.trim().toLowerCase() !== formData.email.trim().toLowerCase()) {
-      toast.error(`Este convite é restrito ao e-mail: ${inviteData.email}`);
-      return;
-    }
-
     const isTeamPublic = inviteData.inviteType === 'team_public_link';
     const finalPrimary = primaryFunction === 'Outro' ? customPrimary.trim() : primaryFunction;
 
@@ -217,7 +207,7 @@ export default function InviteRegisterPage() {
           'Authorization': `Bearer ${idToken}`
         },
         body: JSON.stringify({
-          inviteId: inviteData.id,
+          inviteId: inviteData.inviteId,
           fullName: formData.fullName,
           phone: formData.phone || "",
           primaryFunction: finalPrimary || "",
@@ -482,14 +472,14 @@ export default function InviteRegisterPage() {
                       name="email" 
                       type="email" 
                       required 
-                      disabled={!!inviteData?.email}
+                      disabled={false}
                       value={formData.email} 
                       onChange={handleChange} 
                       className="bg-black/50 h-11 rounded-xl disabled:opacity-60" 
                       placeholder="seuemail@exemplo.com"
                     />
-                    {inviteData?.email && (
-                      <p className="text-[10px] text-[#D4AF37]">E-mail fixado pelo administrador do salão.</p>
+                    {inviteData?.hasEmail && inviteData.maskedEmail && (
+                      <p className="text-[10px] text-[#D4AF37]">Use o e-mail correspondente a {inviteData.maskedEmail}. O endereço completo será validado com segurança pelo servidor.</p>
                     )}
                   </div>
                   <div className="space-y-2">

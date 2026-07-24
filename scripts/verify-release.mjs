@@ -32,6 +32,9 @@ const forbiddenFilePatterns = [
   /^fix.*\.(cjs|patch)$/i,
   /^restore.*\.cjs$/i,
   /^clean_mess\.cjs$/i,
+  /^inspect\.(ts|js|mjs|cjs)$/i,
+  /^debug.*\.(ts|js|mjs|cjs)$/i,
+  /^dump.*\.(ts|js|mjs|cjs)$/i,
 ];
 
 for (const file of readdirSync(root)) {

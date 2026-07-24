@@ -414,7 +414,6 @@ export default function SubscriptionPage() {
   // States for activation flow
   const [isActivating, setIsActivating] = useState(false);
   const [showActivationModal, setShowActivationModal] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'credit_card' | 'pix' | 'boleto'>('credit_card');
   const [selectedPlan, setSelectedPlan] = useState<string>('');
 
   useEffect(() => {
@@ -483,7 +482,6 @@ export default function SubscriptionPage() {
         salonData.billingEmail || salonData.ownerEmail || '',
         {
           planId: selectedPlan,
-          paymentMethod,
           checkoutPurpose: purpose
         } as any
       ) as any;

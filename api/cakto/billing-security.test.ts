@@ -19,6 +19,9 @@ const mockOnboardingSet = vi.fn().mockResolvedValue(undefined);
 const mockBatchSet = vi.fn();
 const mockBatchUpdate = vi.fn();
 const mockBatchDelete = vi.fn();
+const mockTransactionGet = vi.fn().mockResolvedValue({ exists: false, data: () => ({}) });
+const mockTransactionSet = vi.fn();
+const mockTransactionUpdate = vi.fn();
 
 vi.mock("../_shared/firebaseAdmin.js", () => {
   return {
@@ -34,9 +37,9 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
     },
     getAdminDb: () => ({
       runTransaction: async (cb) => cb({
-        get: vi.fn().mockResolvedValue({ exists: false, data: () => ({}) }),
-        set: vi.fn(),
-        update: vi.fn()
+        get: mockTransactionGet,
+        set: mockTransactionSet,
+        update: mockTransactionUpdate
       }),
       batch: () => ({
         set: mockBatchSet,
@@ -70,7 +73,10 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
           doc: () => ({
             get: mockSalonGet,
             update: mockSalonSet,
-            set: mockSalonSet
+            set: mockSalonSet,
+            collection: () => ({
+              doc: () => ({ id: "nested_doc" })
+            })
           })
         };
         return chainable;
@@ -107,6 +113,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     process.env = { ...originalEnv };
     process.env.CAKTO_SANDBOX_MODE = "true"; // Ativar simulação por padrão nos testes
     mockOnboardingGet.mockResolvedValue({ exists: false });
+    mockTransactionGet.mockResolvedValue({ exists: false, data: () => ({}) });
   });
 
   describe("create-checkout.ts", () => {
@@ -132,7 +139,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_new", planId: "founder" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ exists: false });
 
       await checkoutHandler(req, res);
@@ -149,7 +156,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "founder" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start", founderAuthorized: false }) 
@@ -170,7 +177,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "founder" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start", founderAuthorized: true }) 
@@ -188,7 +195,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "founder" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start" }) 
@@ -206,7 +213,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_new", planId: "start", checkoutPurpose: "activate_recurring" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ exists: false });
 
       await checkoutHandler(req, res);
@@ -223,7 +230,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_new", planId: "invalid_plan", checkoutPurpose: "new_subscription" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
 
       await checkoutHandler(req, res);
 
@@ -239,7 +246,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "start" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start" }) 
@@ -260,7 +267,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "start", checkoutPurpose: "activate_recurring" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start", billingProvider: "cakto", subscriptionStatus: "active" }) 
@@ -388,7 +395,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "start" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start" }) 
@@ -439,8 +446,14 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { 
           salonId: "salon_new", 
           planId: "start", 
-          email: "extra@test.com",
-          salonName: "Novo Salão"
+          email: "owner@test.com",
+          salonName: "Novo Salão",
+          ownerName: "Proprietário",
+          phone: "11999999999",
+          city: "São Paulo",
+          state: "SP",
+          businessSegment: "Salão de Beleza",
+          estimatedProfessionals: "1-5"
         } 
       };
       const res = createMockRes();
@@ -454,7 +467,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       
       const savedData = mockOnboardingSet.mock.calls[0][0];
       expect(savedData.ownerEmail).toBe("owner@test.com"); // Prefere user.email como proprietário definitivo
-      expect(savedData.pendingCheckoutEmail).toBe("extra@test.com"); // Corpo salvou como pending
+      expect(savedData.pendingCheckoutEmail).toBe("owner@test.com"); // Usa e-mail autenticado como fonte canônica
       expect(savedData.ownerId).toBe("user_123");
       expect(savedData.createdBy).toBe("user_123");
       expect(savedData.createdAt).toBeDefined();
@@ -465,10 +478,21 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     it("deve impedir sobrescrever onboarding se o documento já existir e pertencer a outro usuário", async () => {
       const req: any = { 
         method: "POST", 
-        body: { salonId: "salon_new", planId: "start" } 
+        body: { 
+          salonId: "salon_new", 
+          planId: "start",
+          email: "owner@test.com",
+          salonName: "Novo Salão",
+          ownerName: "Proprietário",
+          phone: "11999999999",
+          city: "São Paulo",
+          state: "SP",
+          businessSegment: "Salão de Beleza",
+          estimatedProfessionals: "1-5"
+        } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ exists: false });
       mockOnboardingGet.mockResolvedValueOnce({
         exists: true,
@@ -492,7 +516,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_123", paymentMethod: "credit_card" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "start" }) 
@@ -640,7 +664,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_123", planId: "start" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
 
       await checkoutHandler(req, res);
 
@@ -659,7 +683,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         query: { salonId: "salon_manual" }
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         data: () => ({
@@ -689,7 +713,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         query: { salonId: "salon_cakto_pending" }
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         data: () => ({
@@ -713,7 +737,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_exists", planId: "founder", checkoutPurpose: "activate_recurring" } 
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({ 
         exists: true, 
         data: () => ({ plan: "founder", billingProvider: "manual", subscriptionStatus: "active", paymentStatus: "paid", founderAuthorized: true }) 
@@ -739,7 +763,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         body: { salonId: "salon_active", paymentMethod: "credit_card" }
       };
       const res = createMockRes();
-      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123" } as any);
+      vi.mocked(verifyIdToken).mockResolvedValueOnce({ uid: "user_123", email: "owner@test.com" } as any);
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         data: () => ({ plan: "start", billingProvider: "cakto", subscriptionStatus: "active", paymentStatus: "paid" })
@@ -812,7 +836,8 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
           subscription_id: "sub_123",
           customer_id: "cust_123",
           external_id: "salon_123",
-          checkout_offer_id: "off_start"
+          checkout_offer_id: "off_start",
+          customer: { email: "owner@test.com" }
         }
       };
       const res = createMockRes();
@@ -820,7 +845,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
-        data: () => ({ plan: "start" }),
+        data: () => ({ plan: "start", pendingPlan: "start", pendingOfferId: "off_start", pendingCheckoutEmail: "owner@test.com", pendingCheckoutPurpose: "activate_recurring", pendingRequestedAt: Date.now() }),
         ref: { update: vi.fn(), set: vi.fn() }
       });
 
@@ -885,7 +910,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       const { processCaktoWebhookPayload } = await import("./webhook.js");
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
-        data: () => ({ plan: "start" }),
+        data: () => ({ plan: "start", pendingPlan: "start", pendingOfferId: "off_start", pendingCheckoutEmail: "owner@test.com", pendingCheckoutPurpose: "activate_recurring", pendingRequestedAt: Date.now() }),
         ref: { update: vi.fn(), set: vi.fn() }
       });
 
@@ -896,6 +921,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         customer_id: "cust_123",
         external_id: "salon_123",
         checkout_offer_id: "off_start",
+        customer: { email: "owner@test.com" },
         payment_method: "credit_card",
         current_period_end: "2026-12-31T23:59:59Z"
       });
@@ -903,7 +929,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       expect(res.success).toBe(true);
       expect(mockBatchUpdate).toHaveBeenCalled();
       const updatedFields = mockBatchUpdate.mock.calls[0][1];
-      expect(updatedFields.billingMode).toBe("recurring");
+      expect(updatedFields.billingMode).toBe("recurring_gateway");
       expect(updatedFields.paymentMethod).toBe("credit_card");
       expect(updatedFields.billingProvider).toBe("cakto");
     });
@@ -912,7 +938,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       const { processCaktoWebhookPayload } = await import("./webhook.js");
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
-        data: () => ({ plan: "start" }),
+        data: () => ({ plan: "start", pendingPlan: "start", pendingOfferId: "off_start", pendingCheckoutEmail: "owner@test.com", pendingCheckoutPurpose: "activate_recurring", pendingRequestedAt: Date.now() }),
         ref: { update: vi.fn(), set: vi.fn() }
       });
 
@@ -922,6 +948,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
         customer_id: "cust_123",
         external_id: "salon_123",
         checkout_offer_id: "off_start",
+        customer: { email: "owner@test.com" },
         payment_method: "pix",
         current_period_end: "2026-12-31T23:59:59Z"
       });
@@ -929,9 +956,91 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       expect(res.success).toBe(true);
       expect(mockBatchUpdate).toHaveBeenCalled();
       const updatedFields = mockBatchUpdate.mock.calls[0][1];
-      expect(updatedFields.billingMode).not.toBe("recurring");
+      expect(updatedFields.billingMode).toBe("one_time_gateway");
       expect(updatedFields.paymentMethod).toBe("pix");
       expect(updatedFields.billingProvider).toBe("cakto");
     });
+
+    it("deve exigir intenção de checkout completa para ativar salão existente", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        id: "salon_123",
+        data: () => ({ plan: "start" }),
+        ref: {
+          update: vi.fn(),
+          set: vi.fn(),
+          collection: () => ({ doc: () => ({ id: "nested_doc" }) })
+        }
+      });
+
+      const result = await processCaktoWebhookPayload({
+        event: "purchase_approved",
+        order_id: "ord_missing_intent",
+        subscription_id: "sub_missing_intent",
+        external_id: "salon_123",
+        checkout_offer_id: "off_start",
+        customer: { email: "owner@test.com" }
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.reason).toBe("missing_checkout_intent");
+    });
+
+    it("deve preservar acesso até o fim do período pago quando assinatura é cancelada", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      mockSalonGet.mockResolvedValueOnce({
+        exists: true,
+        id: "salon_123",
+        data: () => ({
+          plan: "start",
+          caktoSubscriptionId: "sub_cancel",
+          currentPeriodEnd: "2099-12-31T23:59:59Z",
+          paymentStatus: "paid",
+          activationStatus: "active"
+        }),
+        ref: {
+          update: vi.fn(),
+          set: vi.fn(),
+          collection: () => ({ doc: () => ({ id: "nested_doc" }) })
+        }
+      });
+
+      const result = await processCaktoWebhookPayload({
+        event: "subscription_canceled",
+        order_id: "ord_cancel",
+        subscription_id: "sub_cancel",
+        external_id: "salon_123",
+        checkout_offer_id: "off_start",
+        customer: { email: "owner@test.com" }
+      });
+
+      expect(result.success).toBe(true);
+      const updatedFields = mockBatchUpdate.mock.calls.find((call) => call[1]?.cancelAtPeriodEnd)?.[1];
+      expect(updatedFields.cancelAtPeriodEnd).toBe(true);
+      expect(updatedFields.isActive).toBe(true);
+      expect(updatedFields.subscriptionStatus).toBe("active");
+    });
+
+    it("deve tratar evento processado como duplicado sem reprocessar", async () => {
+      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      mockTransactionGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ status: "processed", createdAt: Date.now(), updatedAt: Date.now() })
+      });
+
+      const result = await processCaktoWebhookPayload({
+        event: "purchase_approved",
+        event_id: "evt_duplicate",
+        order_id: "ord_duplicate",
+        external_id: "salon_123",
+        checkout_offer_id: "off_start",
+        customer: { email: "owner@test.com" }
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.duplicate).toBe(true);
+    });
+
   });
 });

@@ -64,7 +64,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { 
       salonId, 
       planId, 
-      paymentMethod, 
       email,
       ownerName,
       salonName,
@@ -106,6 +105,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       console.error("[Cakto Checkout Serverless] Erro de autenticação:", authErr);
       return res.status(401).json({ error: "Sessão inválida ou expirada." });
+    }
+
+    const authenticatedEmail = String(user.email || "").trim().toLowerCase();
+    if (!authenticatedEmail) {
+      return res.status(400).json({ error: "A conta autenticada não possui e-mail válido." });
     }
 
     const adminDb = getAdminDb();
@@ -195,6 +199,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!allowedPlansForNew.includes(planId)) {
         return res.status(400).json({ error: "O plano solicitado não é permitido para novas inscrições." });
       }
+      const submittedEmail = String(email || "").trim().toLowerCase();
+      if (submittedEmail && submittedEmail !== authenticatedEmail) {
+        return res.status(400).json({ error: "O e-mail informado não corresponde à conta autenticada." });
+      }
+      if (!ownerName || !salonName || !phone || !city || !state || !businessSegment || !estimatedProfessionals) {
+        return res.status(400).json({ error: "Dados obrigatórios do onboarding estão incompletos." });
+      }
     }
 
     // Verificar se já existe onboarding/{salonId} e se pertence a outro usuário
@@ -222,7 +233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         checkoutEmail = user.email || "";
       }
     } else {
-      checkoutEmail = (email && typeof email === "string" && email.includes("@")) ? email : (user.email || "");
+      checkoutEmail = authenticatedEmail;
     }
     checkoutEmail = checkoutEmail.trim().toLowerCase();
 
@@ -234,8 +245,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (businessSegment === 'Barbearia') legacyBusinessType = 'barbershop';
       else if (businessSegment === 'Clínica de Estética') legacyBusinessType = 'clinic';
 
-      const onboardingEmail = user.email || "";
-      const bodyEmail = (email && typeof email === "string" && email.includes("@")) ? email.trim().toLowerCase() : "";
+      const onboardingEmail = authenticatedEmail;
 
       onboardingData = {
         id: salonId,
@@ -256,7 +266,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pendingPlan: planId,
         pendingOfferId: "", // será preenchido após carregar as ofertas
         pendingCheckoutUrl: "", // será preenchido após gerar
-        pendingCheckoutEmail: bodyEmail || onboardingEmail,
+        pendingCheckoutEmail: onboardingEmail,
         pendingRequestedAt: now,
         pendingCheckoutPurpose: checkoutPurpose,
         pendingBillingActivation: true,

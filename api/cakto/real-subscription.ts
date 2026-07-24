@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       user = await verifyIdToken(req);
     } catch (e: any) {
-      return res.status(401).json({ error: e.message || "Não autenticado." });
+      return res.status(401).json({ error: "Sessão inválida ou expirada." });
     }
     
     const adminDb = getAdminDb();
@@ -80,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: authResult.reason || "Não autorizado." });
     }
     
-    if (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual" || (salonData?.billingProvider === "cakto" && salonData?.caktoSubscriptionId && salonData.caktoSubscriptionId.startsWith("sub_manual"))) {
+    if (salonData?.billingProvider === "manual" || salonData?.billingMode === "manual_pix" || (salonData?.billingProvider === "cakto" && salonData?.caktoSubscriptionId && salonData.caktoSubscriptionId.startsWith("sub_manual"))) {
       return res.status(200).json({
          status: salonData?.subscriptionStatus || salonData?.activationStatus || (salonData?.isActive ? "active" : "canceled"),
          amount: salonData?.lastPaymentAmount || 0,
@@ -102,13 +102,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
     
-    if (subscriptionId.toLowerCase().includes("homolog") || subscriptionId.toLowerCase().includes("simulated") || process.env.CAKTO_SANDBOX_MODE === "true") {
+    if (subscriptionId.toLowerCase().includes("homolog") || subscriptionId.toLowerCase().includes("simulated")) {
       return res.status(200).json({
-        status: salonData?.subscriptionStatus || "active",
-        amount: salonData?.lastPaymentAmount || 0,
-        paymentMethod: "simulated",
-        next_payment_date: salonData?.nextBillingDate || null,
-        offer: salonData?.caktoOfferId || null,
+        hasRealSubscription: false,
+        homologation: true,
+        status: salonData?.homologationSubscriptionStatus || "pending",
+        amount: salonData?.homologationLastPaymentAmount || 0,
+        paymentMethod: salonData?.homologationPaymentMethod || "not_informed",
+        next_payment_date: salonData?.homologationNextBillingDate || null,
+        offer: salonData?.homologationOfferId || null,
         recurrence_period: "monthly"
       });
     }
@@ -137,7 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const caktoSub = await response.json();
     const status = caktoSub.status || caktoSub.subscriptionStatus || "unknown";
     const amount = caktoSub.amount || caktoSub.value || 0;
-    const paymentMethod = caktoSub.paymentMethod || caktoSub.payment_method || caktoSub.billingType || "credit_card";
+    const paymentMethod = caktoSub.paymentMethod || caktoSub.payment_method || caktoSub.billingType || "not_informed";
     const next_payment_date = caktoSub.next_payment_date || caktoSub.next_billing_date || caktoSub.nextBillingDate || null;
     const offer = caktoSub.offer || caktoSub.offer_id || caktoSub.offerId || null;
     const recurrence_period = caktoSub.recurrence_period || caktoSub.recurrencePeriod || "monthly";

@@ -1,10 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
 
+function timestampToMillis(value: any): number {
+  if (typeof value === "number") return value;
+  if (value && typeof value.toMillis === "function") return value.toMillis();
+  if (value && typeof value.seconds === "number") return value.seconds * 1000;
+  return 0;
+}
+
 export default async function resolveInvite(req: VercelRequest, res: VercelResponse) {
-  // Configuração CORS básica
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
 
@@ -19,7 +23,7 @@ export default async function resolveInvite(req: VercelRequest, res: VercelRespo
   try {
     const { inviteId } = req.query;
 
-    if (!inviteId || typeof inviteId !== 'string' || inviteId.length < 5) {
+    if (!inviteId || typeof inviteId !== 'string' || !/^[A-Za-z0-9_-]{5,160}$/.test(inviteId)) {
       return res.status(400).json({ error: 'Convite inválido ou mal formatado.' });
     }
 
@@ -39,10 +43,9 @@ export default async function resolveInvite(req: VercelRequest, res: VercelRespo
     }
     
     // Expiration validation
-    if (inviteData.expiresAt && typeof inviteData.expiresAt === 'number') {
-      if (Date.now() > inviteData.expiresAt) {
-        return res.status(400).json({ error: 'Este convite está expirado.' });
-      }
+    const expiresAtMs = timestampToMillis(inviteData.expiresAt);
+    if (expiresAtMs > 0 && Date.now() > expiresAtMs) {
+      return res.status(410).json({ error: 'Este convite está expirado.' });
     }
     
     // Use count validation for link types
@@ -54,12 +57,24 @@ export default async function resolveInvite(req: VercelRequest, res: VercelRespo
       }
     }
 
-    // Sanitized return data
+    const salonId = String(inviteData.salonId || "");
+    if (!/^[A-Za-z0-9_-]{3,128}$/.test(salonId)) {
+      return res.status(404).json({ error: 'Convite não encontrado ou inválido.' });
+    }
+    const salonSnap = await adminDb.collection("salons").doc(salonId).get();
+    if (!salonSnap.exists) {
+      return res.status(404).json({ error: 'Convite não encontrado ou inválido.' });
+    }
+
+    // Somente dados sanitizados necessários para a tela.
     const sanitizedResponse: any = {
       inviteId: inviteSnap.id,
       inviteType: inviteData.inviteType,
       role: inviteData.role,
-      salonId: inviteData.salonId
+      category: inviteData.category || '',
+      specialty: inviteData.specialty || '',
+      professionalFunction: inviteData.professionalFunction || '',
+      salonName: String(salonSnap.data()?.name || 'Empresa LumièreOS')
     };
 
     if (inviteData.email) {

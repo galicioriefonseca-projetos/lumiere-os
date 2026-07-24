@@ -19,9 +19,13 @@ import {
   FileText,
   ShieldCheck,
   TrendingUp,
-  Award
+  Award,
+  Lock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -37,6 +41,9 @@ export default function RegisterPage() {
     state: '',
     businessSegment: '' as 'Salão de Beleza' | 'Barbearia' | 'Clínica de Estética' | '',
     estimatedProfessionals: '' as 'Apenas eu' | '2 a 5' | '6 a 10' | '11 a 20' | 'Mais de 20' | '',
+    password: '',
+    confirmPassword: '',
+    acceptedTerms: false,
   });
 
   const getRecommendedPlan = (estimatedProfessionals: string) => {
@@ -58,18 +65,17 @@ export default function RegisterPage() {
         };
       case '2 a 5':
         return {
-          id: 'founder',
-          name: 'Founder (Pioneiro)',
-          price: 'R$ 297/mês',
-          maxProfessionals: 'Até 22 profissionais',
-          limit: 22,
+          id: 'start',
+          name: 'Start',
+          price: 'R$ 197/mês',
+          maxProfessionals: 'Até 5 profissionais',
+          limit: 5,
           benefits: [
-            'Até 22 profissionais habilitados',
-            'Acesso completo a todos os recursos',
-            'Sem bloqueios ou limites restritos',
-            'Checklist Lumière',
-            'Metas de faturamento por colaborador',
-            'Suporte prioritário e implantação assistida'
+            'Até 5 profissionais habilitados',
+            'Checklist operacional de excelência',
+            'Controle completo de agenda',
+            'Painel operacional básico',
+            'Suporte padrão via e-mail'
           ]
         };
       case '6 a 10':
@@ -136,7 +142,8 @@ export default function RegisterPage() {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, type, value, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handleSelectSegment = (segment: 'Salão de Beleza' | 'Barbearia' | 'Clínica de Estética') => {
@@ -155,54 +162,123 @@ export default function RegisterPage() {
     formData.email.trim() !== '' &&
     formData.city.trim() !== '' &&
     formData.state.trim() !== '' &&
-    formData.businessSegment !== '';
+    formData.businessSegment !== '' &&
+    formData.password.length >= 8 &&
+    formData.password === formData.confirmPassword &&
+    formData.acceptedTerms;
 
   const reco = getRecommendedPlan(formData.estimatedProfessionals || 'Apenas eu');
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!formData.acceptedTerms) {
+      toast.error('Você precisa aceitar os Termos de Uso e a Política de Privacidade.');
+      return;
+    }
+    if (formData.password.length < 8) {
+      toast.error('A senha deve ter pelo menos 8 caracteres.');
+      return;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      toast.error('As senhas não coincidem.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Auto-generate a Salon ID
-      const salonId = crypto.randomUUID();
+      const normalizedEmail = formData.email.trim().toLowerCase();
+      let firebaseUser = auth.currentUser;
 
-      // Fazer chamada ao backend seguro para criar o checkout e salvar o salão pendente
+      if (!firebaseUser || firebaseUser.email?.toLowerCase() !== normalizedEmail) {
+        try {
+          const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, formData.password);
+          firebaseUser = credential.user;
+        } catch (authError: any) {
+          if (authError?.code !== 'auth/email-already-in-use') throw authError;
+          const credential = await signInWithEmailAndPassword(auth, normalizedEmail, formData.password);
+          firebaseUser = credential.user;
+        }
+      }
+
+      if (!firebaseUser) throw new Error('Não foi possível autenticar sua conta.');
+      if (firebaseUser.email?.toLowerCase() !== normalizedEmail) {
+        throw new Error('A conta autenticada não corresponde ao e-mail informado.');
+      }
+
+      if (firebaseUser.displayName !== formData.ownerName.trim()) {
+        await updateProfile(firebaseUser, { displayName: formData.ownerName.trim() });
+      }
+
+      const now = Date.now();
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const existingUser = await getDoc(userRef);
+      const baseProfile = {
+        id: firebaseUser.uid,
+        email: normalizedEmail,
+        fullName: formData.ownerName.trim(),
+        name: formData.ownerName.trim(),
+        phone: formData.phone.trim(),
+        onboardingStatus: 'pending_payment',
+        updatedAt: now,
+      };
+
+      if (!existingUser.exists()) {
+        await setDoc(userRef, {
+          ...baseProfile,
+          role: 'pending',
+          salonId: null,
+          createdAt: now,
+        });
+      } else {
+        const existingData = existingUser.data();
+        if (existingData?.salonId && existingData?.role !== 'pending') {
+          throw new Error('Esta conta já está vinculada a uma empresa. Acesse o sistema para gerenciar sua assinatura.');
+        }
+        await setDoc(userRef, baseProfile, { merge: true });
+      }
+
+      const salonId = `salon_${firebaseUser.uid}`;
+      const idToken = await firebaseUser.getIdToken(true);
+
       const response = await fetch('/api/cakto/create-checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           salonId,
           planId: reco.id,
-          email: formData.email,
-          ownerName: formData.ownerName,
-          salonName: formData.salonName,
-          phone: formData.phone,
-          city: formData.city,
-          state: formData.state,
+          checkoutPurpose: 'new_subscription',
+          email: normalizedEmail,
+          ownerName: formData.ownerName.trim(),
+          salonName: formData.salonName.trim(),
+          phone: formData.phone.trim(),
+          city: formData.city.trim(),
+          state: formData.state.trim().toUpperCase(),
           businessSegment: formData.businessSegment,
           estimatedProfessionals: formData.estimatedProfessionals,
         }),
       });
 
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Erro ao gerar link de pagamento seguro.');
+        throw new Error(result.error || 'Erro ao gerar link de pagamento seguro.');
       }
 
-      const result = await response.json();
-      if (result.checkoutUrl) {
-        toast.success('Direcionando para o pagamento seguro na Cakto...');
-        window.location.href = result.checkoutUrl;
-      } else {
+      if (!result.checkoutUrl || typeof result.checkoutUrl !== 'string') {
         throw new Error('URL de checkout inválida retornada pelo servidor.');
       }
 
+      toast.success('Conta criada. Redirecionando para o checkout seguro da Cakto...');
+      window.location.assign(result.checkoutUrl);
     } catch (error: any) {
-      console.error(error);
-      toast.error('Erro ao processar: ' + (error.message || 'Erro desconhecido'));
+      console.error('[RegisterPage] Falha no cadastro/checkout:', error);
+      const message = error?.code === 'auth/invalid-credential'
+        ? 'Este e-mail já possui uma conta. Confirme a senha ou acesse a tela de login.'
+        : error?.message || 'Não foi possível concluir o cadastro.';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -346,6 +422,48 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-zinc-300">Crie uma senha</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-3.5 h-5 w-5 text-zinc-500" />
+                      <Input
+                        id="password"
+                        name="password"
+                        type="password"
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="Mínimo de 8 caracteres"
+                        value={formData.password}
+                        onChange={handleChange}
+                        className="bg-black/50 border-white/10 h-12 pl-11 rounded-xl focus:border-primary/50 text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword" className="text-zinc-300">Confirme a senha</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-3.5 h-5 w-5 text-zinc-500" />
+                      <Input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        required
+                        minLength={8}
+                        autoComplete="new-password"
+                        placeholder="Repita a senha"
+                        value={formData.confirmPassword}
+                        onChange={handleChange}
+                        className="bg-black/50 border-white/10 h-12 pl-11 rounded-xl focus:border-primary/50 text-white"
+                      />
+                    </div>
+                    {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                      <p className="text-[10px] text-destructive">As senhas não coincidem.</p>
+                    )}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2 md:col-span-1">
                     <Label htmlFor="phone" className="text-zinc-300">WhatsApp Direto</Label>
@@ -416,6 +534,22 @@ export default function RegisterPage() {
                   </div>
                 </div>
               </div>
+
+              <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/25 p-4 text-xs text-zinc-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="acceptedTerms"
+                  checked={formData.acceptedTerms}
+                  onChange={handleChange}
+                  className="mt-0.5 h-4 w-4 accent-[var(--primary)]"
+                />
+                <span>
+                  Li e aceito os{' '}
+                  <a href={import.meta.env.VITE_TERMS_URL || '/termos'} target="_blank" rel="noreferrer" className="text-primary hover:underline">Termos de Uso</a>
+                  {' '}e a{' '}
+                  <a href={import.meta.env.VITE_PRIVACY_URL || '/privacidade'} target="_blank" rel="noreferrer" className="text-primary hover:underline">Política de Privacidade</a>.
+                </span>
+              </label>
 
               {/* Action area */}
               <div className="pt-4 flex justify-between items-center">
@@ -592,6 +726,9 @@ export default function RegisterPage() {
 
               {/* Botão de Confirmação & Ativação */}
               <div className="space-y-4 pt-2">
+                <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
+                  A forma de pagamento é escolhida diretamente no checkout hospedado da Cakto. O LumièreOS não recebe nem armazena dados sensíveis de pagamento.
+                </p>
                 <Button
                   type="button"
                   id="btn-confirm-preview-email"

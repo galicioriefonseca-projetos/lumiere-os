@@ -251,7 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const trySalonFallback = async (uid: string, email: string | null): Promise<any> => {
-    console.log("[AuthFallback] Buscando salão via ownerId ou ownerEmail para resolver conta órfã...", uid, email);
+    console.log("[AuthFallback] Buscando salão via ownerId para resolver conta órfã...", uid, email);
     try {
       const salonsColl = collection(db, 'salons');
       
@@ -263,15 +263,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return snap1.docs[0];
       }
 
-      // 2. Query by ownerEmail == email
-      if (email) {
-        const q2 = query(salonsColl, where('ownerEmail', '==', email));
-        const snap2 = await getDocs(q2);
-        if (!snap2.empty) {
-          console.log("[AuthFallback] Salão encontrado por ownerEmail:", snap2.docs[0].id);
-          return snap2.docs[0];
-        }
-      }
     } catch (err) {
       console.error("[AuthFallback] Erro ao buscar salão por fallback:", err);
     }
@@ -527,7 +518,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           finalRole: uData.role,
           finalSalonId: null,
           salonDataLoaded: false,
-          error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback (ownerId/ownerEmail)",
+          error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback seguro (ownerId)",
         });
         logAuthDebug({
           authUid: uid,
@@ -938,7 +929,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 finalRole: uData.role,
                 finalSalonId: null,
                 salonDataLoaded: false,
-                error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback (ownerId/ownerEmail)",
+                error: "Usuário sem salonId no Firestore e nenhum salão encontrado por fallback seguro (ownerId)",
               });
               logAuthDebug({
                 authUid: user.uid,
@@ -1324,7 +1315,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogleForRegister = async (
-    salonFields: {
+    _salonFields: {
       salonName: string;
       businessType: string;
       city: string;
@@ -1343,102 +1334,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const activeAuth = getAuth();
     const result = await signInWithPopup(activeAuth, provider);
     const user = result.user;
-
+    const now = Date.now();
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
 
-    if (userSnap.exists()) {
-      const existingData = userSnap.data();
-      if (existingData.salonId) {
-        await signOut(activeAuth);
-        throw { code: 'auth/social-email-already-linked' };
-      }
-      
-      const now = Date.now();
-      const previewEndsAt = now + 7 * 24 * 60 * 60 * 1000;
-      const salonId = crypto.randomUUID();
-      const fullName = optionalFullName || user.displayName || existingData.fullName || salonFields.ownerName || '';
-
-      const salonData = {
-        id: salonId,
-        name: salonFields.salonName,
-        ownerName: fullName,
-        ownerId: user.uid,
-        ownerEmail: user.email || '',
-        phone: salonFields.phone,
-        businessType: salonFields.businessType,
-        city: salonFields.city,
-        state: salonFields.state,
-        plan: salonFields.plan,
-        subscriptionStatus: 'preview',
-        activationStatus: 'active',
-        previewEndsAt: previewEndsAt,
-        isActive: true,
-        professionalsLimit: salonFields.limit,
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        id: user.uid,
+        fullName: optionalFullName || user.displayName || '',
+        name: optionalFullName || user.displayName || '',
+        email: user.email || '',
+        phone: user.phoneNumber || '',
+        role: 'pending',
+        salonId: null,
+        onboardingStatus: 'pending_payment',
         createdAt: now,
         updatedAt: now,
-
-        // Optional onboarding fields
-        businessSegment: salonFields.businessSegment || '',
-        estimatedProfessionals: salonFields.estimatedProfessionals || '',
-        recommendedPlan: salonFields.recommendedPlan || salonFields.plan
-      };
-      await setDoc(doc(db, 'salons', salonId), salonData);
-
-      await updateDoc(doc(db, 'users', user.uid), {
-        salonId: salonId,
-        fullName: fullName,
-        phone: salonFields.phone,
-        role: 'owner',
-        updatedAt: now,
       });
-
-      sessionStorage.removeItem('demo_role');
-      return user;
     }
-
-    const now = Date.now();
-    const previewEndsAt = now + 7 * 24 * 60 * 60 * 1000;
-    const salonId = crypto.randomUUID();
-    const fullName = optionalFullName || user.displayName || salonFields.ownerName || '';
-
-    const salonData = {
-      id: salonId,
-      name: salonFields.salonName,
-      ownerName: fullName,
-      ownerId: user.uid,
-      ownerEmail: user.email || '',
-      phone: salonFields.phone,
-      businessType: salonFields.businessType,
-      city: salonFields.city,
-      state: salonFields.state,
-      plan: salonFields.plan,
-      subscriptionStatus: 'preview',
-      activationStatus: 'active',
-      previewEndsAt: previewEndsAt,
-      isActive: true,
-      professionalsLimit: salonFields.limit,
-      createdAt: now,
-      updatedAt: now,
-
-      // Optional onboarding fields
-      businessSegment: salonFields.businessSegment || '',
-      estimatedProfessionals: salonFields.estimatedProfessionals || '',
-      recommendedPlan: salonFields.recommendedPlan || salonFields.plan
-    };
-    await setDoc(doc(db, 'salons', salonId), salonData);
-
-    const userData = {
-      id: user.uid,
-      fullName: fullName,
-      email: user.email || '',
-      phone: salonFields.phone,
-      role: 'owner',
-      salonId: salonId,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await setDoc(doc(db, 'users', user.uid), userData);
 
     sessionStorage.removeItem('demo_role');
     return user;

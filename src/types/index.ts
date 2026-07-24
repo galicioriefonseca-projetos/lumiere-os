@@ -70,7 +70,7 @@ export interface Salon {
   billingEmail?: string;
   // Stripe & Billing properties (Active providers: manual_pix, cakto. Others are deprecated)
   billingProvider?: 'manual' | 'manual_pix' | 'cakto' | 'stripe' | 'asaas' | 'mercadopago';
-  billingMode?: 'manual_pix' | 'recurring_card';
+  billingMode?: 'manual_pix' | 'recurring_card' | 'recurring_gateway' | 'one_time_gateway';
   /** @deprecated Use Cakto instead */
   stripeCustomerId?: string;
   /** @deprecated Use Cakto instead */

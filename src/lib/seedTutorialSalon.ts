@@ -416,4 +416,3 @@ export async function ensureTutorialSalon(uid: string): Promise<{ success: boole
   }
 }
 
-export const ensureTutorialSalonForLeandro = ensureTutorialSalon;

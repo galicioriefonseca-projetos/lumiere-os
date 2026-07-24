@@ -76,8 +76,7 @@ service cloud.firestore {
         canUseTutorialDemo(salonId) ||
         (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId) ||
         exists(/databases/$(database)/documents/salons/$(salonId)/professionals/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
-        (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid)
       );
     }
 
@@ -149,12 +148,11 @@ service cloud.firestore {
           exists(userDoc()) && 
           'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
           'role' in get(userDoc()).data && 
-          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin")
         ) ||
         (
           exists(/databases/$(database)/documents/salons/$(salonId)) && (
-            ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
-            ('ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
+            ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid)
           )
         )
       );
@@ -178,8 +176,9 @@ service cloud.firestore {
       
       allow create: if isPlatformAdmin() || (
         isOwnerOfUser(userId) &&
-        request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl']) &&
+        request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl', 'onboardingStatus']) &&
         request.resource.data.role == "pending" &&
+        request.resource.data.email == userEmail() &&
         (!('salonId' in request.resource.data) || request.resource.data.salonId == null || request.resource.data.salonId == "")
       );
       
@@ -215,7 +214,6 @@ service cloud.firestore {
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
           resource.data.ownerId == request.auth.uid ||
-          resource.data.get('ownerEmail', '') == userEmail() ||
           (isTutorialDemoUser() && isTutorialDemoSalon(resource.id))
         )
       );
@@ -248,12 +246,31 @@ service cloud.firestore {
     // Invites collection (Hardened)
     match /invites/{inviteId} {
       allow create: if isPlatformAdmin() || (
-        isSignedIn() && 
-        exists(userDoc()) && 
-        userSalonId() == request.resource.data.salonId && 
+        isSignedIn() &&
+        exists(userDoc()) &&
+        request.resource.data.keys().hasOnly([
+          'id', 'salonId', 'salonName', 'invitedByUserId', 'invitedByName', 'invitedByEmail',
+          'inviteType', 'role', 'category', 'specialty', 'professionalFunction',
+          'maxUses', 'usesCount', 'email', 'invitedName', 'invitedPhone',
+          'status', 'expiresAt', 'createdAt', 'updatedAt'
+        ]) &&
+        request.resource.data.id == inviteId &&
+        request.resource.data.salonId == userSalonId() &&
+        request.resource.data.invitedByUserId == request.auth.uid &&
+        request.resource.data.invitedByEmail == userEmail() &&
         (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") &&
         request.resource.data.inviteType in ["manager", "receptionist", "attendant", "professional", "function_link", "team_public_link"] &&
-        !(request.resource.data.role in ["owner", "admin", "platform_admin"])
+        request.resource.data.role in ["manager", "receptionist", "attendant", "professional"] &&
+        request.resource.data.status == "pending" &&
+        request.resource.data.createdAt is int &&
+        request.resource.data.updatedAt is int &&
+        request.resource.data.expiresAt is timestamp &&
+        (!('email' in request.resource.data) || request.resource.data.email == null || request.resource.data.email is string) &&
+        (!('usesCount' in request.resource.data) || request.resource.data.usesCount == 0) &&
+        (!('maxUses' in request.resource.data) || (request.resource.data.maxUses is int && request.resource.data.maxUses > 0 && request.resource.data.maxUses <= 10000)) &&
+        (request.resource.data.inviteType != "team_public_link" || request.resource.data.role == "professional") &&
+        (request.resource.data.inviteType != "function_link" || ('maxUses' in request.resource.data && 'usesCount' in request.resource.data)) &&
+        (request.resource.data.inviteType != "team_public_link" || ('maxUses' in request.resource.data && 'usesCount' in request.resource.data))
       );
 
       allow get: if isPlatformAdmin() || (

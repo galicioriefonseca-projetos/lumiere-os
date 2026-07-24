@@ -1,7 +1,7 @@
 import { initializeTestEnvironment, RulesTestEnvironment, TokenOptions } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
 import { describe, beforeAll, afterAll, beforeEach, it, expect } from 'vitest';
-import { doc, getDoc, setDoc, updateDoc, collection } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, Timestamp } from 'firebase/firestore';
 
 describe('LumièreOS Firestore Rules Tests', () => {
   let testEnv: RulesTestEnvironment;
@@ -559,182 +559,322 @@ describe('LumièreOS Firestore Rules Tests', () => {
     await expect(getDoc(doc(db, 'salons', 'salon_public', 'appointments', 'app1'))).rejects.toThrow();
   });
 
-  it('impede convite de outro e-mail e pagamento com campos extras', async () => {
+  it('permite perfil pending mínimo e bloqueia salonId na criação do próprio usuário', async () => {
+    const userContext = testEnv.authenticatedContext('pending_uid', {
+      email: 'pending@email.com',
+      email_verified: true,
+    } as any);
+    const db = userContext.firestore();
+
+    await expect(setDoc(doc(db, 'users', 'pending_uid'), {
+      id: 'pending_uid',
+      email: 'pending@email.com',
+      fullName: 'Usuário Pendente',
+      phone: '17999999999',
+      role: 'pending',
+      salonId: null,
+      onboardingStatus: 'pending_payment',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })).resolves.toBeUndefined();
+
+    const otherContext = testEnv.authenticatedContext('pending_uid_2', {
+      email: 'pending2@email.com',
+      email_verified: true,
+    } as any);
+    await expect(setDoc(doc(otherContext.firestore(), 'users', 'pending_uid_2'), {
+      id: 'pending_uid_2',
+      email: 'pending2@email.com',
+      fullName: 'Usuário Fraudulento',
+      role: 'pending',
+      salonId: 'salao_alheio',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })).rejects.toThrow();
+  });
+
+  it('permite owner criar pagamento manual válido e bloqueia manager', async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, 'invites', 'invite123'), {
-        email: 'certo@email.com',
-        type: 'email',
-        status: 'pending'
+      await setDoc(doc(db, 'salons', 'salon_manual'), { ownerId: 'owner_manual' });
+      await setDoc(doc(db, 'users', 'owner_manual'), {
+        salonId: 'salon_manual', role: 'owner', email: 'owner@manual.com',
       });
-      await setDoc(doc(db, 'salons', 'salon_pay'), {
-        ownerId: 'owner_pay'
-      });
-      await setDoc(doc(db, 'users', 'owner_pay'), {
-        salonId: 'salon_pay',
-        role: 'owner'
+      await setDoc(doc(db, 'users', 'manager_manual'), {
+        salonId: 'salon_manual', role: 'manager', email: 'manager@manual.com',
       });
     });
 
-    // Convite errado
-    const wrongContext = testEnv.authenticatedContext('wrong', { email: 'errado@email.com' } as any);
-    const dbWrong = wrongContext.firestore();
-    await expect(getDoc(doc(dbWrong, 'invites', 'invite123'))).rejects.toThrow();
+    const payment = {
+      status: 'reported',
+      method: 'pix',
+      provider: 'manual_pix',
+      salonId: 'salon_manual',
+      amount: 297,
+      createdAt: Date.now(),
+    };
+    const ownerContext = testEnv.authenticatedContext('owner_manual', {
+      email: 'owner@manual.com', email_verified: true,
+    } as any);
+    await expect(setDoc(
+      doc(ownerContext.firestore(), 'salons', 'salon_manual', 'payments', 'pay_valid'),
+      payment,
+    )).resolves.toBeUndefined();
 
-    // Pagamento fraudulento
-    const ownerContext = testEnv.authenticatedContext('owner_pay', { uid: 'owner_pay' } as any);
-    const db = ownerContext.firestore();
-    
-    // Campos extras ou status incorreto
-    await expect(setDoc(doc(db, 'salons', 'salon_pay', 'payments', 'pay1'), {
-      status: 'paid', // deveria ser reported
+    const managerContext = testEnv.authenticatedContext('manager_manual', {
+      email: 'manager@manual.com', email_verified: true,
+    } as any);
+    await expect(setDoc(
+      doc(managerContext.firestore(), 'salons', 'salon_manual', 'payments', 'pay_manager'),
+      payment,
+    )).rejects.toThrow();
+  });
+
+  it('não concede acesso ao salão somente por ownerEmail coincidente', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'salons', 'salon_email_only'), {
+        ownerId: 'owner_real',
+        ownerEmail: 'email@coincidente.com',
+      });
+    });
+    const attackerContext = testEnv.authenticatedContext('outro_uid', {
+      email: 'email@coincidente.com',
+      email_verified: true,
+    } as any);
+    await expect(getDoc(
+      doc(attackerContext.firestore(), 'salons', 'salon_email_only'),
+    )).rejects.toThrow();
+  });
+
+  it('impede leitura de convite por candidato e pagamento manual com campos extras', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'invites', 'invite123'), {
+        id: 'invite123',
+        salonId: 'salon_pay',
+        salonName: 'Salão Pagamentos',
+        invitedByUserId: 'owner_pay',
+        invitedByName: 'Owner',
+        invitedByEmail: 'owner@email.com',
+        email: 'certo@email.com',
+        inviteType: 'professional',
+        role: 'professional',
+        status: 'pending',
+        expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await setDoc(doc(db, 'salons', 'salon_pay'), { ownerId: 'owner_pay' });
+      await setDoc(doc(db, 'users', 'owner_pay'), {
+        salonId: 'salon_pay',
+        role: 'owner',
+        email: 'owner@email.com',
+      });
+    });
+
+    const wrongContext = testEnv.authenticatedContext('wrong', {
+      email: 'errado@email.com',
+      email_verified: true,
+    } as any);
+    await expect(getDoc(doc(wrongContext.firestore(), 'invites', 'invite123'))).rejects.toThrow();
+
+    const ownerContext = testEnv.authenticatedContext('owner_pay', {
+      email: 'owner@email.com',
+      email_verified: true,
+    } as any);
+    await expect(setDoc(doc(ownerContext.firestore(), 'salons', 'salon_pay', 'payments', 'pay1'), {
+      status: 'reported',
       method: 'pix',
       provider: 'manual_pix',
       salonId: 'salon_pay',
       amount: 100,
       createdAt: Date.now(),
-      extraField: 'hacker'
+      extraField: 'nao_permitido',
     })).rejects.toThrow();
   });
 
-  it('bloqueia leitura do candidato pelo client SDK', async () => {
-    const candidateContext = testEnv.authenticatedContext('candidato', { uid: 'candidato', email: 'candidato@email.com' } as any);
-    const db = candidateContext.firestore();
-    
-    await expect(getDoc(doc(db, 'invites', 'invite123'))).rejects.toThrow();
-  });
-
-  it('bloqueia update de aceitação pelo client SDK', async () => {
+  it('bloqueia leitura e aceitação de convite pelo candidato no Client SDK', async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, 'invites', 'invite_to_accept'), {
-        email: 'candidato@email.com',
-        type: 'email',
-        status: 'pending'
-      });
-    });
-
-    const candidateContext = testEnv.authenticatedContext('candidato', { uid: 'candidato', email: 'candidato@email.com' } as any);
-    const db = candidateContext.firestore();
-    
-    await expect(updateDoc(doc(db, 'invites', 'invite_to_accept'), {
-      status: 'accepted',
-      acceptedByUserId: 'candidato'
-    })).rejects.toThrow();
-  });
-
-  it('permite que owner, admin e manager criem convites do próprio salão', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
-      await setDoc(doc(db, 'users', 'manager_uid'), { salonId: 'salao_teste', role: 'manager' });
-    });
-
-    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
-    const dbOwner = ownerContext.firestore();
-    await expect(setDoc(doc(dbOwner, 'invites', 'invite_owner'), {
-      salonId: 'salao_teste',
-      inviteType: 'professional',
-      role: 'professional',
-      status: 'pending'
-    })).resolves.toBeDefined();
-
-    const managerContext = testEnv.authenticatedContext('manager_uid', { uid: 'manager_uid' } as any);
-    const dbManager = managerContext.firestore();
-    await expect(setDoc(doc(dbManager, 'invites', 'invite_manager'), {
-      salonId: 'salao_teste',
-      inviteType: 'professional',
-      role: 'professional',
-      status: 'pending'
-    })).resolves.toBeDefined();
-  });
-
-  it('bloqueia owner de criar convite com roles privilegiadas', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
-    });
-
-    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
-    const dbOwner = ownerContext.firestore();
-    
-    // owner
-    await expect(setDoc(doc(dbOwner, 'invites', 'invite_priv_1'), {
-      salonId: 'salao_teste',
-      inviteType: 'professional',
-      role: 'owner',
-      status: 'pending'
-    })).rejects.toThrow();
-
-    // admin
-    await expect(setDoc(doc(dbOwner, 'invites', 'invite_priv_2'), {
-      salonId: 'salao_teste',
-      inviteType: 'professional',
-      role: 'admin',
-      status: 'pending'
-    })).rejects.toThrow();
-  });
-
-  it('bloqueia alteração de campos sensíveis de convites', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
-      await setDoc(doc(db, 'invites', 'invite_update_test'), {
+      await setDoc(doc(context.firestore(), 'invites', 'invite_to_accept'), {
+        id: 'invite_to_accept',
         salonId: 'salao_teste',
+        salonName: 'Salão Teste',
+        invitedByUserId: 'owner_uid',
+        invitedByName: 'Owner',
+        invitedByEmail: 'owner@email.com',
+        email: 'candidato@email.com',
         inviteType: 'professional',
         role: 'professional',
         status: 'pending',
-        maxUses: 1,
-        createdAt: 1000
+        expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       });
     });
 
-    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
-    const dbOwner = ownerContext.firestore();
-    
-    await expect(updateDoc(doc(dbOwner, 'invites', 'invite_update_test'), {
-      salonId: 'novo_salao'
-    })).rejects.toThrow();
-    
-    await expect(updateDoc(doc(dbOwner, 'invites', 'invite_update_test'), {
-      role: 'manager'
+    const candidateContext = testEnv.authenticatedContext('candidato', {
+      email: 'candidato@email.com',
+      email_verified: true,
+    } as any);
+    const db = candidateContext.firestore();
+    await expect(getDoc(doc(db, 'invites', 'invite_to_accept'))).rejects.toThrow();
+    await expect(updateDoc(doc(db, 'invites', 'invite_to_accept'), {
+      status: 'accepted',
+      acceptedByUserId: 'candidato',
     })).rejects.toThrow();
   });
 
-  it('permite que owner cancele convite pending', async () => {
+  it('permite owner e manager criarem convites válidos do próprio salão', async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
-      await setDoc(doc(db, 'invites', 'invite_cancel_test'), {
-        salonId: 'salao_teste',
-        status: 'pending',
+      await setDoc(doc(db, 'users', 'owner_uid'), {
+        salonId: 'salao_teste', role: 'owner', email: 'owner@email.com',
+      });
+      await setDoc(doc(db, 'users', 'manager_uid'), {
+        salonId: 'salao_teste', role: 'manager', email: 'manager@email.com',
       });
     });
 
-    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
-    const dbOwner = ownerContext.firestore();
-    
-    await expect(updateDoc(doc(dbOwner, 'invites', 'invite_cancel_test'), {
-      status: 'canceled',
-      updatedAt: Date.now()
-    })).resolves.toBeDefined();
-  });
-
-  it('bloqueia criação de convite para outro salão', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, 'users', 'owner_uid'), { salonId: 'salao_teste', role: 'owner' });
-    });
-
-    const ownerContext = testEnv.authenticatedContext('owner_uid', { uid: 'owner_uid' } as any);
-    const dbOwner = ownerContext.firestore();
-    
-    await expect(setDoc(doc(dbOwner, 'invites', 'invite_other_salon'), {
-      salonId: 'outro_salao',
+    const buildInvite = (id: string, uid: string, email: string) => ({
+      id,
+      salonId: 'salao_teste',
+      salonName: 'Salão Teste',
+      invitedByUserId: uid,
+      invitedByName: uid,
+      invitedByEmail: email,
       inviteType: 'professional',
       role: 'professional',
-      status: 'pending'
+      email: 'novo@email.com',
+      status: 'pending',
+      expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', {
+      email: 'owner@email.com', email_verified: true,
+    } as any);
+    await expect(setDoc(
+      doc(ownerContext.firestore(), 'invites', 'invite_owner'),
+      buildInvite('invite_owner', 'owner_uid', 'owner@email.com'),
+    )).resolves.toBeUndefined();
+
+    const managerContext = testEnv.authenticatedContext('manager_uid', {
+      email: 'manager@email.com', email_verified: true,
+    } as any);
+    await expect(setDoc(
+      doc(managerContext.firestore(), 'invites', 'invite_manager'),
+      buildInvite('invite_manager', 'manager_uid', 'manager@email.com'),
+    )).resolves.toBeUndefined();
+  });
+
+  it('bloqueia criação de convite privilegiado ou para outro salão', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users', 'owner_uid'), {
+        salonId: 'salao_teste', role: 'owner', email: 'owner@email.com',
+      });
+    });
+    const ownerContext = testEnv.authenticatedContext('owner_uid', {
+      email: 'owner@email.com', email_verified: true,
+    } as any);
+    const db = ownerContext.firestore();
+    const base = {
+      salonName: 'Salão Teste',
+      invitedByUserId: 'owner_uid',
+      invitedByName: 'Owner',
+      invitedByEmail: 'owner@email.com',
+      inviteType: 'professional',
+      email: 'novo@email.com',
+      status: 'pending',
+      expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await expect(setDoc(doc(db, 'invites', 'invite_priv_owner'), {
+      ...base, id: 'invite_priv_owner', salonId: 'salao_teste', role: 'owner',
+    })).rejects.toThrow();
+    await expect(setDoc(doc(db, 'invites', 'invite_priv_admin'), {
+      ...base, id: 'invite_priv_admin', salonId: 'salao_teste', role: 'admin',
+    })).rejects.toThrow();
+    await expect(setDoc(doc(db, 'invites', 'invite_outro_salao'), {
+      ...base, id: 'invite_outro_salao', salonId: 'outro_salao', role: 'professional',
     })).rejects.toThrow();
   });
+
+  it('permite function_link válido e bloqueia contador inicial fraudulento', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users', 'owner_uid'), {
+        salonId: 'salao_teste', role: 'owner', email: 'owner@email.com',
+      });
+    });
+    const ownerContext = testEnv.authenticatedContext('owner_uid', {
+      email: 'owner@email.com', email_verified: true,
+    } as any);
+    const db = ownerContext.firestore();
+    const base = {
+      salonId: 'salao_teste',
+      salonName: 'Salão Teste',
+      invitedByUserId: 'owner_uid',
+      invitedByName: 'Owner',
+      invitedByEmail: 'owner@email.com',
+      inviteType: 'function_link',
+      role: 'professional',
+      category: 'Cabeleireiro',
+      specialty: 'Cabeleireiro',
+      professionalFunction: 'Cabeleireiro',
+      maxUses: 5,
+      email: null,
+      invitedName: null,
+      invitedPhone: null,
+      status: 'pending',
+      expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    await expect(setDoc(doc(db, 'invites', 'function_valid'), {
+      ...base, id: 'function_valid', usesCount: 0,
+    })).resolves.toBeUndefined();
+    await expect(setDoc(doc(db, 'invites', 'function_fraud'), {
+      ...base, id: 'function_fraud', usesCount: 3,
+    })).rejects.toThrow();
+  });
+
+  it('permite owner cancelar convite pending sem alterar campos estruturais', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'owner_uid'), {
+        salonId: 'salao_teste', role: 'owner', email: 'owner@email.com',
+      });
+      await setDoc(doc(db, 'invites', 'invite_cancel_test'), {
+        id: 'invite_cancel_test',
+        salonId: 'salao_teste',
+        salonName: 'Salão Teste',
+        invitedByUserId: 'owner_uid',
+        invitedByName: 'Owner',
+        invitedByEmail: 'owner@email.com',
+        inviteType: 'professional',
+        role: 'professional',
+        email: 'novo@email.com',
+        status: 'pending',
+        expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    });
+
+    const ownerContext = testEnv.authenticatedContext('owner_uid', {
+      email: 'owner@email.com', email_verified: true,
+    } as any);
+    const ref = doc(ownerContext.firestore(), 'invites', 'invite_cancel_test');
+    await expect(updateDoc(ref, {
+      status: 'canceled', updatedAt: Date.now(),
+    })).resolves.toBeUndefined();
+    await expect(updateDoc(ref, {
+      salonId: 'outro_salao', status: 'canceled', updatedAt: Date.now(),
+    })).rejects.toThrow();
+  });
+
 
 });
