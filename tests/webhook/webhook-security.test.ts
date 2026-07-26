@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildHomologationWebhookUpdate } from "./webhook.js";
+import { buildHomologationWebhookUpdate } from "../../server/routes/cakto/webhook.js";
 
 describe("Teste de Segurança do Webhook de Homologação", () => {
   const forbiddenKeys = [

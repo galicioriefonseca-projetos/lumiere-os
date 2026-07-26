@@ -11,9 +11,9 @@ const requiredFiles = [
   'src/App.tsx',
   'src/lib/firebase.ts',
   'src/components/ui/button.tsx',
-  'api/cakto/create-checkout.ts',
-  'api/cakto/webhook.ts',
-  'api/health.ts',
+  
+  
+  
   'firestore.rules',
   'firebase.json',
   'vercel.json',
@@ -93,4 +93,28 @@ console.log('✅ Estrutura de release aprovada.');
 if (warnings.length) {
   console.warn('\n⚠️ Avisos:');
   warnings.forEach((warning) => console.warn(`- ${warning}`));
+}
+
+
+let apiFiles = [];
+
+if (existsSync('api')) {
+  function walkApi(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      const stat = statSync(full);
+      if (stat.isDirectory()) walkApi(full);
+      else if (entry.endsWith('.ts')) apiFiles.push(full);
+    }
+  }
+  walkApi('api');
+}
+
+if (apiFiles.length > 1) {
+  console.error("❌ ERRO: A pasta /api deve conter no máximo 1 arquivo TypeScript (ex: api/[...path].ts) para não estourar o limite da Vercel Hobby.");
+  process.exit(1);
+}
+if (apiFiles.length > 1) {
+  console.error("❌ ERRO: A pasta /api deve conter no máximo 1 arquivo TypeScript (ex: api/[...path].ts) para não estourar o limite da Vercel Hobby.");
+  process.exit(1);
 }

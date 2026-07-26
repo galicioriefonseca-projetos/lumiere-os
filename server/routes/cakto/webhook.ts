@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb, isFirebaseAdminCredentialError } from "../_shared/firebaseAdmin.js";
+import { getAdminDb, isFirebaseAdminCredentialError } from "../../shared/firebaseAdmin.js";
 
 interface CaktoSettings {
   productId: string;

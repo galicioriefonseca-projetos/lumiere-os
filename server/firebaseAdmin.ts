@@ -6,4 +6,4 @@ export {
   getAdminMessaging,
   getFirebaseAdminCredentialConfig,
   isFirebaseAdminCredentialError,
-} from "../api/_shared/firebaseAdmin";
+} from "./shared/firebaseAdmin.js";

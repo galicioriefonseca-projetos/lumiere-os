@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminDb } from "../_shared/firebaseAdmin.js";
-import { verifyIdToken, resolvePlatformAdmin } from "../_shared/auth.js";
+import { getAdminDb } from "../../shared/firebaseAdmin.js";
+import { verifyIdToken, resolvePlatformAdmin } from "../../shared/auth.js";
 import { processCaktoWebhookPayload } from "./webhook.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

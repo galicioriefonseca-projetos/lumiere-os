@@ -23,7 +23,7 @@ const mockTransactionGet = vi.fn().mockResolvedValue({ exists: false, data: () =
 const mockTransactionSet = vi.fn();
 const mockTransactionUpdate = vi.fn();
 
-vi.mock("../_shared/firebaseAdmin.js", () => {
+vi.mock("../../server/shared/firebaseAdmin.js", () => {
   return {
     isFirebaseAdminCredentialError: (error: any) => {
       if (!error) return false;
@@ -86,14 +86,14 @@ vi.mock("../_shared/firebaseAdmin.js", () => {
   };
 });
 
-vi.mock("../_shared/auth.js", () => ({
+vi.mock("../../server/shared/auth.js", () => ({
   verifyIdToken: vi.fn(),
   canManageBilling: vi.fn()
 }));
 
-import { verifyIdToken, canManageBilling } from "../_shared/auth.js";
-import checkoutHandler from "./create-checkout.js";
-import updatePaymentHandler from "./update-payment-method.js";
+import { verifyIdToken, canManageBilling } from "../../server/shared/auth.js";
+import checkoutHandler from "../../server/routes/cakto/create-checkout.js";
+import updatePaymentHandler from "../../server/routes/cakto/update-payment-method.js";
 
 function createMockRes() {
   const res: any = {};
@@ -536,7 +536,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
 
   describe("canManageBilling real implementation and resolvePlatformAdmin", () => {
     it("deve reconhecer Platform Admin por custom claim role ou platform_admin, mas NÃO por admin", async () => {
-      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../../server/shared/auth.js");
       const adminDb = {
         collection: vi.fn().mockReturnValue({
           doc: vi.fn().mockReturnValue({
@@ -556,7 +556,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve reconhecer Platform Admin se UID existir na coleção platformAdmins", async () => {
-      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../../server/shared/auth.js");
       
       const adminDb = {
         collection: vi.fn().mockImplementation((col) => {
@@ -580,7 +580,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve reconhecer Platform Admin se role for platform_admin no documento users/{uid}", async () => {
-      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../../server/shared/auth.js");
 
       const adminDb = {
         collection: vi.fn().mockImplementation((col) => {
@@ -606,7 +606,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve autorizar Platform Admin globalmente mesmo sem salonId ou com salonId divergente", async () => {
-      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../_shared/auth.js");
+      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../../server/shared/auth.js");
 
       // Mock do Firestore para simular Platform Admin via Custom Claim
       const user = { uid: "admin_uid", role: "platform_admin" };
@@ -621,7 +621,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
 
   describe("14 Casos de Negócio e Segurança de Faturamento", () => {
     it("1. Deverá recusar acesso de alteração se o usuário não for platform_admin", async () => {
-      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../_shared/auth.js");
+      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../../server/shared/auth.js");
       const user = { uid: "user_normal", role: "owner" };
       const salonData = { ownerId: "user_owner" };
       const result = await realCanManageBilling(user, "salon_123", salonData);
@@ -629,7 +629,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("2. Deverá aceitar e atualizar com sucesso o salão se o usuário for platform_admin confirmado", async () => {
-      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../_shared/auth.js");
+      const { canManageBilling: realCanManageBilling } = await vi.importActual<any>("../../server/shared/auth.js");
       const user = { uid: "admin_uid", role: "platform_admin" };
       const salonData = { ownerId: "user_owner" };
       const result = await realCanManageBilling(user, "salon_123", salonData);
@@ -638,7 +638,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("3. Não deverá aceitar claim 'admin' genérica fora das regras estabelecidas na auditoria anterior", async () => {
-      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../_shared/auth.js");
+      const { resolvePlatformAdmin: rpa } = await vi.importActual<any>("../../server/shared/auth.js");
       const adminDb = {
         collection: vi.fn().mockReturnValue({
           doc: vi.fn().mockReturnValue({
@@ -654,7 +654,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
       const mockError: any = new Error("Credential error");
       mockError.code = "auth/invalid-credential";
       
-      const adminModule = await import("../_shared/firebaseAdmin.js");
+      const adminModule = await import("../../server/shared/firebaseAdmin.js");
       const spy = vi.spyOn(adminModule, "getAdminDb").mockImplementationOnce(() => {
         throw mockError;
       });
@@ -677,7 +677,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("5. O endpoint real-subscription deverá identificar conta manual ativa de forma correta e retornar 200 sem consultar a Cakto", async () => {
-      const realSubHandler = (await import("./real-subscription.js")).default;
+      const realSubHandler = (await import("../../server/routes/cakto/real-subscription.js")).default;
       const req: any = {
         method: "GET",
         query: { salonId: "salon_manual" }
@@ -707,7 +707,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("6. O endpoint real-subscription deverá retornar 409 se a conta for Cakto mas não possuir o ID de assinatura real", async () => {
-      const realSubHandler = (await import("./real-subscription.js")).default;
+      const realSubHandler = (await import("../../server/routes/cakto/real-subscription.js")).default;
       const req: any = {
         method: "GET",
         query: { salonId: "salon_cakto_pending" }
@@ -802,7 +802,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("12. A autorização do webhook Cakto deve falhar caso o token de assinatura esteja ausente ou incorreto", async () => {
-      const webhookHandler = (await import("./webhook.js")).default;
+      const webhookHandler = (await import("../../server/routes/cakto/webhook.js")).default;
       const req: any = {
         method: "POST",
         headers: {
@@ -822,8 +822,8 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
 
     
     it("13. O webhook Cakto deve processar com sucesso faturas", async () => {
-      const webhookHandler = (await import("./webhook.js")).default;
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const webhookHandler = (await import("../../server/routes/cakto/webhook.js")).default;
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
 
       const req: any = {
         method: "POST",
@@ -858,21 +858,21 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("falha quando evento ausente", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       const res = await processCaktoWebhookPayload({ order_id: "ord_123", external_id: "salon_123" });
       expect(res.success).toBe(false);
       expect(res.reason).toBe("missing_event_name");
     });
 
     it("falha quando payment_not_paid ou desconhecido", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       const res = await processCaktoWebhookPayload({ event: "unknown_weird", order_id: "ord_123", external_id: "salon_123", checkout_offer_id: "off_start" });
       expect(res.success).toBe(false);
       expect(res.reason).toBe("unknown_event");
     });
 
     it("e-mail sozinho não escolhe salão", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
  
       // We will need to check what happen when only email is provided
       const res = await processCaktoWebhookPayload({ event: "purchase_approved", customer_email: "test@test.com" });
@@ -885,7 +885,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("onboarding sem pagamento aprovado não é promovido", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       const res = await processCaktoWebhookPayload({ event: "purchase_refused", external_id: "salon_123", offer_id: "offer_founder_297" });
       // If it tries to promote onboarding
       expect(res.success).toBe(false);
@@ -893,7 +893,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
 
 
     it("14. Todas as mensagens de erro críticas do Firebase/Google Cloud devem ser encapsuladas sem expor segredos nos responses", async () => {
-      const { isFirebaseAdminCredentialError } = await import("../_shared/firebaseAdmin.js");
+      const { isFirebaseAdminCredentialError } = await import("../../server/shared/firebaseAdmin.js");
       const fbError: any = new Error("Google private key error containing sensitive details");
       fbError.code = "auth/invalid-credential";
       
@@ -907,7 +907,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve definir billingMode: recurring e paymentMethod quando webhook aprovado possui subscription_id", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         data: () => ({ plan: "start", pendingPlan: "start", pendingOfferId: "off_start", pendingCheckoutEmail: "owner@test.com", pendingCheckoutPurpose: "activate_recurring", pendingRequestedAt: Date.now() }),
@@ -935,7 +935,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("não deve definir billingMode: recurring quando webhook aprovado não possui subscription_id (Pix ou Boleto comum)", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         data: () => ({ plan: "start", pendingPlan: "start", pendingOfferId: "off_start", pendingCheckoutEmail: "owner@test.com", pendingCheckoutPurpose: "activate_recurring", pendingRequestedAt: Date.now() }),
@@ -962,7 +962,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve exigir intenção de checkout completa para ativar salão existente", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         id: "salon_123",
@@ -988,7 +988,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve preservar acesso até o fim do período pago quando assinatura é cancelada", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       mockSalonGet.mockResolvedValueOnce({
         exists: true,
         id: "salon_123",
@@ -1023,7 +1023,7 @@ describe("Testes de Segurança de Faturamento (Billing Security)", () => {
     });
 
     it("deve tratar evento processado como duplicado sem reprocessar", async () => {
-      const { processCaktoWebhookPayload } = await import("./webhook.js");
+      const { processCaktoWebhookPayload } = await import("../../server/routes/cakto/webhook.js");
       mockTransactionGet.mockResolvedValueOnce({
         exists: true,
         data: () => ({ status: "processed", createdAt: Date.now(), updatedAt: Date.now() })
