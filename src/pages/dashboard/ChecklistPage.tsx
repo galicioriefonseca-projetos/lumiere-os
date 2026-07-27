@@ -55,6 +55,8 @@ import {
   FileText,
   Users,
   Info,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import {
   predefinedTemplates,
@@ -516,6 +518,23 @@ export default function ChecklistPage() {
 
     return () => unsubs.forEach((u) => u());
   }, [salonData]);
+
+  const toggleProfessionalStatus = async (prof: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!salonData) return;
+    try {
+      const isCurrentlyActive = prof.isActive !== false;
+      const profRef = doc(db, `salons/${salonData.id}/professionals`, prof.id);
+      await updateDoc(profRef, {
+        isActive: !isCurrentlyActive,
+        updatedAt: Date.now(),
+      });
+      toast.success(`Profissional ${isCurrentlyActive ? 'inativado' : 'ativado'} com sucesso.`);
+    } catch (error) {
+      console.error("Erro ao alterar status do profissional:", error);
+      toast.error("Erro ao alterar status do profissional.");
+    }
+  };
 
   const handleCreateLumièreChecklist = async () => {
     if (!salonData) return;
@@ -1425,19 +1444,7 @@ export default function ChecklistPage() {
                           setSearchTerm("");
                           setSelectedFilterFunction("");
                           
-                          const pendingPros = professionals.filter((p) => professionalStatuses[p.id]?.status === "pendente");
-                          if (pendingPros.length > 0) {
-                            const first = pendingPros[0];
-                            const funcs = getEvaluableFunctions(first);
-                            const firstFunc = funcs[0] || "Função não definida";
-                            setEvalProfessionalId(first.id);
-                            setEvalFunction(firstFunc);
-                            const run = evaluationRuns.find(r => r.evaluatedProfessionalId === first.id && sanitizeFunctionSlug(r.evaluationFunction || r.evaluatedFunction || r.professionalFunction || r.primaryFunction) === sanitizeFunctionSlug(firstFunc));
-                            setAttendanceStatus(run?.attendanceStatus || "present");
-                            setCategoryScores(run?.categoryScores || {});
-                            setObservations(run?.observations || run?.absenceReason || "");
-                            setMobileStep("evaluation");
-                          } else if (professionals.length > 0) {
+                          if (professionals.length > 0) {
                             const first = professionals[0];
                             const funcs = getEvaluableFunctions(first);
                             const firstFunc = funcs[0] || "Função não definida";
@@ -1447,12 +1454,11 @@ export default function ChecklistPage() {
                             setAttendanceStatus(run?.attendanceStatus || "present");
                             setCategoryScores(run?.categoryScores || {});
                             setObservations(run?.observations || run?.absenceReason || "");
-                            setMobileStep("list");
                           } else {
                             setEvalProfessionalId("");
                             setEvalFunction("");
-                            setMobileStep("list");
                           }
+                          setMobileStep("list");
                           setIncompleteValidationCategories([]);
                         }
                       }}
@@ -1693,17 +1699,37 @@ export default function ChecklistPage() {
                                           <p className="text-[10px] text-primary truncate mt-0.5" title={funcs.join(", ")}>{subTitle}</p>
                                         </div>
                                         
-                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase shrink-0 ${
-                                          status === "pendente"
-                                            ? "bg-yellow-500/15 text-yellow-500 border border-yellow-500/10"
-                                            : status === "avaliado"
-                                              ? "bg-green-500/15 text-green-400 border border-green-500/10"
-                                              : status === "falta"
-                                                ? "bg-red-500/15 text-red-400 border border-red-500/10"
-                                                : "bg-cyan-500/15 text-cyan-400 border border-cyan-500/10"
-                                        }`}>
-                                          {status === "pendente" ? "Pendente" : status === "avaliado" ? "Avaliado" : status === "falta" ? "Falta" : status === "prejudicado" ? "Prejudicado" : "Não Exec"}
-                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => toggleProfessionalStatus(p, e)}
+                                          className={`text-[9px] font-bold px-2 py-1 rounded-md uppercase shrink-0 flex items-center gap-1 transition-all ${
+                                            p.isActive === false
+                                              ? "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-emerald-500/15 hover:text-emerald-400"
+                                              : status === "pendente"
+                                                ? "bg-yellow-500/15 text-yellow-500 border border-yellow-500/20 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/20"
+                                                : status === "avaliado"
+                                                  ? "bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/20"
+                                                  : status === "falta"
+                                                    ? "bg-red-500/15 text-red-400 border border-red-500/20 hover:bg-emerald-500/15 hover:text-emerald-400 hover:border-emerald-500/20"
+                                                    : "bg-cyan-500/15 text-cyan-400 border border-cyan-500/20 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/20"
+                                          }`}
+                                          title={p.isActive !== false ? "Clique para desativar (não receberá avaliação)" : "Clique para ativar (receberá avaliação)"}
+                                        >
+                                          <Power className="w-3 h-3" />
+                                          <span>
+                                            {p.isActive === false 
+                                              ? "Inativo" 
+                                              : status === "pendente" 
+                                                ? "Pendente" 
+                                                : status === "avaliado" 
+                                                  ? "Avaliado" 
+                                                  : status === "falta" 
+                                                    ? "Falta" 
+                                                    : status === "prejudicado" 
+                                                      ? "Prejudicado" 
+                                                      : "Não Exec"}
+                                          </span>
+                                        </button>
                                       </div>
                                       
                                       {run && run.totalScore !== undefined && (
@@ -2260,7 +2286,29 @@ export default function ChecklistPage() {
                           const run = reportRuns.find((r) => r.evaluatedProfessionalId === p.id);
                           return (
                             <tr key={p.id} className="hover:bg-zinc-900/20 transition-all font-light">
-                              <td className="p-4 font-semibold text-white">{p.name}</td>
+                              <td className="p-4 font-semibold text-white">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span>{p.name}</span>
+                                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${p.isActive !== false ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                                      {p.isActive !== false ? 'Ativo' : 'Inativo'}
+                                    </span>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={(e) => toggleProfessionalStatus(p, e)}
+                                    className={`h-7 w-7 rounded-md transition-all ${
+                                      p.isActive !== false
+                                        ? 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10'
+                                        : 'text-[#D4AF37] hover:text-[#D4AF37] hover:bg-[#D4AF37]/10'
+                                    }`}
+                                    title={p.isActive !== false ? "Desativar profissional" : "Ativar profissional"}
+                                  >
+                                    {p.isActive !== false ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
+                                  </Button>
+                                </div>
+                              </td>
                               <td className="p-4">{getDisplayFunction(p)}</td>
                               <td className="p-4">
                                 {run ? (

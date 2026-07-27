@@ -105,7 +105,7 @@ export default function AccountPage() {
         const qs = query(collection(db, `salons/${salonId}/services`));
         const qc = query(collection(db, `salons/${salonId}/clients`));
         const qa = query(collection(db, `salons/${salonId}/appointments`));
-        const qck = query(collection(db, `salons/${salonId}/checklist_runs`));
+        const qck = query(collection(db, `salons/${salonId}/checklistRuns`));
 
         const [pSnap, sSnap, cSnap, aSnap, ckSnap] = await Promise.all([
           getDocs(qp),

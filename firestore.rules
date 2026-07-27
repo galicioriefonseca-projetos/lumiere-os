@@ -96,6 +96,10 @@ service cloud.firestore {
     // Permission gates
     function canManageSalon(salonId) {
       return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        exists(/databases/$(database)/documents/salons/$(salonId)) && 
+        'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && 
+        get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid
+      ) || (
         exists(userDoc()) && 
         'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
         'role' in get(userDoc()).data && 
