@@ -489,12 +489,15 @@ export default function SubscriptionPage() {
       const url = subResult.checkoutUrl;
       if (!url) {
         checkoutWindow?.close();
-        throw new Error('O gateway não retornou a URL de checkout.');
+        throw new Error('O gateway não retornou a URL de checkout. Verifique se o plano selecionado tem uma oferta (offerId) configurada nas Configurações > Cakto.');
       }
 
-      if (checkoutWindow) {
+      if (checkoutWindow && !checkoutWindow.closed) {
         checkoutWindow.location.href = url;
       } else {
+        // Pop-up bloqueado ou fechado pelo navegador: avisa o usuário e usa
+        // redirecionamento na própria aba como alternativa garantida.
+        toast.warning('Seu navegador bloqueou a nova aba do checkout. Redirecionando nesta mesma aba...');
         window.location.assign(url);
       }
 

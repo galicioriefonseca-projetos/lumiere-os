@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb, isFirebaseAdminCredentialError } from "../../shared/firebaseAdmin.js";
+import { sendActivationEmail } from "../../shared/email.js";
 
 interface CaktoSettings {
   productId: string;
@@ -497,6 +498,23 @@ export async function processCaktoWebhookPayload(normalizedData: any, homologati
       
       await batch.commit();
       finalAction = "created";
+
+      // Envia o e-mail de "pagamento confirmado / acesso liberado" agora que a
+      // conta foi ativada pela primeira vez. Nunca deve derrubar o webhook:
+      // o pagamento e a liberação de acesso já foram concluídos acima.
+      try {
+        const emailResult = await sendActivationEmail({
+          to: newSalonData.ownerEmail,
+          ownerName: newSalonData.ownerName,
+          salonName: newSalonData.name,
+          plan: mappedPlan || undefined
+        });
+        if (!emailResult.sent) {
+          console.warn("[Cakto Webhook] E-mail de ativação não enviado:", emailResult.reason);
+        }
+      } catch (emailErr) {
+        console.error("[Cakto Webhook] Erro ao enviar e-mail de ativação:", emailErr);
+      }
     } else {
       // Salão existente
       const batch = adminDb.batch();

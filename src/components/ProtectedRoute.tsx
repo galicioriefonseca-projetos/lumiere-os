@@ -122,8 +122,19 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
     return <Navigate to="/master" replace />;
   }
 
+  // Usuário cadastrado mas ainda sem pagamento confirmado pela Cakto:
+  // manda para a tela de espera em vez de cair na tela de "Configuração Inválida".
+  if ((role as string) === 'pending') {
+    if (location.pathname !== '/aguardando-pagamento') {
+      return <Navigate to="/aguardando-pagamento" replace />;
+    }
+    // Já está na tela correta: libera direto, sem passar pelo canAccessRoute
+    // (que não reconhece o papel 'pending' e bloquearia o próprio usuário).
+    return <>{children}</>;
+  }
+
   // Intercept legacy function_link data errors to offer self-healing
-  if ((role as string) === 'function_link' || (role && !['platform_admin', 'owner', 'manager', 'receptionist', 'attendant', 'professional'].includes(role))) {
+  if ((role as string) === 'function_link' || (role && !['platform_admin', 'owner', 'manager', 'receptionist', 'attendant', 'professional', 'pending'].includes(role))) {
     return (
       <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">

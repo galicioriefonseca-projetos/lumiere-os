@@ -59,6 +59,7 @@ export default function LoginPage() {
   const queryParams = new URLSearchParams(location.search);
   const emailQuery = queryParams.get('email');
   const recoveryQuery = queryParams.get('recovery');
+  const welcomeQuery = queryParams.get('welcome') === '1';
 
   useEffect(() => {
     if (emailQuery) {
@@ -422,6 +423,14 @@ export default function LoginPage() {
               onDismissError={() => setError(null)}
             >
               <form onSubmit={handleLogin} className="space-y-4 font-sans">
+                {welcomeQuery && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-emerald-200 leading-relaxed">
+                      Pagamento confirmado! Faça login com sua senha cadastrada para acessar seu painel.
+                    </p>
+                  </div>
+                )}
                 {/* Email Input */}
                 <div>
                   <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">

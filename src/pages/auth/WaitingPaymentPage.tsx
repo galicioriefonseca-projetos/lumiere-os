@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Sparkles, Clock, RefreshCw, ExternalLink, ArrowLeft, ShieldCheck } from 'lucide-react';
@@ -9,20 +9,40 @@ import LoadingExperience from '../../components/auth/LoadingExperience';
 
 export default function WaitingPaymentPage() {
   const navigate = useNavigate();
-  const { salonData } = useAuth();
+  const { salonData, userData, refreshUserData } = useAuth();
   const [checking, setChecking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const pollCountRef = useRef(0);
+
+  // Se o papel do usuário deixou de ser 'pending' (o webhook da Cakto já
+  // processou o pagamento), manda direto para o painel.
+  useEffect(() => {
+    if (userData?.role && (userData.role as string) !== 'pending') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [userData?.role, navigate]);
 
   const handleVerify = async () => {
     if (checking) return;
     setChecking(true);
     setStatusMessage(null);
-    
-    // Simulate premium validation
-    setTimeout(() => {
+
+    try {
+      await refreshUserData();
+      pollCountRef.current += 1;
+      // O redirecionamento automático acontece no useEffect acima assim que
+      // userData.role deixar de ser 'pending'. Se chegou até aqui, ainda não
+      // foi confirmado pelo gateway.
+      setStatusMessage(
+        pollCountRef.current >= 3
+          ? 'Ainda não identificamos a confirmação do pagamento. Se você já pagou, aguarde alguns minutos — o processamento do gateway pode demorar um pouco — ou fale com o suporte.'
+          : 'Ainda não recebemos a confirmação do pagamento. Assim que o gateway confirmar, você será redirecionado automaticamente.'
+      );
+    } catch (err) {
+      setStatusMessage('Não foi possível verificar o status agora. Tente novamente em instantes.');
+    } finally {
       setChecking(false);
-      setStatusMessage('Nossos servidores de conciliação bancária estão processando o seu lote de compensação. Por favor, tente novamente em alguns minutos ou aguarde a notificação automática em seu e-mail corporativo.');
-    }, 2500);
+    }
   };
 
   const handleOpenCheckout = () => {
@@ -65,7 +85,7 @@ export default function WaitingPaymentPage() {
                       Aguardando Confirmação
                     </h4>
                     <p className="text-xs text-neutral-400 leading-relaxed">
-                      Identificamos que seu pedido foi recebido. O processo de compensação bancária pode levar alguns instantes. Assim que confirmado, você receberá um e-mail de ativação automático.
+                      Identificamos que seu pedido foi recebido. O processo de compensação bancária pode levar alguns instantes. Assim que confirmado, você receberá um e-mail de ativação automático e também pode clicar em "Verificar Novamente" abaixo.
                     </p>
                   </div>
                 </div>

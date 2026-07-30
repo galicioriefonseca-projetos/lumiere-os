@@ -65,7 +65,7 @@ function App() {
             <Route path="/cadastro" element={<RegisterPage />} />
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
             <Route path="/ativar-conta" element={<ActivationPage />} />
-            <Route path="/aguardando-pagamento" element={<WaitingPaymentPage />} />
+            <Route path="/aguardando-pagamento" element={<ProtectedRoute><WaitingPaymentPage /></ProtectedRoute>} />
             <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
             
