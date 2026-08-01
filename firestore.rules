@@ -95,15 +95,17 @@ service cloud.firestore {
 
     // Permission gates
     function canManageSalon(salonId) {
-      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
-        exists(/databases/$(database)/documents/salons/$(salonId)) && 
-        'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && 
-        get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid
-      ) || (
-        exists(userDoc()) && 
-        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
-        'role' in get(userDoc()).data && 
-        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+      return isSignedIn() && (
+        isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+          exists(/databases/$(database)/documents/salons/$(salonId)) && 
+          'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && 
+          get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid
+        ) || (
+          exists(userDoc()) && 
+          'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+          'role' in get(userDoc()).data && 
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+        )
       );
     }
 
@@ -501,28 +503,7 @@ service cloud.firestore {
     // 21. Auth Audit Logs
     match /authAuditLogs/{logId} {
       allow read: if isPlatformAdmin();
-      allow create: if isSignedIn() && 
-        request.resource.data.keys().hasOnly([
-          'id',
-          'userIdentifier',
-          'action',
-          'ip',
-          'userAgent',
-          'origin',
-          'details',
-          'createdAt'
-        ]) &&
-        request.resource.data.userIdentifier is string &&
-        request.resource.data.userIdentifier.size() <= 200 &&
-        request.resource.data.userIdentifier in [request.auth.uid, userEmail()] &&
-        request.resource.data.action is string &&
-        request.resource.data.action.size() <= 200 &&
-        request.resource.data.createdAt is int &&
-        (!('id' in request.resource.data.keys()) || (request.resource.data.id is string && request.resource.data.id.size() <= 100)) &&
-        (!('ip' in request.resource.data.keys()) || (request.resource.data.ip is string && request.resource.data.ip.size() <= 100)) &&
-        (!('userAgent' in request.resource.data.keys()) || (request.resource.data.userAgent is string && request.resource.data.userAgent.size() <= 500)) &&
-        (!('origin' in request.resource.data.keys()) || (request.resource.data.origin is string && request.resource.data.origin.size() <= 200)) &&
-        (!('details' in request.resource.data.keys()) || (request.resource.data.details is string && request.resource.data.details.size() <= 2000));
+      allow create: if isSignedIn();
       allow update, delete: if false;
     }
   }

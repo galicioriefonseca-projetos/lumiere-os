@@ -238,7 +238,9 @@ export function validatePlanCompatibility(salon: any, targetPlan: string, profes
 }
 
 export default function SubscriptionPage() {
-  const { salonData, refreshUserData, isPlatformAdmin } = useAuth();
+  const { salonData, userData, refreshUserData, isPlatformAdmin } = useAuth();
+  
+  const canManageBilling = isPlatformAdmin || (userData?.role && ['owner', 'admin', 'manager'].includes(userData.role));
   
   const [searchParams, setSearchParams] = useSearchParams();
   const orderIdParam = searchParams.get('order_id');
@@ -381,7 +383,7 @@ export default function SubscriptionPage() {
 
   // Listen to billing history subcollection
   useEffect(() => {
-    if (!salonData?.id) return;
+    if (!salonData?.id || !canManageBilling) return;
     const q = query(collection(db, `salons/${salonData.id}/billingHistory`));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: any[] = [];
@@ -393,11 +395,11 @@ export default function SubscriptionPage() {
       console.error("[Billing Page] Erro histórico:", err);
     });
     return () => unsubscribe();
-  }, [salonData?.id]);
+  }, [salonData?.id, canManageBilling]);
 
   // Listen to payments subcollection
   useEffect(() => {
-    if (!salonData?.id) return;
+    if (!salonData?.id || !canManageBilling) return;
     const q = query(collection(db, `salons/${salonData.id}/payments`));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: any[] = [];
@@ -409,7 +411,7 @@ export default function SubscriptionPage() {
       console.error("[Billing Page] Erro pagamentos:", err);
     });
     return () => unsubscribe();
-  }, [salonData?.id]);
+  }, [salonData?.id, canManageBilling]);
 
   // States for activation flow
   const [isActivating, setIsActivating] = useState(false);

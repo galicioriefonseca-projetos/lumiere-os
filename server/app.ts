@@ -27,6 +27,7 @@ console.log("[Lumière Server] NODE_ENV:", process.env.NODE_ENV);
 
 
 const app = express();
+
 export default app;
 
   
@@ -36,6 +37,8 @@ export default app;
   app.use(express.json());
 
   // Habilitar CORS de forma nativa e segura
+
+  
   app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");

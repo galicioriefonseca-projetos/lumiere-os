@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb, isFirebaseAdminCredentialError } from "../../shared/firebaseAdmin.js";
+import { sendCheckoutEmail } from "../../shared/email.js";
 import { verifyIdToken, canManageBilling } from "../../shared/auth.js";
 
 interface CaktoSettings {
@@ -411,6 +412,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     console.log(`[Cakto Checkout Serverless] URL de checkout montada e salão registrado para ID: ${salonId}`);
+
+    try {
+      await sendCheckoutEmail({
+        to: checkoutEmail,
+        ownerName: ownerName || salonData?.ownerName || "Cliente",
+        checkoutUrl,
+        plan: planId
+      });
+    } catch (e) {
+      console.error("[Cakto Checkout Serverless] Erro ao enviar email com link de checkout:", e);
+    }
     return res.status(200).json({
       success: true,
       checkoutUrl,

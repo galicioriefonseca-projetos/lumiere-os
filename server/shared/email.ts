@@ -95,3 +95,37 @@ export async function sendActivationEmail(params: { to: string; ownerName?: stri
     html
   });
 }
+
+/**
+ * E-mail enviado quando o checkout é gerado, para que o cliente tenha
+ * o link salvo no e-mail caso feche a aba sem querer.
+ */
+export async function sendCheckoutEmail(params: { to: string; ownerName?: string; checkoutUrl: string; plan?: string }) {
+  const greetingName = params.ownerName ? params.ownerName.split(' ')[0] : 'tudo bem';
+
+  const html = `
+  <div style="font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0a0a0a; padding:32px 0;">
+    <div style="max-width:480px; margin:0 auto; background:#111114; border:1px solid #26262c; border-radius:16px; padding:32px; color:#e5e5e5;">
+      <p style="color:#D4AF37; letter-spacing:2px; font-size:11px; text-transform:uppercase; margin:0 0 16px;">LumièreOS</p>
+      <h1 style="font-size:20px; font-weight:600; margin:0 0 16px; color:#fff;">Complete sua assinatura</h1>
+      <p style="font-size:14px; line-height:1.6; color:#c7c7cc; margin:0 0 8px;">Olá, ${greetingName}!</p>
+      <p style="font-size:14px; line-height:1.6; color:#c7c7cc; margin:0 0 24px;">
+        Falta pouco para você liberar o acesso ao seu painel LumièreOS${params.plan ? ` no plano <strong>${params.plan}</strong>` : ''}.
+        Se você já pagou, ignore este e-mail. Caso ainda não tenha finalizado, clique no botão abaixo para concluir o pagamento com segurança:
+      </p>
+      <a href="${params.checkoutUrl}" style="display:inline-block; background:#D4AF37; color:#0a0a0a; font-weight:600; font-size:13px; padding:12px 24px; border-radius:10px; text-decoration:none;">
+        Concluir pagamento
+      </a>
+      <p style="font-size:12px; line-height:1.5; color:#7a7a80; margin:24px 0 0;">
+        Se o botão não funcionar, copie e cole este link no navegador:<br/>
+        <span style="word-break:break-all;">${params.checkoutUrl}</span>
+      </p>
+    </div>
+  </div>`;
+
+  return sendEmail({
+    to: params.to,
+    subject: 'Finalize sua assinatura do LumièreOS',
+    html
+  });
+}
