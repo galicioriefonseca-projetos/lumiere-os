@@ -14,7 +14,7 @@ export default function WaitingPaymentPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const pollCountRef = useRef(0);
 
-  // Se o papel do usuário deixou de ser 'pending' (o webhook da Cakto já
+  // Se o papel do usuário deixou de ser 'pending' (o webhook da Asaas já
   // processou o pagamento), manda direto para o painel.
   useEffect(() => {
     if (userData?.role && (userData.role as string) !== 'pending') {
@@ -46,11 +46,11 @@ export default function WaitingPaymentPage() {
   };
 
   const handleOpenCheckout = () => {
-    if (salonData?.caktoCheckoutUrl) {
-      window.open(salonData.caktoCheckoutUrl, '_blank');
+    if (salonData?.providerCheckoutUrl) {
+      window.open(salonData.providerCheckoutUrl, '_blank');
     } else {
       // Fallback
-      window.open('https://cakto.com.br', '_blank');
+      window.open('https://asaas.com.br', '_blank');
     }
   };
 
@@ -65,7 +65,7 @@ export default function WaitingPaymentPage() {
           {checking ? (
             <AuthCard title="Verificando Status" subtitle="Sincronizando registros financeiros em tempo real...">
               <LoadingExperience 
-                message="Conciliando pagamentos com a Cakto..." 
+                message="Conciliando pagamentos com a Asaas..." 
                 subtitle="Nossos sistemas de segurança estão validando seu comprovante bancário." 
               />
             </AuthCard>

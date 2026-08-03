@@ -10,7 +10,7 @@
  *   APP_URL         -> URL pública do app (já usada em outras partes do projeto)
  *
  * Se RESEND_API_KEY não estiver configurada, a função apenas loga um aviso
- * e retorna sem lançar erro — assim o webhook da Cakto nunca falha por
+ * e retorna sem lançar erro — assim o webhook da Asaas nunca falha por
  * causa do envio de e-mail (o pagamento já foi processado e é o mais importante).
  */
 
@@ -58,7 +58,7 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
 }
 
 /**
- * E-mail enviado assim que o pagamento é aprovado pela Cakto e a conta é
+ * E-mail enviado assim que o pagamento é aprovado pela Asaas e a conta é
  * ativada pela primeira vez (finalAction === "created" no webhook).
  * Não bloqueia o fluxo do webhook — deve sempre ser chamado dentro de um
  * try/catch (ou já é seguro internamente, veja sendEmail acima).

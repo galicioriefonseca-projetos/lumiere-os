@@ -272,7 +272,7 @@ export function DashboardDialogs({
                     ? "bg-green-500/25 border-green-500/45 text-green-400" 
                     : (salonData?.subscriptionStatus === 'preview' ? "bg-amber-500/25 border-amber-500/45 text-amber-400" : "bg-red-500/25 border-red-500/45 text-red-400")
                 )}>
-                  CONTRATO: {salonData?.subscriptionStatus === 'preview' ? 'Garantia de 7 dias pela Cakto' : (salonData?.subscriptionStatus === 'active' ? 'ativo' : 'pendente')}
+                  CONTRATO: {salonData?.subscriptionStatus === 'preview' ? 'Garantia de 7 dias pela Asaas' : (salonData?.subscriptionStatus === 'active' ? 'ativo' : 'pendente')}
                 </span>
               </div>
               <h4 className="font-semibold text-white text-sm leading-snug">

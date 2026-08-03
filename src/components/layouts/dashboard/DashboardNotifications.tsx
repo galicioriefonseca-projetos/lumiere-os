@@ -17,8 +17,8 @@ export function DashboardNotifications() {
     },
     {
       id: 2,
-      title: 'Garantia de 7 dias pela Cakto',
-      description: 'Sua assinatura conta com proteção de reembolso total de 7 dias pela Cakto.',
+      title: 'Garantia de 7 dias pela Asaas',
+      description: 'Sua assinatura conta com proteção de reembolso total de 7 dias pela Asaas.',
       time: '2 horas atrás',
       icon: ShieldCheck,
       iconColor: 'text-emerald-400',

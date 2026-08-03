@@ -26,20 +26,17 @@ export default function MasterPanel() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [founderMigrationOption, setFounderMigrationOption] = useState<'A' | 'B'>('A');
 
-  const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'cakto'>('salons');
-  const [caktoSettings, setCaktoSettings] = useState({
-    productId: '',
-    startOfferId: '',
-    founderOfferId: '',
-    performanceOfferId: '',
-    networkOfferId: '',
-    enterpriseOfferId: ''
+  const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'asaas'>('salons');
+  const [billingSettings, setAsaasSettings] = useState<any>({
+    mode: 'sandbox' as 'sandbox' | 'production',
+    apiKey: '',
+    webhookToken: ''
   });
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [syncingProducts, setSyncingProducts] = useState(false);
 
-  // States para homologação da Cakto
+  // States para homologação da Asaas
   const [testResult, setTestResult] = useState<any | null>(null);
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [testEvent, setTestEvent] = useState('purchase_approved');
@@ -57,15 +54,15 @@ export default function MasterPanel() {
     setTestResult(null);
 
     let offerId = '';
-    if (testPlan === 'start') offerId = caktoSettings.startOfferId || 'off_simulated_start';
-    else if (testPlan === 'founder') offerId = caktoSettings.founderOfferId || 'off_simulated_founder';
-    else if (testPlan === 'performance') offerId = caktoSettings.performanceOfferId || 'off_simulated_performance';
-    else if (testPlan === 'network') offerId = caktoSettings.networkOfferId || 'off_simulated_network';
-    else if (testPlan === 'enterprise') offerId = caktoSettings.enterpriseOfferId || 'off_simulated_enterprise';
+    if (testPlan === 'start') offerId = billingSettings.startOfferId || 'off_simulated_start';
+    else if (testPlan === 'founder') offerId = billingSettings.founderOfferId || 'off_simulated_founder';
+    else if (testPlan === 'performance') offerId = billingSettings.performanceOfferId || 'off_simulated_performance';
+    else if (testPlan === 'network') offerId = billingSettings.networkOfferId || 'off_simulated_network';
+    else if (testPlan === 'enterprise') offerId = billingSettings.enterpriseOfferId || 'off_simulated_enterprise';
 
     try {
       const token = await currentUser.getIdToken();
-      const res = await fetch('/api/cakto/webhook-test', {
+      const res = await fetch('/api/billing/webhook-test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,12 +92,12 @@ export default function MasterPanel() {
     }
   };
 
-  const fetchCaktoSettings = async () => {
+  const fetchAsaasSettings = async () => {
     if (!currentUser) return;
     setLoadingSettings(true);
     try {
       const token = await currentUser.getIdToken();
-      const res = await fetch('/api/cakto/settings', {
+      const res = await fetch('/api/billing/settings', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -109,7 +106,7 @@ export default function MasterPanel() {
         throw new Error(await res.text() || 'Falha ao buscar configurações');
       }
       const data = await res.json();
-      setCaktoSettings({
+      setAsaasSettings({
         productId: data.productId || '',
         startOfferId: data.startOfferId || '',
         founderOfferId: data.founderOfferId || '',
@@ -119,57 +116,57 @@ export default function MasterPanel() {
       });
     } catch (err: any) {
       console.error(err);
-      toast.error(`Erro ao carregar configurações Cakto: ${err.message}`);
+      toast.error(`Erro ao carregar configurações Asaas: ${err.message}`);
     } finally {
       setLoadingSettings(false);
     }
   };
 
-  const saveCaktoSettings = async () => {
+  const saveAsaasSettings = async () => {
     if (!currentUser) return;
     setSavingSettings(true);
     try {
       const token = await currentUser.getIdToken();
-      const res = await fetch('/api/cakto/settings', {
+      const res = await fetch('/api/billing/settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(caktoSettings)
+        body: JSON.stringify(billingSettings)
       });
       if (!res.ok) {
         throw new Error(await res.text() || 'Falha ao salvar configurações');
       }
-      toast.success('Configurações do Cakto salvas com sucesso!');
+      toast.success('Configurações do Asaas salvas com sucesso!');
     } catch (err: any) {
       console.error(err);
-      toast.error(`Erro ao salvar configurações Cakto: ${err.message}`);
+      toast.error(`Erro ao salvar configurações Asaas: ${err.message}`);
     } finally {
       setSavingSettings(false);
     }
   };
 
-  const syncCaktoProducts = async () => {
+  const testAsaasConnection = async () => {
     if (!currentUser) return;
     setSyncingProducts(true);
     try {
       const token = await currentUser.getIdToken();
-      const res = await fetch('/api/cakto/sync-products', {
+      const res = await fetch('/api/billing/test-connection', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        }
+        },
+        body: JSON.stringify(billingSettings)
       });
       if (!res.ok) {
-        throw new Error(await res.text() || 'Falha ao sincronizar ofertas');
+        throw new Error(await res.text() || 'Falha na conexão com a Asaas');
       }
-      const data = await res.json();
-      toast.success(data.message || 'Sincronização realizada com sucesso!');
-      await fetchCaktoSettings();
+      toast.success('Conexão com a Asaas bem-sucedida!');
     } catch (err: any) {
       console.error(err);
-      toast.error(`Erro ao sincronizar ofertas Cakto: ${err.message}`);
+      toast.error(`Erro ao testar conexão Asaas: ${err.message}`);
     } finally {
       setSyncingProducts(false);
     }
@@ -178,9 +175,9 @@ export default function MasterPanel() {
   const [runningMigrationScan, setRunningMigrationScan] = useState(false);
 
   const salonsWithHomologationIds = salons.filter(salon => {
-    const sub = salon.caktoSubscriptionId || "";
-    const ord = salon.caktoOrderId || "";
-    const off = salon.caktoOfferId || "";
+    const sub = salon.providerSubscriptionId || "";
+    const ord = salon.homologationOrderId || "";
+    const off = salon.homologationOfferId || "";
     const lowerSub = sub.toLowerCase();
     const lowerOrd = ord.toLowerCase();
     const lowerOff = off.toLowerCase();
@@ -271,10 +268,10 @@ export default function MasterPanel() {
 
   const isSimulatedFounder = (salon: Salon) => {
     return salon.plan === 'founder' && (
-      !salon.caktoSubscriptionId ||
-      salon.caktoSubscriptionId.includes('simulated') ||
-      salon.caktoSubscriptionId.includes('homolog') ||
-      salon.caktoSubscriptionId === 'sub_simulated_dev'
+      !salon.providerSubscriptionId ||
+      salon.providerSubscriptionId.includes('simulated') ||
+      salon.providerSubscriptionId.includes('homolog') ||
+      salon.providerSubscriptionId === 'sub_simulated_dev'
     );
   };
 
@@ -348,7 +345,7 @@ export default function MasterPanel() {
             if (checkoutWindow) checkoutWindow.opener = null;
             try {
               const token = await currentUser.getIdToken(true);
-              const response = await fetch('/api/cakto/create-checkout', {
+              const response = await fetch('/api/billing/create-checkout', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -382,7 +379,7 @@ export default function MasterPanel() {
             } catch (err: any) {
               checkoutWindow?.close();
               console.error("Option A migration error:", err);
-              toast.error(`Erro: ${err.message || "Falha ao gerar faturamento Cakto."}`);
+              toast.error(`Erro: ${err.message || "Falha ao gerar faturamento Asaas."}`);
               return;
             }
           } else {
@@ -427,11 +424,11 @@ export default function MasterPanel() {
             const isNonProductionId = (value?: string | null) =>
               typeof value === 'string' && /(simulated|homolog|test)/i.test(value);
 
-            if (isNonProductionId(selectedSalon.caktoSubscriptionId)) (updates as any).caktoSubscriptionId = deleteField();
-            if (isNonProductionId(selectedSalon.caktoOrderId)) (updates as any).caktoOrderId = deleteField();
-            if (isNonProductionId(selectedSalon.caktoCustomerId)) (updates as any).caktoCustomerId = deleteField();
-            if (isNonProductionId(selectedSalon.caktoOfferId)) (updates as any).caktoOfferId = deleteField();
-            if (selectedSalon.caktoCheckoutUrl?.includes('simulated_checkout')) (updates as any).caktoCheckoutUrl = deleteField();
+            if (isNonProductionId(selectedSalon.providerSubscriptionId)) (updates as any).providerSubscriptionId = deleteField();
+            if (isNonProductionId(selectedSalon.homologationOrderId)) (updates as any).homologationOrderId = deleteField();
+            if (isNonProductionId(selectedSalon.providerCustomerId)) (updates as any).providerCustomerId = deleteField();
+            if (isNonProductionId(selectedSalon.homologationOfferId)) (updates as any).homologationOfferId = deleteField();
+            if (selectedSalon.providerCheckoutUrl?.includes('simulated_checkout')) (updates as any).providerCheckoutUrl = deleteField();
           }
           break;
         default:
@@ -644,16 +641,16 @@ export default function MasterPanel() {
           </button>
           <button
             onClick={() => {
-              setActiveTab('cakto');
-              fetchCaktoSettings();
+              setActiveTab('asaas');
+              fetchAsaasSettings();
             }}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all relative ${
-              activeTab === 'cakto'
+              activeTab === 'asaas'
                 ? 'border-destructive text-destructive font-semibold'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            Integração Cakto
+            Integração Asaas
           </button>
         </div>
 
@@ -720,13 +717,13 @@ export default function MasterPanel() {
                         <td className="px-4 py-3">
                            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                               <span className="font-semibold text-white uppercase">Provedor: {salon.billingProvider || 'Nenhum'}</span>
-                              {salon.caktoCustomerId && (
-                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.caktoCustomerId}>
-                                   <span className="truncate max-w-[120px]">Cakto Cus: {salon.caktoCustomerId}</span>
+                              {salon.providerCustomerId && (
+                                <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.providerCustomerId}>
+                                   <span className="truncate max-w-[120px]">Asaas Cus: {salon.providerCustomerId}</span>
                                    <span className="uppercase text-emerald-400">Status: {salon.subscriptionStatus}</span>
-                                   {salon.caktoCheckoutUrl ? (
+                                   {salon.providerCheckoutUrl ? (
                                      <div className="flex gap-1.5 items-center mt-1">
-                                       <a href={salon.caktoCheckoutUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline hover:text-indigo-300">
+                                       <a href={salon.providerCheckoutUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline hover:text-indigo-300">
                                          Abrir Link
                                        </a>
                                      </div>
@@ -862,15 +859,15 @@ export default function MasterPanel() {
         </Card>
         )}
 
-        {activeTab === 'cakto' && (
+        {activeTab === 'asaas' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="border-border bg-black/40">
                <CardHeader>
                  <CardTitle className="text-xl flex items-center gap-2">
                    <Sparkles className="w-5 h-5 text-destructive" />
-                   Integração Cakto
+                   Integração Asaas
                  </CardTitle>
-                 <p className="text-sm text-muted-foreground text-left">Cadastre e edite dinamicamente os IDs do produto e das ofertas da Cakto para faturamento dinâmico.</p>
+                 <p className="text-sm text-muted-foreground text-left">Cadastre e edite dinamicamente os IDs do produto e das ofertas da Asaas para faturamento dinâmico.</p>
                </CardHeader>
                <CardContent className="space-y-4">
                  {loadingSettings ? (
@@ -880,66 +877,58 @@ export default function MasterPanel() {
                  ) : (
                    <div className="space-y-4 text-left">
                      <div className="space-y-1.5">
-                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Cakto Product ID</label>
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Ambiente (Modo)</label>
+                       <select
+                         className="flex h-10 w-full rounded-md border border-input bg-card px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-white"
+                         value={(billingSettings as any).mode || 'sandbox'}
+                         onChange={(e) => setAsaasSettings({ ...billingSettings, mode: e.target.value as 'sandbox' | 'production' } as any)}
+                       >
+                         <option value="sandbox">Sandbox (Testes)</option>
+                         <option value="production">Produção</option>
+                       </select>
+                     </div>
+                     <div className="space-y-1.5">
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Asaas API Key</label>
                        <Input
-                         placeholder="Ex: prod_..."
+                         type="password"
+                         placeholder="Ex: $aact_..."
                          className="bg-card border-border text-white"
-                         value={caktoSettings.productId}
-                         onChange={(e) => setCaktoSettings({ ...caktoSettings, productId: e.target.value })}
+                         value={(billingSettings as any).apiKey || ''}
+                         onChange={(e) => setAsaasSettings({ ...billingSettings, apiKey: e.target.value } as any)}
                        />
                      </div>
                      <div className="space-y-1.5">
-                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Start</label>
+                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Webhook Token</label>
                        <Input
-                         placeholder="Ex: off_..."
+                         placeholder="Token para validar os webhooks"
                          className="bg-card border-border text-white"
-                         value={caktoSettings.startOfferId}
-                         onChange={(e) => setCaktoSettings({ ...caktoSettings, startOfferId: e.target.value })}
-                       />
-                     </div>
-                     <div className="space-y-1.5">
-                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Founder</label>
-                       <Input
-                         placeholder="Ex: off_..."
-                         className="bg-card border-border text-white"
-                         value={caktoSettings.founderOfferId}
-                         onChange={(e) => setCaktoSettings({ ...caktoSettings, founderOfferId: e.target.value })}
-                       />
-                     </div>
-                     <div className="space-y-1.5">
-                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Performance</label>
-                       <Input
-                         placeholder="Ex: off_..."
-                         className="bg-card border-border text-white"
-                         value={caktoSettings.performanceOfferId}
-                         onChange={(e) => setCaktoSettings({ ...caktoSettings, performanceOfferId: e.target.value })}
-                       />
-                     </div>
-                     <div className="space-y-1.5">
-                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Network</label>
-                       <Input
-                         placeholder="Ex: off_..."
-                         className="bg-card border-border text-white"
-                         value={caktoSettings.networkOfferId}
-                         onChange={(e) => setCaktoSettings({ ...caktoSettings, networkOfferId: e.target.value })}
-                       />
-                     </div>
-                     <div className="space-y-1.5">
-                       <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">ID Oferta - Enterprise</label>
-                       <Input
-                         placeholder="Ex: off_..."
-                         className="bg-card border-border text-white"
-                         value={caktoSettings.enterpriseOfferId}
-                         onChange={(e) => setCaktoSettings({ ...caktoSettings, enterpriseOfferId: e.target.value })}
+                         value={(billingSettings as any).webhookToken || ''}
+                         onChange={(e) => setAsaasSettings({ ...billingSettings, webhookToken: e.target.value } as any)}
                        />
                      </div>
                      <div className="pt-2 flex flex-wrap gap-3">
                        <Button
-                         onClick={saveCaktoSettings}
+                         onClick={saveAsaasSettings}
                          disabled={savingSettings || syncingProducts}
                          className="bg-destructive hover:bg-destructive/80 text-white font-medium"
                        >
-                         {savingSettings ? (
+                         
+                        <Button
+                          onClick={async () => {
+                             try {
+                               await fetch('/api/billing/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'seed' }) });
+                               toast.success('Planos sincronizados com sucesso.');
+                             } catch(err) {
+                               toast.error('Erro ao sincronizar planos.');
+                             }
+                          }}
+                          variant="outline"
+                          className="border-blue-500/30 hover:bg-blue-500/10 text-white font-medium"
+                        >
+                          Sincronizar Planos (Seed)
+                        </Button>
+
+                          {savingSettings ? (
                            <>
                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                              Salvando...
@@ -950,7 +939,7 @@ export default function MasterPanel() {
                        </Button>
 
                        <Button
-                         onClick={syncCaktoProducts}
+                         onClick={testAsaasConnection}
                          disabled={savingSettings || syncingProducts}
                          variant="outline"
                          className="border-destructive/30 hover:bg-destructive/10 text-white font-medium"
@@ -958,10 +947,10 @@ export default function MasterPanel() {
                          {syncingProducts ? (
                            <>
                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                             Sincronizando...
+                             Testando...
                            </>
                          ) : (
-                           'Sincronizar Ofertas'
+                           'Testar Conexão'
                          )}
                        </Button>
                      </div>
@@ -969,166 +958,8 @@ export default function MasterPanel() {
                  )}
                </CardContent>
             </Card>
-
-            <Card className="border-border bg-black/40">
-              <CardHeader>
-                <CardTitle className="text-xl flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-[#D4AF37]" />
-                  Varredura de Segurança de Faturamento
-                </CardTitle>
-                <p className="text-sm text-muted-foreground text-left">
-                  Detecta instâncias utilizando identificadores de homologação e marca para migração segura sem apagar dados ativos de clientes.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-4 text-left">
-                <div className="bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-sm font-semibold text-white block">Contas com IDs simulados</span>
-                      <span className="text-xs text-muted-foreground mt-0.5 block">Identificadores contendo "homolog" ou "simulated" nos campos de faturamento.</span>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      {salonsWithHomologationIds.length} encontradas
-                    </span>
-                  </div>
-
-                  {salonsWithHomologationIds.length > 0 && (
-                    <div className="space-y-2 max-h-40 overflow-y-auto border border-zinc-900 rounded-lg p-2.5 bg-black/20">
-                      {salonsWithHomologationIds.map(salon => (
-                        <div key={salon.id} className="flex justify-between items-center text-xs font-mono py-1 border-b border-zinc-900/50 last:border-b-0">
-                          <span className="text-zinc-300 font-semibold">{salon.name}</span>
-                          <div className="flex items-center gap-2">
-                            {salon.billingRequiresMigration && (
-                              <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                                Requer Migração
-                              </span>
-                            )}
-                            <span className="text-zinc-500">{salon.plan}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="pt-2">
-                    <Button
-                      onClick={runMigrationScan}
-                      disabled={runningMigrationScan || salonsWithHomologationIds.length === 0}
-                      className="bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold text-xs"
-                    >
-                      {runningMigrationScan ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                          Processando...
-                        </>
-                      ) : (
-                        'Executar Varredura e Marcar Requer Migração'
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border bg-black/40">
-               <CardHeader>
-                 <CardTitle className="text-xl flex items-center gap-2">
-                   <RefreshCcw className="w-5 h-5 text-destructive" />
-                   Homologação Cakto
-                 </CardTitle>
-                 <p className="text-sm text-muted-foreground text-left">Permite simular o envio de eventos de webhook para testar a ativação, reativação, cancelamento ou recusado de planos.</p>
-               </CardHeader>
-               <CardContent className="space-y-4 text-left">
-                  <div className="space-y-1.5">
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Empresa/Salão para Teste</label>
-                    <Select value={testSalonId} onValueChange={setTestSalonId}>
-                      <SelectTrigger className="bg-card border-border text-white">
-                        <SelectValue placeholder="Selecione o salão para testar" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border text-white">
-                        {salons.map((salon) => (
-                          <SelectItem key={salon.id} value={salon.id}>
-                            {salon.name} ({salon.ownerEmail})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Evento do Webhook</label>
-                    <Select value={testEvent} onValueChange={setTestEvent}>
-                      <SelectTrigger className="bg-card border-border text-white">
-                        <SelectValue placeholder="Selecione o evento" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border text-white">
-                        <SelectItem value="purchase_approved">Aprovação de Compra (purchase_approved)</SelectItem>
-                        <SelectItem value="subscription_created">Assinatura Criada (subscription_created)</SelectItem>
-                        <SelectItem value="subscription_renewed">Assinatura Renovada (subscription_renewed)</SelectItem>
-                        <SelectItem value="subscription_canceled">Assinatura Cancelada (subscription_canceled)</SelectItem>
-                        <SelectItem value="purchase_refused">Pagamento Recusado (purchase_refused)</SelectItem>
-                        <SelectItem value="subscription_renewal_refused">Renovação Recusada (subscription_renewal_refused)</SelectItem>
-                        <SelectItem value="refund">Reembolso (refund)</SelectItem>
-                        <SelectItem value="chargeback">Disputa/Estorno (chargeback)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Plano Correspondente</label>
-                    <Select value={testPlan} onValueChange={setTestPlan}>
-                      <SelectTrigger className="bg-card border-border text-white">
-                        <SelectValue placeholder="Selecione o plano" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border text-white">
-                        <SelectItem value="start">Start</SelectItem>
-                        <SelectItem value="founder">Founder (Pioneiro)</SelectItem>
-                        <SelectItem value="performance">Performance</SelectItem>
-                        <SelectItem value="network">Network</SelectItem>
-                        <SelectItem value="enterprise">Enterprise</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="pt-2">
-                    <Button
-                      onClick={executeWebhookTest}
-                      disabled={testingWebhook}
-                      className="bg-destructive hover:bg-destructive/80 text-white font-medium w-full animate-none"
-                    >
-                      {testingWebhook ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Simulando Webhook...
-                        </>
-                      ) : (
-                        'Executar Teste'
-                      )}
-                    </Button>
-                  </div>
-
-                  {testResult && (
-                    <div className="mt-4 p-4 rounded-xl border border-border bg-black/60 space-y-3 text-xs font-mono">
-                      <div className="flex items-center gap-1.5 text-green-400 font-bold text-sm">
-                        <CheckCircle className="w-4 h-4" />
-                        <span>✅ Sucesso</span>
-                      </div>
-                      <div className="space-y-1 text-muted-foreground">
-                        <div>
-                          <span className="text-white">Plano Atualizado:</span> <span className="text-[#D4AF37] uppercase font-bold">{testResult.plan}</span>
-                        </div>
-                        <div>
-                          <span className="text-white">Status da Assinatura:</span> <span className="text-indigo-400 uppercase font-bold">{testResult.status}</span>
-                        </div>
-                        <div>
-                          <span className="text-white">Documento Alterado:</span> <span className="text-zinc-300 break-all">{testResult.firestorePath}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-               </CardContent>
-            </Card>
           </div>
+
         )}
 
         {/* Info dialog instructions */}
@@ -1191,7 +1022,7 @@ export default function MasterPanel() {
                       />
                       <div>
                         <span className="font-semibold text-white block">Opção A: Gerar checkout real Founder</span>
-                        <span className="text-xs text-muted-foreground block mt-0.5">Gera o checkout de produção da Cakto sem alterar o acesso atual. A conta permanece ativa e manual até a confirmação do webhook real.</span>
+                        <span className="text-xs text-muted-foreground block mt-0.5">Gera o checkout de produção da Asaas sem alterar o acesso atual. A conta permanece ativa e manual até a confirmação do webhook real.</span>
                       </div>
                     </label>
 

@@ -26,36 +26,18 @@ import {
   XCircle,
   RefreshCw
 } from 'lucide-react';
-import { PLANS_CONFIG } from '../../config/plans';
+import { usePlans } from '../../hooks/usePlans';
 import { BILLING_CONFIG } from '../../config/billing';
 import { toast } from 'sonner';
-import { billingService } from '../../services/billing/BillingService';
+
 import { collection, query, onSnapshot, where, doc } from 'firebase/firestore';
-import { schedulePlanChange, cancelPlanChange, isRealCaktoSubscription, isManualActiveSubscription } from '../../lib/cakto';
+import { schedulePlanChange, cancelPlanChange, isRealProviderSubscription, isManualActiveSubscription } from '../../lib/billing';
 
-const PLANS_PRICES: Record<string, number> = {
-  start: 197,
-  founder: 297,
-  performance: 397,
-  network: 797,
-  enterprise: 1997
-};
 
-const PLANS_MAX_PROFESSIONALS: Record<string, number> = {
-  start: 5,
-  founder: 22,
-  performance: 20,
-  network: 999,
-  enterprise: 9999
-};
 
-const PLAN_NAMES: Record<string, string> = {
-  start: "Start",
-  founder: "Founder (Pioneiro)",
-  performance: "Performance",
-  network: "Network",
-  enterprise: "Enterprise"
-};
+
+
+
 
 const PLAN_RESOURCES: Record<string, Record<string, boolean>> = {
   start: {
@@ -157,13 +139,7 @@ const FEATURE_LABELS: Record<string, string> = {
   suportePrioritario: "Suporte VIP e Implantação Assistida"
 };
 
-const PLAN_RANK: Record<string, number> = {
-  start: 0,
-  founder: 1,
-  performance: 2,
-  network: 3,
-  enterprise: 4
-};
+
 
 // Required Business Helper Functions
 export function getPlanGains(currentPlan: string, targetPlan: string): string[] {
@@ -202,42 +178,59 @@ export function getMaintainedFeatures(currentPlan: string, targetPlan: string): 
   return maintained;
 }
 
-export function getPriceDifference(currentPlan: string, targetPlan: string): number {
-  const currentAmount = PLANS_PRICES[currentPlan] || 197;
-  const targetAmount = PLANS_PRICES[targetPlan] || 197;
-  return targetAmount - currentAmount;
-}
 
-export function isUpgrade(currentPlan: string, targetPlan: string): boolean {
-  return (PLAN_RANK[targetPlan] || 0) > (PLAN_RANK[currentPlan] || 0);
-}
 
-export function isDowngrade(currentPlan: string, targetPlan: string): boolean {
-  return (PLAN_RANK[targetPlan] || 0) < (PLAN_RANK[currentPlan] || 0);
-}
 
-export function validatePlanCompatibility(salon: any, targetPlan: string, professionalsCount: number): { compatible: boolean; reason?: string } {
-  const maxProfessionals = PLANS_MAX_PROFESSIONALS[targetPlan] || 0;
-  if (professionalsCount > maxProfessionals) {
-    return {
-      compatible: false,
-      reason: `Você possui ${professionalsCount} profissionais cadastrados, mas o plano ${PLAN_NAMES[targetPlan]} suporta no máximo ${maxProfessionals} profissionais. Remova os profissionais excedentes para poder realizar o downgrade.`
-    };
-  }
 
-  const unitsCount = salon.unitsCount || (salon.units ? (Array.isArray(salon.units) ? salon.units.length : 1) : 1);
-  const isMultiUnitPlan = targetPlan === "network" || targetPlan === "enterprise";
-  if (unitsCount > 1 && !isMultiUnitPlan) {
-    return {
-      compatible: false,
-      reason: `Você possui ${unitsCount} unidades configuradas. O plano ${PLAN_NAMES[targetPlan]} não oferece suporte para Gestão Multiunidade. Exclua as unidades adicionais para prosseguir.`
-    };
-  }
 
-  return { compatible: true };
-}
+
+
 
 export default function SubscriptionPage() {
+
+  const { plans, loading: plansLoading, getPlan } = usePlans();
+
+  const PLANS_PRICES = plans.reduce((acc, p) => ({ ...acc, [p.id]: p.price }), {} as Record<string, number>);
+  const PLANS_MAX_PROFESSIONALS = plans.reduce((acc, p) => ({ ...acc, [p.id]: p.maxProfessionals || 5 }), {} as Record<string, number>);
+  const PLAN_NAMES = plans.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {} as Record<string, string>);
+  const PLAN_RANK = plans.reduce((acc, p) => ({ ...acc, [p.id]: p.displayOrder }), {} as Record<string, number>);
+  const PLANS_CONFIG = plans.reduce((acc, p) => ({ ...acc, [p.id]: { ...p, monthlyAmount: p.price } }), {} as Record<string, any>);
+
+  function getPriceDifference(currentPlan: string, targetPlan: string): number {
+    const currentAmount = PLANS_PRICES[currentPlan] || 197;
+    const targetAmount = PLANS_PRICES[targetPlan] || 197;
+    return targetAmount - currentAmount;
+  }
+
+  function isUpgrade(currentPlan: string, targetPlan: string): boolean {
+    return (PLAN_RANK[targetPlan] || 0) > (PLAN_RANK[currentPlan] || 0);
+  }
+
+  function isDowngrade(currentPlan: string, targetPlan: string): boolean {
+    return (PLAN_RANK[targetPlan] || 0) < (PLAN_RANK[currentPlan] || 0);
+  }
+
+  
+  function validatePlanCompatibility(salon: any, targetPlan: string, professionalsCount: number): { compatible: boolean; reason?: string } {
+    const maxProfessionals = (getPlan(targetPlan)?.maxProfessionals || 5) || 0;
+    if (professionalsCount > maxProfessionals) {
+      return {
+        compatible: false,
+        reason: `Você possui ${professionalsCount} profissionais cadastrados, mas o plano ${(getPlan(targetPlan)?.name || targetPlan)} suporta no máximo ${maxProfessionals} profissionais. Remova os profissionais excedentes para poder realizar o downgrade.`
+      };
+    }
+    const unitsCount = salon.unitsCount || (salon.units ? (Array.isArray(salon.units) ? salon.units.length : 1) : 1);
+    const isMultiUnitPlan = targetPlan === "network" || targetPlan === "enterprise";
+    if (unitsCount > 1 && !isMultiUnitPlan) {
+      return {
+        compatible: false,
+        reason: `Você possui ${unitsCount} unidades configuradas. O plano ${(getPlan(targetPlan)?.name || targetPlan)} não oferece suporte para Gestão Multiunidade. Exclua as unidades adicionais para prosseguir.`
+      };
+    }
+    return { compatible: true };
+  }
+
+
   const { salonData, userData, refreshUserData, isPlatformAdmin } = useAuth();
   
   const canManageBilling = isPlatformAdmin || (userData?.role && ['owner', 'admin', 'manager'].includes(userData.role));
@@ -276,7 +269,7 @@ export default function SubscriptionPage() {
     if (data?.code === 'FIREBASE_ADMIN_AUTH_FAILED') {
       return 'O serviço de faturamento está temporariamente indisponível. Tente novamente em alguns minutos ou fale com o suporte.';
     }
-    if (data?.code === 'CAKTO_UPSTREAM_ERROR') {
+    if (data?.code === 'ASAAS_UPSTREAM_ERROR') {
       return 'Não foi possível consultar o gateway de pagamento neste momento. Tente novamente mais tarde.';
     }
     return data?.error || fallback;
@@ -288,7 +281,7 @@ export default function SubscriptionPage() {
     setRealSubError(null);
     try {
       const token = await getFreshIdToken();
-      const res = await fetch(`/api/cakto/real-subscription?salonId=${encodeURIComponent(salonData.id)}`, {
+      const res = await fetch(`/api/billing/real-subscription?salonId=${encodeURIComponent(salonData.id)}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -307,27 +300,27 @@ export default function SubscriptionPage() {
   };
 
   useEffect(() => {
-    const hasRealCakto = isRealCaktoSubscription(salonData);
-    if (activeTab === 'payment' && hasRealCakto) {
+    const hasRealProvider = isRealProviderSubscription(salonData);
+    if (activeTab === 'payment' && hasRealProvider) {
       void fetchRealSub();
       return;
     }
 
-    // Contas manuais não possuem assinatura real na Cakto; limpar estados antigos
+    // Contas manuais não possuem assinatura real na Gateway de Pagamento; limpar estados antigos
     // evita exibir uma falha armazenada de uma consulta anterior.
-    if (!hasRealCakto) {
+    if (!hasRealProvider) {
       setRealSub(null);
       setRealSubError(null);
       setIsLoadingRealSub(false);
     }
-  }, [activeTab, salonData?.id, salonData?.billingProvider, salonData?.subscriptionStatus, salonData?.caktoSubscriptionId]);
+  }, [activeTab, salonData?.id, salonData?.billingProvider, salonData?.subscriptionStatus, salonData?.providerSubscriptionId]);
 
   const handleUpdatePaymentMethod = async () => {
     if (!salonData?.id) return;
     setIsUpdatingMethod(true);
     try {
       const token = await getFreshIdToken();
-      const res = await fetch('/api/cakto/update-payment-method', {
+      const res = await fetch('/api/billing/update-payment-method', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -354,7 +347,7 @@ export default function SubscriptionPage() {
       }
 
       await refreshUserData();
-      if (isRealCaktoSubscription(salonData)) {
+      if (isRealProviderSubscription(salonData)) {
         await fetchRealSub();
       }
     } catch (err: any) {
@@ -433,7 +426,7 @@ export default function SubscriptionPage() {
   }
 
   const currentPlan = salonData.plan || 'start';
-  const planInfo = PLANS_CONFIG[currentPlan as keyof typeof PLANS_CONFIG] || PLANS_CONFIG.start;
+  const planInfo = PLANS_CONFIG[currentPlan as keyof typeof PLANS_CONFIG] || PLANS_CONFIG.start || { name: 'Plano Atual', monthlyAmount: 0 };
 
   // Compute actual overdue days
   let daysOverdue = 0;
@@ -468,52 +461,48 @@ export default function SubscriptionPage() {
   };
 
   const handleActivate = async () => {
-    if (!salonData.id) return;
-
-    // Abre a aba dentro do clique do usuário para evitar bloqueio de pop-up em celulares.
-    const checkoutWindow = window.open('about:blank', '_blank');
-    if (checkoutWindow) checkoutWindow.opener = null;
-
     setIsActivating(true);
+    let checkoutWindow = null;
     try {
-      toast.info('Preparando checkout seguro...');
-      const purpose = isManualActiveSubscription(salonData) ? 'activate_recurring' : 'new_subscription';
-
-      const subResult = await billingService.createSubscription(
-        salonData.id,
-        salonData.billingEmail || salonData.ownerEmail || '',
-        {
-          planId: selectedPlan,
-          checkoutPurpose: purpose
-        } as any
-      ) as any;
-
-      const url = subResult.checkoutUrl;
-      if (!url) {
-        checkoutWindow?.close();
-        throw new Error('O gateway não retornou a URL de checkout. Verifique se o plano selecionado tem uma oferta (offerId) configurada nas Configurações > Cakto.');
+      if (!window.matchMedia("(display-mode: standalone)").matches && !/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        checkoutWindow = window.open('about:blank', '_blank');
+        if (!checkoutWindow) {
+           toast.error('Por favor, permita pop-ups no seu navegador para abrir o checkout de forma segura.');
+           setIsActivating(false);
+           return;
+        }
+        checkoutWindow.document.write('<div style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#000;color:#fff;">Conectando ao ambiente seguro de pagamentos...</div>');
       }
+
+      const confirmTargetPlan = selectedPlan || currentPlan;
+
+      const response = await fetch('/api/billing/create-checkout', { 
+         method: 'POST', 
+         headers: { 'Content-Type': 'application/json' }, 
+         body: JSON.stringify({ salonId: salonData.id, planId: confirmTargetPlan, billingType: 'CREDIT_CARD' }) 
+      });
+      
+      const subResult = await response.json();
+      
+      if (!subResult.success || !subResult.bankSlipUrl) {
+         throw new Error(subResult.error || 'O gateway não retornou a URL de checkout.');
+      }
+
+      const url = subResult.bankSlipUrl;
 
       if (checkoutWindow && !checkoutWindow.closed) {
         checkoutWindow.location.href = url;
       } else {
-        // Pop-up bloqueado ou fechado pelo navegador: avisa o usuário e usa
-        // redirecionamento na própria aba como alternativa garantida.
-        toast.warning('Seu navegador bloqueou a nova aba do checkout. Redirecionando nesta mesma aba...');
         window.location.assign(url);
       }
-
+      
       setShowActivationModal(false);
-      toast.success(
-        isManualActiveSubscription(salonData)
-          ? 'Checkout gerado. Seu acesso atual continuará ativo até a confirmação do pagamento.'
-          : 'Checkout gerado com sucesso.'
-      );
+      toast.success('Checkout gerado com sucesso.');
       await refreshUserData();
     } catch (err: any) {
       checkoutWindow?.close();
       console.error("[Billing Page] Erro na ativação:", err);
-      toast.error(err.message || 'Falha ao processar assinatura via Cakto.');
+      toast.error(err.message || 'Falha ao processar assinatura via Gateway de Pagamento.');
     } finally {
       setIsActivating(false);
     }
@@ -605,6 +594,7 @@ export default function SubscriptionPage() {
     }`;
   };
 
+
   // Founder eligibility criteria
   const isFounderEligible = salonData?.founderAuthorized === true || 
                             salonData?.isFounderAuthorized === true || 
@@ -633,7 +623,7 @@ export default function SubscriptionPage() {
                 <Info className="w-3.5 h-3.5 text-red-400" /> Como regularizar:
               </p>
               <p>1. Clique em "Regularizar Agora" abaixo.</p>
-              <p>2. Complete o faturamento do plano via checkout seguro da Cakto.</p>
+              <p>2. Complete o faturamento do plano via checkout seguro da Gateway de Pagamento.</p>
               <p>3. Seu acesso será reestabelecido automaticamente após a compensação.</p>
             </div>
 
@@ -849,7 +839,7 @@ export default function SubscriptionPage() {
                       <Coins className="w-3.5 h-3.5 text-[#D4AF37]" /> Forma de Faturamento
                     </span>
                     <p className="text-sm font-semibold text-white uppercase flex items-center gap-1 text-xs">
-                      {salonData.billingProvider === 'cakto' ? '💳 Recorrente Cakto' : '💸 PIX / Transferência'}
+                      {salonData.billingProvider === 'asaas' ? '💳 Recorrente Gateway de Pagamento' : '💸 PIX / Transferência'}
                     </p>
                   </div>
                 </div>
@@ -891,16 +881,16 @@ export default function SubscriptionPage() {
                         <Coins className="w-4 h-4 text-zinc-400" /> Faturamento Manual
                       </div>
                       <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Sua licença foi ativada manualmente. Para automatizar o pagamento da sua próxima mensalidade, você pode configurar uma assinatura na Cakto.
+                        Sua licença foi ativada manualmente. Para automatizar o pagamento da sua próxima mensalidade, você pode configurar uma assinatura na Gateway de Pagamento.
                       </p>
                     </>
                   ) : (
                     <>
                       <div className="flex items-center gap-2 text-[#D4AF37] font-semibold text-xs uppercase tracking-wider">
-                        <ShieldCheck className="w-4 h-4 text-[#D4AF37]" /> Conexão Cakto Ativa
+                        <ShieldCheck className="w-4 h-4 text-[#D4AF37]" /> Conexão Gateway de Pagamento Ativa
                       </div>
                       <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Sua assinatura está protegida e integrada à Cakto. Não coletamos nem armazenamos os seus dados de cartão de crédito.
+                        Sua assinatura está protegida e integrada à Gateway de Pagamento. Não coletamos nem armazenamos os seus dados de cartão de crédito.
                       </p>
                     </>
                   )}
@@ -1153,7 +1143,7 @@ export default function SubscriptionPage() {
 
                   <div className="p-4 bg-zinc-950 border border-zinc-900 rounded-xl space-y-2 text-xs text-zinc-400 leading-normal">
                     <p className="font-semibold text-white">Vigência e Faturamento:</p>
-                    <p>O upgrade será programado em sua conta da Cakto. A diferença de valor mensal calculada será de <strong>+ {formatMoney(getPriceDifference(currentPlan, confirmTargetPlan))} / mês</strong>, adicionada ao seu próximo ciclo recorrente{salonData.nextBillingDate ? ` (${formatDate(salonData.nextBillingDate)})` : ''}.</p>
+                    <p>O upgrade será programado em sua conta da Gateway de Pagamento. A diferença de valor mensal calculada será de <strong>+ {formatMoney(getPriceDifference(currentPlan, confirmTargetPlan))} / mês</strong>, adicionada ao seu próximo ciclo recorrente{salonData.nextBillingDate ? ` (${formatDate(salonData.nextBillingDate)})` : ''}.</p>
                   </div>
                 </div>
               )}
@@ -1275,7 +1265,7 @@ export default function SubscriptionPage() {
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Forma:</span>
                     <span className="text-white font-semibold uppercase">
-                      {salonData.billingProvider === 'cakto' ? 'Cartão de Crédito' : 'PIX'}
+                      {salonData.billingProvider === 'asaas' ? 'Cartão de Crédito' : 'PIX'}
                     </span>
                   </div>
                 </div>
@@ -1301,7 +1291,7 @@ export default function SubscriptionPage() {
                 <div className="flex justify-between items-center">
                   <h3 className="font-semibold text-zinc-200">Histórico de Cobranças</h3>
                   <span className="text-[10px] text-zinc-500 uppercase">
-                    {salonData.billingProvider === 'cakto' ? 'Valores integrados via Cakto' : 'Lançamentos de Cobrança'}
+                    {salonData.billingProvider === 'asaas' ? 'Valores integrados via Gateway de Pagamento' : 'Lançamentos de Cobrança'}
                   </span>
                 </div>
 
@@ -1319,8 +1309,8 @@ export default function SubscriptionPage() {
                         <FileText className="w-8 h-8 text-zinc-600 mx-auto" />
                         <p className="text-xs">Nenhuma cobrança ou transação registrada nesta conta.</p>
                         <p className="text-[10px] text-zinc-600">
-                          {salonData.billingProvider === 'cakto'
-                            ? 'Faturas e liquidações processadas via Cakto serão listadas aqui.'
+                          {salonData.billingProvider === 'asaas'
+                            ? 'Faturas e liquidações processadas via Gateway de Pagamento serão listadas aqui.'
                             : 'Cobranças geradas e confirmações de faturamento serão listadas aqui.'}
                         </p>
                       </div>
@@ -1342,15 +1332,15 @@ export default function SubscriptionPage() {
                         </thead>
                         <tbody className="divide-y divide-zinc-900">
                           {filteredPayments.map((p) => {
-                            const transactionId = p.transactionId || p.caktoOrderId || p.orderId;
-                            // Não trata o ID interno do Firestore como ID de transação real se for Cakto sem transactionId (embora fallback se não for)
+                            const transactionId = p.transactionId || p.providerOrderId || p.orderId;
+                            // Não trata o ID interno do Firestore como ID de transação real se for Gateway de Pagamento sem transactionId (embora fallback se não for)
                             const displayId = transactionId ? transactionId : `Ref. ${p.id.slice(0, 8)}`;
                             
-                            const isCaktoPayment = p.provider === 'cakto' || !!p.caktoOrderId || !!p.caktoTransactionId || p.webhookProvider === 'cakto';
+                            const isProviderPayment = p.provider === 'asaas' || !!p.providerOrderId || !!p.providerTransactionId || p.webhookProvider === 'asaas';
                             
                             let provider = 'Sistema';
-                            if (isCaktoPayment) {
-                              provider = 'Cakto Gateway';
+                            if (isProviderPayment) {
+                              provider = 'Gateway de Pagamento';
                             } else if (p.provider === 'manual' || p.provider === 'manual_pix' || p.status === 'reported' || p.manual) {
                               provider = 'Pagamento manual informado';
                             }
@@ -1445,7 +1435,7 @@ export default function SubscriptionPage() {
                 <div className="flex items-start gap-2 bg-[#D4AF37]/5 border border-[#D4AF37]/10 p-3 rounded-lg text-xs text-zinc-400">
                   <Info className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
                   <p className="leading-relaxed">
-                    Sua licença foi ativada manualmente. Para automatizar o pagamento da sua próxima mensalidade, você pode configurar uma assinatura na Cakto.
+                    Sua licença foi ativada manualmente. Para automatizar o pagamento da sua próxima mensalidade, você pode configurar uma assinatura na Gateway de Pagamento.
                   </p>
                 </div>
 
@@ -1465,7 +1455,7 @@ export default function SubscriptionPage() {
                 </div>
               </div>
             </div>
-          ) : !isRealCaktoSubscription(salonData) ? (
+          ) : !isRealProviderSubscription(salonData) ? (
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-5 animate-fade-in">
               <div className="flex items-start gap-3">
                 <div className="p-2 bg-[#D4AF37]/10 rounded-lg text-[#D4AF37] shrink-0">
@@ -1504,7 +1494,7 @@ export default function SubscriptionPage() {
               {isLoadingRealSub ? (
                 <div className="rounded-2xl border border-zinc-800 bg-black/40 text-white p-12 flex flex-col items-center justify-center space-y-4">
                   <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
-                  <p className="text-xs text-zinc-400">Consultando status real da assinatura na API Cakto...</p>
+                  <p className="text-xs text-zinc-400">Consultando status real da assinatura na API Gateway de Pagamento...</p>
                 </div>
               ) : realSubError ? (
                 <div className="rounded-2xl border border-red-900/40 bg-red-950/10 text-white p-6 space-y-4">
@@ -1560,7 +1550,7 @@ export default function SubscriptionPage() {
                     <div className="flex items-start gap-2 bg-[#D4AF37]/5 border border-[#D4AF37]/10 p-3 rounded-lg text-xs text-zinc-400">
                       <Info className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
                       <p className="leading-relaxed">
-                        Como a sua mensalidade atual está paga, a escolha de um novo método <strong>não gera cobrança imediata</strong>. Nenhuma nova assinatura ou pedido de compra será gerado. Apenas a sua preferência para as próximas cobranças será programada na Cakto.
+                        Como a sua mensalidade atual está paga, a escolha de um novo método <strong>não gera cobrança imediata</strong>. Nenhuma nova assinatura ou pedido de compra será gerado. Apenas a sua preferência para as próximas cobranças será programada na Gateway de Pagamento.
                       </p>
                     </div>
                   </div>
@@ -1858,7 +1848,7 @@ export default function SubscriptionPage() {
                 <p className="text-xs text-zinc-500 mt-1">
                   {isManualActiveSubscription(salonData)
                     ? 'Configure as próximas mensalidades sem interromper o acesso atual.'
-                    : 'Inicie sua assinatura recorrente segura via Cakto.'}
+                    : 'Inicie sua assinatura recorrente segura via Gateway de Pagamento.'}
                 </p>
               </div>
               <button 
@@ -1879,20 +1869,25 @@ export default function SubscriptionPage() {
                   disabled={isManualActiveSubscription(salonData)}
                   className="bg-zinc-950 border border-zinc-800 text-white text-xs h-10 rounded-xl px-3 focus:outline-none focus:ring-1 focus:ring-[#D4AF37]"
                 >
-                  <option value="start">Start (R$ 197/mês)</option>
-                  {isFounderEligible && <option value="founder">Founder (Pioneiro) (R$ 297/mês)</option>}
-                  <option value="performance">Performance (R$ 397/mês)</option>
-                  <option value="network">Network (R$ 797/mês)</option>
-                  <option value="enterprise">Enterprise (R$ 1997/mês)</option>
+                  
+                  {plans.map((p) => {
+                    if (p.id === 'founder' && !isFounderEligible) return null;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (R$ {p.price}/mês)
+                      </option>
+                    );
+                  })}
+
                 </select>
               </div>
 
               <div className="p-3 bg-zinc-900/50 rounded-xl border border-zinc-800/80 space-y-1 text-[11px] text-zinc-400 leading-normal">
                 <p className="font-semibold text-white flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-green-400" /> Segurança de Pagamento</p>
-                <p>Nenhum dado financeiro ou de cartão é armazenado em nosso servidor. O processamento é realizado criptografado diretamente pela Cakto.</p>
+                <p>Nenhum dado financeiro ou de cartão é armazenado em nosso servidor. O processamento é realizado criptografado diretamente pela Gateway de Pagamento.</p>
               </div>
 
-              {salonData.caktoSubscriptionId && salonData.subscriptionStatus === 'active' && (
+              {salonData.providerSubscriptionId && salonData.subscriptionStatus === 'active' && (
                 <div className="p-3 bg-red-500/10 rounded-xl border border-red-500/20 space-y-1.5 text-[11px] text-red-400 leading-normal">
                   <p className="font-semibold text-white flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-red-400 font-bold" /> Alteração de Cartão / Plano
@@ -1916,7 +1911,7 @@ export default function SubscriptionPage() {
               <button 
                 type="button" 
                 onClick={handleActivate}
-                disabled={isActivating || (!!salonData.caktoSubscriptionId && salonData.subscriptionStatus === 'active')}
+                disabled={isActivating || (!!salonData.providerSubscriptionId && salonData.subscriptionStatus === 'active')}
                 className="bg-[#D4AF37] hover:bg-[#Bca032] text-black font-semibold rounded-xl flex items-center justify-center gap-2 px-5 h-10 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isActivating ? <Loader2 className="w-4 h-4 animate-spin" /> : (isManualActiveSubscription(salonData) ? 'Configurar próximas mensalidades' : 'Ir para Pagamento')}

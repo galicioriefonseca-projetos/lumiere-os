@@ -68,34 +68,14 @@ export interface Salon {
   updatedAt: number;
   deletedAt?: number;
   billingEmail?: string;
-  // Stripe & Billing properties (Active providers: manual_pix, cakto. Others are deprecated)
-  billingProvider?: 'manual' | 'manual_pix' | 'cakto' | 'stripe' | 'asaas' | 'mercadopago';
+  // Stripe & Billing properties (Active providers: manual_pix, asaas)
+  billingProvider?: 'manual' | 'manual_pix' | 'asaas';
   billingMode?: 'manual_pix' | 'recurring_card' | 'recurring_gateway' | 'one_time_gateway';
-  /** @deprecated Use Cakto instead */
-  stripeCustomerId?: string;
-  /** @deprecated Use Cakto instead */
-  stripeSubscriptionId?: string;
-  /** @deprecated Use Cakto instead */
-  stripeCheckoutSessionId?: string;
-  /** @deprecated Use Cakto instead */
-  stripePriceId?: string;
-  /** @deprecated Use Cakto instead */
-  mercadoPagoPreapprovalId?: string;
-  /** @deprecated Use Cakto instead */
-  asaasCustomerId?: string;
-  /** @deprecated Use Cakto instead */
-  asaasSubscriptionId?: string;
-  /** @deprecated Use Cakto instead */
-  asaasCheckoutUrl?: string;
-  /** @deprecated Use Cakto instead */
-  asaasLastPaymentId?: string;
-  /** @deprecated Use Cakto instead */
+  providerCustomerId?: string;
+  providerSubscriptionId?: string;
+  providerCheckoutUrl?: string;
+  providerLastPaymentId?: string;
   asaasLastEvent?: string;
-  caktoCustomerId?: string;
-  caktoSubscriptionId?: string;
-  caktoOrderId?: string;
-  caktoCheckoutUrl?: string;
-  caktoOfferId?: string;
   billingRequiresMigration?: boolean;
   homologationSubscriptionId?: string;
   homologationOrderId?: string;

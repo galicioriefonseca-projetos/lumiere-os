@@ -19,8 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const checks: Record<string, boolean | string> = {
     firebaseAdminConfigured: firebaseFormatValid,
-    caktoConfigured: Boolean(process.env.CAKTO_CLIENT_ID && process.env.CAKTO_CLIENT_SECRET),
-    webhookSecretConfigured: Boolean(process.env.CAKTO_WEBHOOK_SECRET),
+    asaasConfigured: Boolean(process.env.ASAAS_CLIENT_ID && process.env.ASAAS_CLIENT_SECRET),
+    webhookSecretConfigured: Boolean(process.env.ASAAS_WEBHOOK_SECRET),
   };
 
   const wantsDeepCheck = req.query.deep === "1";
@@ -46,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const requiredChecksOk =
     checks.firebaseAdminConfigured === true &&
-    checks.caktoConfigured === true &&
+    checks.asaasConfigured === true &&
     checks.webhookSecretConfigured === true &&
     checks.firebaseAdminConnectivity !== false;
 

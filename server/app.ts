@@ -1,15 +1,14 @@
 
-import caktoSettingsHandler from "./routes/cakto/settings.js";
-import caktoSyncProductsHandler from "./routes/cakto/sync-products.js";
-import caktoCreateCheckoutHandler from "./routes/cakto/create-checkout.js";
-import caktoWebhookHandler from "./routes/cakto/webhook.js";
-import caktoWebhookTestHandler from "./routes/cakto/webhook-test.js";
-import caktoSubscriptionStatusHandler from "./routes/cakto/subscription-status.js";
-import caktoRealSubscriptionHandler from "./routes/cakto/real-subscription.js";
-import caktoUpdatePaymentMethodHandler from "./routes/cakto/update-payment-method.js";
-import caktoChangePlanHandler from "./routes/cakto/change-plan.js";
 import resolveInviteHandler from "./routes/invites/resolve.js";
 import acceptInviteHandler from "./routes/invites/accept.js";
+import asaasSettingsHandler from "./routes/billing/settings.js";
+import asaasTestConnectionHandler from "./routes/billing/test-connection.js";
+import asaasCreateCheckoutHandler from "./routes/billing/create-checkout.js";
+import asaasWebhookHandler from "./routes/billing/webhook.js";
+import asaasChangePlanHandler from "./routes/billing/change-plan.js";
+import asaasUpdatePaymentMethodHandler from "./routes/billing/update-payment-method.js";
+import asaasRealSubscriptionHandler from "./routes/billing/real-subscription.js";
+import asaasSubscriptionStatusHandler from "./routes/billing/subscription-status.js";
 
 import express from "express";
 import path from "path";
@@ -138,177 +137,23 @@ export default app;
     return { authorized: false, reason: "Você não tem permissão para gerenciar o faturamento deste salão." };
   }
 
-  // ==========================================
-  // INTEGRAÇÃO DE BACKEND SEGURO CAKTO BILLING
-  // ==========================================
-
-  interface CaktoSettings {
-    productId: string;
-    startOfferId: string;
-    founderOfferId: string;
-    performanceOfferId: string;
-    networkOfferId: string;
-    enterpriseOfferId: string;
-    updatedAt?: number;
-  }
-
-  let cachedCaktoSettings: { data: CaktoSettings; expiresAt: number } | null = null;
-  const CAKTO_SETTINGS_CACHE_TTL = 5 * 60 * 1000; // Cache por 5 minutos para otimizar leituras no Firestore
-
-  async function getCaktoSettingsCached(): Promise<CaktoSettings> {
-    if (cachedCaktoSettings && cachedCaktoSettings.expiresAt > Date.now()) {
-      console.log("[Cakto Settings Cache] Utilizando configurações em cache do Firestore.");
-      return cachedCaktoSettings.data;
-    }
-
-    console.log("[Cakto Settings Cache] Sem cache válido. Buscando configurações diretamente do Firestore...");
-    try {
-      const adminDb = getAdminDb();
-      const docRef = adminDb.collection("settings").doc("cakto");
-      const docSnap = await docRef.get();
-
-      let settingsData: CaktoSettings = {
-        productId: "",
-        startOfferId: "",
-        founderOfferId: "",
-        performanceOfferId: "",
-        networkOfferId: "",
-        enterpriseOfferId: ""
-      };
-
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        settingsData = {
-          productId: data?.productId || "",
-          startOfferId: data?.startOfferId || "",
-          founderOfferId: data?.founderOfferId || "",
-          performanceOfferId: data?.performanceOfferId || "",
-          networkOfferId: data?.networkOfferId || "",
-          enterpriseOfferId: data?.enterpriseOfferId || "",
-          updatedAt: data?.updatedAt
-        };
-      }
-
-      cachedCaktoSettings = {
-        data: settingsData,
-        expiresAt: Date.now() + CAKTO_SETTINGS_CACHE_TTL
-      };
-
-      return settingsData;
-    } catch (err) {
-      console.error("[Cakto Settings Cache] Erro ao buscar dados do Firestore, retornando fallback vazio:", err);
-      return {
-        productId: "",
-        startOfferId: "",
-        founderOfferId: "",
-        performanceOfferId: "",
-        networkOfferId: "",
-        enterpriseOfferId: ""
-      };
-    }
-  }
-
-  function invalidateCaktoSettingsCache(newData?: CaktoSettings) {
-    if (newData) {
-      cachedCaktoSettings = {
-        data: newData,
-        expiresAt: Date.now() + CAKTO_SETTINGS_CACHE_TTL
-      };
-      console.log("[Cakto Settings Cache] Cache atualizado de forma síncrona com os novos dados gravados.");
-    } else {
-      cachedCaktoSettings = null;
-      console.log("[Cakto Settings Cache] Cache invalidado com sucesso.");
-    }
-  }
-
-  function getCaktoApiBaseUrl() {
-    const raw = process.env.CAKTO_API_URL || "https://api.cakto.com.br";
-    const url = new URL(raw);
-    return `${url.protocol}//${url.host}`;
-  }
-
-  let cachedCaktoToken: { token: string; expiresAt: number } | null = null;
-
-  async function getCaktoAccessToken(): Promise<string> {
-    const clientId = process.env.CAKTO_CLIENT_ID;
-    const clientSecret = process.env.CAKTO_CLIENT_SECRET;
-    const apiUrl = getCaktoApiBaseUrl();
-
-    // Secure Log - Never log actual values of clientId/clientSecret, only whether they exist
-    console.log("[Cakto API Secure Log] getCaktoAccessToken chamado.");
-    console.log(`[Cakto API Secure Log] CAKTO_API_URL: ${apiUrl}`);
-    console.log(`[Cakto API Secure Log] CAKTO_CLIENT_ID configurado: ${!!clientId}`);
-    console.log(`[Cakto API Secure Log] CAKTO_CLIENT_SECRET configurado: ${!!clientSecret}`);
-
-    if (!clientId || !clientSecret) {
-      throw new Error("CAKTO_CLIENT_ID ou CAKTO_CLIENT_SECRET não configurados no servidor.");
-    }
-
-    if (cachedCaktoToken && cachedCaktoToken.expiresAt > Date.now()) {
-      return cachedCaktoToken.token;
-    }
-
-    console.log("[Cakto API] Solicitando novo token de acesso OAuth2...");
-    const url = `${apiUrl}/public_api/token/`;
-
-    try {
-      console.log(`[Cakto API Secure Log] Obtendo token de ${url} via application/x-www-form-urlencoded...`);
-      const params = new URLSearchParams();
-      params.append("client_id", clientId);
-      params.append("client_secret", clientSecret);
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: params.toString(),
-      });
-
-      const responseStatus = response.status;
-      const text = await response.text();
-      const safeText = text
-        .replace(new RegExp(clientSecret, "g"), "[REDACTED_SECRET]")
-        .replace(new RegExp(clientId, "g"), "[REDACTED_CLIENT_ID]");
-
-      console.log(`[Cakto API Secure Log] URL: ${url} | Status: ${responseStatus} | Resposta: ${safeText}`);
-
-      if (response.ok) {
-        const data = JSON.parse(text);
-        if (data && data.access_token) {
-          const expiresIn = (data.expires_in || 3600) * 1000;
-          cachedCaktoToken = {
-            token: data.access_token,
-            expiresAt: Date.now() + expiresIn - 60000
-          };
-          console.log("[Cakto API] Token de acesso obtido com sucesso!");
-          return data.access_token;
-        }
-      }
-      throw new Error(`Status: ${responseStatus} | Resposta: ${safeText}`);
-    } catch (err: any) {
-      console.warn(`[Cakto API] Erro ao obter token para ${url}:`, err);
-      throw new Error(`Falha ao autenticar com a API Cakto (OAuth2). Detalhes: ${err.message}`);
-    }
-  }
 
   async function isPlatformAdminUser(user: any): Promise<boolean> {
     const adminDb = getAdminDb();
     return resolvePlatformAdmin(user, adminDb);
   }
 
-  // Endpoints para gerenciar configurações dinâmicas da Cakto no Firestore (Master Panel)
-  
-  app.get("/api/cakto/settings", (req, res) => caktoSettingsHandler(req as any, res as any));
-  app.post("/api/cakto/settings", (req, res) => caktoSettingsHandler(req as any, res as any));
-  app.post("/api/cakto/sync-products", (req, res) => caktoSyncProductsHandler(req as any, res as any));
-  app.post("/api/cakto/create-checkout", (req, res) => caktoCreateCheckoutHandler(req as any, res as any));
-  app.post("/api/cakto/webhook", (req, res) => caktoWebhookHandler(req as any, res as any));
-  app.post("/api/cakto/webhook-test", (req, res) => caktoWebhookTestHandler(req as any, res as any));
-  app.get("/api/cakto/subscription-status", (req, res) => caktoSubscriptionStatusHandler(req as any, res as any));
-  app.get("/api/cakto/real-subscription", (req, res) => caktoRealSubscriptionHandler(req as any, res as any));
-  app.post("/api/cakto/update-payment-method", (req, res) => caktoUpdatePaymentMethodHandler(req as any, res as any));
-  app.post("/api/cakto/change-plan", (req, res) => caktoChangePlanHandler(req as any, res as any));
+  // Billing / Asaas endpoints
+  app.get("/api/billing/settings", (req, res) => asaasSettingsHandler(req as any, res as any));
+  app.post("/api/billing/settings", (req, res) => asaasSettingsHandler(req as any, res as any));
+  app.post("/api/billing/test-connection", (req, res) => asaasTestConnectionHandler(req as any, res as any));
+  app.post("/api/billing/create-checkout", (req, res) => asaasCreateCheckoutHandler(req as any, res as any));
+  app.post("/api/billing/webhook", (req, res) => asaasWebhookHandler(req as any, res as any));
+  app.post("/api/billing/change-plan", (req, res) => asaasChangePlanHandler(req as any, res as any));
+  app.post("/api/billing/update-payment-method", (req, res) => asaasUpdatePaymentMethodHandler(req as any, res as any));
+  app.get("/api/billing/real-subscription", (req, res) => asaasRealSubscriptionHandler(req as any, res as any));
+  app.get("/api/billing/subscription-status", (req, res) => asaasSubscriptionStatusHandler(req as any, res as any));
+
   app.get("/api/invites/resolve", (req, res) => resolveInviteHandler(req as any, res as any));
   app.post("/api/invites/accept", (req, res) => acceptInviteHandler(req as any, res as any));
 

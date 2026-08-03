@@ -172,6 +172,12 @@ service cloud.firestore {
     }
 
     // Users collection
+    // Plans (Public read)
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isPlatformAdmin();
+    }
+
     match /users/{userId} {
       allow get: if isOwnerOfUser(userId) || isPlatformAdmin();
       allow list: if isPlatformAdmin() || (
@@ -309,7 +315,7 @@ service cloud.firestore {
 
     // Subscriptions (Mercado Pago)
     match /salons/{salonId}/subscriptions/{subscriptionId} {
-      allow read: if canManageSalon(salonId) || canManageBilling(salonId);
+      allow read: if canManageSalon(salonId);
       allow write: if isPlatformAdmin();
     }
 

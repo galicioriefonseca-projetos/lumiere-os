@@ -18,7 +18,7 @@ import DashboardLayout from './components/layouts/DashboardLayout';
 import OnboardingLayout from './components/layouts/OnboardingLayout';
 
 // Heavy pages (lazy loaded)
-const DashboardHome = React.lazy(() => import('./pages/dashboard/DashboardHome'));
+import DashboardHome from './pages/dashboard/DashboardHome';
 const ProfessionalsPage = React.lazy(() => import('./pages/dashboard/ProfessionalsPage'));
 const ServicesPage = React.lazy(() => import('./pages/dashboard/ServicesPage'));
 const CategoriesPage = React.lazy(() => import('./pages/dashboard/CategoriesPage'));

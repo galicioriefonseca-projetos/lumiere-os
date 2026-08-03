@@ -30,7 +30,7 @@ export function DashboardTopbar({
   
   const getStatusText = () => {
     if (isPlatformAdmin) return 'ativo';
-    if (salonData?.subscriptionStatus === 'preview') return 'Garantia de 7 dias pela Cakto';
+    if (salonData?.subscriptionStatus === 'preview') return 'Garantia de 7 dias pela Asaas';
     if (salonData?.subscriptionStatus === 'active') return 'ativo';
     return 'pendente';
   };

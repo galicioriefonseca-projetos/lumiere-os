@@ -145,7 +145,7 @@ export default function LandingPage() {
               className="flex justify-center items-center gap-2 pt-4 text-xs text-zinc-500 font-light"
             >
               <ShieldCheck className="w-4 h-4 text-primary" />
-              <span>Garantia de 7 dias com intermediação segura pela Cakto</span>
+              <span>Garantia de 7 dias com intermediação segura pela Asaas</span>
             </motion.div>
           </div>
         </section>
@@ -351,7 +351,7 @@ export default function LandingPage() {
                           <span className="text-[10px] uppercase font-bold tracking-widest text-primary">Controle Contábil</span>
                           <h4 className="text-xl font-heading text-white font-medium">Conciliação Automática de Comissões</h4>
                         </div>
-                        <span className="text-xs text-primary font-mono font-medium">Bandeira: Cakto Gateway</span>
+                        <span className="text-xs text-primary font-mono font-medium">Bandeira: Asaas Gateway</span>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -390,7 +390,7 @@ export default function LandingPage() {
                             </div>
                             <div className="flex justify-between">
                               <span className="text-zinc-400 font-light">Intermediador:</span>
-                              <span className="text-white font-light">Cakto Tecnologia S.A.</span>
+                              <span className="text-white font-light">Asaas Tecnologia S.A.</span>
                             </div>
                           </div>
                           <div className="text-[10px] text-zinc-500 font-light leading-relaxed border-t border-white/5 pt-2">
@@ -650,9 +650,9 @@ export default function LandingPage() {
               </div>
               <div className="p-8 rounded-3xl bg-zinc-900/40 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
                 <div className="text-3xl font-heading text-primary font-light">03</div>
-                <h3 className="text-lg font-heading text-white">Garantia Cakto</h3>
+                <h3 className="text-lg font-heading text-white">Garantia Asaas</h3>
                 <p className="text-xs text-zinc-400 font-light leading-relaxed">
-                  Inicie com garantia incondicional de faturamento de 7 dias operada pela Cakto: satisfação garantida ou devolução total.
+                  Inicie com garantia incondicional de faturamento de 7 dias operada pela Asaas: satisfação garantida ou devolução total.
                 </p>
               </div>
             </div>
@@ -792,7 +792,7 @@ export default function LandingPage() {
                 <li><span className="hover:text-primary transition-colors cursor-pointer">Termos de Uso</span></li>
                 <li><span className="hover:text-primary transition-colors cursor-pointer">Política de Privacidade</span></li>
                 <li><span className="hover:text-primary transition-colors cursor-pointer">Acordo de Licenciamento</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Políticas da Cakto</span></li>
+                <li><span className="hover:text-primary transition-colors cursor-pointer">Políticas da Asaas</span></li>
               </ul>
             </div>
 

@@ -122,7 +122,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
     return <Navigate to="/master" replace />;
   }
 
-  // Usuário cadastrado mas ainda sem pagamento confirmado pela Cakto:
+  // Usuário cadastrado mas ainda sem pagamento confirmado pela Asaas:
   // manda para a tela de espera em vez de cair na tela de "Configuração Inválida".
   if ((role as string) === 'pending') {
     if (location.pathname !== '/aguardando-pagamento') {

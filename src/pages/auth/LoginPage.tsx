@@ -835,7 +835,7 @@ export default function LoginPage() {
                         </div>
                         
                         <p className="text-[10px] text-neutral-500 font-mono tracking-wide uppercase">
-                          Garantia de 7 dias pela Cakto • Link Seguro
+                          Garantia de 7 dias pela Asaas • Link Seguro
                         </p>
                       </div>
 

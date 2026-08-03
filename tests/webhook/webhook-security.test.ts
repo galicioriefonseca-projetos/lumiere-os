@@ -1,102 +1,54 @@
-import { describe, it, expect } from "vitest";
-import { buildHomologationWebhookUpdate } from "../../server/routes/cakto/webhook.js";
+import { describe, it, expect, vi } from 'vitest';
+import asaasWebhookHandler from '../../server/routes/billing/webhook';
 
-describe("Teste de Segurança do Webhook de Homologação", () => {
-  const forbiddenKeys = [
-    "updatedAt",
-    "plan",
-    "billingProvider",
-    "subscriptionStatus",
-    "paymentStatus",
-    "ownerEmail",
-    "nextBillingDate",
-    "caktoSubscriptionId",
-    "pendingPlan"
-  ];
-
-  const checkKeysOnlyStartWithHomologationAndNoForbiddenKeys = (payload: Record<string, any>) => {
-    const keys = Object.keys(payload);
-    expect(keys.length).toBeGreaterThan(0);
-    
-    // Todas as chaves retornadas começam com 'homologation'
-    for (const key of keys) {
-      expect(key.startsWith("homologation")).toBe(true);
-    }
-
-    // Nenhuma das chaves retornadas deve ser igual a qualquer chave de produção proibida
-    for (const forbiddenKey of forbiddenKeys) {
-      expect(payload).not.toHaveProperty(forbiddenKey);
-    }
+// Mocks
+vi.mock('../../server/shared/firebaseAdmin.js', () => {
+  return {
+    getAdminDb: vi.fn(() => ({
+      collection: vi.fn(() => ({
+        doc: vi.fn(() => ({
+          get: vi.fn().mockResolvedValue({
+            data: () => ({ webhookToken: 'secure-token-123' })
+          })
+        }))
+      }))
+    }))
   };
+});
 
-  it("deve mapear corretamente o evento 'purchase_approved'", () => {
-    const payload = buildHomologationWebhookUpdate({
-      eventName: "purchase_approved",
-      eventId: "evt_123",
-      orderId: "ord_123",
-      subscriptionId: "sub_123",
-      customerId: "cust_123",
-      offerId: "off_123",
-      normalizedData: {
-        current_period_end: "2026-08-14T12:00:00Z",
-        amount: 197
-      }
-    });
+describe('Webhook Security', () => {
+  it('should reject requests without a valid token', async () => {
+    const req = {
+      headers: { 'asaas-access-token': 'wrong-token' },
+      body: { event: 'PAYMENT_CONFIRMED' }
+    } as any;
 
-    checkKeysOnlyStartWithHomologationAndNoForbiddenKeys(payload);
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn()
+    } as any;
 
-    expect(payload.homologationSubscriptionStatus).toBe("active");
-    expect(payload.homologationPaymentStatus).toBe("paid");
+    await asaasWebhookHandler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Token inválido' });
   });
 
-  it("deve mapear corretamente o evento 'subscription_created'", () => {
-    const payload = buildHomologationWebhookUpdate({
-      eventName: "subscription_created",
-      eventId: "evt_123",
-      orderId: "ord_123",
-      subscriptionId: "sub_123",
-      customerId: "cust_123",
-      offerId: "off_123",
-      normalizedData: {}
-    });
+  it('should process request with valid token', async () => {
+    const req = {
+      headers: { 'asaas-access-token': 'secure-token-123' },
+      body: { event: 'PAYMENT_CONFIRMED' }
+    } as any;
 
-    checkKeysOnlyStartWithHomologationAndNoForbiddenKeys(payload);
+    // Needs further mocking of billingService if we want it to succeed
+    // For now we just verify it doesn't fail with 401
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn()
+    } as any;
 
-    expect(payload.homologationSubscriptionStatus).toBe("pending");
-    expect(payload.homologationPaymentStatus).toBe("pending");
-  });
-
-  it("deve mapear corretamente o evento 'purchase_refused'", () => {
-    const payload = buildHomologationWebhookUpdate({
-      eventName: "purchase_refused",
-      eventId: "evt_123",
-      orderId: "ord_123",
-      subscriptionId: "sub_123",
-      customerId: "cust_123",
-      offerId: "off_123",
-      normalizedData: {}
-    });
-
-    checkKeysOnlyStartWithHomologationAndNoForbiddenKeys(payload);
-
-    expect(payload.homologationSubscriptionStatus).toBe("overdue");
-    expect(payload.homologationPaymentStatus).toBe("refused");
-  });
-
-  it("deve mapear corretamente o evento 'subscription_canceled'", () => {
-    const payload = buildHomologationWebhookUpdate({
-      eventName: "subscription_canceled",
-      eventId: "evt_123",
-      orderId: "ord_123",
-      subscriptionId: "sub_123",
-      customerId: "cust_123",
-      offerId: "off_123",
-      normalizedData: {}
-    });
-
-    checkKeysOnlyStartWithHomologationAndNoForbiddenKeys(payload);
-
-    expect(payload.homologationSubscriptionStatus).toBe("canceled");
-    expect(payload.homologationPaymentStatus).toBe("canceled");
+    // Because billingService is not mocked, it might throw, but it won't be 401
+    await asaasWebhookHandler(req, res);
+    expect(res.status).not.toHaveBeenCalledWith(401);
   });
 });

@@ -241,7 +241,7 @@ export default function RegisterPage() {
       const salonId = `salon_${firebaseUser.uid}`;
       const idToken = await firebaseUser.getIdToken(true);
 
-      const response = await fetch('/api/cakto/create-checkout', {
+      const response = await fetch('/api/billing/create-checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -271,7 +271,7 @@ export default function RegisterPage() {
         throw new Error('URL de checkout inválida retornada pelo servidor.');
       }
 
-      toast.success('Conta criada. Redirecionando para o checkout seguro da Cakto...');
+      toast.success('Conta criada. Redirecionando para o checkout seguro da Asaas...');
       window.location.assign(result.checkoutUrl);
     } catch (error: any) {
       console.error('[RegisterPage] Falha no cadastro/checkout:', error);
@@ -307,7 +307,7 @@ export default function RegisterPage() {
             Diagnóstico Estratégico LumièreOS
           </h2>
           <p className="text-sm text-zinc-400 max-w-lg mx-auto font-light leading-relaxed">
-            Avalie a eficiência operacional de sua empresa de beleza. Nosso algoritmo analisará sua estrutura para propor a arquitetura perfeita com garantia de 7 dias pela Cakto.
+            Avalie a eficiência operacional de sua empresa de beleza. Nosso algoritmo analisará sua estrutura para propor a arquitetura perfeita com garantia de 7 dias pela Asaas.
           </p>
         </div>
       </div>
@@ -712,14 +712,14 @@ export default function RegisterPage() {
                   </ul>
                 </div>
 
-                {/* Security and Cakto Guarantee stamp */}
+                {/* Security and Asaas Guarantee stamp */}
                 <div className="pt-4 border-t border-primary/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-primary">
                   <div className="flex items-center gap-1.5 font-medium">
                     <ShieldCheck className="w-4 h-4" />
                     <span>Transação 100% Protegida & Criptografada</span>
                   </div>
                   <span className="font-mono text-[9px] bg-primary/10 text-primary px-3 py-1 rounded border border-primary/20 uppercase tracking-wider">
-                    GARANTIA DE 7 DIAS PELA CAKTO
+                    GARANTIA DE 7 DIAS PELA ASAAS
                   </span>
                 </div>
               </div>
@@ -727,7 +727,7 @@ export default function RegisterPage() {
               {/* Botão de Confirmação & Ativação */}
               <div className="space-y-4 pt-2">
                 <p className="text-[11px] text-zinc-500 text-center leading-relaxed">
-                  A forma de pagamento é escolhida diretamente no checkout hospedado da Cakto. O LumièreOS não recebe nem armazena dados sensíveis de pagamento.
+                  A forma de pagamento é escolhida diretamente no checkout hospedado da Asaas. O LumièreOS não recebe nem armazena dados sensíveis de pagamento.
                 </p>
                 <Button
                   type="button"

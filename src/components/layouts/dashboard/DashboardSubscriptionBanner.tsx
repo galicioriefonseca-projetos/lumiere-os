@@ -33,10 +33,10 @@ export function DashboardSubscriptionBanner({
           <AlertTriangle className="w-5 h-5 text-[#D4AF37] mt-0.5 shrink-0 animate-pulse" />
           <div className="space-y-1">
             <span className="font-semibold text-sm text-[#D4AF37] block">
-              Garantia de 7 dias pela Cakto • Plano {plan}
+              Garantia de 7 dias pela Asaas • Plano {plan}
             </span>
             <span className="text-xs text-zinc-300 leading-relaxed font-light block">
-              Sua conta piloto premium está ativa com suporte total. Aproveite a segurança da <strong>Garantia de 7 dias pela Cakto</strong> ou realize o upgrade definitivo. Ativação automática após confirmação do pagamento.
+              Sua conta piloto premium está ativa com suporte total. Aproveite a segurança da <strong>Garantia de 7 dias pela Asaas</strong> ou realize o upgrade definitivo. Ativação automática após confirmação do pagamento.
             </span>
           </div>
         </div>
@@ -58,7 +58,7 @@ export function DashboardSubscriptionBanner({
             Ativação após confirmação do pagamento
           </h4>
           <p className="text-xs text-slate-300 leading-relaxed font-light">
-            Seu salão está operando com Garantia de 7 dias pela Cakto. Adquira acesso vitalício ou mensal contínuo.
+            Seu salão está operando com Garantia de 7 dias pela Asaas. Adquira acesso vitalício ou mensal contínuo.
           </p>
         </div>
         <Button 

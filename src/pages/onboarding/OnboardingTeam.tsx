@@ -9,11 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { PROFESSIONAL_SPECIALTIES } from '../../data/professionalSpecialties';
-import { PLANS_CONFIG } from '../../config/plans';
+import { usePlans } from '../../hooks/usePlans';
 import { toast } from 'sonner';
 import { Loader2, UserPlus, Trash2, Edit2, Phone, Mail, Sparkles, UserCheck, Scissors } from 'lucide-react';
 
 export default function OnboardingTeam() {
+  const { getPlan } = usePlans();
+
   const { salonData } = useAuth();
   const navigate = useNavigate();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -77,8 +79,8 @@ export default function OnboardingTeam() {
 
     // Verificar se atingiu o limite de profissionais permitido pelo plano
     const currentPlan = salonData.plan || 'start';
-    const planConfig = PLANS_CONFIG[currentPlan as PlanType] || PLANS_CONFIG.start;
-    const maxProfessionals = planConfig.maxProfessionals;
+    const planConfig = getPlan(currentPlan);
+    const maxProfessionals = planConfig?.maxProfessionals || 5;
 
     if (!editingProf && professionals.length >= maxProfessionals) {
       toast.error(`Seu plano atual (${planConfig.name}) permite cadastrar no máximo ${maxProfessionals} profissionais. Faça um upgrade ou remova algum para continuar.`);
