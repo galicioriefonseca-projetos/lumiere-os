@@ -1,23 +1,64 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
+import { verifyIdToken, resolvePlatformAdmin } from '../../shared/auth.js';
 
 export default async function asaasSettingsHandler(req: VercelRequest, res: VercelResponse) {
   try {
     const adminDb = getAdminDb();
     
     if (req.method === 'GET') {
+      let decodedToken;
+      try {
+        decodedToken = await verifyIdToken(req);
+      } catch (err: any) {
+        return res.status(401).json({ error: err.message || 'Não autorizado' });
+      }
+
+      const isPlatformAdmin = await resolvePlatformAdmin(decodedToken, adminDb);
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ error: 'Acesso negado: apenas administradores da plataforma podem ler estas configurações.' });
+      }
+
       const doc = await adminDb.collection('settings').doc('asaas').get();
       if (!doc.exists) {
         return res.status(200).json({
           mode: 'sandbox',
-          apiKey: '',
-          webhookToken: ''
+          productId: '',
+          startOfferId: '',
+          founderOfferId: '',
+          performanceOfferId: '',
+          networkOfferId: '',
+          enterpriseOfferId: ''
         });
       }
-      return res.status(200).json(doc.data());
+      
+      const data = doc.data() || {};
+      
+      // Selectively return public fields
+      return res.status(200).json({
+          mode: data.mode || 'sandbox',
+          productId: data.productId || '',
+          startOfferId: data.startOfferId || '',
+          founderOfferId: data.founderOfferId || '',
+          performanceOfferId: data.performanceOfferId || '',
+          networkOfferId: data.networkOfferId || '',
+          enterpriseOfferId: data.enterpriseOfferId || ''
+      });
     }
 
     if (req.method === 'POST') {
+      let decodedToken;
+      try {
+        decodedToken = await verifyIdToken(req);
+      } catch (err: any) {
+        return res.status(401).json({ error: err.message || 'Não autorizado' });
+      }
+
+      const isPlatformAdmin = await resolvePlatformAdmin(decodedToken, adminDb);
+      if (!isPlatformAdmin) {
+        return res.status(403).json({ error: 'Acesso negado: apenas administradores da plataforma podem alterar as configurações.' });
+      }
+
       const { action } = req.body;
       if (action === 'seed') {
         const plans = [
@@ -35,14 +76,38 @@ export default async function asaasSettingsHandler(req: VercelRequest, res: Verc
         await batch.commit();
         return res.status(200).json({ success: true, message: 'Plans seeded' });
       }
-
-      const { mode, apiKey, webhookToken } = req.body;
-      await adminDb.collection('settings').doc('asaas').set({
-        mode,
-        apiKey,
+      
+      const { 
+        mode, 
+        apiKey, 
         webhookToken,
+        productId,
+        startOfferId,
+        founderOfferId,
+        performanceOfferId,
+        networkOfferId,
+        enterpriseOfferId
+      } = req.body;
+      
+      const updateData: any = {
+        mode,
         updatedAt: Date.now()
-      });
+      };
+      
+      // Update secrets only if provided
+      if (apiKey && apiKey.trim() !== '') updateData.apiKey = apiKey;
+      if (webhookToken && webhookToken.trim() !== '') updateData.webhookToken = webhookToken;
+      
+      // Update IDs if provided
+      if (productId !== undefined) updateData.productId = productId;
+      if (startOfferId !== undefined) updateData.startOfferId = startOfferId;
+      if (founderOfferId !== undefined) updateData.founderOfferId = founderOfferId;
+      if (performanceOfferId !== undefined) updateData.performanceOfferId = performanceOfferId;
+      if (networkOfferId !== undefined) updateData.networkOfferId = networkOfferId;
+      if (enterpriseOfferId !== undefined) updateData.enterpriseOfferId = enterpriseOfferId;
+      
+      await adminDb.collection('settings').doc('asaas').set(updateData, { merge: true });
+
       return res.status(200).json({ message: 'Configurações salvas' });
     }
 
