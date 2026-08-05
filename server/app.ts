@@ -23,12 +23,16 @@ dotenv.config();
 
 console.log("[Lumière Server] Iniciando...");
 import { env } from "./config/env.js";
+import { publicLimiter, authLimiter, billingLimiter, aiLimiter, adminLimiter } from "./middleware/rateLimiter.js";
 
 console.log("[Lumière Server] NODE_ENV:", env.app.env);
 
 
 
 const app = express();
+
+// Trust Vercel Proxy to get the real client IP
+app.set("trust proxy", 1);
 
 export default app;
 
@@ -52,7 +56,7 @@ export default app;
   });
 
   // Rota de Health Check
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", publicLimiter, (req, res) => {
     res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });
   });
 
@@ -147,20 +151,20 @@ export default app;
   }
 
   // Billing / Asaas endpoints
-  app.get("/api/billing/settings", (req, res) => asaasSettingsHandler(req as any, res as any));
-  app.post("/api/billing/settings", (req, res) => asaasSettingsHandler(req as any, res as any));
-  app.post("/api/billing/test-connection", (req, res) => asaasTestConnectionHandler(req as any, res as any));
-  app.post("/api/billing/create-checkout", (req, res) => asaasCreateCheckoutHandler(req as any, res as any));
+  app.get("/api/billing/settings", adminLimiter, (req, res) => asaasSettingsHandler(req as any, res as any));
+  app.post("/api/billing/settings", adminLimiter, (req, res) => asaasSettingsHandler(req as any, res as any));
+  app.post("/api/billing/test-connection", adminLimiter, (req, res) => asaasTestConnectionHandler(req as any, res as any));
+  app.post("/api/billing/create-checkout", billingLimiter, (req, res) => asaasCreateCheckoutHandler(req as any, res as any));
   app.post("/api/billing/webhook", (req, res) => asaasWebhookHandler(req as any, res as any));
-  app.post("/api/billing/change-plan", (req, res) => asaasChangePlanHandler(req as any, res as any));
-  app.post("/api/billing/update-payment-method", (req, res) => asaasUpdatePaymentMethodHandler(req as any, res as any));
-  app.get("/api/billing/real-subscription", (req, res) => asaasRealSubscriptionHandler(req as any, res as any));
-  app.get("/api/billing/subscription-status", (req, res) => asaasSubscriptionStatusHandler(req as any, res as any));
+  app.post("/api/billing/change-plan", billingLimiter, (req, res) => asaasChangePlanHandler(req as any, res as any));
+  app.post("/api/billing/update-payment-method", billingLimiter, (req, res) => asaasUpdatePaymentMethodHandler(req as any, res as any));
+  app.get("/api/billing/real-subscription", billingLimiter, (req, res) => asaasRealSubscriptionHandler(req as any, res as any));
+  app.get("/api/billing/subscription-status", billingLimiter, (req, res) => asaasSubscriptionStatusHandler(req as any, res as any));
 
-  app.get("/api/invites/resolve", (req, res) => resolveInviteHandler(req as any, res as any));
-  app.post("/api/invites/accept", (req, res) => acceptInviteHandler(req as any, res as any));
+  app.get("/api/invites/resolve", publicLimiter, (req, res) => resolveInviteHandler(req as any, res as any));
+  app.post("/api/invites/accept", publicLimiter, (req, res) => acceptInviteHandler(req as any, res as any));
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
       if (!email || !password) {
@@ -229,7 +233,7 @@ export default app;
   });
 
   // Rota de envio de Notificações Push via Firebase Cloud Messaging para Profissionais
-  app.post("/api/send-appointment-push", async (req, res) => {
+  app.post("/api/send-appointment-push", adminLimiter, async (req, res) => {
     try {
       const { salonId, appointmentId, professionalId, clientName, serviceName, date, time, action } = req.body;
       
@@ -380,7 +384,7 @@ export default app;
   }
 
   // API Route para o Gemini Insights (Mantendo funcionalidades existentes do LumièreOS)
-  app.post("/api/gemini-insight", async (req, res) => {
+  app.post("/api/gemini-insight", aiLimiter, async (req, res) => {
     try {
       const {
         salonName,
@@ -435,7 +439,7 @@ Use sempre o tom em português (do Brasil). Não use saudações introdutórias 
   });
 
   // API Route para o Gemini Insights de Equipe
-  app.post("/api/gemini-team-insight", async (req, res) => {
+  app.post("/api/gemini-team-insight", aiLimiter, async (req, res) => {
     try {
       const {
         salonName,
@@ -486,7 +490,7 @@ Use tom em português (do Brasil). Vá direto para a análise executiva.`;
   });
 
   // API Route para o Parser de Catálogos de Serviço e Produtos em PDF com IA
-  app.post("/api/parse-catalog-pdf", async (req, res) => {
+  app.post("/api/parse-catalog-pdf", aiLimiter, async (req, res) => {
     try {
       const { pdfBase64, salonName } = req.body;
       if (!pdfBase64) {
@@ -570,7 +574,7 @@ Retorne estritamente o JSON estruturado em conformidade com o schema.`
   });
 
   // API Route para o Chatbot Inteligente Lumière AI
-  app.post("/api/gemini-chat", async (req, res) => {
+  app.post("/api/gemini-chat", aiLimiter, async (req, res) => {
     try {
       const {
         message,

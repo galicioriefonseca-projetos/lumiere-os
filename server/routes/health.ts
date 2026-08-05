@@ -1,4 +1,4 @@
-import { env } from "../../config/env.js";
+import { env } from "../config/env.js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb, getFirebaseAdminCredentialConfig, isFirebaseAdminCredentialError } from "../shared/firebaseAdmin.js";
 
