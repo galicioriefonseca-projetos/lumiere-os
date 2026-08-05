@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 /**
  * Serviço mínimo de e-mail transacional.
  *
@@ -21,8 +22,8 @@ interface SendEmailParams {
 }
 
 export async function sendEmail({ to, subject, html }: SendEmailParams): Promise<{ sent: boolean; reason?: string }> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'LumièreOS <onboarding@resend.dev>';
+  const apiKey = env.resend.apiKey;
+  const from = env.app.emailFrom || 'LumièreOS <onboarding@resend.dev>';
 
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY não configurada — e-mail NÃO enviado. Destinatário:', to, 'Assunto:', subject);
@@ -64,7 +65,7 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
  * try/catch (ou já é seguro internamente, veja sendEmail acima).
  */
 export async function sendActivationEmail(params: { to: string; ownerName?: string; salonName?: string; plan?: string }) {
-  const appUrl = (process.env.APP_URL || 'https://app.lumiereos.com.br').replace(/\/+$/, '');
+  const appUrl = (env.app.url || 'https://app.lumiereos.com.br').replace(/\/+$/, '');
   const loginUrl = `${appUrl}/login?email=${encodeURIComponent(params.to)}&welcome=1`;
   const greetingName = params.ownerName ? params.ownerName.split(' ')[0] : 'tudo bem';
 

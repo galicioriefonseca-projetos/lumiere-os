@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { getAdminDb } from '../shared/firebaseAdmin.js';
 import { asaasProvider } from './AsaasProvider.js';
 import { Plan, PaymentMethod, Customer, Subscription } from './types.js';
@@ -18,8 +19,8 @@ export class BillingService {
     if (!doc.exists || !doc.data()?.apiKey) {
       const defaultSettings: BillingSettings = {
         mode: 'sandbox',
-        apiKey: '$aact_YTU5YTE0M2M2N2I4MTliNDQ4Njk5ZjVlOWRmYmJhZGM6Ojk1YTUxYzg5LTYyMTktNDcxNi05MmQwLTBmNTIyMjA2MDc4Yjo6NzQxOTI=',
-        webhookToken: 'mock_token',
+        apiKey: env.asaas.apiKey || '',
+        webhookToken: env.asaas.webhookToken || '',
         updatedAt: Date.now()
       };
       try {

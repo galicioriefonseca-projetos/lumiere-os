@@ -121,7 +121,7 @@ export async function createActivationToken(email: string, salonId: string): Pro
       createdAt: now,
       expiresAt
     });
-    console.log('[LumièreAuth] Created activation token:', token);
+    console.log('[LumièreAuth] Created activation token.');
     return token;
   } catch (error) {
     console.error('[LumièreAuth] Error creating activation token:', error);
@@ -140,19 +140,19 @@ export async function validateActivationToken(token: string): Promise<{ email: s
     const snap = await getDoc(tokenRef);
     
     if (!snap.exists()) {
-      console.warn('[LumièreAuth] Token does not exist:', token);
+      console.warn('[LumièreAuth] Token does not exist.');
       return null;
     }
     
     const data = snap.data();
     
     if (data.used) {
-      console.warn('[LumièreAuth] Token already used:', token);
+      console.warn('[LumièreAuth] Token already used.');
       return null;
     }
     
     if (data.expiresAt < Date.now()) {
-      console.warn('[LumièreAuth] Token expired:', token);
+      console.warn('[LumièreAuth] Token expired.');
       return null;
     }
     
@@ -176,7 +176,7 @@ export async function markActivationTokenUsed(token: string): Promise<void> {
       used: true,
       usedAt: Date.now()
     });
-    console.log('[LumièreAuth] Marked token as used:', token);
+    console.log('[LumièreAuth] Marked token as used.');
   } catch (error) {
     console.warn('[LumièreAuth] Failed to mark token as used:', error);
   }

@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { initializeApp, getApps, cert, App } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
@@ -63,7 +64,7 @@ const validateCredentialConfig = (config: FirebaseServiceAccountConfig): Firebas
     throw new FirebaseAdminConfigurationError("FIREBASE_PRIVATE_KEY não possui os marcadores esperados.");
   }
 
-  const expectedProjectId = process.env.FIREBASE_EXPECTED_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
+  const expectedProjectId = env.firebase.expectedProjectId || "";
   if (expectedProjectId && expectedProjectId.trim() !== config.projectId.trim()) {
     throw new FirebaseAdminConfigurationError(
       "O projeto da conta de serviço não corresponde ao projeto Firebase configurado no aplicativo."
@@ -79,7 +80,7 @@ const validateCredentialConfig = (config: FirebaseServiceAccountConfig): Firebas
 };
 
 export const getFirebaseAdminCredentialConfig = (): FirebaseServiceAccountConfig => {
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const serviceAccountJson = env.firebase.serviceAccountJson;
 
   if (serviceAccountJson?.trim()) {
     const parsed = decodeServiceAccountJson(serviceAccountJson);
@@ -92,9 +93,9 @@ export const getFirebaseAdminCredentialConfig = (): FirebaseServiceAccountConfig
   }
 
   return validateCredentialConfig({
-    projectId: process.env.FIREBASE_PROJECT_ID || "",
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
-    privateKey: process.env.FIREBASE_PRIVATE_KEY || "",
+    projectId: env.firebase.projectId || "",
+    clientEmail: env.firebase.clientEmail || "",
+    privateKey: env.firebase.privateKey || "",
     source: "split_env",
   });
 };

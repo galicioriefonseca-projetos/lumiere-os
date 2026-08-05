@@ -22,7 +22,10 @@ import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging } from ".
 dotenv.config();
 
 console.log("[Lumière Server] Iniciando...");
-console.log("[Lumière Server] NODE_ENV:", process.env.NODE_ENV);
+import { env } from "./config/env.js";
+
+console.log("[Lumière Server] NODE_ENV:", env.app.env);
+
 
 
 const app = express();
@@ -84,7 +87,7 @@ export default app;
     }
 
     // 4. Fallback PLATFORM_ADMIN_EMAIL (sem VITE_*)
-    const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL;
+    const platformAdminEmail = env.app.platformAdminEmail;
     if (user.email && platformAdminEmail && user.email === platformAdminEmail) {
       return true;
     }
@@ -164,7 +167,7 @@ export default app;
         return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
       }
 
-      const apiKey = process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY;
+      const apiKey = env.firebase.apiKey;
       if (!apiKey) {
         return res.status(500).json({ error: "Chave de acesso do Firebase não configurada no servidor." });
       }
@@ -188,8 +191,8 @@ export default app;
       const data = await response.json();
 
       if (!response.ok) {
-        console.warn("[PlatformAuthProxy] Erro ao autenticar via REST API:", data);
         const errMessage = data?.error?.message || "Erro desconhecido na autenticação.";
+        console.warn("[PlatformAuthProxy] Erro ao autenticar via REST API:", errMessage);
         
         // Mapeamento idêntico aos códigos de erro convencionais do Firebase Auth para continuidade de UX
         let code = "auth/unknown";
@@ -309,7 +312,7 @@ export default app;
             }
           }
         }).catch((err: any) => {
-          console.warn(`[Push Notification Backend] Falha ao disparar para o token ${token.substring(0, 8)}...:`, err);
+          console.warn(`[Push Notification Backend] Falha ao disparar para um token:`, err);
           return null;
         })
       );
@@ -390,7 +393,7 @@ export default app;
         professionalsCount,
       } = req.body;
 
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = env.gemini.apiKey;
       if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
         return res.json({ 
           text: "Inteligência Artificial Pausada: Por favor, adicione sua própria 'GEMINI_API_KEY' nas configurações (Settings) e reinicie o servidor para habilitar os insights gerados por IA."
@@ -442,7 +445,7 @@ Use sempre o tom em português (do Brasil). Não use saudações introdutórias 
         recentEvaluations
       } = req.body;
 
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = env.gemini.apiKey;
       if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
          return res.json({ 
           text: "Inteligência Artificial Pausada: O serviço de mentoria inteligente de equipe requer a configuração de uma 'GEMINI_API_KEY' válida nas configurações (Settings)."
@@ -490,7 +493,7 @@ Use tom em português (do Brasil). Vá direto para a análise executiva.`;
         return res.status(400).json({ error: "O arquivo PDF (Base64) é obrigatório." });
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = env.gemini.apiKey;
       if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
         return res.status(400).json({ 
           error: "Inteligência Artificial Não Configurada: Para importar catálogos em formato PDF, configure sua 'GEMINI_API_KEY' na aba Secrets (Configurações)."
@@ -583,7 +586,7 @@ Retorne estritamente o JSON estruturado em conformidade com o schema.`
         return res.status(400).json({ error: "Sua mensagem é obrigatória." });
       }
 
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = env.gemini.apiKey;
       if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
         return res.json({ 
           text: "Inteligência Artificial Pausada: Por favor, adicione sua própria 'GEMINI_API_KEY' nas configurações (Settings) do LumièreOS e reinicie o servidor do aplicativo para ativar o bate-papo."

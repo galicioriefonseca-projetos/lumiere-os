@@ -118,7 +118,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {/* Debug info */}
-            {process.env.NODE_ENV === 'development' || (typeof window !== 'undefined' && window.location.search.includes('debug=true')) ? (
+            {import.meta.env.MODE === 'development' || (typeof window !== 'undefined' && window.location.search.includes('debug=true')) ? (
               <div className="mt-8 text-left bg-neutral-950 p-4 rounded-lg overflow-auto text-xs text-neutral-500 max-h-48 border border-neutral-800">
                 <p className="font-semibold text-red-400 mb-2">Detalhes Técnicos (Para Suporte):</p>
                 <p><strong>Erro:</strong> {this.state.error?.message}</p>

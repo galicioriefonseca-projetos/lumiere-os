@@ -69,7 +69,7 @@ export async function requestAndRegisterNotificationPermission(salonId: string, 
     });
 
     if (token) {
-      console.log('[Push Notification] Retained FCM Token:', token);
+      console.log('[Push Notification] Retained FCM Token.');
       
       // Save Token to user's profile and active professional database
       await saveTokenToFirestore(salonId, userId, token);

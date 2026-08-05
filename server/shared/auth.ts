@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { getAdminAuth, getAdminDb, isFirebaseAdminCredentialError } from "./firebaseAdmin.js";
 
 export async function verifyIdToken(req: any): Promise<any> {
@@ -42,7 +43,7 @@ export async function resolvePlatformAdmin(user: any, adminDb: any): Promise<boo
   }
 
   // 4. Fallback PLATFORM_ADMIN_EMAIL (temporário, sem VITE_*)
-  const platformAdminEmail = process.env.PLATFORM_ADMIN_EMAIL;
+  const platformAdminEmail = env.app.platformAdminEmail;
   if (user.email && platformAdminEmail && user.email === platformAdminEmail) {
     return true;
   }

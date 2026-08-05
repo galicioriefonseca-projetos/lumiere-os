@@ -1,3 +1,4 @@
+import { env } from "./config/env.js";
 import app from "./app.js";
 import path from "path";
 import express from "express";
@@ -5,7 +6,7 @@ import express from "express";
 const PORT = 3000;
 
 async function startLocalServer() {
-  if (process.env.NODE_ENV !== "production") {
+  if (env.app.env !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },

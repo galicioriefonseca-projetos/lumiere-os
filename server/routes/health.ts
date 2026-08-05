@@ -1,3 +1,4 @@
+import { env } from "../../config/env.js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getAdminDb, getFirebaseAdminCredentialConfig, isFirebaseAdminCredentialError } from "../shared/firebaseAdmin.js";
 
@@ -19,13 +20,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const checks: Record<string, boolean | string> = {
     firebaseAdminConfigured: firebaseFormatValid,
-    asaasConfigured: Boolean(process.env.ASAAS_CLIENT_ID && process.env.ASAAS_CLIENT_SECRET),
-    webhookSecretConfigured: Boolean(process.env.ASAAS_WEBHOOK_SECRET),
+    asaasConfigured: Boolean(env.asaas.clientId && env.asaas.clientSecret),
+    webhookSecretConfigured: Boolean(env.asaas.webhookSecret),
   };
 
   const wantsDeepCheck = req.query.deep === "1";
   if (wantsDeepCheck) {
-    const expectedSecret = process.env.HEALTHCHECK_SECRET;
+    const expectedSecret = env.app.healthcheckSecret;
     const receivedSecret = req.headers["x-healthcheck-secret"];
 
     if (!expectedSecret || receivedSecret !== expectedSecret) {
