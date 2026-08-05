@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { billingService } from '../../billing/BillingService.js';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { Plan } from '../../billing/types.js';
+import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -9,12 +10,21 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
   }
 
   try {
-    const { salonId, planId, billingType } = req.body;
+    const { salonId, planId, billingType } = req.body || {};
     
     if (!salonId || !planId) {
       return res.status(400).json({ error: 'Missing salonId or planId' });
     }
 
+    // 1. Autenticação
+    let user;
+    try {
+      user = await verifyIdToken(req);
+    } catch (err: any) {
+      return res.status(401).json({ success: false, error: err.message || 'Não autorizado' });
+    }
+
+    // 2. Buscar documento do salão
     const adminDb = getAdminDb();
     const salonDoc = await adminDb.collection('salons').doc(salonId).get();
     
@@ -23,6 +33,12 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     }
     
     const salonData = salonDoc.data();
+
+    // 3. Autorização de Faturamento
+    const authResult = await canManageBilling(user, salonId, salonData);
+    if (!authResult.authorized) {
+      return res.status(403).json({ success: false, error: authResult.reason || 'Sem permissão de faturamento para este salão.' });
+    }
 
     // Cria a assinatura usando o BillingService
     const subscription = await billingService.createSubscription(

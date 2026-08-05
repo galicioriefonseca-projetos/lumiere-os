@@ -1,10 +1,31 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { billingService } from '../../billing/BillingService.js';
+import { verifyIdToken, resolvePlatformAdmin } from '../../shared/auth.js';
 
 export default async function asaasTestConnectionHandler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Método não permitido.' });
+  }
+
   try {
-    const { mode, apiKey, webhookToken } = req.body;
+    const adminDb = getAdminDb();
+
+    // 1. Verificação de Autenticação
+    let user;
+    try {
+      user = await verifyIdToken(req);
+    } catch (err: any) {
+      return res.status(401).json({ error: err.message || 'Não autorizado' });
+    }
+
+    // 2. Verificação de Autorização (Platform Admin)
+    const isPlatformAdmin = await resolvePlatformAdmin(user, adminDb);
+    if (!isPlatformAdmin) {
+      return res.status(403).json({ error: 'Acesso negado: apenas administradores da plataforma podem testar e alterar credenciais do Asaas.' });
+    }
+
+    const { mode, apiKey, webhookToken } = req.body || {};
     if (!apiKey) {
       return res.status(400).json({ error: 'API Key é obrigatória' });
     }
@@ -12,7 +33,6 @@ export default async function asaasTestConnectionHandler(req: VercelRequest, res
     const isConnected = await billingService.testConnection({ mode, apiKey, webhookToken });
     
     if (isConnected) {
-      const adminDb = getAdminDb();
       await adminDb.collection('settings').doc('asaas').set({
         mode,
         apiKey,
