@@ -78,9 +78,33 @@ export function isManualActiveSubscription(salonData: any): boolean {
 }
 
 export async function schedulePlanChange(salonId: string, planId: string): Promise<any> {
-  throw new Error("Use changePlan via BillingService");
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Usuário não autenticado");
+  const res = await fetch('/api/billing/change-plan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ salonId, planId, action: 'change' })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao alterar o plano.');
+  return data;
 }
 
 export async function cancelPlanChange(salonId: string): Promise<any> {
-  throw new Error("Not implemented");
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Usuário não autenticado");
+  const res = await fetch('/api/billing/change-plan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ salonId, action: 'cancel' })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) throw new Error(data.error || 'Falha ao cancelar agendamento de plano.');
+  return data;
 }

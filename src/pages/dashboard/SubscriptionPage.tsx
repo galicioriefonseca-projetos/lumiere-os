@@ -478,7 +478,7 @@ export default function SubscriptionPage() {
 
       const response = await fetch('/api/billing/create-checkout', { 
          method: 'POST', 
-         headers: { 'Content-Type': 'application/json' }, 
+         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${await getFreshIdToken()}` }, 
          body: JSON.stringify({ salonId: salonData.id, planId: confirmTargetPlan, billingType: 'CREDIT_CARD' }) 
       });
       
