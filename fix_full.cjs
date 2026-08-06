@@ -1,3 +1,6 @@
+const fs = require('fs');
+
+const serviceCode = `
 import { 
   User as AuthUser, 
   GoogleAuthProvider, 
@@ -195,7 +198,7 @@ export const AuthService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`
+        'Authorization': \`Bearer \${idToken}\`
       },
       body: JSON.stringify({
         inviteId: inviteData.inviteId || inviteData.id,
@@ -217,3 +220,6 @@ export const AuthService = {
     return { user, idToken };
   }
 };
+`;
+
+fs.writeFileSync('src/services/AuthService.ts', serviceCode.trim());
