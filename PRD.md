@@ -6,12 +6,12 @@ Este documento serve como a especificação oficial de produto e guia de testes 
 
 ## 1. Visão Geral do Produto
 
-O **LumièreOS** é uma plataforma que consolida agendamentos, controle financeiro, inteligência de marketing e gestão de assinaturas para proprietários de salões de beleza. A plataforma opera sob um modelo de negócios SaaS (Software as a Service) com faturamento recorrente, integrado nativamente aos gateways de pagamento **Cakto** e **Asaas**.
+O **LumièreOS** é uma plataforma que consolida agendamentos, controle financeiro, inteligência de marketing e gestão de assinaturas para proprietários de salões de beleza. A plataforma opera sob um modelo de negócios SaaS (Software as a Service) com faturamento recorrente, integrado nativamente aos gateways de pagamento **Asaas** e **Asaas**.
 
 ### Objetivos Principais:
 - **Redução do Churn:** Automação total da liberação e bloqueio de recursos conforme o status de pagamento.
 - **Eficiência Operacional:** Provisionamento instantâneo de contas no Firebase Firestore após confirmação do webhook.
-- **Flexibilidade Multigateway:** Suporte simultâneo a fluxos de checkout e faturamento via Cakto (recorrência externa) e Asaas (assinaturas e cobranças flexíveis).
+- **Flexibilidade Multigateway:** Suporte simultâneo a fluxos de checkout e faturamento via Asaas (recorrência externa) e Asaas (assinaturas e cobranças flexíveis).
 
 ---
 
@@ -21,7 +21,7 @@ A aplicação é construída com um frontend React moderno (Vite) e um backend s
 
 ```
 ┌─────────────────┐       ┌─────────────────┐       ┌──────────────────────┐
-│  Gateway Cakto  │ ────> │  Vercel Server  │ ────> │  Firebase Firestore  │
+│  Gateway Asaas  │ ────> │  Vercel Server  │ ────> │  Firebase Firestore  │
 │  & Asaas (Web)  │       │  /api/webhooks  │       │     (Salons/User)    │
 └─────────────────┘       └─────────────────┘       └──────────────────────┘
 ```
@@ -35,7 +35,7 @@ O acesso ao Firestore e Auth em ambiente serverless foi unificado em `api/_share
 ### 2.2 Sincronização de Assinaturas (Webhooks)
 Os webhooks realizam a escuta ativa de eventos de pagamento e mapeiam os seguintes estados de assinatura no banco de dados (`salons`):
 
-| Evento Recebido (Cakto) | Mapeamento no Banco (`paymentStatus` / `subscriptionStatus`) | Ação Operacional |
+| Evento Recebido (Asaas) | Mapeamento no Banco (`paymentStatus` / `subscriptionStatus`) | Ação Operacional |
 |:---|:---|:---|
 | `purchase_approved` / `subscription_renewed` | `paid` / `active` | Libera acesso total ao painel do salão e atualiza data do próximo faturamento. |
 | `purchase_refused` / Eventos de falha | `overdue` / `overdue` | Alerta o usuário no sistema sobre atraso, sem cortar o acesso imediatamente. |
@@ -48,15 +48,15 @@ Os webhooks realizam a escuta ativa de eventos de pagamento e mapeiam os seguint
 
 Para garantir a homologação completa das integrações, execute os seguintes testes utilizando ferramentas como **Postman**, **Insomnia** ou comandos `curl`.
 
-### 3.1 Teste 1: Validação do Webhook Cakto (Aprovação de Compra)
-Este teste simula um pagamento bem-sucedido originado do checkout da Cakto.
+### 3.1 Teste 1: Validação do Webhook Asaas (Aprovação de Compra)
+Este teste simula um pagamento bem-sucedido originado do checkout da Asaas.
 
 - **Método:** `POST`
-- **URL:** `https://lumiere-os.vercel.app/api/cakto/webhook` (Substitua pela sua URL ativa)
+- **URL:** `https://lumiere-os.vercel.app/api/asaas/webhook` (Substitua pela sua URL ativa)
 - **Headers:**
   ```http
   Content-Type: application/json
-  x-cakto-token: <SEU_CAKTO_WEBHOOK_SECRET>
+  x-asaas-token: <SEU_ASAAS_WEBHOOK_SECRET>
   ```
 - **Payload (JSON):**
   ```json
@@ -74,14 +74,14 @@ Este teste simula um pagamento bem-sucedido originado do checkout da Cakto.
 ---
 
 ### 3.2 Teste 2: Webhook de Teste/Ping (Sem dados de Salão)
-Simula o clique do botão "Testar" no painel da Cakto, onde o payload não carrega dados reais ou IDs de clientes.
+Simula o clique do botão "Testar" no painel da Asaas, onde o payload não carrega dados reais ou IDs de clientes.
 
 - **Método:** `POST`
-- **URL:** `https://lumiere-os.vercel.app/api/cakto/webhook`
+- **URL:** `https://lumiere-os.vercel.app/api/asaas/webhook`
 - **Headers:**
   ```http
   Content-Type: application/json
-  x-cakto-token: <SEU_CAKTO_WEBHOOK_SECRET>
+  x-asaas-token: <SEU_ASAAS_WEBHOOK_SECRET>
   ```
 - **Payload (JSON):**
   ```json
@@ -98,11 +98,11 @@ Simula o clique do botão "Testar" no painel da Cakto, onde o payload não carre
 Garante que requisições não autorizadas sejam devidamente bloqueadas.
 
 - **Método:** `POST`
-- **URL:** `https://lumiere-os.vercel.app/api/cakto/webhook`
+- **URL:** `https://lumiere-os.vercel.app/api/asaas/webhook`
 - **Headers:**
   ```http
   Content-Type: application/json
-  x-cakto-token: token_incorreto_ou_malicioso
+  x-asaas-token: token_incorreto_ou_malicioso
   ```
 - **Resultado Esperado:** Retorno `401 Unauthorized` com payload `{ "error": "Assinatura inválida de webhook." }`.
 
@@ -119,7 +119,7 @@ FIREBASE_CLIENT_EMAIL="firebase-adminsdk-fbsvc@lumiereos-11a95.iam.gserviceaccou
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 
 # Segredos de Integração de Cobrança
-CAKTO_WEBHOOK_SECRET="seu_segredo_definido_no_painel_da_cakto"
+ASAAS_WEBHOOK_SECRET="seu_segredo_definido_no_painel_da_asaas"
 ```
 
 ---

@@ -9,7 +9,7 @@ SaaS de gestão para salões, clínicas de estética e negócios de beleza, com 
 - React 19, TypeScript e Vite
 - Express e funções serverless na Vercel
 - Firebase Authentication, Firestore e Firebase Admin
-- Cakto para checkout e assinatura recorrente
+- Asaas para checkout e assinatura recorrente
 - Vitest e Firebase Rules Unit Testing
 
 ## Instalação
@@ -57,7 +57,7 @@ Para o Firebase Admin, prefira `FIREBASE_SERVICE_ACCOUNT_JSON`. Nunca envie cred
 
 - Abrir checkout grava somente campos `pending*`.
 - Conta manual ativa permanece acessível durante a configuração da recorrência.
-- Somente o webhook real validado converte o faturamento para Cakto.
+- Somente o webhook real validado converte o faturamento para Asaas.
 - Homologação grava somente campos `homologation*`.
 - O plano Founder exige autorização no backend.
 

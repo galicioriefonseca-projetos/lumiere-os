@@ -15,7 +15,7 @@ A arquitetura segue o princípio de separação de responsabilidades:
 - **Backend** → Regras de negócio e integrações.
 - **Firestore** → Persistência de dados.
 - **Gemini** → Inteligência Artificial.
-- **Cakto** → Assinaturas e pagamentos.
+- **Asaas** → Assinaturas e pagamentos.
 - **Vercel** → Hospedagem.
 
 ---
@@ -41,7 +41,7 @@ Responsabilidades:
 - Validações
 - Firestore
 - Gemini
-- Cakto
+- Asaas
 - Webhooks
 
 *Todo acesso ao Firestore deve ocorrer por meio do backend quando envolver lógica de negócio ou operações sensíveis.*
@@ -76,7 +76,7 @@ Responsável por:
 
 ---
 
-### Cakto
+### Asaas
 Responsável por:
 - Checkout
 - Assinaturas
@@ -84,7 +84,7 @@ Responsável por:
 - Cancelamento
 - Webhooks
 
-*A Cakto é a única fonte de verdade para o estado financeiro da assinatura.*
+*A Asaas é a única fonte de verdade para o estado financeiro da assinatura.*
 
 ---
 
@@ -112,9 +112,9 @@ Responsável por:
 ## Fluxo de Assinatura
 
 1. Usuário escolhe um plano.
-2. O backend cria a sessão de checkout na Cakto.
+2. O backend cria a sessão de checkout na Asaas.
 3. O usuário conclui o pagamento.
-4. A Cakto envia um webhook.
+4. A Asaas envia um webhook.
 5. O backend valida a autenticidade do webhook.
 6. O Firestore é atualizado.
 7. A assinatura passa para "active".
@@ -184,7 +184,7 @@ Cada módulo deve conter:
 
 - Frontend → Backend → Serviços → Repositórios → Firestore
 - Frontend → Backend → Gemini
-- Frontend → Backend → Cakto
+- Frontend → Backend → Asaas
 
 *Nenhum componente React acessa integrações externas diretamente.*
 
@@ -227,7 +227,7 @@ A arquitetura deve suportar:
 As seguintes integrações são consideradas autoridades em seus respectivos domínios:
 - **Firebase Authentication** → Identidade do usuário.
 - **Firestore** → Dados operacionais.
-- **Cakto** → Estado da assinatura.
+- **Asaas** → Estado da assinatura.
 - **Gemini** → Geração de conteúdo e assistência.
 - **Vercel** → Ambiente de execução.
 

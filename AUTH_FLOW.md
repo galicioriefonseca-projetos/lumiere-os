@@ -239,6 +239,6 @@ A arquitetura deve permitir futuramente:
 - **Firebase Authentication** → Identidade do usuário.
 - **Firestore** → Relação usuário/tenant.
 - **Membership** → Papel e permissões.
-- **Cakto** → Estado da assinatura.
+- **Asaas** → Estado da assinatura.
 
 Nenhum outro componente deve substituir essas responsabilidades.

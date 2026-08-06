@@ -15,7 +15,7 @@
 - [ ] Variáveis Firebase Admin válidas na Vercel
 - [ ] Projeto Firebase Web e Admin coincidentes
 - [ ] Platform Admin cadastrado por UID
-- [ ] Ofertas Cakto oficiais cadastradas
+- [ ] Ofertas Asaas oficiais cadastradas
 - [ ] Segredo e URL do webhook configurados
 - [ ] Healthcheck profundo aprovado
 - [ ] Logs e alertas configurados

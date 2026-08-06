@@ -9,7 +9,7 @@ Data da revisão: 2026-07-24
 - Checkout exige token Firebase e recebe somente `planId` e dados do onboarding.
 - Founder foi removido da recomendação pública.
 - Novo salão é preparado em `onboarding/{salonId}` e só é promovido pelo webhook aprovado.
-- Forma de pagamento é escolhida no checkout da Cakto e registrada pelo webhook.
+- Forma de pagamento é escolhida no checkout da Asaas e registrada pelo webhook.
 - Autorização por simples coincidência de `ownerEmail` foi removida das Firestore Rules e do fallback do frontend.
 - Campos financeiros permanecem protegidos contra edição pelo cliente.
 - Idempotência do webhook passou a reivindicar eventos em transação.

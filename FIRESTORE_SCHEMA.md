@@ -149,7 +149,7 @@ Campos:
 - createdAt
 
 ### subscriptions
-Assinaturas da Cakto.
+Assinaturas da Asaas.
 
 Campos:
 - tenantId

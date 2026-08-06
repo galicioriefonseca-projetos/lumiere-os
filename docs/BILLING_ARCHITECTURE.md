@@ -61,7 +61,7 @@ O `BillingService` atua como a única porta de entrada (**Facade**) para todas a
 3.  **Segurança e Validação**: Adicionar camadas de segurança adicionais antes de repassar chamadas para serviços externos.
 
 ### D. O Gateway Específico (DEPRECATED - Asaas/Mercado Pago)
-Tanto o Asaas quanto o Mercado Pago foram desativados e removidos de todas as partes ativas do frontend e simulação do LumièreOS. Suas implementações no código são mantidas passivas e seus campos no Firestore servem estritamente como legado histórico compatível. Todo faturamento recorrente ativo utiliza exclusivamente a **Cakto**, e o faturamento manual utiliza o **Manual PIX**.
+Tanto o Asaas quanto o Mercado Pago foram desativados e removidos de todas as partes ativas do frontend e simulação do LumièreOS. Suas implementações no código são mantidas passivas e seus campos no Firestore servem estritamente como legado histórico compatível. Todo faturamento recorrente ativo utiliza exclusivamente a **Asaas**, e o faturamento manual utiliza o **Manual PIX**.
 
 ---
 

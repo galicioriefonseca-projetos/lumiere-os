@@ -77,17 +77,7 @@ export interface Salon {
   providerLastPaymentId?: string;
   asaasLastEvent?: string;
   billingRequiresMigration?: boolean;
-  homologationSubscriptionId?: string;
-  homologationOrderId?: string;
-  homologationOfferId?: string;
-  homologationLastEvent?: string;
-  homologationUpdatedAt?: number;
-  homologationCustomerId?: string;
-  homologationCheckoutUrl?: string;
   pendingPlan?: string;
-  pendingOfferId?: string;
-  pendingCheckoutUrl?: string;
-  pendingCheckoutEmail?: string;
   pendingPaymentStatus?: string;
   pendingSubscriptionStatus?: string;
   founderInitialPrice?: number;

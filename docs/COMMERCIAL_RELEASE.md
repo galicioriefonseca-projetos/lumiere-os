@@ -11,10 +11,10 @@ Configure em Production:
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — opção preferencial
 - `FIREBASE_EXPECTED_PROJECT_ID`
 - `PLATFORM_ADMIN_EMAIL` — fallback temporário
-- `CAKTO_CLIENT_ID`
-- `CAKTO_CLIENT_SECRET`
-- `CAKTO_API_URL`
-- `CAKTO_WEBHOOK_SECRET`
+- `ASAAS_CLIENT_ID`
+- `ASAAS_CLIENT_SECRET`
+- `ASAAS_API_URL`
+- `ASAAS_WEBHOOK_SECRET`
 - `HEALTHCHECK_SECRET`
 
 Após mudar variáveis, faça um novo deploy. O ambiente do Google AI Studio e o da Vercel são independentes.
@@ -28,9 +28,9 @@ Após mudar variáveis, faça um novo deploy. O ambiente do Google AI Studio e o
 - Executar os testes no Firestore Emulator antes da publicação definitiva.
 - Definir política de backup e restauração.
 
-## 3. Cakto
+## 3. Asaas
 
-- Cadastrar `productId` e ofertas oficiais em `settings/cakto`.
+- Cadastrar `productId` e ofertas oficiais em `settings/asaas`.
 - Configurar a URL do webhook e seu segredo.
 - Validar eventos reais aceitos pela integração.
 - Fazer primeiro um teste de geração de checkout sem pagamento.

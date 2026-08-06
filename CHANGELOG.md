@@ -3,7 +3,7 @@
 ## v1.6.0-rc.1 (2026-07-15)
 ### Release candidate comercial e consolidação de segurança
 
-- Fluxo Founder manual para recorrência Cakto sem suspensão antecipada da conta.
+- Fluxo Founder manual para recorrência Asaas sem suspensão antecipada da conta.
 - Checkout grava somente campos pendentes; confirmação definitiva ocorre pelo webhook validado.
 - Homologação isolada em campos próprios e protegida por Platform Admin.
 - Onboarding só é promovido para salão após pagamento aprovado e correlação segura.

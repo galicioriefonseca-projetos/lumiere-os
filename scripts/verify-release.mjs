@@ -79,7 +79,7 @@ if (!pkg.version || pkg.version === '0.0.0') failures.push('package.json precisa
 if (pkg.dependencies?.mercadopago) failures.push('Dependência legada mercadopago ainda presente');
 
 const envExample = readFileSync(join(root, '.env.example'), 'utf8');
-for (const variable of ['CAKTO_CLIENT_ID', 'CAKTO_CLIENT_SECRET', 'CAKTO_WEBHOOK_SECRET', 'FIREBASE_SERVICE_ACCOUNT_JSON', 'VITE_TERMS_URL', 'VITE_PRIVACY_URL']) {
+for (const variable of ['ASAAS_CLIENT_ID', 'ASAAS_CLIENT_SECRET', 'ASAAS_WEBHOOK_SECRET', 'FIREBASE_SERVICE_ACCOUNT_JSON', 'VITE_TERMS_URL', 'VITE_PRIVACY_URL']) {
   if (!envExample.includes(variable)) warnings.push(`.env.example não documenta ${variable}`);
 }
 

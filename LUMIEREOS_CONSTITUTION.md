@@ -40,7 +40,7 @@ Toda implementação deve priorizar:
 - Google Gemini (@google/genai)
 
 **Pagamentos**
-- Cakto
+- Asaas
 
 **Deploy**
 - Vercel
@@ -94,7 +94,7 @@ A autenticação oficial é Firebase Authentication.
 Nunca criar outro mecanismo paralelo.
 
 ### Pagamentos
-Toda assinatura é controlada pela Cakto.
+Toda assinatura é controlada pela Asaas.
 O frontend nunca ativa um plano. A ativação ocorre exclusivamente através do webhook.
 
 ### Inteligência Artificial

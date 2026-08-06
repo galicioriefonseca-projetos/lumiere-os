@@ -82,7 +82,7 @@ Toda resposta utilizada pelo sistema deve ser estruturada e validada.
 Nunca confiar diretamente na saída do modelo.
 
 ## Pagamentos
-Toda ativação de assinatura ocorre exclusivamente pelo webhook da Cakto.
+Toda ativação de assinatura ocorre exclusivamente pelo webhook da Asaas.
 O frontend nunca deve alterar o estado de uma assinatura.
 
 ## Qualidade

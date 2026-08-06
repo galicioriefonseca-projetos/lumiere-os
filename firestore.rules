@@ -1,6 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
-  match /databases/{database}/3documents {
+  match /databases/{database}/documents {
     
     // Safety Net - Allow Platform Admin globally, deny others by default
     match /{document=**} {
@@ -239,7 +239,7 @@ service cloud.firestore {
           canUseTutorialDemo(salonId)
         ) && 
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'plan', 'subscriptionStatus', 'activationStatus', 'paymentStatus', 'isActive', 'billingProvider', 'billingMode', 'professionalLimit', 'professionalsLimit', 'maxProfessionals', 'founderAuthorized', 'isFounderAuthorized', 'isFounder', 'caktoSubscriptionId', 'caktoOrderId', 'caktoCustomerId', 'caktoOfferId', 'caktoCheckoutUrl', 'caktoCheckoutEmail', 'nextBillingDate', 'currentPeriodStart', 'currentPeriodEnd', 'lastPaymentAt', 'lastPaymentAmount', 'billingSyncRequired', 'billingSyncReason', 'pendingPlan', 'pendingOfferId', 'pendingCheckoutUrl', 'pendingCheckoutEmail', 'pendingRequestedAt', 'pendingCheckoutPurpose', 'pendingBillingActivation', 'pendingPlanChange', 'ownerId', 'ownerEmail', 'deletedAt'
+          'plan', 'subscriptionStatus', 'activationStatus', 'paymentStatus', 'isActive', 'billingProvider', 'billingMode', 'professionalLimit', 'professionalsLimit', 'maxProfessionals', 'founderAuthorized', 'isFounderAuthorized', 'isFounder', 'subscriptionId', 'planId', 'customerId', 'checkoutUrl', 'provider', 'nextBillingDate', 'currentPeriodStart', 'currentPeriodEnd', 'lastPaymentAt', 'lastPaymentAmount', 'billingSyncRequired', 'billingSyncReason', 'pendingPlan', 'pendingOfferId', 'pendingCheckoutUrl', 'pendingCheckoutEmail', 'pendingRequestedAt', 'pendingCheckoutPurpose', 'pendingBillingActivation', 'pendingPlanChange', 'ownerId', 'ownerEmail', 'deletedAt'
         ])
       );
                      

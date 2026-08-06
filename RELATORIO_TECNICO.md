@@ -40,7 +40,7 @@ Eliminamos as brechas no Firestore para manipulação via Client:
 ## 🔒 Arquitetura de Segurança e Implementações (Patch P0.8)
 
 ### 1. Isolamento Real de Homologação
-Garantimos o isolamento absoluto das transações de homologação no webhook (`processCaktoWebhookPayload`):
+Garantimos o isolamento absoluto das transações de homologação no webhook (`processAsaasWebhookPayload`):
 - **Isolamento de Escrita**: Se `homologationMode === true`, a API chama exclusivamente a rotina `buildHomologationWebhookUpdate` e escreve apenas campos iniciados pelo prefixo `homologation*` (ex. `homologationLastEventId`, `homologationSubscriptionStatus`, etc.).
 - **Impedimento Comercial**: Sob nenhuma hipótese de homologação o sistema cria onboarding, cria salões ou escreve na coleção `billingWebhookEvents`.
 - **Preservação de Dados de Produção**: Os campos definitivos do salão (como `plan`, `subscriptionStatus`, `paymentStatus`, `isActive` e `nextBillingDate`) são inteiramente preservados e nunca sofrem alterações.
@@ -48,7 +48,7 @@ Garantimos o isolamento absoluto das transações de homologação no webhook (`
 
 ### 2. Idempotência e Tratamento de Webhooks
 Estruturamos um sistema determinístico de webhooks para mitigar erros de reprocessamento e duplicidade:
-- **ID de Evento Estável**: Caso o `event_id` enviado pela Cakto esteja ausente, o sistema gera um identificador estável derivado do hash MD5 de propriedades do payload (`eventName`, `orderId`, `subscriptionId`, `salonId`, `offerId`, `customerEmail`).
+- **ID de Evento Estável**: Caso o `event_id` enviado pela Asaas esteja ausente, o sistema gera um identificador estável derivado do hash MD5 de propriedades do payload (`eventName`, `orderId`, `subscriptionId`, `salonId`, `offerId`, `customerEmail`).
 - **Estados de Processamento**: Gerenciamento controlado das execuções no Firestore (`billingWebhookEvents/{eventId}`) com os estados:
   - `processing`: Identifica eventos que estão em processamento ativo recente.
   - `processed`: Ignora eventos duplicados já confirmados.
@@ -58,7 +58,7 @@ Estruturamos um sistema determinístico de webhooks para mitigar erros de reproc
 
 ### 3. Correlação de Segurança de Pagamentos e Ativações
 Implementamos validações estritas para correlacionar transações a usuários e salões legítimos:
-- **Validação de Assinatura**: O sistema localiza o salão unicamente por `caktoSubscriptionId` em eventos de renovação de faturamento.
+- **Validação de Assinatura**: O sistema localiza o salão unicamente por `asaasSubscriptionId` em eventos de renovação de faturamento.
 - **Correlação Segura de Onboarding**: Para ativações iniciais, o sistema correlaciona as propriedades enviadas no webhook contra os dados pendentes no onboarding correspondente (`pendingOfferId`, `pendingCheckoutEmail` e `pendingPlan`), prevenindo a promoção arbitrária de salões falsificados ou associados a ofertas incorretas.
 - **Detecção de Inconsistências**: Caso existam múltiplos registros ambíguos ou disparidades de correlação, a API aborta a atualização com os motivos `ambiguous_salon_match` ou `correlation_mismatch` e sinaliza revisão assistida.
 
@@ -66,19 +66,19 @@ Implementamos validações estritas para correlacionar transações a usuários 
 Refatoramos o arquivo `firestore.rules` para bloquear de forma nativa vulnerabilidades comuns no cliente-side:
 - **Consolidação de Coleções**: Removemos a declaração duplicada da coleção `payments`, centralizando as lógicas de criação e leitura em um único bloco restrito.
 - **Escrita de Pagamentos Manuais**: Permite a criação de pagamentos manuais apenas para donos e administradores do salão autenticados, validando estritamente os campos autorizados via `keys().hasOnly(['status', 'method', 'provider', 'salonId', 'amount', 'createdAt'])`.
-- **Impedimento de Alteração Financeira**: Impedimos de forma soberana o cliente-side de alterar mais de 38 campos sensíveis de configuração e faturamento do salão (como `plan`, `subscriptionStatus`, `paymentStatus`, `isActive`, `ownerId`, `founderAuthorized` e parâmetros do gateway Cakto).
+- **Impedimento de Alteração Financeira**: Impedimos de forma soberana o cliente-side de alterar mais de 38 campos sensíveis de configuração e faturamento do salão (como `plan`, `subscriptionStatus`, `paymentStatus`, `isActive`, `ownerId`, `founderAuthorized` e parâmetros do gateway Asaas).
 
 ---
 
 ## 📈 Resultados e Evidências da Validação Técnica
 
 ### 1. Suíte de Testes de Faturamento (Billing Security)
-A suíte completa de testes de segurança de faturamento em `api/cakto/billing-security.test.ts` executou com sucesso total, cobrindo todos os **40 casos de teste de negócio**:
+A suíte completa de testes de segurança de faturamento em `api/asaas/billing-security.test.ts` executou com sucesso total, cobrindo todos os **40 casos de teste de negócio**:
 ```bash
-> vitest run api/cakto/billing-security.test.ts
+> vitest run api/asaas/billing-security.test.ts
 
   RUN  v4.1.10 /app/applet
-  ✓ api/cakto/billing-security.test.ts (40 tests)
+  ✓ api/asaas/billing-security.test.ts (40 tests)
 
   Test Files  1 passed (1)
        Tests  40 passed (40)
@@ -87,10 +87,10 @@ A suíte completa de testes de segurança de faturamento em `api/cakto/billing-s
 ### 2. Suíte de Testes do Webhook
 A suíte de segurança do webhook de homologação foi executada com êxito e confirmou a exatidão estrutural dos campos gerados:
 ```bash
-> vitest run api/cakto/webhook-security.test.ts
+> vitest run api/asaas/webhook-security.test.ts
 
   RUN  v4.1.10 /app/applet
-  ✓ api/cakto/webhook-security.test.ts (4 tests)
+  ✓ api/asaas/webhook-security.test.ts (4 tests)
 
   Test Files  1 passed (1)
        Tests  4 passed (4)

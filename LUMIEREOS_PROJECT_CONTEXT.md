@@ -65,7 +65,7 @@ O sistema deve oferecer:
   - SDK oficial: `@google/genai`
 
 **Pagamentos**
-- Cakto
+- Asaas
 
 **Hospedagem**
 - Vercel
@@ -85,7 +85,7 @@ O projeto utiliza arquitetura cliente-servidor.
 **Backend:**
 - Regras de negócio
 - Integração Gemini
-- Integração Cakto
+- Integração Asaas
 - Firebase Admin
 - Segurança
 
@@ -141,7 +141,7 @@ Exemplos:
 
 ## Pagamentos
 
-O sistema utiliza a Cakto.
+O sistema utiliza a Asaas.
 
 Fluxo:
 Cadastro → Escolha do Plano → Checkout → Pagamento → Webhook → Atualização do Firestore → Assinatura Ativa

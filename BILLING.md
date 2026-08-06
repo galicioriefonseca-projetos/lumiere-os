@@ -21,7 +21,7 @@ Ele controla:
 - reativações.
 
 O Billing nunca depende do frontend para alterar o estado de uma assinatura.
-A fonte oficial da assinatura é a Cakto.
+A fonte oficial da assinatura é a Asaas.
 
 ---
 
@@ -123,7 +123,7 @@ Dados preservados.
    ↓
 4. Escolher plano.
    ↓
-5. Checkout Cakto.
+5. Checkout Asaas.
    ↓
 6. Webhook confirma pagamento.
    ↓
@@ -183,7 +183,7 @@ Plano atual
 ↓
 Novo plano
 ↓
-Cakto
+Asaas
 ↓
 Webhook
 ↓
@@ -196,7 +196,7 @@ Liberar novos recursos
 ## Downgrade
 
 Mesmo fluxo.
-A alteração entra em vigor conforme política definida pela Cakto.
+A alteração entra em vigor conforme política definida pela Asaas.
 
 ---
 
@@ -279,7 +279,7 @@ O frontend nunca altera:
 - plan
 - subscriptionId
 
-Esses dados somente podem ser modificados pelo backend após confirmação da Cakto.
+Esses dados somente podem ser modificados pelo backend após confirmação da Asaas.
 
 ---
 
@@ -320,6 +320,6 @@ Preparado para:
 
 ## Fonte da Verdade
 
-A Cakto é a autoridade financeira.
+A Asaas é a autoridade financeira.
 O Firestore apenas replica o estado confirmado pelo webhook.
 Nenhuma informação financeira deve ser alterada diretamente pelo frontend.
