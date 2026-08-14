@@ -1,13 +1,11 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { billingService } from '../../billing/BillingService.js';
 
 export default async function asaasWebhookHandler(req: VercelRequest, res: VercelResponse) {
   // 1. Garantir o método HTTP correto (se explicitamente fornecido)
   if (req.method && req.method !== 'POST') {
-    if (typeof res.setHeader === 'function') {
-      res.setHeader('Allow', 'POST');
-    }
+    res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Método não permitido. Utilize POST.' });
   }
 
@@ -16,7 +14,7 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     const adminDb = getAdminDb();
     const billingSettingsDoc = await adminDb.collection('settings').doc('asaas').get();
     const billingSettings = billingSettingsDoc.data();
-    
+
     // 3. Autenticação e assinatura do webhook
     const token = req.headers['asaas-access-token'];
     if (billingSettings?.webhookToken && token !== billingSettings.webhookToken) {
