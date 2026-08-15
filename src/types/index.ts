@@ -77,6 +77,8 @@ export interface Salon {
   providerLastPaymentId?: string;
   asaasLastEvent?: string;
   billingRequiresMigration?: boolean;
+  homologationOrderId?: string;
+  homologationOfferId?: string;
   pendingPlan?: string;
   pendingPaymentStatus?: string;
   pendingSubscriptionStatus?: string;
