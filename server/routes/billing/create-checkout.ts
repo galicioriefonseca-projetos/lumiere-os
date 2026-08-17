@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { billingService } from '../../billing/BillingService.js';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
+import { normalizeBillingCustomerData, saveBillingCustomerData } from '../../billing/BillingCustomerService.js';
 
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -10,7 +11,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
   }
 
   try {
-    const { salonId, planId } = req.body || {};
+    const { salonId, planId, customerData } = req.body || {};
 
     if (!salonId || !planId) {
       return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
@@ -29,7 +30,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(404).json({ success: false, error: 'Salão não encontrado.' });
     }
 
-    const salonData = salonDoc.data();
+    const salonData = salonDoc.data() || {};
     const authResult = await canManageBilling(user, salonId, salonData);
     if (!authResult.authorized) {
       return res.status(403).json({
@@ -38,16 +39,54 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       });
     }
 
-    // O checkout de ativação deve permitir que o cliente escolha a forma de
-    // pagamento na página hospedada do Asaas. O frontend legado ainda envia
-    // CREDIT_CARD, mas não capturamos cartão dentro do LumièreOS.
+    // O checkout nunca deve chegar à Asaas sem CPF/CNPJ. Se o frontend
+    // enviar os dados nesta chamada, salvamos e sincronizamos o cliente primeiro.
+    // Caso contrário, usamos o cadastro financeiro já existente.
+    let billingData = salonData.billing || {};
+    const hasDocument = Boolean(billingData.document || salonData.document || salonData.cnpj);
+
+    if (customerData) {
+      await saveBillingCustomerData(salonId, customerData);
+      const refreshed = await adminDb.collection('salons').doc(salonId).get();
+      billingData = refreshed.data()?.billing || {};
+    }
+
+    if (!hasDocument && !billingData.document) {
+      return res.status(422).json({
+        success: false,
+        code: 'BILLING_DATA_REQUIRED',
+        error: 'Complete os dados de faturamento antes de continuar para o pagamento.',
+        missingFields: ['document', 'legalName', 'email', 'mobilePhone']
+      });
+    }
+
+    // Valida também documentos legados antes de criar qualquer cobrança.
+    try {
+      normalizeBillingCustomerData({
+        document: billingData.document || salonData.document || salonData.cnpj,
+        legalName: billingData.legalName || salonData.name,
+        email: billingData.email || salonData.billingEmail || salonData.ownerEmail,
+        mobilePhone: billingData.mobilePhone || salonData.phone || salonData.whatsapp
+      });
+    } catch (validationError: any) {
+      return res.status(422).json({
+        success: false,
+        code: 'BILLING_DATA_INVALID',
+        error: validationError.message,
+        missingFields: ['document', 'legalName', 'email', 'mobilePhone']
+      });
+    }
+
+    // O checkout de ativação permite que o cliente escolha a forma de pagamento
+    // na página hospedada do Asaas. O frontend legado ainda envia CREDIT_CARD,
+    // mas não capturamos cartão dentro do LumièreOS.
     const billingType = 'UNDEFINED' as const;
 
     const subscription = await billingService.createSubscription(
       salonId,
       planId,
       billingType,
-      salonData
+      { ...salonData, billing: billingData }
     );
 
     let invoiceUrl: string | null = null;
@@ -67,7 +106,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
 
     return res.status(200).json({
       success: true,
-      // bankSlipUrl permanece como alias para compatibilidade com a tela atual.
       checkoutUrl: invoiceUrl,
       invoiceUrl,
       bankSlipUrl: invoiceUrl,
