@@ -3,44 +3,50 @@ import { billingService } from '../../billing/BillingService.js';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 
-function normalizeBillingType(value: string | undefined): string | undefined {
+function normalizeBillingType(value: string | undefined): 'UNDEFINED' | 'CREDIT_CARD' | 'BOLETO' | 'PIX' | undefined {
   if (!value) return undefined;
   const normalized = value.toUpperCase();
-  const aliases: Record<string, string> = {
+  const aliases: Record<string, 'UNDEFINED' | 'CREDIT_CARD' | 'BOLETO' | 'PIX'> = {
+    UNDEFINED: 'UNDEFINED',
+    CHECKOUT: 'UNDEFINED',
+    CHOOSE: 'UNDEFINED',
     CREDIT_CARD: 'CREDIT_CARD',
     CREDITCARD: 'CREDIT_CARD',
     BOLETO: 'BOLETO',
     PIX: 'PIX'
   };
-  return aliases[normalized] || aliases[value.toLowerCase()] || undefined;
+  return aliases[normalized];
 }
 
 export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido.' });
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Método não permitido. Utilize POST.' });
   }
 
   try {
     const body = req.body || {};
     const salonId = body.salonId;
-    const billingType = normalizeBillingType(body.billingType || body.paymentMethod);
-    const { creditCard, creditCardHolderInfo } = body;
+    const requestedMethod = normalizeBillingType(body.billingType || body.paymentMethod);
 
-    if (!salonId || !billingType) {
-      return res.status(400).json({
-        error: 'Informe salonId e uma forma de pagamento válida: CREDIT_CARD, PIX ou BOLETO.'
-      });
+    if (!salonId) {
+      return res.status(400).json({ error: 'Informe o salonId.' });
     }
 
-    // Pix Automático possui uma jornada própria no Asaas e não é um billingType
-    // válido para atualização de assinatura. Não enviar esse valor diretamente à API.
+    // Pix Automático possui uma jornada de autorização própria e não pode ser
+    // tratado como billingType de uma assinatura comum.
     if (body.paymentMethod === 'pix_automatic') {
       return res.status(400).json({
-        error: 'Pix Automático utiliza uma jornada de autorização própria e não pode ser configurado como billingType da assinatura.'
+        error: 'Pix Automático utiliza uma jornada própria de autorização e ainda não está disponível nesta tela.'
       });
     }
 
-    // 1. Autenticação
+    // Para a tela de "próximas cobranças", UNDEFINED é o modo correto quando
+    // queremos que o pagador escolha o método na página hospedada do Asaas.
+    // O backend mantém os aliases antigos para compatibilidade, mas o checkout
+    // hospedado recebe UNDEFINED e não captura dados de cartão no LumièreOS.
+    const billingType = requestedMethod || 'UNDEFINED';
+
     let user;
     try {
       user = await verifyIdToken(req);
@@ -48,17 +54,13 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       return res.status(401).json({ error: err.message || 'Não autorizado' });
     }
 
-    // 2. Buscar documento do salão
     const adminDb = getAdminDb();
     const salonDoc = await adminDb.collection('salons').doc(salonId).get();
-
     if (!salonDoc.exists) {
       return res.status(404).json({ error: 'Salão não encontrado' });
     }
 
     const salonData = salonDoc.data();
-
-    // 3. Autorização de faturamento
     const authResult = await canManageBilling(user, salonId, salonData);
     if (!authResult.authorized) {
       return res.status(403).json({
@@ -66,17 +68,13 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       });
     }
 
-    // 4. Atualizar a assinatura no Asaas.
     await billingService.updatePaymentMethod(
       salonId,
-      billingType as any,
-      creditCard,
-      creditCardHolderInfo
+      billingType,
+      body.creditCard,
+      body.creditCardHolderInfo
     );
 
-    // 5. Se existir cobrança pendente, devolver a fatura correspondente.
-    // Não usar URL fixa de sandbox: a configuração do BillingService já determina
-    // se a conta está em sandbox ou produção.
     const subscriptionId = salonData?.billing?.subscriptionId;
     let invoiceUrl: string | null = null;
 
@@ -90,12 +88,17 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
 
     return res.status(200).json({
       success: true,
-      message: 'Forma de pagamento atualizada com sucesso.',
+      message: invoiceUrl
+        ? 'Configuração atualizada. O Asaas abrirá a página segura para escolher e informar a forma de pagamento.'
+        : 'Configuração atualizada, mas não há uma cobrança pendente disponível para abrir agora.',
       checkoutUrl: invoiceUrl,
-      authorizationUrl: invoiceUrl
+      authorizationUrl: invoiceUrl,
+      billingType
     });
   } catch (error: any) {
     console.error('[Asaas Update Payment Method]', error);
-    return res.status(500).json({ error: error.message || 'Erro interno ao atualizar forma de pagamento.' });
+    return res.status(500).json({
+      error: error?.message || 'Erro interno ao atualizar forma de pagamento.'
+    });
   }
 }
