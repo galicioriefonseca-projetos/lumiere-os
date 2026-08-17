@@ -51,7 +51,8 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async updateCustomer(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<Customer> {
-    const res = await this.request(mode, apiKey, `/customers/${id}`, 'POST', data);
+    // Asaas atualiza clientes existentes com PUT /customers/{id}.
+    const res = await this.request(mode, apiKey, `/customers/${id}`, 'PUT', data);
     return this.mapCustomer(res);
   }
 
@@ -71,8 +72,6 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async updateSubscription(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<Subscription> {
-    // Asaas documents subscription updates with PUT. POST here caused the hosted
-    // payment-method flow to fail or return non-JSON/404 responses in production.
     const res = await this.request(mode, apiKey, `/subscriptions/${id}`, 'PUT', data);
     return this.mapSubscription(res);
   }
