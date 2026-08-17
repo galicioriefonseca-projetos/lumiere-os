@@ -30,7 +30,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(404).json({ success: false, error: 'Salão não encontrado.' });
     }
 
-    const salonData = salonDoc.data() || {};
+    let salonData = salonDoc.data() || {};
     const authResult = await canManageBilling(user, salonId, salonData);
     if (!authResult.authorized) {
       return res.status(403).json({
@@ -41,21 +41,25 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
 
     // O checkout nunca deve chegar à Asaas sem CPF/CNPJ. Se o frontend
     // enviar os dados nesta chamada, salvamos e sincronizamos o cliente primeiro.
-    // Caso contrário, usamos o cadastro financeiro já existente.
-    let billingData = salonData.billing || {};
-    const hasDocument = Boolean(billingData.document || salonData.document || salonData.cnpj);
-
     if (customerData) {
       await saveBillingCustomerData(salonId, customerData);
       const refreshed = await adminDb.collection('salons').doc(salonId).get();
-      billingData = refreshed.data()?.billing || {};
+      salonData = refreshed.data() || {};
     }
 
-    if (!hasDocument && !billingData.document) {
-      return res.status(422).json({
-        success: false,
-        code: 'BILLING_DATA_REQUIRED',
-        error: 'Complete os dados de faturamento antes de continuar para o pagamento.',
+    const billingData = salonData.billing || {};
+    const document = billingData.document || salonData.document || salonData.cnpj || '';
+
+    // Primeira etapa do fluxo: abrir a tela segura de complementação cadastral.
+    // Isso evita mandar uma requisição inválida à Asaas e dá ao usuário a opção
+    // de finalizar os dados dentro de Minha Assinatura.
+    if (!document) {
+      const completionUrl = `/dashboard/dados-faturamento?salonId=${encodeURIComponent(salonId)}&planId=${encodeURIComponent(planId)}`;
+      return res.status(200).json({
+        success: true,
+        requiresBillingData: true,
+        checkoutUrl: completionUrl,
+        bankSlipUrl: completionUrl,
         missingFields: ['document', 'legalName', 'email', 'mobilePhone']
       });
     }
@@ -63,7 +67,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     // Valida também documentos legados antes de criar qualquer cobrança.
     try {
       normalizeBillingCustomerData({
-        document: billingData.document || salonData.document || salonData.cnpj,
+        document,
         legalName: billingData.legalName || salonData.name,
         email: billingData.email || salonData.billingEmail || salonData.ownerEmail,
         mobilePhone: billingData.mobilePhone || salonData.phone || salonData.whatsapp
@@ -77,9 +81,8 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       });
     }
 
-    // O checkout de ativação permite que o cliente escolha a forma de pagamento
-    // na página hospedada do Asaas. O frontend legado ainda envia CREDIT_CARD,
-    // mas não capturamos cartão dentro do LumièreOS.
+    // O checkout hospedado permite que o cliente escolha a forma de pagamento.
+    // Nenhum dado de cartão é capturado ou armazenado pelo LumièreOS.
     const billingType = 'UNDEFINED' as const;
 
     const subscription = await billingService.createSubscription(
