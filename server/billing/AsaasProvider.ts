@@ -23,7 +23,7 @@ export class AsaasProvider implements BillingProvider {
       headers: this.getHeaders(apiKey),
       body: body ? JSON.stringify(body) : undefined
     };
-    
+
     const response = await fetch(url, options);
     const json = await response.json().catch(() => null);
 
@@ -71,7 +71,9 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async updateSubscription(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<Subscription> {
-    const res = await this.request(mode, apiKey, `/subscriptions/${id}`, 'POST', data);
+    // Asaas documents subscription updates with PUT. POST here caused the hosted
+    // payment-method flow to fail or return non-JSON/404 responses in production.
+    const res = await this.request(mode, apiKey, `/subscriptions/${id}`, 'PUT', data);
     return this.mapSubscription(res);
   }
 
@@ -96,7 +98,7 @@ export class AsaasProvider implements BillingProvider {
       identificationField: res.identificationField
     };
   }
-  
+
   async updatePaymentMethod(mode: 'sandbox' | 'production', apiKey: string, paymentId: string, billingType: PaymentMethod, creditCard?: any, creditCardHolderInfo?: any): Promise<any> {
     const payload: any = { billingType };
     if (billingType === 'CREDIT_CARD' && creditCard && creditCardHolderInfo) {
