@@ -1,22 +1,21 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { billingService } from '../../billing/BillingService.js';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
-import { Plan } from '../../billing/types.js';
 import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Método não permitido. Utilize POST.' });
   }
 
   try {
     const { salonId, planId, billingType } = req.body || {};
-    
+
     if (!salonId || !planId) {
-      return res.status(400).json({ error: 'Missing salonId or planId' });
+      return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
     }
 
-    // 1. Autenticação
     let user;
     try {
       user = await verifyIdToken(req);
@@ -24,51 +23,56 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(401).json({ success: false, error: err.message || 'Não autorizado' });
     }
 
-    // 2. Buscar documento do salão
     const adminDb = getAdminDb();
     const salonDoc = await adminDb.collection('salons').doc(salonId).get();
-    
     if (!salonDoc.exists) {
-      return res.status(404).json({ error: 'Salon not found' });
+      return res.status(404).json({ success: false, error: 'Salão não encontrado.' });
     }
-    
-    const salonData = salonDoc.data();
 
-    // 3. Autorização de Faturamento
+    const salonData = salonDoc.data();
     const authResult = await canManageBilling(user, salonId, salonData);
     if (!authResult.authorized) {
-      return res.status(403).json({ success: false, error: authResult.reason || 'Sem permissão de faturamento para este salão.' });
+      return res.status(403).json({
+        success: false,
+        error: authResult.reason || 'Sem permissão de faturamento para este salão.'
+      });
     }
 
-    // Cria a assinatura usando o BillingService
+    // A criação da assinatura continua centralizada no BillingService.
+    // O valor padrão é CREDIT_CARD para preservar o fluxo legado de ativação.
     const subscription = await billingService.createSubscription(
-       salonId, 
-       planId, 
-       billingType || 'CREDIT_CARD', 
-       salonData
+      salonId,
+      planId,
+      billingType || 'CREDIT_CARD',
+      salonData
     );
 
-    
-    let invoiceUrl = `https://sandbox.asaas.com/i/${subscription.id}`;
+    let invoiceUrl: string | null = null;
     try {
-      const fetchedUrl = await billingService.getSubscriptionInvoiceUrl(subscription.id);
-      if (fetchedUrl) invoiceUrl = fetchedUrl;
-    } catch(err) {
-      console.warn('Could not fetch invoiceUrl from Asaas:', err);
+      invoiceUrl = await billingService.getSubscriptionInvoiceUrl(subscription.id);
+    } catch (err) {
+      console.warn('[Asaas] Não foi possível obter a invoiceUrl da assinatura:', err);
     }
-    
-    return res.status(200).json({ 
-      success: true, 
-      bankSlipUrl: invoiceUrl,
+
+    if (!invoiceUrl) {
+      return res.status(502).json({
+        success: false,
+        error: 'A assinatura foi criada, mas o Asaas ainda não disponibilizou uma página de pagamento. Aguarde alguns segundos e tente novamente.',
+        providerSubscriptionId: subscription.id
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      checkoutUrl: invoiceUrl,
+      invoiceUrl,
       providerSubscriptionId: subscription.id
     });
-  
-    
   } catch (error: any) {
     console.error('[Asaas] Create Checkout Error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Erro interno ao criar pagamento.'
     });
   }
 }
