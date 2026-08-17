@@ -2,7 +2,6 @@ import { BillingProvider, Customer, Subscription, PaymentMethod } from './types.
 
 export class AsaasProvider implements BillingProvider {
   private getBaseUrl(mode: 'sandbox' | 'production') {
-    // Asaas atual: produção e sandbox usam os domínios api.* e não /api/v3.
     return mode === 'sandbox'
       ? 'https://api-sandbox.asaas.com/v3'
       : 'https://api.asaas.com/v3';
@@ -51,7 +50,6 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async updateCustomer(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<Customer> {
-    // Asaas atualiza clientes existentes com PUT /customers/{id}.
     const res = await this.request(mode, apiKey, `/customers/${id}`, 'PUT', data);
     return this.mapCustomer(res);
   }
@@ -62,7 +60,20 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async createSubscription(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<Subscription> {
-    const res = await this.request(mode, apiKey, '/subscriptions', 'POST', data);
+    // O callback é usado apenas para devolver o cliente à aplicação após a
+    // conclusão do pagamento. A ativação financeira continua sendo feita
+    // exclusivamente pelo webhook da Asaas.
+    const payload = { ...data };
+    if (data.callback?.successUrl) {
+      payload.callback = {
+        successUrl: data.callback.successUrl,
+        cancelUrl: data.callback.cancelUrl,
+        expiredUrl: data.callback.expiredUrl,
+        autoRedirect: data.callback.autoRedirect ?? true
+      };
+    }
+
+    const res = await this.request(mode, apiKey, '/subscriptions', 'POST', payload);
     return this.mapSubscription(res);
   }
 
