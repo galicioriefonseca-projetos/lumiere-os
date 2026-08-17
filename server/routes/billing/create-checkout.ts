@@ -10,7 +10,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
   }
 
   try {
-    const { salonId, planId, billingType } = req.body || {};
+    const { salonId, planId } = req.body || {};
 
     if (!salonId || !planId) {
       return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
@@ -38,12 +38,15 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       });
     }
 
-    // A criação da assinatura continua centralizada no BillingService.
-    // O valor padrão é CREDIT_CARD para preservar o fluxo legado de ativação.
+    // O checkout de ativação deve permitir que o cliente escolha a forma de
+    // pagamento na página hospedada do Asaas. O frontend legado ainda envia
+    // CREDIT_CARD, mas não capturamos cartão dentro do LumièreOS.
+    const billingType = 'UNDEFINED' as const;
+
     const subscription = await billingService.createSubscription(
       salonId,
       planId,
-      billingType || 'CREDIT_CARD',
+      billingType,
       salonData
     );
 
@@ -64,8 +67,10 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
 
     return res.status(200).json({
       success: true,
+      // bankSlipUrl permanece como alias para compatibilidade com a tela atual.
       checkoutUrl: invoiceUrl,
       invoiceUrl,
+      bankSlipUrl: invoiceUrl,
       providerSubscriptionId: subscription.id
     });
   } catch (error: any) {
