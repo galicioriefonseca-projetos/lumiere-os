@@ -16,7 +16,8 @@ export interface Plan {
   asaasId?: string;
 }
 
-export type PaymentMethod = 'PIX' | 'CREDIT_CARD' | 'BOLETO';
+// UNDEFINED lets the payer choose the payment method on the Asaas hosted invoice.
+export type PaymentMethod = 'UNDEFINED' | 'PIX' | 'CREDIT_CARD' | 'BOLETO';
 
 export interface Customer {
   id: string; // Asaas ID
