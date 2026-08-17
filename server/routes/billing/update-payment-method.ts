@@ -3,21 +3,6 @@ import { billingService } from '../../billing/BillingService.js';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 
-function normalizeBillingType(value: string | undefined): 'UNDEFINED' | 'CREDIT_CARD' | 'BOLETO' | 'PIX' | undefined {
-  if (!value) return undefined;
-  const normalized = value.toUpperCase();
-  const aliases: Record<string, 'UNDEFINED' | 'CREDIT_CARD' | 'BOLETO' | 'PIX'> = {
-    UNDEFINED: 'UNDEFINED',
-    CHECKOUT: 'UNDEFINED',
-    CHOOSE: 'UNDEFINED',
-    CREDIT_CARD: 'CREDIT_CARD',
-    CREDITCARD: 'CREDIT_CARD',
-    BOLETO: 'BOLETO',
-    PIX: 'PIX'
-  };
-  return aliases[normalized];
-}
-
 export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -27,7 +12,6 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
   try {
     const body = req.body || {};
     const salonId = body.salonId;
-    const requestedMethod = normalizeBillingType(body.billingType || body.paymentMethod);
 
     if (!salonId) {
       return res.status(400).json({ error: 'Informe o salonId.' });
@@ -41,11 +25,10 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       });
     }
 
-    // Para a tela de "próximas cobranças", UNDEFINED é o modo correto quando
-    // queremos que o pagador escolha o método na página hospedada do Asaas.
-    // O backend mantém os aliases antigos para compatibilidade, mas o checkout
-    // hospedado recebe UNDEFINED e não captura dados de cartão no LumièreOS.
-    const billingType = requestedMethod || 'UNDEFINED';
+    // A tela de configuração das próximas mensalidades não coleta cartão no
+    // LumièreOS. UNDEFINED faz o Asaas apresentar a página hospedada e permitir
+    // que o próprio pagador escolha uma forma de pagamento habilitada na conta.
+    const billingType = 'UNDEFINED' as const;
 
     let user;
     try {
@@ -68,12 +51,7 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       });
     }
 
-    await billingService.updatePaymentMethod(
-      salonId,
-      billingType,
-      body.creditCard,
-      body.creditCardHolderInfo
-    );
+    await billingService.updatePaymentMethod(salonId, billingType);
 
     const subscriptionId = salonData?.billing?.subscriptionId;
     let invoiceUrl: string | null = null;
@@ -89,7 +67,7 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
     return res.status(200).json({
       success: true,
       message: invoiceUrl
-        ? 'Configuração atualizada. O Asaas abrirá a página segura para escolher e informar a forma de pagamento.'
+        ? 'Configuração atualizada. A página segura do Asaas permitirá escolher a forma de pagamento.'
         : 'Configuração atualizada, mas não há uma cobrança pendente disponível para abrir agora.',
       checkoutUrl: invoiceUrl,
       authorizationUrl: invoiceUrl,
