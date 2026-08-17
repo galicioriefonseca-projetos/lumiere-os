@@ -6,7 +6,6 @@ import { Toaster } from '@/components/ui/sonner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import OfflineIndicator from './components/OfflineIndicator';
 
-// Lightweight pages (loaded immediately)
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -17,7 +16,6 @@ import PreparingEnvironmentPage from './pages/auth/PreparingEnvironmentPage';
 import DashboardLayout from './components/layouts/DashboardLayout';
 import OnboardingLayout from './components/layouts/OnboardingLayout';
 
-// Heavy pages (lazy loaded)
 import DashboardHome from './pages/dashboard/DashboardHome';
 const ProfessionalsPage = React.lazy(() => import('./pages/dashboard/ProfessionalsPage'));
 const ServicesPage = React.lazy(() => import('./pages/dashboard/ServicesPage'));
@@ -30,8 +28,8 @@ const CommissionsPage = React.lazy(() => import('./pages/dashboard/CommissionsPa
 const AccountPage = React.lazy(() => import('./pages/dashboard/AccountPage'));
 const ReportsPage = React.lazy(() => import('./pages/dashboard/ReportsPage'));
 const SubscriptionPage = React.lazy(() => import('./pages/dashboard/SubscriptionPage'));
+const BillingCustomerPage = React.lazy(() => import('./pages/dashboard/BillingCustomerPage'));
 
-// New core features
 const FinancialPage = React.lazy(() => import('./pages/dashboard/FinancialPage'));
 const InventoryPage = React.lazy(() => import('./pages/dashboard/InventoryPage'));
 const PricingCalculatorPage = React.lazy(() => import('./pages/dashboard/PricingCalculatorPage'));
@@ -44,7 +42,6 @@ const OnboardingGoals = React.lazy(() => import('./pages/onboarding/OnboardingGo
 const OnboardingChecklist = React.lazy(() => import('./pages/onboarding/OnboardingChecklist'));
 const BookingPage = React.lazy(() => import('./pages/booking/BookingPage'));
 
-// Suspense fallback spinner
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-neutral-950">
     <div className="flex flex-col items-center">
@@ -68,7 +65,7 @@ function App() {
             <Route path="/aguardando-pagamento" element={<ProtectedRoute><WaitingPaymentPage /></ProtectedRoute>} />
             <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
-            
+
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
               <Route path="equipe" element={<OnboardingTeam />} />
               <Route path="servicos" element={<OnboardingServices />} />
@@ -94,15 +91,13 @@ function App() {
               <Route path="minha-conta" element={<AccountPage />} />
               <Route path="checklist" element={<ChecklistPage />} />
               <Route path="assinatura" element={<SubscriptionPage />} />
-              
-              {/* New core routes */}
+              <Route path="dados-faturamento" element={<BillingCustomerPage />} />
               <Route path="financeiro" element={<FinancialPage />} />
               <Route path="estoque" element={<InventoryPage />} />
               <Route path="precificacao" element={<PricingCalculatorPage />} />
             </Route>
 
             <Route path="/master" element={<ProtectedRoute requireAdmin><MasterPanel /></ProtectedRoute>} />
-            
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
