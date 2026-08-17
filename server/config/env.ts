@@ -45,7 +45,10 @@ export function validateEnv() {
     app: {
       env: process.env.NODE_ENV || 'development',
       platformAdminEmail: process.env.PLATFORM_ADMIN_EMAIL,
-      url: process.env.APP_URL || 'https://app.lumiereos.com.br',
+      // APP_URL pode ser sobrescrita no Vercel quando houver domínio próprio.
+      // O fallback aponta para o domínio de produção atual para que o retorno
+      // da Asaas nunca seja enviado para um endereço inexistente.
+      url: process.env.APP_URL || 'https://lumiere-os.vercel.app',
       emailFrom: process.env.EMAIL_FROM || 'LumièreOS <onboarding@resend.dev>',
       healthcheckSecret: process.env.HEALTHCHECK_SECRET,
     }
