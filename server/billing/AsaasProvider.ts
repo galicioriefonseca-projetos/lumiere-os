@@ -2,9 +2,10 @@ import { BillingProvider, Customer, Subscription, PaymentMethod } from './types.
 
 export class AsaasProvider implements BillingProvider {
   private getBaseUrl(mode: 'sandbox' | 'production') {
-    return mode === 'sandbox' 
-      ? 'https://sandbox.asaas.com/api/v3'
-      : 'https://api.asaas.com/api/v3';
+    // Asaas atual: produção e sandbox usam os domínios api.* e não /api/v3.
+    return mode === 'sandbox'
+      ? 'https://api-sandbox.asaas.com/v3'
+      : 'https://api.asaas.com/v3';
   }
 
   private getHeaders(apiKey: string) {
