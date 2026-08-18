@@ -76,9 +76,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       });
     }
 
-    // O checkout hospedado permite que a Asaas apresente as formas de pagamento.
-    // O retorno abaixo serve apenas para UX; a liberação da conta continua
-    // dependendo do webhook confirmado pela Asaas.
     const billingType = 'UNDEFINED' as const;
     const appUrl = env.app.url.replace(/\/$/, '');
     const paymentCallback = {
@@ -124,6 +121,14 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     });
   } catch (error: any) {
     console.error('[Asaas] Create Checkout Error:', error);
+    const statusCode = Number(error?.statusCode);
+    if (statusCode === 409) {
+      return res.status(409).json({
+        success: false,
+        code: 'CHECKOUT_IN_PROGRESS',
+        error: error.message || 'Já existe uma tentativa de checkout em andamento.'
+      });
+    }
     return res.status(500).json({
       success: false,
       error: error?.message || 'Erro interno ao criar pagamento.'

@@ -12,7 +12,7 @@
     "lint": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run firestore.rules.test.ts\"",
     "test:webhook": "vitest run tests/webhook/webhook-security.test.ts",
-    "test:billing": "vitest run tests/billing/billing-security.test.ts",
+    "test:billing": "vitest run tests/billing/billing-security.test.ts tests/billing/subscription-idempotency.test.ts",
     "test": "npm run test:webhook && npm run test:billing",
     "test:security": "npm run test:webhook && npm run test:billing",
     "check:release": "node scripts/verify-release.mjs",
@@ -67,7 +67,6 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3",
     "vitest": "^4.1.9"
   },
   "description": "Plataforma SaaS de gestão para salões, clínicas de estética e negócios de beleza.",
