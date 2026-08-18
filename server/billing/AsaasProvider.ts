@@ -77,6 +77,16 @@ export class AsaasProvider implements BillingProvider {
     return this.mapSubscription(res);
   }
 
+  async listSubscriptions(mode: 'sandbox' | 'production', apiKey: string, filters: { customer?: string; externalReference?: string; includeDeleted?: boolean } = {}): Promise<Subscription[]> {
+    const params = new URLSearchParams({ limit: '100', offset: '0' });
+    if (filters.customer) params.set('customer', filters.customer);
+    if (filters.externalReference) params.set('externalReference', filters.externalReference);
+    if (filters.includeDeleted) params.set('includeDeleted', 'true');
+
+    const res = await this.request(mode, apiKey, `/subscriptions?${params.toString()}`);
+    return Array.isArray(res?.data) ? res.data.map((item: any) => this.mapSubscription(item)) : [];
+  }
+
   async cancelSubscription(mode: 'sandbox' | 'production', apiKey: string, id: string): Promise<boolean> {
     const res = await this.request(mode, apiKey, `/subscriptions/${id}`, 'DELETE');
     return res.deleted || false;
