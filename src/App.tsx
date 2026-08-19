@@ -6,7 +6,7 @@ import { Toaster } from '@/components/ui/sonner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import OfflineIndicator from './components/OfflineIndicator';
 
-import LandingPage from './pages/LandingPage';
+import PublicHomePage from './pages/PublicHomePage';
 import PricingPage from './pages/PricingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -56,7 +56,7 @@ function App() {
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<PublicHomePage />} />
             <Route path="/planos" element={<PricingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cadastro" element={<RegisterPage />} />
