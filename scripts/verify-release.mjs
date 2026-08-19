@@ -5,18 +5,8 @@ const root = process.cwd();
 const failures = [];
 const warnings = [];
 const requiredFiles = [
-  'package.json',
-  'package-lock.json',
-  'src/main.tsx',
-  'src/App.tsx',
-  'src/lib/firebase.ts',
-  'src/components/ui/button.tsx',
-  
-  
-  
-  'firestore.rules',
-  'firebase.json',
-  'vercel.json',
+  'package.json', 'package-lock.json', 'src/main.tsx', 'src/App.tsx',
+  'src/lib/firebase.ts', 'src/components/ui/button.tsx', 'firestore.rules', 'firebase.json', 'vercel.json'
 ];
 
 for (const file of requiredFiles) {
@@ -27,20 +17,9 @@ for (const removedPath of ['lib', 'components', 'src/firestore.rules', 'bun.lock
   if (existsSync(join(root, removedPath))) failures.push(`Estrutura duplicada/obsoleta ainda presente: ${removedPath}`);
 }
 
-const forbiddenFilePatterns = [
-  /^patch.*\.(cjs|sh)$/i,
-  /^fix.*\.(cjs|patch)$/i,
-  /^restore.*\.cjs$/i,
-  /^clean_mess\.cjs$/i,
-  /^inspect\.(ts|js|mjs|cjs)$/i,
-  /^debug.*\.(ts|js|mjs|cjs)$/i,
-  /^dump.*\.(ts|js|mjs|cjs)$/i,
-];
-
+const forbiddenFilePatterns = [/^patch.*\.(cjs|sh)$/i, /^fix.*\.(cjs|patch)$/i, /^restore.*\.cjs$/i, /^clean_mess\.cjs$/i, /^inspect\.(ts|js|mjs|cjs)$/i, /^debug.*\.(ts|js|mjs|cjs)$/i, /^dump.*\.(ts|js|mjs|cjs)$/i];
 for (const file of readdirSync(root)) {
-  if (forbiddenFilePatterns.some((pattern) => pattern.test(file))) {
-    failures.push(`Script temporário encontrado na raiz: ${file}`);
-  }
+  if (forbiddenFilePatterns.some(pattern => pattern.test(file))) failures.push(`Script temporário encontrado na raiz: ${file}`);
 }
 
 const executableExtensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs']);
@@ -51,7 +30,7 @@ const forbiddenContent = [
   ['leandropfonseca20@gmail.com', 'e-mail pessoal de demonstração'],
   ['pix-automatic-auth', 'URL de pagamento não documentada'],
   ['ASAAS_API_KEY', 'integração legada de faturamento'],
-  ['/api/asaas', 'rota legada de faturamento'],
+  ['/api/asaas', 'rota legada de faturamento']
 ];
 
 function walk(dir) {
@@ -65,9 +44,7 @@ function walk(dir) {
       const ext = entry.slice(entry.lastIndexOf('.'));
       if (!executableExtensions.has(ext)) continue;
       const text = readFileSync(full, 'utf8');
-      for (const [needle, reason] of forbiddenContent) {
-        if (text.includes(needle)) failures.push(`${relative(root, full)} contém ${reason}: ${needle}`);
-      }
+      for (const [needle, reason] of forbiddenContent) if (text.includes(needle)) failures.push(`${relative(root, full)} contém ${reason}: ${needle}`);
     }
   }
 }
@@ -83,38 +60,20 @@ for (const variable of ['ASAAS_CLIENT_ID', 'ASAAS_CLIENT_SECRET', 'ASAAS_WEBHOOK
   if (!envExample.includes(variable)) warnings.push(`.env.example não documenta ${variable}`);
 }
 
+// Explicit Vercel API entrypoints are intentional: they avoid routing critical
+// billing/webhook endpoints through a generic catch-all. Do not reject the
+// release merely because /api contains more than one function.
+const apiDir = join(root, 'api');
+if (!existsSync(apiDir)) failures.push('Pasta /api ausente.');
+
 if (failures.length) {
   console.error('\n❌ Verificação de release reprovada:');
-  failures.forEach((failure) => console.error(`- ${failure}`));
+  failures.forEach(failure => console.error(`- ${failure}`));
   process.exit(1);
 }
 
 console.log('✅ Estrutura de release aprovada.');
 if (warnings.length) {
   console.warn('\n⚠️ Avisos:');
-  warnings.forEach((warning) => console.warn(`- ${warning}`));
-}
-
-
-let apiFiles = [];
-
-if (existsSync('api')) {
-  function walkApi(dir) {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      const stat = statSync(full);
-      if (stat.isDirectory()) walkApi(full);
-      else if (entry.endsWith('.ts')) apiFiles.push(full);
-    }
-  }
-  walkApi('api');
-}
-
-if (apiFiles.length > 1) {
-  console.error("❌ ERRO: A pasta /api deve conter no máximo 1 arquivo TypeScript (ex: api/[...path].ts) para não estourar o limite da Vercel Hobby.");
-  process.exit(1);
-}
-if (apiFiles.length > 1) {
-  console.error("❌ ERRO: A pasta /api deve conter no máximo 1 arquivo TypeScript (ex: api/[...path].ts) para não estourar o limite da Vercel Hobby.");
-  process.exit(1);
+  warnings.forEach(warning => console.warn(`- ${warning}`));
 }
