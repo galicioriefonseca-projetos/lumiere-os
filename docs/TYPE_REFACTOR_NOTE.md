@@ -1,0 +1,1 @@
+Temporary note: plan type aliases are intentionally preserved in the existing source model until a full type migration can be performed without dropping unrelated domain interfaces.
