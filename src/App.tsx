@@ -7,6 +7,7 @@ import PWAInstallPrompt from './components/PWAInstallPrompt';
 import OfflineIndicator from './components/OfflineIndicator';
 
 import LandingPage from './pages/LandingPage';
+import PricingPage from './pages/PricingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import InviteRegisterPage from './pages/auth/InviteRegisterPage';
@@ -29,12 +30,10 @@ const AccountPage = React.lazy(() => import('./pages/dashboard/AccountPage'));
 const ReportsPage = React.lazy(() => import('./pages/dashboard/ReportsPage'));
 const SubscriptionPage = React.lazy(() => import('./pages/dashboard/SubscriptionPage'));
 const BillingCustomerPage = React.lazy(() => import('./pages/dashboard/BillingCustomerPage'));
-
 const FinancialPage = React.lazy(() => import('./pages/dashboard/FinancialPage'));
 const InventoryPage = React.lazy(() => import('./pages/dashboard/InventoryPage'));
 const PricingCalculatorPage = React.lazy(() => import('./pages/dashboard/PricingCalculatorPage'));
 const GamificationPage = React.lazy(() => import('./pages/dashboard/GamificationPage'));
-
 const MasterPanel = React.lazy(() => import('./pages/MasterPanel'));
 const OnboardingTeam = React.lazy(() => import('./pages/onboarding/OnboardingTeam'));
 const OnboardingServices = React.lazy(() => import('./pages/onboarding/OnboardingServices'));
@@ -45,7 +44,7 @@ const BookingPage = React.lazy(() => import('./pages/booking/BookingPage'));
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-neutral-950">
     <div className="flex flex-col items-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37] mb-4"></div>
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37] mb-4" />
       <p className="text-neutral-400 text-sm">Carregando...</p>
     </div>
   </div>
@@ -58,6 +57,7 @@ function App() {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/planos" element={<PricingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cadastro" element={<RegisterPage />} />
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
@@ -65,7 +65,6 @@ function App() {
             <Route path="/aguardando-pagamento" element={<ProtectedRoute><WaitingPaymentPage /></ProtectedRoute>} />
             <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
-
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
               <Route path="equipe" element={<OnboardingTeam />} />
               <Route path="servicos" element={<OnboardingServices />} />
@@ -73,7 +72,6 @@ function App() {
               <Route path="checklist" element={<OnboardingChecklist />} />
               <Route index element={<Navigate to="equipe" replace />} />
             </Route>
-
             <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
               <Route index element={<DashboardHome />} />
               <Route path="profissional" element={<DashboardHome />} />
@@ -96,7 +94,6 @@ function App() {
               <Route path="estoque" element={<InventoryPage />} />
               <Route path="precificacao" element={<PricingCalculatorPage />} />
             </Route>
-
             <Route path="/master" element={<ProtectedRoute requireAdmin><MasterPanel /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
