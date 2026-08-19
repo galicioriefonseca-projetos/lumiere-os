@@ -1,6 +1,6 @@
 import catalog from './planCatalog.json';
 
-export type PublicPlanId = 'essential' | 'professional' | 'performance_plus' | 'multiunit' | 'enterprise';
+export type PublicPlanId = 'essential' | 'professional' | 'performance_plus' | 'multiunit' | 'enterprise_custom';
 export type PublicBillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
 
 export function getPlanPrice(planId: PublicPlanId, cycle: PublicBillingCycle): number | null {
