@@ -1,9 +1,13 @@
+export type BillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
+
 export interface Plan {
   id: string;
   name: string;
   description: string;
   price: number;
-  billingCycle: 'MONTHLY' | 'YEARLY' | 'QUARTERLY' | 'SEMIANNUALLY';
+  semiannualPrice?: number;
+  annualPrice?: number;
+  billingCycle: BillingCycle;
   trialDays: number;
   features: string[];
   active: boolean;
@@ -14,13 +18,15 @@ export interface Plan {
   updatedAt?: string;
   maxProfessionals?: number;
   asaasId?: string;
+  customPricing?: boolean;
+  legacy?: boolean;
 }
 
 // UNDEFINED lets the payer choose the payment method on the Asaas hosted invoice.
 export type PaymentMethod = 'UNDEFINED' | 'PIX' | 'CREDIT_CARD' | 'BOLETO';
 
 export interface Customer {
-  id: string; // Asaas ID
+  id: string;
   name: string;
   email: string;
   cpfCnpj?: string;
@@ -36,6 +42,7 @@ export interface Subscription {
   nextDueDate: string;
   status: string;
   description?: string;
+  cycle?: BillingCycle;
 }
 
 export interface BillingProvider {
