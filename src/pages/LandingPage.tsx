@@ -1,822 +1,371 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { 
-  Sparkles, 
-  Scissors, 
-  CalendarCheck2, 
-  ArrowRight, 
-  ShieldCheck, 
-  CheckCircle2, 
-  RefreshCcw, 
-  FileText, 
-  TrendingUp, 
-  CalendarDays, 
-  Inbox, 
-  Zap, 
-  Lock, 
-  Check, 
-  X,
-  Users,
-  LineChart,
-  DollarSign,
-  Briefcase,
+import {
+  ArrowRight,
+  BarChart3,
+  CalendarCheck2,
+  Check,
   ChevronRight,
-  ShieldAlert
+  CircleDollarSign,
+  Clock3,
+  Crown,
+  LayoutDashboard,
+  Menu,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  X,
+  XCircle,
+  Zap,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import PWAInstallButton from '../components/PWAInstallButton';
+
+type BillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
+
+type Plan = {
+  id: string;
+  name: string;
+  description: string;
+  monthlyPrice: number | null;
+  maxProfessionals: number | null;
+  badge?: string | null;
+  customPricing?: boolean;
+  features: string[];
+};
+
+const plans: Plan[] = [
+  {
+    id: 'essential',
+    name: 'Essencial',
+    description: 'Para organizar a operação e sair do improviso.',
+    monthlyPrice: 197,
+    maxProfessionals: 5,
+    features: ['Até 5 profissionais', 'Agenda completa', 'Clientes e serviços', 'Comandas', 'Controle básico de caixa', 'Agendamento online', 'Dashboard operacional', 'Relatórios básicos', 'Suporte padrão'],
+  },
+  {
+    id: 'professional',
+    name: 'Profissional',
+    description: 'Para negócios em crescimento que precisam de controle financeiro e gestão de equipe.',
+    monthlyPrice: 397,
+    maxProfessionals: 15,
+    badge: 'Mais escolhido',
+    features: ['Tudo do Essencial', 'Até 15 profissionais', 'Financeiro completo', 'Fluxo de caixa', 'Contas a pagar e receber', 'Comissões e metas', 'CRM', 'Relatórios avançados', 'Dashboard de gestão', 'Suporte prioritário'],
+  },
+  {
+    id: 'performance_plus',
+    name: 'Performance',
+    description: 'Para operações que querem inteligência, automação e decisões orientadas por dados.',
+    monthlyPrice: 597,
+    maxProfessionals: 30,
+    features: ['Tudo do Profissional', 'Até 30 profissionais', 'Lumi — IA', 'Insights automáticos', 'Análises financeiras avançadas', 'Indicadores inteligentes', 'Análise de desempenho da equipe', 'Relatórios gerenciais avançados', 'Automação avançada', 'Suporte prioritário'],
+  },
+  {
+    id: 'multiunit',
+    name: 'Multiunidade',
+    description: 'Para grupos, redes e operações com múltiplas unidades.',
+    monthlyPrice: 897,
+    maxProfessionals: 60,
+    features: ['Tudo do Performance', 'Até 60 profissionais por unidade', 'Gestão multiunidade', 'Dashboard consolidado', 'Comparação entre unidades', 'Financeiro por unidade', 'Relatórios executivos', 'Gestão centralizada', 'Permissões avançadas', 'Suporte VIP'],
+  },
+  {
+    id: 'enterprise_custom',
+    name: 'Enterprise',
+    description: 'Para operações de grande porte com necessidades comerciais e técnicas personalizadas.',
+    monthlyPrice: null,
+    maxProfessionals: null,
+    badge: 'Sob consulta',
+    customPricing: true,
+    features: ['Tudo do Multiunidade', 'Implantação personalizada', 'Integrações avançadas', 'BI e relatórios personalizados', 'Gerente de conta', 'SLA e suporte dedicado'],
+  },
+];
+
+const discountByCycle: Record<BillingCycle, number> = {
+  MONTHLY: 0,
+  SEMIANNUALLY: 0.1,
+  YEARLY: 0.15,
+};
+
+const cycleLabels: Record<BillingCycle, { label: string; short: string }> = {
+  MONTHLY: { label: 'Mensal', short: 'mês' },
+  SEMIANNUALLY: { label: 'Semestral', short: 'mês no semestral' },
+  YEARLY: { label: 'Anual', short: 'mês no anual' },
+};
+
+function formatBRL(value: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
+}
+
+function monthlyEquivalent(plan: Plan, cycle: BillingCycle) {
+  if (plan.monthlyPrice == null) return null;
+  return Math.round(plan.monthlyPrice * (1 - discountByCycle[cycle]));
+}
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'agenda' | 'financeiro' | 'equipe' | 'indicadores'>('dashboard');
+  const [cycle, setCycle] = useState<BillingCycle>('MONTHLY');
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true;
-    if (isStandalone) {
-      navigate('/login?source=pwa', { replace: true });
-    }
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    if (isStandalone) navigate('/login?source=pwa', { replace: true });
   }, [navigate]);
 
-  return (
-    <div className="min-h-screen bg-black text-foreground flex flex-col font-sans selection:bg-primary/30 selection:text-primary">
-      {/* Glow ambient background effects */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute top-[1200px] right-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute bottom-[800px] left-10 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none -z-10" />
+  const cycleDiscount = discountByCycle[cycle];
 
-      {/* Header Premium */}
-      <header className="border-b border-white/5 backdrop-blur-md sticky top-0 z-50 bg-black/60">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary/20 blur-md rounded-full" />
-              <Sparkles className="w-8 h-8 text-primary relative z-10 animate-pulse" />
-            </div>
-            <span className="text-2xl font-heading font-medium tracking-wide bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">Lumière</span>
-            <span className="text-[10px] uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded font-mono">OS</span>
-          </div>
-          
-          <div className="flex items-center gap-6">
-            <Button 
-              variant="ghost" 
-              onClick={() => navigate("/login")} 
-              className="rounded-full text-zinc-400 hover:text-white transition-colors text-sm hover:bg-white/5 px-5"
-            >
-              Acessar Sistema
-            </Button>
-            <Button 
-              onClick={() => navigate("/cadastro")} 
-              className="rounded-full bg-primary hover:bg-gold-400 text-black font-semibold shadow-[0_0_20px_rgba(212,175,55,0.2)] transition-all px-6 py-2.5 text-xs uppercase tracking-wider"
-            >
-              Diagnóstico Estratégico
-            </Button>
-          </div>
+  const choosePlan = (planId: string) => {
+    if (planId === 'enterprise_custom') {
+      const el = document.getElementById('contato');
+      el?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    navigate(`/cadastro?planId=${encodeURIComponent(planId)}&billingCycle=${encodeURIComponent(cycle)}`);
+  };
+
+  const anchor = (id: string) => {
+    setMobileOpen(false);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const benefits = useMemo(() => [
+    { icon: CalendarCheck2, title: 'Agenda sem conflito', text: 'Tenha uma visão clara dos horários, profissionais e atendimentos para reduzir desencontros e decisões de última hora.' },
+    { icon: CircleDollarSign, title: 'Financeiro sob controle', text: 'Centralize entradas, saídas, contas, comissões e metas para saber o que está acontecendo com o dinheiro do negócio.' },
+    { icon: Users, title: 'Equipe mais previsível', text: 'Acompanhe profissionais, metas e processos em um único lugar, com menos cobrança manual e mais clareza.' },
+    { icon: BarChart3, title: 'Decisões com dados', text: 'Transforme informações da operação em indicadores para identificar oportunidades e agir antes que pequenos problemas cresçam.' },
+  ], []);
+
+  return (
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-primary/30 selection:text-primary">
+      <header className="sticky top-0 z-50 border-b border-white/5 bg-black/75 backdrop-blur-xl">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 md:px-6">
+          <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-2.5" aria-label="LumièreOS início">
+            <Sparkles className="h-7 w-7 text-primary" />
+            <span className="font-heading text-2xl tracking-wide">Lumière</span>
+            <span className="rounded border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-primary">OS</span>
+          </button>
+
+          <nav className="hidden items-center gap-7 md:flex">
+            <button onClick={() => anchor('problema')} className="text-sm text-zinc-400 transition hover:text-white">O problema</button>
+            <button onClick={() => anchor('recursos')} className="text-sm text-zinc-400 transition hover:text-white">Recursos</button>
+            <button onClick={() => anchor('planos')} className="text-sm text-zinc-400 transition hover:text-white">Planos</button>
+            <button onClick={() => navigate('/login')} className="text-sm text-zinc-400 transition hover:text-white">Entrar</button>
+            <Button onClick={() => navigate('/cadastro')} className="rounded-full bg-primary px-6 text-xs font-bold uppercase tracking-wider text-black hover:bg-gold-400">Começar agora</Button>
+          </nav>
+
+          <button onClick={() => setMobileOpen(v => !v)} className="md:hidden" aria-label="Abrir menu">
+            {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
+        {mobileOpen && (
+          <div className="border-t border-white/5 bg-zinc-950 px-5 py-5 md:hidden">
+            <div className="flex flex-col gap-4">
+              <button onClick={() => anchor('problema')} className="text-left text-sm text-zinc-300">O problema</button>
+              <button onClick={() => anchor('recursos')} className="text-left text-sm text-zinc-300">Recursos</button>
+              <button onClick={() => anchor('planos')} className="text-left text-sm text-zinc-300">Planos</button>
+              <button onClick={() => navigate('/login')} className="text-left text-sm text-zinc-300">Entrar</button>
+              <Button onClick={() => navigate('/cadastro')} className="rounded-full bg-primary text-black">Começar agora</Button>
+            </div>
+          </div>
+        )}
       </header>
 
-      <main className="flex-1">
-        {/* Hero Section - Posicionamento Premium */}
-        <section className="relative pt-32 pb-24 px-6 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-background to-background -z-10" />
-          <div className="max-w-5xl mx-auto text-center space-y-8">
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8 }}
-            >
-              <span className="px-4 py-2 rounded-full border border-primary/25 bg-primary/5 text-primary text-xs font-semibold tracking-widest uppercase mb-4 inline-flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5" />
-                O Padrão Ouro em Gestão de Beleza
-              </span>
+      <main>
+        <section className="relative overflow-hidden px-5 pb-24 pt-24 md:pb-32 md:pt-32">
+          <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgba(212,175,55,0.14),transparent_55%)]" />
+          <div className="mx-auto max-w-6xl text-center">
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" /> Gestão feita para negócios de beleza
             </motion.div>
-            
-            <motion.h1 
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.1 }}
-              className="text-5xl md:text-8xl font-light tracking-tight leading-[1.05] font-sans"
-            >
-              O sistema operacional <br/>
-              para <span className="italic font-medium text-transparent bg-clip-text bg-gradient-to-r from-primary via-gold-400 to-white">empresas da beleza.</span>
+            <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="mx-auto max-w-5xl text-5xl font-light leading-[1.04] tracking-tight md:text-7xl lg:text-8xl">
+              Pare de <span className="text-zinc-500">apagar incêndios.</span><br />
+              Comece a <span className="bg-gradient-to-r from-primary via-yellow-200 to-white bg-clip-text font-medium italic text-transparent">comandar.</span>
             </motion.h1>
-            
-            <motion.p 
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="text-lg md:text-xl text-zinc-400 font-light max-w-3xl mx-auto leading-relaxed"
-            >
-              Substitua dezenas de ferramentas genéricas por um único ecossistema integrado de alta performance. Desenvolvido exclusivamente para salões de beleza, clínicas e barbearias de alto padrão que buscam operação impecável e inteligência comercial.
+            <motion.p initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }} className="mx-auto mt-7 max-w-3xl text-base leading-7 text-zinc-400 md:text-xl md:leading-8">
+              O LumièreOS coloca agenda, clientes, equipe, financeiro e indicadores no mesmo lugar — para que a gestão deixe de depender de planilhas, mensagens espalhadas e decisões no achismo.
             </motion.p>
-            
-            <motion.div 
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.3 }}
-              className="flex flex-col sm:flex-row justify-center gap-5 pt-6"
-            >
-              <Button 
-                size="lg" 
-                onClick={() => navigate("/cadastro")} 
-                className="rounded-full h-14 px-10 text-xs uppercase tracking-wider bg-primary hover:bg-gold-400 text-black font-bold shadow-[0_0_35px_rgba(212,175,55,0.25)] hover:shadow-[0_0_55px_rgba(212,175,55,0.45)] transition-all duration-300"
-              >
-                Iniciar Diagnóstico Estratégico
+            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }} className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button onClick={() => anchor('planos')} className="h-14 rounded-full bg-primary px-9 text-xs font-bold uppercase tracking-wider text-black shadow-[0_0_35px_rgba(212,175,55,0.2)] hover:bg-gold-400">
+                Ver planos e escolher <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-              <Button 
-                size="lg" 
-                variant="outline" 
-                onClick={() => {
-                  const el = document.getElementById('tour');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }} 
-                className="rounded-full h-14 px-10 text-xs uppercase tracking-wider border-zinc-800 hover:border-primary/50 text-zinc-300 hover:text-white transition-all duration-300 bg-zinc-950/40"
-              >
-                Ver o Sistema por Dentro
+              <Button variant="outline" onClick={() => navigate('/cadastro')} className="h-14 rounded-full border-zinc-800 bg-zinc-950/60 px-9 text-xs uppercase tracking-wider text-zinc-200 hover:border-primary/40 hover:bg-zinc-900">
+                Fazer diagnóstico
               </Button>
             </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5, duration: 1 }}
-              className="flex justify-center items-center gap-2 pt-4 text-xs text-zinc-500 font-light"
-            >
-              <ShieldCheck className="w-4 h-4 text-primary" />
-              <span>Garantia de 7 dias com intermediação segura pela Asaas</span>
-            </motion.div>
+            <div className="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-zinc-500">
+              <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-400" /> Escolha o plano que faz sentido</span>
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-primary" /> Pagamentos processados pelo Asaas</span>
+              <span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-primary" /> Gestão em qualquer dispositivo</span>
+            </div>
           </div>
         </section>
 
-        {/* PWA App Install Banner */}
-        <section className="py-10 px-6">
-          <div className="max-w-5xl mx-auto rounded-3xl bg-gradient-to-br from-zinc-900/80 to-black border border-white/5 p-8 md:p-10 flex flex-col md:flex-row items-center justify-between gap-8 text-center md:text-left relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
-              <Sparkles className="w-64 h-64 text-primary" />
+        <section id="problema" className="border-y border-white/5 bg-zinc-950/60 px-5 py-20 md:py-24">
+          <div className="mx-auto max-w-6xl">
+            <div className="grid gap-12 md:grid-cols-[0.9fr_1.1fr] md:items-center">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Se isso acontece, o problema não é falta de esforço</span>
+                <h2 className="mt-4 text-4xl font-light leading-tight md:text-5xl">Sua empresa cresceu.<br /><span className="text-zinc-500">A forma de administrar também precisa crescer.</span></h2>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  'A agenda depende de mensagens, memória e conferências manuais.',
+                  'O dinheiro entra, mas é difícil enxergar o resultado com clareza.',
+                  'A equipe precisa ser cobrada o tempo todo para seguir processos.',
+                  'Existem dados, mas faltam respostas para saber onde agir primeiro.',
+                ].map((item) => (
+                  <div key={item} className="rounded-2xl border border-white/5 bg-black/40 p-5">
+                    <XCircle className="mb-3 h-5 w-5 text-red-400/70" />
+                    <p className="text-sm leading-6 text-zinc-300">{item}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="relative z-10 flex-1 space-y-2">
-              <span className="text-[10px] uppercase tracking-widest font-mono text-primary font-bold">Tecnologia PWA</span>
-              <h3 className="text-2xl font-heading text-white">Sempre com você, no celular ou tablet</h3>
-              <p className="text-zinc-400 font-light text-sm max-w-xl">
-                O Lumière foi projetado para funcionar perfeitamente em dispositivos móveis. Instale nosso aplicativo diretamente do navegador e controle sua operação com um toque.
-              </p>
+          </div>
+        </section>
+
+        <section id="recursos" className="px-5 py-24 md:py-28">
+          <div className="mx-auto max-w-6xl">
+            <div className="mx-auto max-w-3xl text-center">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Uma operação, uma visão</span>
+              <h2 className="mt-4 text-4xl font-light md:text-5xl">Menos tarefas administrativas.<br /><span className="text-zinc-500">Mais tempo para administrar.</span></h2>
+              <p className="mt-5 text-zinc-400">O LumièreOS conecta as áreas que mais impactam o dia a dia para transformar informação espalhada em uma visão de negócio.</p>
             </div>
-            <div className="relative z-10 shrink-0">
+            <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {benefits.map(({ icon: Icon, title, text }) => (
+                <motion.div key={title} whileHover={{ y: -4 }} className="rounded-3xl border border-white/5 bg-zinc-950/70 p-7 transition hover:border-primary/20">
+                  <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-primary/5"><Icon className="h-5 w-5 text-primary" /></div>
+                  <h3 className="text-lg font-medium">{title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-zinc-500">{text}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="border-y border-white/5 bg-zinc-950/60 px-5 py-24">
+          <div className="mx-auto max-w-6xl">
+            <div className="grid gap-10 md:grid-cols-3">
+              <div className="md:col-span-1">
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Do caos ao controle</span>
+                <h2 className="mt-4 text-4xl font-light">O que muda quando tudo conversa?</h2>
+              </div>
+              <div className="space-y-4 md:col-span-2">
+                {[
+                  ['01', 'Você enxerga a operação', 'Agenda, equipe e atendimento deixam de competir por atenção em lugares diferentes.'],
+                  ['02', 'Você entende o financeiro', 'Entradas, saídas, contas e comissões ficam organizados para apoiar decisões melhores.'],
+                  ['03', 'Você age antes do problema', 'Indicadores e inteligência ajudam a identificar oportunidades e pontos de atenção.'],
+                ].map(([number, title, text]) => (
+                  <div key={number} className="flex gap-5 rounded-2xl border border-white/5 bg-black/40 p-6">
+                    <span className="font-mono text-sm text-primary">{number}</span>
+                    <div><h3 className="font-medium">{title}</h3><p className="mt-1 text-sm leading-6 text-zinc-500">{text}</p></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="px-5 py-20">
+          <div className="mx-auto max-w-5xl rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/10 via-zinc-950 to-black p-8 md:p-12">
+            <div className="grid gap-8 md:grid-cols-[1fr_auto] md:items-center">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Feito para acompanhar a rotina</span>
+                <h2 className="mt-3 text-3xl font-light">Sua gestão onde a operação acontece.</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">Use no computador, celular ou tablet. O LumièreOS foi pensado para acompanhar proprietários e equipes durante o dia inteiro.</p>
+              </div>
               <PWAInstallButton variant="button" />
             </div>
           </div>
         </section>
 
-        {/* TOUR SYSTEM SECTION - IMAGENS DO SISTEMA COM INTERATIVIDADE LUXUOSA EM CSS */}
-        <section id="tour" className="py-24 px-6 border-y border-white/5 bg-zinc-950/40 relative">
-          <div className="max-w-7xl mx-auto space-y-16">
-            <div className="text-center space-y-4 max-w-3xl mx-auto">
-              <span className="text-xs uppercase font-bold text-primary tracking-widest bg-primary/10 px-4 py-1.5 rounded-full">O Ecossistema LumièreOS</span>
-              <h2 className="text-4xl md:text-5xl font-heading font-light tracking-tight text-white font-sans">Sua empresa de beleza em alta definição</h2>
-              <p className="text-zinc-400 font-light leading-relaxed text-base">
-                Explore a refinada interface do LumièreOS. Projetado com estética premium de alto contraste, tipografia perfeita e carregamento instantâneo.
-              </p>
+        <section id="planos" className="border-t border-white/5 bg-zinc-950/50 px-5 py-24 md:py-28">
+          <div className="mx-auto max-w-7xl">
+            <div className="mx-auto max-w-3xl text-center">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Escolha o nível da sua operação</span>
+              <h2 className="mt-4 text-4xl font-light md:text-5xl">Um plano para cada momento do negócio.</h2>
+              <p className="mt-5 text-zinc-400">Comece pelo que sua operação precisa hoje e evolua quando fizer sentido.</p>
             </div>
 
-            {/* Tabs Controller */}
-            <div className="flex flex-wrap justify-center gap-2 max-w-3xl mx-auto" id="system-tour-tabs">
-              {[
-                { id: 'dashboard', label: 'Painel Geral (Dashboard)', icon: LineChart },
-                { id: 'agenda', label: 'Agenda Inteligente', icon: CalendarCheck2 },
-                { id: 'financeiro', label: 'Faturamento & Comissões', icon: DollarSign },
-                { id: 'equipe', label: 'Checklist Lumière', icon: Scissors },
-                { id: 'indicadores', label: 'IA Lumière Analytics', icon: TrendingUp },
-              ].map((tab) => {
-                const Icon = tab.icon;
+            <div className="mx-auto mt-10 flex w-fit rounded-full border border-white/10 bg-black p-1.5">
+              {(Object.keys(cycleLabels) as BillingCycle[]).map((item) => (
+                <button key={item} onClick={() => setCycle(item)} className={`rounded-full px-5 py-2.5 text-xs font-semibold transition ${cycle === item ? 'bg-primary text-black' : 'text-zinc-500 hover:text-white'}`}>
+                  {cycleLabels[item].label}
+                  {item !== 'MONTHLY' && <span className="ml-1.5 text-[9px]">-{Math.round(discountByCycle[item] * 100)}%</span>}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 text-center text-xs text-zinc-500">
+              {cycle === 'MONTHLY' ? 'Pagamento mensal, sem desconto de ciclo.' : cycle === 'SEMIANNUALLY' ? 'Você economiza 10% no ciclo semestral.' : 'Você economiza 15% no ciclo anual.'}
+            </div>
+
+            <div className="mt-12 grid gap-5 lg:grid-cols-4">
+              {plans.filter(plan => !plan.customPricing).map((plan) => {
+                const monthly = monthlyEquivalent(plan, cycle)!;
                 return (
-                  <button
-                    key={tab.id}
-                    id={`tab-btn-${tab.id}`}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 px-5 py-3 rounded-full text-xs font-semibold uppercase tracking-wider transition-all duration-300 cursor-pointer border ${
-                      activeTab === tab.id
-                        ? 'bg-primary text-black border-primary shadow-[0_0_20px_rgba(212,175,55,0.2)]'
-                        : 'bg-zinc-900/60 text-zinc-400 border-white/5 hover:bg-zinc-900 hover:border-white/10 hover:text-white'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
-                  </button>
+                  <motion.div key={plan.id} whileHover={{ y: -5 }} className={`relative flex flex-col rounded-3xl border p-7 ${plan.id === 'professional' ? 'border-primary/50 bg-gradient-to-b from-primary/10 to-zinc-950 shadow-[0_0_45px_rgba(212,175,55,0.08)]' : 'border-white/7 bg-zinc-950/80'}`}>
+                    {plan.badge && <div className="absolute -top-3 left-6 rounded-full bg-primary px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-black"><Crown className="mr-1 inline h-3 w-3" />{plan.badge}</div>}
+                    <h3 className="text-xl font-medium">{plan.name}</h3>
+                    <p className="mt-3 min-h-[60px] text-sm leading-6 text-zinc-500">{plan.description}</p>
+                    <div className="mt-7">
+                      <div className="flex items-end gap-1"><span className="text-4xl font-semibold tracking-tight">{formatBRL(monthly)}</span><span className="mb-1.5 text-xs text-zinc-500">/{cycleLabels[cycle].short}</span></div>
+                      {cycle !== 'MONTHLY' && <p className="mt-2 text-xs text-primary">Economize {Math.round(cycleDiscount * 100)}% neste ciclo</p>}
+                    </div>
+                    <div className="my-6 h-px bg-white/5" />
+                    <div className="mb-5 flex items-center gap-2 text-xs font-medium text-zinc-300"><Users className="h-4 w-4 text-primary" /> Até {plan.maxProfessionals} profissionais</div>
+                    <ul className="flex-1 space-y-3">
+                      {plan.features.slice(0, 8).map(feature => <li key={feature} className="flex gap-2 text-xs leading-5 text-zinc-400"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />{feature}</li>)}
+                    </ul>
+                    <Button onClick={() => choosePlan(plan.id)} className={`mt-8 h-12 w-full rounded-full text-xs font-bold uppercase tracking-wider ${plan.id === 'professional' ? 'bg-primary text-black hover:bg-gold-400' : 'border border-white/10 bg-white/5 text-white hover:bg-white/10'}`}>
+                      Escolher {plan.name}<ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </motion.div>
                 );
               })}
             </div>
 
-            {/* Visualizer Frame */}
-            <div className="bg-zinc-900/40 rounded-3xl border border-white/10 p-4 md:p-6 shadow-3xl max-w-5xl mx-auto relative overflow-hidden" id="system-tour-frame">
-              {/* Browser bar layout */}
-              <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-red-500/80 block" />
-                  <span className="w-3 h-3 rounded-full bg-yellow-500/80 block" />
-                  <span className="w-3 h-3 rounded-full bg-green-500/80 block" />
-                  <span className="text-zinc-500 text-xs font-mono ml-4 font-light bg-black/40 px-4 py-1 rounded-full border border-white/5 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse block" />
-                    lumiereos.com/dashboard/app
-                  </span>
-                </div>
-                <span className="text-[10px] uppercase font-mono tracking-widest text-[#D4AF37] font-bold bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-3 py-1 rounded-full">
-                  LUMIÈRE OS v1.4
-                </span>
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_2fr]">
+              <div className="rounded-3xl border border-primary/20 bg-primary/5 p-7">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-primary">Enterprise</span>
+                <h3 className="mt-2 text-2xl font-light">Uma operação fora do padrão?</h3>
+                <p className="mt-3 text-sm leading-6 text-zinc-400">Implantação, integrações, BI e suporte dedicado para operações que precisam de uma estrutura sob medida.</p>
+                <Button onClick={() => anchor('contato')} className="mt-6 rounded-full bg-primary text-black hover:bg-gold-400">Falar com comercial <ArrowRight className="ml-2 h-4 w-4" /></Button>
               </div>
-
-              {/* Dynamic Frame Content Container */}
-              <div className="min-h-[420px] bg-black/60 rounded-2xl p-6 relative flex flex-col justify-between overflow-hidden">
-                <AnimatePresence mode="wait">
-                  {activeTab === 'dashboard' && (
-                    <motion.div 
-                      key="dashboard"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                      className="space-y-6 w-full"
-                    >
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-primary">Indicadores Gerais</span>
-                          <h4 className="text-xl font-heading text-white font-medium">Balanço de Performance Corporativa</h4>
-                        </div>
-                        <span className="text-xs text-zinc-400 font-light bg-zinc-900 border border-white/5 px-3 py-1 rounded">Hoje, {new Date().toLocaleDateString('pt-BR')}</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-zinc-950/90 border border-white/5 rounded-2xl p-4 space-y-1">
-                          <span className="text-zinc-500 text-[10px] uppercase tracking-wider font-semibold block">Faturamento Diário</span>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-2xl font-bold text-white">R$ 14.850,00</span>
-                            <span className="text-xs font-semibold text-emerald-400 font-mono">+18%</span>
-                          </div>
-                          <span className="text-[9px] text-zinc-400 font-light block">Meta diária: R$ 12.000,00 (Atingida)</span>
-                        </div>
-                        <div className="bg-zinc-950/90 border border-white/5 rounded-2xl p-4 space-y-1">
-                          <span className="text-zinc-500 text-[10px] uppercase tracking-wider font-semibold block">Taxa de Ocupação</span>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-2xl font-bold text-white">87.4%</span>
-                            <span className="text-xs font-semibold text-emerald-400 font-mono">+4.2%</span>
-                          </div>
-                          <span className="text-[9px] text-zinc-400 font-light block">82 slots agendados de 94 disponíveis</span>
-                        </div>
-                        <div className="bg-zinc-950/90 border border-white/5 rounded-2xl p-4 space-y-1">
-                          <span className="text-zinc-500 text-[10px] uppercase tracking-wider font-semibold block">Comissão Distribuída</span>
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-2xl font-bold text-[#D4AF37]">R$ 5.940,00</span>
-                            <span className="text-xs font-semibold text-zinc-400 font-mono">Méd. 40%</span>
-                          </div>
-                          <span className="text-[9px] text-zinc-400 font-light block">Processada e rateada de forma instantânea</span>
-                        </div>
-                      </div>
-
-                      {/* Simulated Chart preview */}
-                      <div className="bg-zinc-950/80 border border-white/5 rounded-2xl p-4 h-48 flex flex-col justify-between">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-medium text-white">Curva de Faturamento Semanal</span>
-                          <span className="text-[10px] text-zinc-400">Total acumulado: R$ 89.240,00</span>
-                        </div>
-                        <div className="flex-1 flex items-end gap-3 px-2">
-                          {[35, 45, 28, 62, 80, 75, 95].map((val, i) => (
-                            <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                              <div className="w-full bg-gradient-to-t from-primary/20 to-primary rounded-t" style={{ height: `${val * 1.1}px` }} />
-                              <span className="text-[9px] text-zinc-500 font-mono">{['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB', 'DOM'][i]}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {activeTab === 'agenda' && (
-                    <motion.div 
-                      key="agenda"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                      className="space-y-6 w-full"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-primary">Agenda Corporativa</span>
-                          <h4 className="text-xl font-heading text-white font-medium">Controle de Fluxo Operacional</h4>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">8 Atendimentos Ativos</span>
-                          <span className="text-[10px] font-mono bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">Sala de Espera: 2</span>
-                        </div>
-                      </div>
-
-                      {/* Agenda Schedule Grid Simulation */}
-                      <div className="bg-zinc-950/80 border border-white/5 rounded-2xl p-4 overflow-hidden space-y-3">
-                        {[
-                          { time: '14:00', client: 'Heloísa Cavalcanti', service: 'Mechas + Reconstrução', professional: 'Matheus Costa (Stylist)', status: 'Ativo', statusColor: 'bg-emerald-500 text-emerald-950' },
-                          { time: '14:30', client: 'Giselle Fontoura', service: 'Design de Sobrancelha', professional: 'Luana Santos (Estética)', status: 'Espera', statusColor: 'bg-amber-400 text-black' },
-                          { time: '15:00', client: 'Adriana Montenegro', service: 'Manicure Premium (Gel)', professional: 'Mariana Silva (Nails)', status: 'Confirmado', statusColor: 'bg-primary text-black' },
-                          { time: '16:00', client: 'Alessandra Albuquerque', service: 'Corte Conceito Lumière', professional: 'Matheus Costa (Stylist)', status: 'Confirmado', statusColor: 'bg-primary text-black' }
-                        ].map((row, idx) => (
-                          <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:border-primary/20 transition-all gap-2">
-                            <div className="flex items-center gap-4">
-                              <span className="text-xs font-mono font-bold text-[#D4AF37] bg-[#D4AF37]/5 border border-[#D4AF37]/15 px-2.5 py-1 rounded">{row.time}</span>
-                              <div>
-                                <span className="text-xs font-semibold text-white block">{row.client}</span>
-                                <span className="text-[10px] text-zinc-400 font-light">{row.service}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between sm:justify-end gap-4">
-                              <span className="text-[10px] text-zinc-400 font-mono">{row.professional}</span>
-                              <span className={`text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded font-sans ${row.statusColor}`}>{row.status}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {activeTab === 'financeiro' && (
-                    <motion.div 
-                      key="financeiro"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                      className="space-y-6 w-full"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-primary">Controle Contábil</span>
-                          <h4 className="text-xl font-heading text-white font-medium">Conciliação Automática de Comissões</h4>
-                        </div>
-                        <span className="text-xs text-primary font-mono font-medium">Bandeira: Asaas Gateway</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="bg-zinc-950/80 border border-white/5 rounded-2xl p-4 space-y-4">
-                          <span className="text-xs font-bold text-white block">Distribuição de Lucros (Matriz de Comissão)</span>
-                          <div className="space-y-2">
-                            {[
-                              { name: 'Matheus Costa', role: 'Hair Stylist', revenue: 'R$ 8.400,00', share: '40%', comm: 'R$ 3.360,00' },
-                              { name: 'Mariana Silva', role: 'Nail Designer', revenue: 'R$ 3.900,00', share: '45%', comm: 'R$ 1.755,00' },
-                              { name: 'Luana Santos', role: 'Esteticista', revenue: 'R$ 2.550,00', share: '50%', comm: 'R$ 1.275,00' }
-                            ].map((row, i) => (
-                              <div key={i} className="flex justify-between items-center text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                                <div>
-                                  <span className="text-white font-medium block">{row.name}</span>
-                                  <span className="text-[10px] text-zinc-500 font-light">{row.role} • {row.share} taxa</span>
-                                </div>
-                                <div className="text-right">
-                                  <span className="text-[#D4AF37] font-semibold block">{row.comm}</span>
-                                  <span className="text-[9px] text-zinc-500 font-mono">Ref. {row.revenue}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="bg-zinc-950/80 border border-white/5 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
-                          <span className="text-xs font-bold text-white block">Processador Integrado de Cobrança</span>
-                          <div className="p-3 bg-zinc-900/80 border border-white/5 rounded-xl text-[11px] space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-zinc-400 font-light">Status do Link Comercial:</span>
-                              <span className="text-emerald-400 font-semibold font-mono">Ativo e Conectado</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-zinc-400 font-light">Plano Operacional:</span>
-                              <span className="text-white font-semibold">Lumière Founder</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-zinc-400 font-light">Intermediador:</span>
-                              <span className="text-white font-light">Asaas Tecnologia S.A.</span>
-                            </div>
-                          </div>
-                          <div className="text-[10px] text-zinc-500 font-light leading-relaxed border-t border-white/5 pt-2">
-                            Garantia de segurança de transações e regras comerciais protegidas por criptografia ponta a ponta.
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {activeTab === 'equipe' && (
-                    <motion.div 
-                      key="equipe"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                      className="space-y-6 w-full"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-primary">Cultura de Excelência</span>
-                          <h4 className="text-xl font-heading text-white font-medium">Checklist Operacional Lumière</h4>
-                        </div>
-                        <span className="text-xs text-zinc-400 font-mono bg-zinc-900 px-2 py-0.5 rounded border border-white/5">Meta Diária: 100% Conformidade</span>
-                      </div>
-
-                      {/* Live Checklist Preview */}
-                      <div className="bg-zinc-950/80 border border-white/5 rounded-2xl p-4 space-y-4">
-                        <div className="flex justify-between items-center">
-                          <span className="text-xs font-bold text-white">Tarefas Operacionais de Abertura & Recebimento</span>
-                          <span className="text-xs font-bold text-emerald-400">92% Concluído</span>
-                        </div>
-                        <div className="space-y-2">
-                          {[
-                            { task: 'Climatização e som ambiente calibrados (padrão Lumière)', checked: true, author: 'Recepcionista (13:10)' },
-                            { task: 'Verificação e abastecimento do frigobar com águas e cafés premium', checked: true, author: 'Apoio (13:15)' },
-                            { task: 'Esterilização dos kits de atendimento e inspeção visual das bancadas', checked: true, author: 'Stylist (13:20)' },
-                            { task: 'Checklist de recepção: Relatório de clientes vip do dia impresso', checked: false, author: 'Recepcionista (Pendente)' }
-                          ].map((row, i) => (
-                            <div key={i} className="flex items-start justify-between p-2.5 rounded-lg bg-white/[0.01] border border-white/5">
-                              <div className="flex items-start gap-2.5">
-                                <div className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center border transition-all ${
-                                  row.checked ? 'bg-primary border-primary text-black' : 'border-zinc-700 bg-transparent'
-                                }`}>
-                                  {row.checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                </div>
-                                <span className={`text-xs ${row.checked ? 'text-zinc-400 line-through font-light' : 'text-zinc-200'}`}>{row.task}</span>
-                              </div>
-                              <span className="text-[9px] text-zinc-500 font-mono shrink-0 ml-4">{row.author}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {activeTab === 'indicadores' && (
-                    <motion.div 
-                      key="indicadores"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                      className="space-y-6 w-full"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-primary">Cognição Estratégica</span>
-                          <h4 className="text-xl font-heading text-white font-medium">Lumière AI Intelligence Analyst</h4>
-                        </div>
-                        <span className="text-[10px] uppercase tracking-widest font-mono bg-primary/20 text-primary px-3 py-1 rounded-full animate-pulse border border-primary/20">Processador Ativo</span>
-                      </div>
-
-                      <div className="p-5 rounded-2xl bg-zinc-950/90 border border-primary/20 space-y-4">
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="w-5 h-5 text-primary" />
-                          <span className="text-xs font-semibold text-white">Relatório Gerencial de Tendências de Alta</span>
-                        </div>
-                        <p className="text-xs text-zinc-300 leading-relaxed font-light">
-                          "Olá, Roberto. Identificamos que o serviço <strong className="text-primary font-semibold">Mechas + Reconstrução</strong> registrou uma alta de demanda de 32% nesta última quinzena. O ticket médio por cliente subiu para R$ 420,00. Sugerimos acionar uma campanha direcionada para a lista de clientes VIP que não retornam há mais de 45 dias para consolidar este faturamento."
-                        </p>
-                        
-                        <div className="pt-3 border-t border-white/5 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                          <div className="space-y-1">
-                            <span className="text-zinc-500 text-[9px] uppercase font-bold tracking-wider block">Retenção de Clientes</span>
-                            <span className="text-base font-bold text-white font-mono">78.2%</span>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-zinc-500 text-[9px] uppercase font-bold tracking-wider block">Ticket Médio</span>
-                            <span className="text-base font-bold text-white font-mono">R$ 284,00</span>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-zinc-500 text-[9px] uppercase font-bold tracking-wider block">Eficiência de Equipe</span>
-                            <span className="text-base font-bold text-white font-mono">94.1%</span>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-zinc-500 text-[9px] uppercase font-bold tracking-wider block">Margem de Lucro</span>
-                            <span className="text-base font-bold text-white font-mono">31.5%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+              <div className="rounded-3xl border border-white/5 bg-black/40 p-7">
+                <div className="flex items-center gap-3"><Zap className="h-5 w-5 text-primary" /><span className="font-medium">Ainda não sabe qual escolher?</span></div>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">Faça o Diagnóstico Estratégico. O fluxo considera o perfil da operação e ajuda a encontrar um ponto de partida sem obrigar a escolher no escuro.</p>
+                <Button variant="outline" onClick={() => navigate('/cadastro')} className="mt-5 rounded-full border-white/10">Fazer diagnóstico <ChevronRight className="ml-1 h-4 w-4" /></Button>
               </div>
             </div>
           </div>
         </section>
 
-        {/* BENEFÍCIOS REAIS SECTION */}
-        <section className="py-24 px-6 max-w-7xl mx-auto space-y-16">
-          <div className="text-center space-y-4 max-w-3xl mx-auto">
-            <span className="text-xs uppercase font-bold text-primary tracking-widest bg-primary/10 px-4 py-1.5 rounded-full">Retorno Sobre Investimento</span>
-            <h2 className="text-4xl md:text-5xl font-heading font-light tracking-tight text-white font-sans">Transformação real, sem lero-lero</h2>
-            <p className="text-zinc-400 font-light leading-relaxed text-base">
-              Ao escolher o LumièreOS, você não adquire apenas mais um software. Você redefine a cultura operacional e potencializa a lucratividade da sua empresa.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 hover:border-primary/20 hover:bg-zinc-900 transition-all duration-300 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/5 border border-primary/20 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-primary" />
-              </div>
-              <h3 className="text-lg font-heading text-white">Faturamento Elevado</h3>
-              <p className="text-sm text-zinc-400 leading-relaxed font-light">
-                Mapeamento analítico de metas por colaborador, inteligência de upsell e redução instantânea de cancelamentos com alertas inteligentes de re-agendamento.
-              </p>
-            </div>
-
-            <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 hover:border-primary/20 hover:bg-zinc-900 transition-all duration-300 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/5 border border-primary/20 flex items-center justify-center">
-                <Users className="w-6 h-6 text-primary" />
-              </div>
-              <h3 className="text-lg font-heading text-white">Equipe de Alto Padrão</h3>
-              <p className="text-sm text-zinc-400 leading-relaxed font-light">
-                Com o Checklist Lumière e o controle de comissões, seus profissionais sentem transparência total e seguem processos rígidos de excelência.
-              </p>
-            </div>
-
-            <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 hover:border-primary/20 hover:bg-zinc-900 transition-all duration-300 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/5 border border-primary/20 flex items-center justify-center">
-                <Zap className="w-6 h-6 text-primary" />
-              </div>
-              <h3 className="text-lg font-heading text-white">Otimização de Tempo</h3>
-              <p className="text-sm text-zinc-400 leading-relaxed font-light">
-                Elimine até 20 horas semanais de planilhas e digitação manual de relatórios. O ecossistema consolida faturamento e comissões automaticamente.
-              </p>
-            </div>
-
-            <div className="bg-zinc-900/40 border border-white/5 rounded-3xl p-8 hover:border-primary/20 hover:bg-zinc-900 transition-all duration-300 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/5 border border-primary/20 flex items-center justify-center">
-                <Lock className="w-6 h-6 text-primary" />
-              </div>
-              <h3 className="text-lg font-heading text-white">Privacidade Absoluta</h3>
-              <p className="text-sm text-zinc-400 leading-relaxed font-light">
-                Dados blindados sobre clientes, fornecedores e faturamento estratégico. Nenhuma informação é compartilhada com terceiros ou anunciantes.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* COMPARATIVO ELEGANTE: TRADICIONAIS VS LUMIÈRE OS */}
-        <section className="py-24 px-6 bg-gradient-to-b from-transparent via-zinc-950/60 to-transparent border-t border-white/5">
-          <div className="max-w-5xl mx-auto space-y-16">
-            <div className="text-center space-y-4 max-w-2xl mx-auto">
-              <span className="text-xs uppercase font-bold text-primary tracking-widest bg-primary/10 px-4 py-1.5 rounded-full">Análise Comparativa</span>
-              <h2 className="text-4xl font-heading font-light tracking-tight text-white">O fim da desorganização amadora</h2>
-              <p className="text-zinc-400 font-light leading-relaxed">
-                Por que o LumièreOS é considerado o sistema definitivo para as principais marcas de prestígio no mercado nacional?
-              </p>
-            </div>
-
-            {/* Comparativo de Layout Clássico */}
-            <div className="grid md:grid-cols-2 gap-8" id="comparison-grid">
-              {/* Sistemas tradicionais */}
-              <div className="p-8 rounded-3xl bg-zinc-900/20 border border-white/5 space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
-                    <ShieldAlert className="w-4 h-4" />
-                  </div>
-                  <h3 className="text-lg font-heading font-medium text-zinc-300">Sistemas Tradicionais</h3>
-                </div>
-                
-                <ul className="space-y-4">
-                  {[
-                    'Interfaces saturadas, lentas e poluídas com propagandas intrusivas.',
-                    'Falta de recursos específicos para a realidade da equipe (comissões complexas na ponta do lápis).',
-                    'Suporte técnico terceirizado com atendimento demorado e ineficaz.',
-                    'Ausência de mecanismos estruturados de cultura interna e excelência diária.',
-                    'Silos de dados desconectados gerando furos na contabilidade e na agenda.'
-                  ].map((text, i) => (
-                    <li key={i} className="flex items-start gap-3 text-xs text-zinc-500 font-light">
-                      <X className="w-4 h-4 text-red-500/60 shrink-0 mt-0.5" />
-                      <span>{text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Lumière OS */}
-              <div className="p-8 rounded-3xl bg-zinc-900/60 border border-primary/20 space-y-6 relative overflow-hidden shadow-2xl">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl" />
-                
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                    <Check className="w-4 h-4 stroke-[3]" />
-                  </div>
-                  <h3 className="text-lg font-heading font-medium text-white">LumièreOS Ecossistema</h3>
-                </div>
-                
-                <ul className="space-y-4">
-                  {[
-                    'Experiência imersiva premium: design impecável focado inteiramente na sua operação.',
-                    'Automação real de rateio de comissões e acompanhamento de metas financeiras diárias.',
-                    'Atendimento VIP de alta prioridade com consultores dedicados no WhatsApp.',
-                    'Módulo exclusivo Lumière: checklists de abertura/fechamento e conformidade de equipe.',
-                    'Inteligência centralizada que cruza dados de agenda, faturamento e insumos em tempo real.'
-                  ].map((text, i) => (
-                    <li key={i} className="flex items-start gap-3 text-xs text-zinc-200 font-light">
-                      <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                      <span>{text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* CONSULTATIVE DIAGNOSTIC EXPLANATION (O ANTIGO TRIAL) */}
-        <section className="py-24 px-6 relative border-t border-white/5 bg-zinc-950/20">
-          <div className="max-w-5xl mx-auto space-y-16">
-            <div className="text-center space-y-4">
-              <span className="text-xs uppercase font-bold text-primary tracking-widest bg-primary/10 px-4 py-1.5 rounded-full">Método de Consultoria</span>
-              <h2 className="text-4xl md:text-5xl font-heading font-light tracking-tight text-white font-sans">Diagnóstico Estratégico LumièreOS</h2>
-              <p className="text-zinc-400 max-w-2xl mx-auto font-light leading-relaxed">
-                Nossa tecnologia de onboarding funciona como uma consultoria estratégica virtual. Analisamos seu modelo para propor as configurações ideais sem fricção comercial.
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="p-8 rounded-3xl bg-zinc-900/40 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
-                <div className="text-3xl font-heading text-primary font-light">01</div>
-                <h3 className="text-lg font-heading text-white">Raio-X de Negócio</h3>
-                <p className="text-xs text-zinc-400 font-light leading-relaxed">
-                  Informe as dimensões de sua operação, as metas de equipe e o segmento de atuação com absoluta privacidade de dados.
-                </p>
-              </div>
-              <div className="p-8 rounded-3xl bg-zinc-900/40 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
-                <div className="text-3xl font-heading text-primary font-light">02</div>
-                <h3 className="text-lg font-heading text-white">Relatório Corporativo</h3>
-                <p className="text-xs text-zinc-400 font-light leading-relaxed">
-                  Nossa inteligência emite uma recomendação estruturada do plano perfeito calibrado exatamente para o seu porte comercial.
-                </p>
-              </div>
-              <div className="p-8 rounded-3xl bg-zinc-900/40 border border-white/5 space-y-4 hover:border-primary/20 transition-all duration-300">
-                <div className="text-3xl font-heading text-primary font-light">03</div>
-                <h3 className="text-lg font-heading text-white">Garantia Asaas</h3>
-                <p className="text-xs text-zinc-400 font-light leading-relaxed">
-                  Inicie com garantia incondicional de faturamento de 7 dias operada pela Asaas: satisfação garantida ou devolução total.
-                </p>
-              </div>
-            </div>
-
-            <div className="text-center">
-              <Button 
-                onClick={() => navigate("/cadastro")} 
-                className="rounded-full h-14 px-10 text-xs uppercase tracking-wider bg-primary hover:bg-gold-400 text-black font-bold shadow-[0_0_35px_rgba(212,175,55,0.25)] hover:shadow-[0_0_55px_rgba(212,175,55,0.45)] transition-all cursor-pointer"
-              >
-                Fazer meu Diagnóstico Estratégico
-              </Button>
-            </div>
-          </div>
-        </section>
-
-        {/* Upcoming Updates (ROADMAP DA VISÃO) */}
-        <section className="py-24 px-6 border-t border-white/5 bg-gradient-to-b from-black/0 to-zinc-950/60">
-          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-16 space-y-4">
-              <span className="text-xs uppercase font-bold text-primary tracking-widest bg-primary/10 px-3 py-1.5 rounded-full">Roadmap da Visão</span>
-              <h2 className="text-4xl font-heading font-light tracking-tight text-white">Próximas Atualizações</h2>
-              <p className="text-zinc-400 max-w-2xl mx-auto font-light">Tecnologia, inovação contínua e exclusividade a caminho. Mantemos nosso ecossistema em constante evolução.</p>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-              <div className="bg-zinc-900/20 border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-zinc-900/40 transition-all duration-300 flex flex-col justify-between h-full">
-                <div>
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                    <CalendarDays className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-white text-base mb-2">Google Agenda Connect</h3>
-                  <p className="text-zinc-500 text-[11px] font-light leading-relaxed">
-                    Sincronização imediata bidirecional. Permita que profissionais acessem os horários direto nos calendários móveis nativos.
-                  </p>
-                </div>
-                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-primary font-bold">Agenda Connect</span>
-                  <span className="text-[8px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 uppercase">Em Breve</span>
-                </div>
-              </div>
-
-              <div className="bg-zinc-900/20 border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-zinc-900/40 transition-all duration-300 flex flex-col justify-between h-full">
-                <div>
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                    <FileText className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-white text-base mb-2">Relatórios Customizados</h3>
-                  <p className="text-zinc-500 text-[11px] font-light leading-relaxed">
-                    Exportação integral para planilhas e PDFs com customização de logomarca, ideal para reuniões e auditorias financeiras.
-                  </p>
-                </div>
-                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-primary font-bold">Data Export</span>
-                  <span className="text-[8px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 uppercase">Planejado</span>
-                </div>
-              </div>
-
-              <div className="bg-zinc-900/20 border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-zinc-900/40 transition-all duration-300 flex flex-col justify-between h-full">
-                <div>
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                    <Sparkles className="w-5 h-5 text-primary font-bold" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-white text-base mb-2">Lumière Assist VIP</h3>
-                  <p className="text-zinc-500 text-[11px] font-light leading-relaxed">
-                    Copiloto operacional que detecta falhas na conformidade de checklists Lumière e sugere readequações com agilidade.
-                  </p>
-                </div>
-                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-primary font-bold">Lumière Assist</span>
-                  <span className="text-[8px] font-mono bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20 uppercase">Nova Era</span>
-                </div>
-              </div>
-
-              <div className="bg-zinc-900/20 border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-zinc-900/40 transition-all duration-300 flex flex-col justify-between h-full">
-                <div>
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                    <TrendingUp className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-white text-base mb-2">Insights Avançados</h3>
-                  <p className="text-zinc-500 text-[11px] font-light leading-relaxed">
-                    Análise refinada de equipes, taxas de retenção por profissional e mapas de saturação de serviços diários.
-                  </p>
-                </div>
-                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-primary font-bold">Analytics L'Or</span>
-                  <span className="text-[8px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 uppercase">Planejado</span>
-                </div>
-              </div>
-
-              <div className="bg-zinc-900/20 border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-[#D4AF37]/30 hover:bg-zinc-900/40 transition-all duration-300 flex flex-col justify-between h-full">
-                <div>
-                  <div className="bg-primary/5 border border-primary/20 rounded-xl w-10 h-10 flex items-center justify-center mb-4">
-                    <Inbox className="w-5 h-5 text-primary" />
-                  </div>
-                  <h3 className="font-heading font-semibold text-white text-base mb-2">Auto-Relatório Semanal</h3>
-                  <p className="text-zinc-500 text-[11px] font-light leading-relaxed">
-                    Envio automático consolidado com gráficos de performance diretamente no e-mail cadastrado dos proprietários.
-                  </p>
-                </div>
-                <div className="mt-5 pt-2 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] uppercase font-mono tracking-widest text-primary font-bold">Auto Report</span>
-                  <span className="text-[8px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20 uppercase">Em Roadmap</span>
-                </div>
-              </div>
+        <section id="contato" className="border-t border-white/5 px-5 py-24">
+          <div className="mx-auto max-w-4xl text-center">
+            <Sparkles className="mx-auto h-7 w-7 text-primary" />
+            <h2 className="mt-5 text-4xl font-light md:text-5xl">Quando a operação fica organizada, o crescimento fica mais claro.</h2>
+            <p className="mx-auto mt-5 max-w-2xl text-zinc-400">Escolha um plano, faça o diagnóstico ou entre no sistema. O próximo passo é transformar a gestão em uma rotina mais simples e previsível.</p>
+            <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button onClick={() => anchor('planos')} className="h-13 rounded-full bg-primary px-8 text-black hover:bg-gold-400">Ver planos <ArrowRight className="ml-2 h-4 w-4" /></Button>
+              <Button variant="outline" onClick={() => navigate('/cadastro')} className="h-13 rounded-full border-white/10">Começar pelo diagnóstico</Button>
             </div>
           </div>
         </section>
       </main>
-      
-      {/* Footer Melhorado e Responsivo */}
-      <footer className="border-t border-white/5 bg-zinc-950/80 pt-16 pb-10 px-6">
-        <div className="max-w-7xl mx-auto space-y-12">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div className="col-span-2 md:col-span-1 space-y-4">
-              <div className="flex items-center gap-2.5">
-                <Sparkles className="w-6 h-6 text-primary" />
-                <span className="text-xl font-heading tracking-wide text-white">Lumière</span>
-              </div>
-              <p className="text-zinc-400 font-light text-xs leading-relaxed max-w-sm">
-                O ecossistema operacional de alta sofisticação para marcas líderes e estabelecimentos de prestígio no mercado de beleza nacional.
-              </p>
-            </div>
-            
-            <div className="space-y-4">
-              <h4 className="text-xs uppercase tracking-widest font-bold text-white font-sans">Empresa</h4>
-              <ul className="space-y-2 text-xs font-light text-zinc-400">
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Manifesto de Excelência</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Módulo Lumière</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Segurança de Dados</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Contato Comercial</span></li>
-              </ul>
-            </div>
 
-            <div className="space-y-4">
-              <h4 className="text-xs uppercase tracking-widest font-bold text-white font-sans">Termos & Privacidade</h4>
-              <ul className="space-y-2 text-xs font-light text-zinc-400">
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Termos de Uso</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Política de Privacidade</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Acordo de Licenciamento</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Políticas da Asaas</span></li>
-              </ul>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-xs uppercase tracking-widest font-bold text-white font-sans">Contato & Suporte</h4>
-              <ul className="space-y-2 text-xs font-light text-zinc-400">
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Atendimento Premium VIP</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Suporte Técnico</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">Instagram @lumiereos</span></li>
-                <li><span className="hover:text-primary transition-colors cursor-pointer">LinkedIn Corporation</span></li>
-              </ul>
-            </div>
+      <footer className="border-t border-white/5 bg-zinc-950 px-5 py-12">
+        <div className="mx-auto flex max-w-7xl flex-col gap-7 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-primary" /><span className="font-heading text-lg">LumièreOS</span></div>
+            <p className="mt-2 text-xs text-zinc-600">Gestão inteligente para negócios de beleza.</p>
           </div>
-
-          <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-6">
-            <p className="text-xs text-zinc-500 font-light text-center md:text-left">
-              © {new Date().getFullYear()} Lumière Tecnologia S.A. Todos os direitos reservados.
-            </p>
-            <div className="flex gap-6 text-xs text-zinc-500 font-light">
-              <span className="hover:text-primary transition-colors cursor-pointer">Instagram</span>
-              <span className="hover:text-primary transition-colors cursor-pointer">LinkedIn</span>
-              <span className="hover:text-primary transition-colors cursor-pointer">Contato</span>
-            </div>
+          <div className="flex flex-wrap gap-5 text-xs text-zinc-500">
+            <button onClick={() => navigate('/login')} className="hover:text-white">Entrar</button>
+            <button onClick={() => anchor('planos')} className="hover:text-white">Planos</button>
+            <button onClick={() => navigate('/cadastro')} className="hover:text-white">Diagnóstico</button>
           </div>
+          <p className="text-xs text-zinc-600">© {new Date().getFullYear()} LumièreOS</p>
         </div>
       </footer>
     </div>
