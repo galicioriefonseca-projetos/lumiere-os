@@ -28,7 +28,7 @@ const ChecklistPage = React.lazy(() => import('./pages/dashboard/ChecklistPage')
 const CommissionsPage = React.lazy(() => import('./pages/dashboard/CommissionsPage'));
 const AccountPage = React.lazy(() => import('./pages/dashboard/AccountPage'));
 const ReportsPage = React.lazy(() => import('./pages/dashboard/ReportsPage'));
-const SubscriptionPage = React.lazy(() => import('./pages/dashboard/SubscriptionPage'));
+const SubscriptionPage = React.lazy(() => import('./pages/dashboard/SubscriptionCenterPage'));
 const BillingCustomerPage = React.lazy(() => import('./pages/dashboard/BillingCustomerPage'));
 const FinancialPage = React.lazy(() => import('./pages/dashboard/FinancialPage'));
 const InventoryPage = React.lazy(() => import('./pages/dashboard/InventoryPage'));
