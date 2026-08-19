@@ -46,6 +46,24 @@ export class AsaasProvider implements BillingProvider {
     return this.mapSubscription(await this.request(mode, apiKey, '/subscriptions', 'POST', payload));
   }
 
+  async createRecurringCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
+    const payload = {
+      billingTypes: data.billingTypes || ['CREDIT_CARD'],
+      chargeTypes: ['RECURRENT'],
+      minutesToExpire: data.minutesToExpire || 60,
+      callback: data.callback,
+      items: data.items,
+      customerData: data.customerData,
+      externalReference: data.externalReference,
+      subscription: data.subscription
+    };
+    return this.request(mode, apiKey, '/checkouts', 'POST', payload);
+  }
+
+  async updateSubscriptionCreditCard(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<any> {
+    return this.request(mode, apiKey, `/subscriptions/${id}/creditCard`, 'PUT', data);
+  }
+
   async listSubscriptions(mode: 'sandbox' | 'production', apiKey: string, filters: { customer?: string; externalReference?: string; includeDeleted?: boolean } = {}): Promise<Subscription[]> {
     const params = new URLSearchParams({ limit: '100', offset: '0' });
     if (filters.customer) params.set('customer', filters.customer);
