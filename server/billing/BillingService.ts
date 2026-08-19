@@ -1,7 +1,7 @@
 import { env } from "../config/env.js";
 import { getAdminDb } from '../shared/firebaseAdmin.js';
 import { asaasProvider } from './AsaasProvider.js';
-import { Plan, PaymentMethod, Customer, Subscription } from './types.js';
+import { Plan, PaymentMethod, Subscription, BillingCycle } from './types.js';
 import crypto from 'crypto';
 
 interface BillingSettings {
@@ -13,7 +13,6 @@ interface BillingSettings {
 
 class CheckoutInProgressError extends Error {
   statusCode = 409;
-
   constructor() {
     super('Já existe uma tentativa de checkout em andamento. Aguarde alguns segundos e tente novamente.');
     this.name = 'CheckoutInProgressError';
@@ -21,7 +20,7 @@ class CheckoutInProgressError extends Error {
 }
 
 export class BillingService {
-    private async getSettings(): Promise<BillingSettings> {
+  private async getSettings(): Promise<BillingSettings> {
     const adminDb = getAdminDb();
     const doc = await adminDb.collection('settings').doc('asaas').get();
     if (!doc.exists || !doc.data()?.apiKey) {
@@ -62,9 +61,26 @@ export class BillingService {
     return { id: planDoc.id, ...planDoc.data() } as Plan;
   }
 
-  async createSubscription(salonId: string, planId: string, billingType: PaymentMethod, salonData: any, creditCard?: any, creditCardHolderInfo?: any) {
+  private resolvePlanPricing(plan: Plan, cycle: BillingCycle): number {
+    if (cycle === 'MONTHLY') return Number(plan.price);
+    if (cycle === 'SEMIANNUALLY') return Number(plan.semiannualPrice || 0);
+    return Number(plan.annualPrice || 0);
+  }
+
+  async createSubscription(
+    salonId: string,
+    planId: string,
+    billingType: PaymentMethod,
+    salonData: any,
+    creditCard?: any,
+    creditCardHolderInfo?: any,
+    selectedBillingCycle?: BillingCycle
+  ) {
     const adminDb = getAdminDb();
     const plan = await this.getPlan(planId);
+    const cycle = selectedBillingCycle || plan.billingCycle || 'MONTHLY';
+    const value = this.resolvePlanPricing(plan, cycle);
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`O plano ${planId} não possui preço válido para a periodicidade ${cycle}.`);
     const settings = await this.getSettings();
     const description = `Assinatura ${plan.name} - LumièreOS`;
 
@@ -78,7 +94,8 @@ export class BillingService {
     if (currentSubscriptionId && reusableLocalStatuses.has(currentBillingStatus)) {
       try {
         const existing = await asaasProvider.getSubscription(settings.mode, settings.apiKey, currentSubscriptionId);
-        if (existing.status === 'ACTIVE' && currentBilling.planId === planId) {
+        const existingCycle = existing.cycle || 'MONTHLY';
+        if (existing.status === 'ACTIVE' && currentBilling.planId === planId && existingCycle === cycle && Math.abs(Number(existing.value) - value) < 0.01) {
           console.info('[Asaas] Reutilizando assinatura existente:', currentSubscriptionId);
           return existing;
         }
@@ -91,15 +108,16 @@ export class BillingService {
     if (currentSubscriptionId && currentBillingStatus === 'ACTIVE' && currentBilling.planId && currentBilling.planId !== planId) {
       throw new Error('Já existe uma assinatura ativa para este estabelecimento. Utilize a alteração de plano em vez de criar um novo checkout.');
     }
+    if (currentSubscriptionId && currentBillingStatus === 'ACTIVE' && currentBilling.planId === planId && (currentBilling.billingCycle || 'MONTHLY') !== cycle) {
+      throw new Error('Já existe uma assinatura ativa para este plano. Altere a periodicidade pela opção de alteração de assinatura.');
+    }
 
     const externalReference = salonId;
-    const remoteBeforeLock = await asaasProvider.listSubscriptions(settings.mode, settings.apiKey, {
-      customer: currentBilling.customerId || currentSalonData.asaasCustomerId,
-      externalReference
-    });
+    const remoteBeforeLock = await asaasProvider.listSubscriptions(settings.mode, settings.apiKey, { customer: currentBilling.customerId || currentSalonData.asaasCustomerId, externalReference });
     const matchingRemote = remoteBeforeLock.find(subscription =>
       subscription.status === 'ACTIVE' &&
-      Math.abs(Number(subscription.value) - Number(plan.price)) < 0.01 &&
+      Math.abs(Number(subscription.value) - value) < 0.01 &&
+      (subscription.cycle || 'MONTHLY') === cycle &&
       subscription.description === description
     );
 
@@ -110,6 +128,8 @@ export class BillingService {
         asaasCustomerId: matchingRemote.customer,
         'billing.subscriptionId': matchingRemote.id,
         'billing.planId': planId,
+        'billing.billingCycle': cycle,
+        'billing.value': value,
         'billing.status': currentBillingStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT',
         'billing.pendingSubscriptionStatus': matchingRemote.status,
         'billing.paymentMethod': matchingRemote.billingType,
@@ -130,29 +150,18 @@ export class BillingService {
       if (lockDoc.exists) {
         const lockData = lockDoc.data() || {};
         const existingCreatedAt = Number(lockData.createdAtMs || 0);
-        if (existingCreatedAt && lockCreatedAt - existingCreatedAt < lockTtlMs) {
-          throw new CheckoutInProgressError();
-        }
+        if (existingCreatedAt && lockCreatedAt - existingCreatedAt < lockTtlMs) throw new CheckoutInProgressError();
       }
-
-      transaction.set(lockRef, {
-        token: lockToken,
-        salonId,
-        planId,
-        createdAtMs: lockCreatedAt,
-        createdAt: new Date(lockCreatedAt).toISOString()
-      });
+      transaction.set(lockRef, { token: lockToken, salonId, planId, billingCycle: cycle, value, createdAtMs: lockCreatedAt, createdAt: new Date(lockCreatedAt).toISOString() });
     });
 
     try {
       const customerId = await this.ensureCustomer(salonId, currentSalonData);
-      const remoteAfterLock = await asaasProvider.listSubscriptions(settings.mode, settings.apiKey, {
-        customer: customerId,
-        externalReference
-      });
+      const remoteAfterLock = await asaasProvider.listSubscriptions(settings.mode, settings.apiKey, { customer: customerId, externalReference });
       const matchingAfterLock = remoteAfterLock.find(subscription =>
         subscription.status === 'ACTIVE' &&
-        Math.abs(Number(subscription.value) - Number(plan.price)) < 0.01 &&
+        Math.abs(Number(subscription.value) - value) < 0.01 &&
+        (subscription.cycle || 'MONTHLY') === cycle &&
         subscription.description === description
       );
 
@@ -160,66 +169,23 @@ export class BillingService {
         await adminDb.runTransaction(async transaction => {
           const salonRef = adminDb.collection('salons').doc(salonId);
           const lockSnapshot = await transaction.get(lockRef);
-          transaction.set(salonRef, {
-            billing: {
-              provider: 'asaas',
-              customerId,
-              subscriptionId: matchingAfterLock.id,
-              planId,
-              status: currentBillingStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT',
-              pendingSubscriptionStatus: matchingAfterLock.status,
-              paymentMethod: matchingAfterLock.billingType,
-              nextDueDate: matchingAfterLock.nextDueDate,
-              updatedAt: new Date().toISOString()
-            },
-            asaasCustomerId: customerId
-          }, { merge: true });
+          transaction.set(salonRef, { billing: { provider: 'asaas', customerId, subscriptionId: matchingAfterLock.id, planId, billingCycle: cycle, value, status: currentBillingStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT', pendingSubscriptionStatus: matchingAfterLock.status, paymentMethod: matchingAfterLock.billingType, nextDueDate: matchingAfterLock.nextDueDate, updatedAt: new Date().toISOString() }, asaasCustomerId: customerId }, { merge: true });
           if (lockSnapshot.exists && lockSnapshot.data()?.token === lockToken) transaction.delete(lockRef);
         });
-        console.info('[Asaas] Assinatura reconciliada após aquisição do lock:', matchingAfterLock.id);
         return matchingAfterLock;
       }
 
       const nextDueDate = new Date();
       nextDueDate.setDate(nextDueDate.getDate() + (plan.trialDays || 1));
-      const payload: any = {
-        customer: customerId,
-        billingType,
-        value: plan.price,
-        nextDueDate: nextDueDate.toISOString().split('T')[0],
-        cycle: plan.billingCycle || 'MONTHLY',
-        description,
-        externalReference
-      };
-
-      if (salonData.callback?.successUrl) {
-        payload.callback = {
-          successUrl: salonData.callback.successUrl,
-          cancelUrl: salonData.callback.cancelUrl,
-          expiredUrl: salonData.callback.expiredUrl,
-          autoRedirect: salonData.callback.autoRedirect ?? true
-        };
-      }
-      if (billingType === 'CREDIT_CARD' && creditCard && creditCardHolderInfo) {
-        payload.creditCard = creditCard;
-        payload.creditCardHolderInfo = creditCardHolderInfo;
-      }
+      const payload: any = { customer: customerId, billingType, value, nextDueDate: nextDueDate.toISOString().split('T')[0], cycle, description, externalReference };
+      if (salonData.callback?.successUrl) payload.callback = { successUrl: salonData.callback.successUrl, cancelUrl: salonData.callback.cancelUrl, expiredUrl: salonData.callback.expiredUrl, autoRedirect: salonData.callback.autoRedirect ?? true };
+      if (billingType === 'CREDIT_CARD' && creditCard && creditCardHolderInfo) { payload.creditCard = creditCard; payload.creditCardHolderInfo = creditCardHolderInfo; }
 
       const sub = await asaasProvider.createSubscription(settings.mode, settings.apiKey, payload);
       await adminDb.runTransaction(async transaction => {
         const salonRef = adminDb.collection('salons').doc(salonId);
         const lockSnapshot = await transaction.get(lockRef);
-        transaction.set(salonRef, {
-          billing: {
-            subscriptionId: sub.id,
-            planId,
-            status: 'PENDING_PAYMENT',
-            pendingSubscriptionStatus: sub.status,
-            paymentMethod: billingType,
-            nextDueDate: sub.nextDueDate,
-            updatedAt: new Date().toISOString()
-          }
-        }, { merge: true });
+        transaction.set(salonRef, { billing: { provider: 'asaas', customerId, subscriptionId: sub.id, planId, billingCycle: cycle, value, status: 'PENDING_PAYMENT', pendingSubscriptionStatus: sub.status, paymentMethod: billingType, nextDueDate: sub.nextDueDate, updatedAt: new Date().toISOString() } }, { merge: true });
         if (lockSnapshot.exists && lockSnapshot.data()?.token === lockToken) transaction.delete(lockRef);
       });
       return sub;
@@ -229,9 +195,7 @@ export class BillingService {
           const lockSnapshot = await transaction.get(lockRef);
           if (lockSnapshot.exists && lockSnapshot.data()?.token === lockToken) transaction.delete(lockRef);
         });
-      } catch (cleanupError) {
-        console.warn('[Asaas] Falha ao liberar lock de checkout:', cleanupError);
-      }
+      } catch (cleanupError) { console.warn('[Asaas] Falha ao liberar lock de checkout:', cleanupError); }
       throw error;
     }
   }
@@ -253,8 +217,11 @@ export class BillingService {
     if (!subscriptionId) throw new Error('Nenhuma assinatura ativa encontrada.');
     const plan = await this.getPlan(newPlanId);
     const settings = await this.getSettings();
-    const sub = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, { value: plan.price, cycle: plan.billingCycle || 'MONTHLY', description: `Assinatura ${plan.name} - LumièreOS`, updatePendingPayments: true });
-    await adminDb.collection('salons').doc(salonId).update({ 'billing.planId': newPlanId, 'billing.value': plan.price, 'billing.updatedAt': new Date().toISOString() });
+    const cycle = (data?.billing?.billingCycle || 'MONTHLY') as BillingCycle;
+    const value = this.resolvePlanPricing(plan, cycle);
+    if (!Number.isFinite(value) || value <= 0) throw new Error(`O plano ${newPlanId} não possui preço válido para a periodicidade ${cycle}.`);
+    const sub = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, { value, cycle, description: `Assinatura ${plan.name} - LumièreOS`, updatePendingPayments: true });
+    await adminDb.collection('salons').doc(salonId).update({ 'billing.planId': newPlanId, 'billing.value': value, 'billing.billingCycle': cycle, 'billing.updatedAt': new Date().toISOString() });
     return sub;
   }
 
@@ -310,7 +277,7 @@ export class BillingService {
     if (!subscriptionId) return null;
     const settings = await this.getSettings();
     const sub = await asaasProvider.getSubscription(settings.mode, settings.apiKey, subscriptionId);
-    await adminDb.collection('salons').doc(salonId).update({ 'billing.providerStatus': sub.status, 'billing.nextDueDate': sub.nextDueDate, 'billing.paymentMethod': sub.billingType, 'billing.updatedAt': new Date().toISOString() });
+    await adminDb.collection('salons').doc(salonId).update({ 'billing.providerStatus': sub.status, 'billing.nextDueDate': sub.nextDueDate, 'billing.paymentMethod': sub.billingType, 'billing.billingCycle': sub.cycle || data?.billing?.billingCycle || 'MONTHLY', 'billing.value': sub.value, 'billing.updatedAt': new Date().toISOString() });
     return sub;
   }
 
@@ -318,10 +285,7 @@ export class BillingService {
     const adminDb = getAdminDb();
     const eventId = payload.id;
     const auditId = eventId || crypto.randomUUID();
-    try {
-      await adminDb.collection('billing_logs').doc(auditId).set({ id: auditId, event, payload, createdAt: new Date().toISOString() }, { merge: true });
-    } catch (e) { console.warn('[BillingService] Falha ao salvar log de auditoria:', e); }
-
+    try { await adminDb.collection('billing_logs').doc(auditId).set({ id: auditId, event, payload, createdAt: new Date().toISOString() }, { merge: true }); } catch (e) { console.warn('[BillingService] Falha ao salvar log de auditoria:', e); }
     if (eventId) {
       const eventRef = adminDb.collection('billing_events').doc(eventId);
       const isNewEvent = await adminDb.runTransaction(async transaction => {
@@ -364,21 +328,16 @@ export class BillingService {
       const subscription = payload.subscription;
       let billingStatus: 'ACTIVE' | 'OVERDUE' | 'CANCELLED' | null = null;
       let tenantStatus: 'active' | 'overdue' | 'cancelled' | null = null;
-
       switch (event) {
         case 'PAYMENT_RECEIVED':
-        case 'PAYMENT_CONFIRMED':
-          billingStatus = 'ACTIVE'; tenantStatus = 'active'; break;
-        case 'PAYMENT_OVERDUE':
-          billingStatus = 'OVERDUE'; tenantStatus = 'overdue'; break;
+        case 'PAYMENT_CONFIRMED': billingStatus = 'ACTIVE'; tenantStatus = 'active'; break;
+        case 'PAYMENT_OVERDUE': billingStatus = 'OVERDUE'; tenantStatus = 'overdue'; break;
         case 'SUBSCRIPTION_CANCELLED':
-        case 'SUBSCRIPTION_DELETED':
-          billingStatus = 'CANCELLED'; tenantStatus = 'cancelled'; break;
+        case 'SUBSCRIPTION_DELETED': billingStatus = 'CANCELLED'; tenantStatus = 'cancelled'; break;
         case 'SUBSCRIPTION_UPDATED': {
           const subStatus = (subscription?.status || '').toUpperCase();
           if (subStatus === 'OVERDUE') { billingStatus = 'OVERDUE'; tenantStatus = 'overdue'; }
           else if (subStatus === 'CANCELED' || subStatus === 'CANCELLED' || subStatus === 'DELETED') { billingStatus = 'CANCELLED'; tenantStatus = 'cancelled'; }
-          // ACTIVE da assinatura não libera acesso sem confirmação de pagamento.
           break;
         }
         default:
@@ -407,11 +366,13 @@ export class BillingService {
         if (lastPayment) billingUpdate.lastPaymentDate = lastPayment.toISOString();
         if (resolvedNextDueDate) billingUpdate.nextDueDate = resolvedNextDueDate.toISOString().split('T')[0];
         if (subscription?.status) billingUpdate.providerStatus = subscription.status;
+        if (subscription?.cycle) billingUpdate.billingCycle = subscription.cycle;
+        if (payment?.value != null) billingUpdate.value = Number(payment.value);
+        else if (subscription?.value != null) billingUpdate.value = Number(subscription.value);
         transaction.set(salonRef, { billing: billingUpdate }, { merge: true });
         if (tenantStatus) transaction.set(tenantRef, { id: salonId, status: tenantStatus, subscriptionStatus: tenantStatus, active: tenantStatus === 'active', updatedAt: now.toISOString() }, { merge: true });
-        transaction.set(subRef, { tenantId: salonId, provider: 'asaas', subscriptionId: asaasSubscriptionId, status: billingStatus || currentBilling.status || 'PENDING_PAYMENT', planId: activePlanId, customerId, lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null, nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null, updatedAt: now.toISOString() }, { merge: true });
+        transaction.set(subRef, { tenantId: salonId, provider: 'asaas', subscriptionId: asaasSubscriptionId, status: billingStatus || currentBilling.status || 'PENDING_PAYMENT', planId: activePlanId, customerId, billingCycle: subscription?.cycle || currentBilling.billingCycle || 'MONTHLY', value: subscription?.value != null ? Number(subscription.value) : currentBilling.value || null, lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null, nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null, updatedAt: now.toISOString() }, { merge: true });
       });
-
       if (eventId) await adminDb.collection('billing_events').doc(eventId).update({ status: 'PROCESSED', processed: true, processedAt: new Date().toISOString() });
     } catch (err: any) {
       const isTemporary = this.checkIfTemporaryError(err);
