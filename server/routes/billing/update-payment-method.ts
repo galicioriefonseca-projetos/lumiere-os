@@ -35,7 +35,6 @@ function resolveNextDueDate(salonData: any, cycle: BillingCycle): string {
     const parsed = new Date(typeof value === 'number' ? value : String(value));
     if (!Number.isNaN(parsed.getTime())) { candidate = parsed; break; }
   }
-
   if (!candidate) {
     const lastPayment = salonData?.lastPaymentAt || salonData?.billing?.lastPaymentDate;
     if (lastPayment) {
@@ -43,9 +42,7 @@ function resolveNextDueDate(salonData: any, cycle: BillingCycle): string {
       if (!Number.isNaN(parsed.getTime())) candidate = nextCycleDate(parsed, cycle);
     }
   }
-
   if (!candidate) throw new Error('Não foi possível determinar o próximo vencimento do ciclo já pago. Atualize a data de próxima cobrança antes de migrar para o Asaas.');
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   while (candidate <= today) candidate = nextCycleDate(candidate, cycle);
@@ -85,8 +82,16 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
   try {
     const body = req.body || {};
     const salonId = body.salonId;
+    const requestedPaymentMethod = String(body.paymentMethod || '').toUpperCase();
+    const normalizedPaymentMethod: PaymentMethod | '' = requestedPaymentMethod === 'CREDIT_CARD' || requestedPaymentMethod === 'PIX' || requestedPaymentMethod === 'BOLETO' || requestedPaymentMethod === 'UNDEFINED'
+      ? requestedPaymentMethod as PaymentMethod
+      : requestedPaymentMethod === 'CREDIT-CARD' || requestedPaymentMethod === 'CREDIT CARD' || requestedPaymentMethod === 'CREDIT_CARD'
+        ? 'CREDIT_CARD'
+        : requestedPaymentMethod === 'PIX_AUTOMATIC'
+          ? 'UNDEFINED'
+          : '';
     if (!salonId) return res.status(400).json({ error: 'Informe o salonId.' });
-    if (body.paymentMethod === 'pix_automatic') return res.status(400).json({ error: 'Pix Automático utiliza uma jornada própria de autorização e ainda não está disponível nesta tela.' });
+    if (requestedPaymentMethod === 'PIX_AUTOMATIC') return res.status(400).json({ error: 'Pix Automático utiliza uma jornada própria de autorização e ainda não está disponível nesta tela.' });
 
     let user;
     try { user = await verifyIdToken(req); } catch (err: any) { return res.status(401).json({ error: err.message || 'Não autorizado' }); }
@@ -104,8 +109,7 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
     const settings = await getAsaasSettings();
     if (!settings.apiKey) return res.status(500).json({ error: 'Asaas não está configurado no ambiente de produção.' });
 
-    // Conta já vinculada ao Asaas: atualizar somente o cartão da assinatura, sem cobrança imediata.
-    if (existingSubscriptionId && body.paymentMethod === 'credit_card') {
+    if (existingSubscriptionId && normalizedPaymentMethod === 'CREDIT_CARD') {
       const creditCardToken = body.creditCardToken;
       const creditCard = body.creditCard;
       const creditCardHolderInfo = body.creditCardHolderInfo;
@@ -120,7 +124,6 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       return res.status(200).json({ success: true, message: 'Cartão atualizado com segurança. Nenhuma cobrança foi realizada agora.', billingType: 'CREDIT_CARD', checkoutUrl: null, authorizationUrl: null });
     }
 
-    // Migração segura de clientes que já pagaram manualmente e ainda não possuem assinatura Asaas.
     if (!existingSubscriptionId) {
       const isManualPaid = Boolean(
         salonData?.billingProvider === 'manual' ||
@@ -140,9 +143,7 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
 
       const nextDueDate = resolveNextDueDate(salonData, cycle);
       const customerData = buildCustomerData(salonData);
-      if (!customerData.cpfCnpj || !customerData.email || !customerData.name) {
-        return res.status(422).json({ error: 'Complete CPF/CNPJ, nome e e-mail em Dados de faturamento antes de configurar a forma de pagamento.', missingFields: ['document', 'legalName', 'email'] });
-      }
+      if (!customerData.cpfCnpj || !customerData.email || !customerData.name) return res.status(422).json({ error: 'Complete CPF/CNPJ, nome e e-mail em Dados de faturamento antes de configurar a forma de pagamento.', missingFields: ['document', 'legalName', 'email'] });
 
       const lockRef = adminDb.collection('billing_checkout_locks').doc(salonId);
       const lockToken = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -158,9 +159,9 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       try {
         const appUrl = env.app.url.replace(/\/$/, '');
         const callback = {
-          successUrl: `${appUrl}/dashboard/minha-assinatura?payment=success&migration=1`,
-          cancelUrl: `${appUrl}/dashboard/minha-assinatura?payment=cancelled&migration=1`,
-          expiredUrl: `${appUrl}/dashboard/minha-assinatura?payment=expired&migration=1`,
+          successUrl: `${appUrl}/dashboard/assinatura?payment=success&migration=1`,
+          cancelUrl: `${appUrl}/dashboard/assinatura?payment=cancelled&migration=1`,
+          expiredUrl: `${appUrl}/dashboard/assinatura?payment=expired&migration=1`,
           autoRedirect: true
         };
         const checkout = await asaasProvider.createRecurringCheckout(settings.mode, settings.apiKey, {
@@ -185,33 +186,22 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
           'billing.updatedAt': new Date().toISOString()
         });
 
-        return res.status(200).json({
-          success: true,
-          migrated: false,
-          pendingMigration: true,
-          checkoutUrl: checkout.link || checkout.url || null,
-          authorizationUrl: checkout.link || checkout.url || null,
-          billingCycle: cycle,
-          nextDueDate,
-          value,
-          message: 'Pagamento seguro aberto. Escolha a forma de pagamento no checkout. A cobrança recorrente respeitará o próximo vencimento informado.'
-        });
+        return res.status(200).json({ success: true, migrated: false, pendingMigration: true, checkoutUrl: checkout.link || checkout.url || null, authorizationUrl: checkout.link || checkout.url || null, billingCycle: cycle, nextDueDate, value, message: 'Pagamento seguro aberto. Escolha a forma de pagamento no checkout. A cobrança recorrente respeitará o próximo vencimento informado.' });
       } finally {
         const currentLock = await lockRef.get();
         if (currentLock.exists && currentLock.data()?.token === lockToken) await lockRef.delete();
       }
     }
 
-    // Para outros métodos de uma assinatura existente, preserva a jornada segura já disponível.
-    await billingService.updatePaymentMethod(salonId, 'UNDEFINED' as const);
+    if (!normalizedPaymentMethod) return res.status(400).json({ error: 'Forma de pagamento inválida.' });
+    await billingService.updatePaymentMethod(salonId, normalizedPaymentMethod);
     const subscriptionId = salonData?.billing?.subscriptionId;
     let invoiceUrl: string | null = null;
     if (subscriptionId) {
       try { invoiceUrl = await billingService.getSubscriptionInvoiceUrl(subscriptionId); }
       catch (e) { console.warn('[Asaas Update Payment Method] Não foi possível obter a fatura pendente:', e); }
     }
-
-    return res.status(200).json({ success: true, message: invoiceUrl ? 'Configuração atualizada. A página segura do Asaas permitirá escolher a forma de pagamento.' : 'Configuração atualizada, mas não há uma cobrança pendente disponível para abrir agora.', checkoutUrl: invoiceUrl, authorizationUrl: invoiceUrl, billingType: 'UNDEFINED' });
+    return res.status(200).json({ success: true, message: invoiceUrl ? 'Configuração atualizada. A página segura do Asaas permitirá escolher a forma de pagamento.' : 'Configuração atualizada, mas não há uma cobrança pendente disponível para abrir agora.', checkoutUrl: invoiceUrl, authorizationUrl: invoiceUrl, billingType: normalizedPaymentMethod });
   } catch (error: any) {
     if (error?.message === 'CHECKOUT_LOCKED') return res.status(409).json({ error: 'Já existe uma tentativa de migração em andamento. Aguarde alguns segundos e tente novamente.' });
     console.error('[Asaas Update Payment Method]', error);
