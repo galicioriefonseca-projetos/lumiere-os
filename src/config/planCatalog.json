@@ -1,12 +1,10 @@
 {
-  "version": "2026-08-18",
-  "currency": "BRL",
-  "discounts": { "semiannual": 0.1, "annual": 0.15 },
-  "plans": [
+  "version":"2026-08-18","currency":"BRL","discounts":{"semiannual":0.1,"annual":0.15},
+  "plans":[
     {"id":"essential","name":"Essencial","description":"Para profissionais e pequenos negócios que querem organizar toda a operação.","monthlyPrice":197,"maxProfessionals":5,"badge":null,"features":["Até 5 profissionais","Agenda completa","Clientes e serviços","Comandas","Controle básico de caixa","Agendamento online","Dashboard operacional","Relatórios básicos","Suporte padrão"]},
     {"id":"professional","name":"Profissional","description":"Para negócios em crescimento que precisam de controle financeiro e gestão de equipe.","monthlyPrice":397,"maxProfessionals":15,"badge":"Mais escolhido","features":["Tudo do Essencial","Até 15 profissionais","Financeiro completo","Fluxo de caixa","Contas a pagar e receber","Comissões e metas","CRM","Relatórios avançados","Dashboard de gestão","Suporte prioritário"]},
     {"id":"performance_plus","name":"Performance","description":"Para operações que querem inteligência, automação e decisões orientadas por dados.","monthlyPrice":597,"maxProfessionals":30,"badge":null,"features":["Tudo do Profissional","Até 30 profissionais","Lumi — IA","Insights automáticos","Análises financeiras avançadas","Indicadores inteligentes","Análise de desempenho da equipe","Relatórios gerenciais avançados","Automação avançada","Suporte prioritário"]},
     {"id":"multiunit","name":"Multiunidade","description":"Para grupos, redes e operações com múltiplas unidades.","monthlyPrice":897,"maxProfessionals":60,"badge":null,"features":["Tudo do Performance","Até 60 profissionais por unidade","Gestão multiunidade","Dashboard consolidado","Comparação entre unidades","Financeiro por unidade","Relatórios executivos","Gestão centralizada","Permissões avançadas","Suporte VIP"]},
-    {"id":"enterprise","name":"Enterprise","description":"Operações de grande porte com necessidades comerciais e técnicas personalizadas.","monthlyPrice":null,"maxProfessionals":null,"badge":"Sob consulta","customPricing":true,"features":["Tudo do Multiunidade","Implantação personalizada","Integrações avançadas","BI e relatórios personalizados","Gerente de conta","SLA e suporte dedicado"]}
+    {"id":"enterprise_custom","name":"Enterprise","description":"Operações de grande porte com necessidades comerciais e técnicas personalizadas.","monthlyPrice":null,"maxProfessionals":null,"badge":"Sob consulta","customPricing":true,"features":["Tudo do Multiunidade","Implantação personalizada","Integrações avançadas","BI e relatórios personalizados","Gerente de conta","SLA e suporte dedicado"]}
   ]
 }
