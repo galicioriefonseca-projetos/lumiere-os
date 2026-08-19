@@ -5,6 +5,8 @@ import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 import { normalizeBillingCustomerData, saveBillingCustomerData } from '../../billing/BillingCustomerService.js';
 import { env } from '../../config/env.js';
 
+const ALLOWED_CYCLES = new Set(['MONTHLY', 'SEMIANNUALLY', 'YEARLY']);
+
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -12,10 +14,9 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
   }
   try {
     const { salonId, planId, billingCycle, customerData } = req.body || {};
-    const allowedCycles = new Set(['MONTHLY', 'SEMIANNUALLY', 'YEARLY']);
-    const selectedCycle = billingCycle || 'MONTHLY';
+    const selectedCycle = String(billingCycle || 'MONTHLY').toUpperCase();
     if (!salonId || !planId) return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
-    if (!allowedCycles.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
+    if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
 
     let user;
     try { user = await verifyIdToken(req); } catch (err: any) { return res.status(401).json({ success: false, error: err.message || 'Não autorizado' }); }
@@ -45,7 +46,15 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     const billingType = 'UNDEFINED' as const;
     const appUrl = env.app.url.replace(/\/$/, '');
     const paymentCallback = { successUrl: `${appUrl}/aguardando-pagamento?payment=success`, cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`, expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`, autoRedirect: true };
-    const subscription = await billingService.createSubscription(salonId, planId, billingType, { ...salonData, billing: billingData, callback: paymentCallback });
+    const subscription = await billingService.createSubscription(
+      salonId,
+      planId,
+      billingType,
+      { ...salonData, billing: billingData, callback: paymentCallback },
+      undefined,
+      undefined,
+      selectedCycle as 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY'
+    );
 
     let invoiceUrl: string | null = null;
     try { invoiceUrl = await billingService.getSubscriptionInvoiceUrl(subscription.id); } catch (err) { console.warn('[Asaas] Não foi possível obter a invoiceUrl da assinatura:', err); }
