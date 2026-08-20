@@ -23,42 +23,15 @@ export class BillingService {
   private async getSettings(): Promise<BillingSettings> {
     const adminDb = getAdminDb();
     const doc = await adminDb.collection('settings').doc('asaas').get();
-    if (!doc.exists || !doc.data()?.apiKey) {
-      const defaultSettings: BillingSettings = { mode: 'sandbox', apiKey: env.asaas.apiKey || '', webhookToken: env.asaas.webhookToken || '', updatedAt: Date.now() };
-      try { await adminDb.collection('settings').doc('asaas').set(defaultSettings); } catch (e) { console.warn('Failed to seed default settings', e); }
-      return defaultSettings;
-    }
+    if (!doc.exists || !doc.data()?.apiKey) throw new Error('Configurações do Asaas não encontradas.');
     return doc.data() as BillingSettings;
   }
 
-  async testConnection(settingsOverride?: BillingSettings) {
-    const settings = settingsOverride || await this.getSettings();
-    return asaasProvider.testConnection(settings.mode, settings.apiKey);
-  }
-
-  async ensureCustomer(salonId: string, salonData: any): Promise<string> {
+  private async getPlan(planId: string): Promise<Plan> {
     const adminDb = getAdminDb();
-    let customerId = salonData.billing?.customerId || salonData.asaasCustomerId;
-    if (!customerId) {
-      const settings = await this.getSettings();
-      const customer = await asaasProvider.createCustomer(settings.mode, settings.apiKey, {
-        name: salonData.billing?.legalName || salonData.name,
-        email: salonData.billing?.email || salonData.email || salonData.billingEmail || salonData.ownerEmail,
-        cpfCnpj: salonData.billing?.document || salonData.document || salonData.cnpj,
-        mobilePhone: salonData.billing?.mobilePhone || salonData.phone || salonData.whatsapp,
-        externalReference: salonId
-      });
-      customerId = customer.id;
-      await adminDb.collection('salons').doc(salonId).update({ 'billing.provider': 'asaas', 'billing.customerId': customerId, asaasCustomerId: customerId });
-    }
-    return customerId;
-  }
-
-  async getPlan(planId: string): Promise<Plan> {
-    const adminDb = getAdminDb();
-    const planDoc = await adminDb.collection('plans').doc(planId).get();
-    if (!planDoc.exists) throw new Error(`Plan ${planId} not found`);
-    return { id: planDoc.id, ...planDoc.data() } as Plan;
+    const doc = await adminDb.collection('plans').doc(planId).get();
+    if (!doc.exists) throw new Error(`Plano ${planId} não encontrado.`);
+    return { id: doc.id, ...doc.data() } as Plan;
   }
 
   private resolvePlanPricing(plan: Plan, cycle: BillingCycle): number {
@@ -67,15 +40,7 @@ export class BillingService {
     return Number(plan.annualPrice || 0);
   }
 
-  async createSubscription(
-    salonId: string,
-    planId: string,
-    billingType: PaymentMethod,
-    salonData: any,
-    creditCard?: any,
-    creditCardHolderInfo?: any,
-    selectedBillingCycle?: BillingCycle
-  ) {
+  async createSubscription(salonId: string, planId: string, billingType: PaymentMethod, salonData: any, creditCard?: any, creditCardHolderInfo?: any, selectedBillingCycle?: BillingCycle) {
     const adminDb = getAdminDb();
     const plan = await this.getPlan(planId);
     const cycle = selectedBillingCycle || plan.billingCycle || 'MONTHLY';
@@ -95,48 +60,21 @@ export class BillingService {
       try {
         const existing = await asaasProvider.getSubscription(settings.mode, settings.apiKey, currentSubscriptionId);
         const existingCycle = existing.cycle || 'MONTHLY';
-        if (existing.status === 'ACTIVE' && currentBilling.planId === planId && existingCycle === cycle && Math.abs(Number(existing.value) - value) < 0.01) {
-          console.info('[Asaas] Reutilizando assinatura existente:', currentSubscriptionId);
-          return existing;
-        }
+        if (existing.status === 'ACTIVE' && currentBilling.planId === planId && existingCycle === cycle && Math.abs(Number(existing.value) - value) < 0.01) return existing;
       } catch (err: any) {
         const message = String(err?.message || err);
         if (!message.includes('Asaas API Error: 404')) throw err;
       }
     }
 
-    if (currentSubscriptionId && currentBillingStatus === 'ACTIVE' && currentBilling.planId && currentBilling.planId !== planId) {
-      throw new Error('Já existe uma assinatura ativa para este estabelecimento. Utilize a alteração de plano em vez de criar um novo checkout.');
-    }
-    if (currentSubscriptionId && currentBillingStatus === 'ACTIVE' && currentBilling.planId === planId && (currentBilling.billingCycle || 'MONTHLY') !== cycle) {
-      throw new Error('Já existe uma assinatura ativa para este plano. Altere a periodicidade pela opção de alteração de assinatura.');
-    }
+    if (currentSubscriptionId && currentBillingStatus === 'ACTIVE' && currentBilling.planId && currentBilling.planId !== planId) throw new Error('Já existe uma assinatura ativa para este estabelecimento. Utilize a alteração de plano em vez de criar um novo checkout.');
+    if (currentSubscriptionId && currentBillingStatus === 'ACTIVE' && currentBilling.planId === planId && (currentBilling.billingCycle || 'MONTHLY') !== cycle) throw new Error('Já existe uma assinatura ativa para este plano. Altere a periodicidade pela opção de alteração de assinatura.');
 
     const externalReference = salonId;
     const remoteBeforeLock = await asaasProvider.listSubscriptions(settings.mode, settings.apiKey, { customer: currentBilling.customerId || currentSalonData.asaasCustomerId, externalReference });
-    const matchingRemote = remoteBeforeLock.find(subscription =>
-      subscription.status === 'ACTIVE' &&
-      Math.abs(Number(subscription.value) - value) < 0.01 &&
-      (subscription.cycle || 'MONTHLY') === cycle &&
-      subscription.description === description
-    );
-
+    const matchingRemote = remoteBeforeLock.find(subscription => subscription.status === 'ACTIVE' && Math.abs(Number(subscription.value) - value) < 0.01 && (subscription.cycle || 'MONTHLY') === cycle && subscription.description === description);
     if (matchingRemote) {
-      await adminDb.collection('salons').doc(salonId).update({
-        'billing.provider': 'asaas',
-        'billing.customerId': matchingRemote.customer,
-        asaasCustomerId: matchingRemote.customer,
-        'billing.subscriptionId': matchingRemote.id,
-        'billing.planId': planId,
-        'billing.billingCycle': cycle,
-        'billing.value': value,
-        'billing.status': currentBillingStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT',
-        'billing.pendingSubscriptionStatus': matchingRemote.status,
-        'billing.paymentMethod': matchingRemote.billingType,
-        'billing.nextDueDate': matchingRemote.nextDueDate,
-        'billing.updatedAt': new Date().toISOString()
-      });
-      console.info('[Asaas] Assinatura existente reconciliada antes de criar outra:', matchingRemote.id);
+      await adminDb.collection('salons').doc(salonId).update({ 'billing.provider': 'asaas', 'billing.customerId': matchingRemote.customer, asaasCustomerId: matchingRemote.customer, 'billing.subscriptionId': matchingRemote.id, 'billing.planId': planId, 'billing.billingCycle': cycle, 'billing.value': value, 'billing.status': currentBillingStatus === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT', 'billing.pendingSubscriptionStatus': matchingRemote.status, 'billing.paymentMethod': matchingRemote.billingType, 'billing.nextDueDate': matchingRemote.nextDueDate, 'billing.updatedAt': new Date().toISOString() });
       return matchingRemote;
     }
 
@@ -144,7 +82,6 @@ export class BillingService {
     const lockToken = crypto.randomUUID();
     const lockCreatedAt = Date.now();
     const lockTtlMs = 5 * 60 * 1000;
-
     await adminDb.runTransaction(async transaction => {
       const lockDoc = await transaction.get(lockRef);
       if (lockDoc.exists) {
@@ -158,13 +95,7 @@ export class BillingService {
     try {
       const customerId = await this.ensureCustomer(salonId, currentSalonData);
       const remoteAfterLock = await asaasProvider.listSubscriptions(settings.mode, settings.apiKey, { customer: customerId, externalReference });
-      const matchingAfterLock = remoteAfterLock.find(subscription =>
-        subscription.status === 'ACTIVE' &&
-        Math.abs(Number(subscription.value) - value) < 0.01 &&
-        (subscription.cycle || 'MONTHLY') === cycle &&
-        subscription.description === description
-      );
-
+      const matchingAfterLock = remoteAfterLock.find(subscription => subscription.status === 'ACTIVE' && Math.abs(Number(subscription.value) - value) < 0.01 && (subscription.cycle || 'MONTHLY') === cycle && subscription.description === description);
       if (matchingAfterLock) {
         await adminDb.runTransaction(async transaction => {
           const salonRef = adminDb.collection('salons').doc(salonId);
@@ -180,7 +111,6 @@ export class BillingService {
       const payload: any = { customer: customerId, billingType, value, nextDueDate: nextDueDate.toISOString().split('T')[0], cycle, description, externalReference };
       if (salonData.callback?.successUrl) payload.callback = { successUrl: salonData.callback.successUrl, cancelUrl: salonData.callback.cancelUrl, expiredUrl: salonData.callback.expiredUrl, autoRedirect: salonData.callback.autoRedirect ?? true };
       if (billingType === 'CREDIT_CARD' && creditCard && creditCardHolderInfo) { payload.creditCard = creditCard; payload.creditCardHolderInfo = creditCardHolderInfo; }
-
       const sub = await asaasProvider.createSubscription(settings.mode, settings.apiKey, payload);
       await adminDb.runTransaction(async transaction => {
         const salonRef = adminDb.collection('salons').doc(salonId);
@@ -202,15 +132,16 @@ export class BillingService {
 
   async cancelSubscription(salonId: string) {
     const adminDb = getAdminDb();
-    const salonDoc = await adminDb.collection('salons').doc(salonId).get();
-    const subscriptionId = salonDoc.data()?.billing?.subscriptionId;
+    const data = (await adminDb.collection('salons').doc(salonId).get()).data();
+    const subscriptionId = data?.billing?.subscriptionId;
     if (!subscriptionId) throw new Error('Nenhuma assinatura ativa encontrada.');
     const settings = await this.getSettings();
-    await asaasProvider.cancelSubscription(settings.mode, settings.apiKey, subscriptionId);
-    await adminDb.collection('salons').doc(salonId).update({ 'billing.status': 'CANCELLED', 'billing.updatedAt': new Date().toISOString() });
+    const result = await asaasProvider.cancelSubscription(settings.mode, settings.apiKey, subscriptionId);
+    if (result) await adminDb.collection('salons').doc(salonId).update({ 'billing.status': 'CANCELLED', 'billing.providerStatus': 'DELETED', 'billing.updatedAt': new Date().toISOString() });
+    return result;
   }
 
-  async changePlan(salonId: string, newPlanId: string) {
+  async updatePlan(salonId: string, newPlanId: string) {
     const adminDb = getAdminDb();
     const data = (await adminDb.collection('salons').doc(salonId).get()).data();
     const subscriptionId = data?.billing?.subscriptionId;
@@ -225,48 +156,43 @@ export class BillingService {
     return sub;
   }
 
-  async updatePaymentMethod(salonId: string, billingType: PaymentMethod, creditCard?: any, creditCardHolderInfo?: any) {
+  async getSubscription(salonId: string) {
     const adminDb = getAdminDb();
     const data = (await adminDb.collection('salons').doc(salonId).get()).data();
     const subscriptionId = data?.billing?.subscriptionId;
-    if (!subscriptionId) throw new Error('Nenhuma assinatura ativa encontrada.');
+    if (!subscriptionId) return null;
     const settings = await this.getSettings();
-    const payload: any = { billingType, updatePendingPayments: true };
-    if (billingType === 'CREDIT_CARD' && creditCard && creditCardHolderInfo) { payload.creditCard = creditCard; payload.creditCardHolderInfo = creditCardHolderInfo; }
-    const sub = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, payload);
-    await adminDb.collection('salons').doc(salonId).update({ 'billing.paymentMethod': billingType, 'billing.updatedAt': new Date().toISOString() });
+    const sub = await asaasProvider.getSubscription(settings.mode, settings.apiKey, subscriptionId);
+    await adminDb.collection('salons').doc(salonId).update({ 'billing.providerStatus': sub.status, 'billing.nextDueDate': sub.nextDueDate, 'billing.paymentMethod': sub.billingType, 'billing.billingCycle': sub.cycle || data?.billing?.billingCycle || 'MONTHLY', 'billing.value': sub.value, 'billing.updatedAt': new Date().toISOString() });
     return sub;
   }
 
-  async getSubscriptionInvoiceUrl(subscriptionId: string): Promise<string | null> {
+  async getPendingPayment(salonId: string) {
+    const adminDb = getAdminDb();
+    const data = (await adminDb.collection('salons').doc(salonId).get()).data();
+    const subscriptionId = data?.billing?.subscriptionId;
+    if (!subscriptionId) return null;
     const settings = await this.getSettings();
     const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
-    const pendingPayment = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
+    return payments.find((p: any) => ['PENDING', 'OVERDUE'].includes(String(p.status || '').toUpperCase())) || null;
+  }
+
+  async getSubscriptionInvoiceUrl(salonId: string) {
+    const pendingPayment = await this.getPendingPayment(salonId);
     return pendingPayment?.invoiceUrl || null;
   }
 
-  async getPixPaymentDetails(salonId: string) {
-    const adminDb = getAdminDb();
-    const data = (await adminDb.collection('salons').doc(salonId).get()).data();
-    const subscriptionId = data?.billing?.subscriptionId;
-    if (!subscriptionId) throw new Error('Nenhuma assinatura encontrada.');
+  async getPixQrCode(salonId: string) {
+    const pendingPayment = await this.getPendingPayment(salonId);
+    if (!pendingPayment?.id) return null;
     const settings = await this.getSettings();
-    const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
-    const pendingPayment = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
-    if (!pendingPayment) throw new Error('Nenhum pagamento pendente encontrado.');
-    if (pendingPayment.billingType !== 'PIX') throw new Error('O pagamento pendente não é do tipo PIX.');
     return asaasProvider.getPixQrCode(settings.mode, settings.apiKey, pendingPayment.id);
   }
 
-  async getBoletoDetails(salonId: string) {
-    const adminDb = getAdminDb();
-    const data = (await adminDb.collection('salons').doc(salonId).get()).data();
-    const subscriptionId = data?.billing?.subscriptionId;
-    if (!subscriptionId) throw new Error('Nenhuma assinatura encontrada.');
+  async getBoleto(salonId: string) {
+    const pendingPayment = await this.getPendingPayment(salonId);
+    if (!pendingPayment?.id) return null;
     const settings = await this.getSettings();
-    const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
-    const pendingPayment = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
-    if (!pendingPayment) throw new Error('Nenhum pagamento pendente encontrado.');
     return asaasProvider.getBoleto(settings.mode, settings.apiKey, pendingPayment.id);
   }
 
@@ -358,7 +284,7 @@ export class BillingService {
         const lastPayment = isPaymentConfirmed ? now : (currentBilling.lastPaymentDate ? new Date(currentBilling.lastPaymentDate) : null);
         const resolvedNextDueDate = (payment?.dueDate || subscription?.nextDueDate) ? new Date(payment?.dueDate || subscription?.nextDueDate) : (currentBilling.nextDueDate ? new Date(currentBilling.nextDueDate) : null);
         const asaasSubscriptionId = subscription?.id || payment?.subscription || currentBilling.subscriptionId || '';
-        const activePlanId = currentBilling.planId || 'performance';
+        const activePlanId = currentBilling.planId || 'essential';
         const billingUpdate: any = { ...currentBilling, updatedAt: now.toISOString(), customerId };
         if (billingStatus) billingUpdate.status = billingStatus;
         if (asaasSubscriptionId) billingUpdate.subscriptionId = asaasSubscriptionId;
@@ -390,6 +316,19 @@ export class BillingService {
     const adminDb = getAdminDb();
     await adminDb.collection('billing_dlq').doc(eventId).set({ eventId, error: errorMsg, payload, failedAt: new Date().toISOString(), resolved: false }, { merge: true });
     await adminDb.collection('billing_events').doc(eventId).set({ id: eventId, processed: false, dlq: true, status: 'DLQ', error: errorMsg, updatedAt: new Date().toISOString() }, { merge: true });
+  }
+
+  private async ensureCustomer(salonId: string, salonData: any): Promise<string> {
+    const adminDb = getAdminDb();
+    const billing = salonData?.billing || {};
+    const existingId = billing.customerId || salonData.asaasCustomerId;
+    if (existingId) return existingId;
+    const customerData = billing.customerData || salonData.billingData || salonData;
+    if (!customerData?.cpfCnpj || !customerData?.email || !customerData?.name) throw new Error('Complete CPF/CNPJ, nome e e-mail em Dados de faturamento antes de configurar a forma de pagamento.');
+    const settings = await this.getSettings();
+    const customer = await asaasProvider.createCustomer(settings.mode, settings.apiKey, customerData);
+    await adminDb.collection('salons').doc(salonId).update({ 'billing.customerId': customer.id, asaasCustomerId: customer.id });
+    return customer.id;
   }
 }
 
