@@ -28,6 +28,8 @@ export default function BillingCustomerPage() {
   const salonId = params.get('salonId') || '';
   const planId = params.get('planId') || '';
   const billingCycle = (params.get('billingCycle') || 'MONTHLY').toUpperCase();
+  const migration = params.get('migration') === '1';
+  const migrationPaymentMethod = (params.get('paymentMethod') || 'CREDIT_CARD').toUpperCase();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState({ document: '', legalName: '', email: '', mobilePhone: '' });
@@ -65,6 +67,21 @@ export default function BillingCustomerPage() {
       const customerResult = await customerResponse.json().catch(() => ({}));
       if (!customerResponse.ok) throw new Error(customerResult.error || 'Não foi possível salvar os dados de faturamento.');
 
+      if (migration) {
+        const paymentResponse = await fetch('/api/billing/update-payment-method', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ salonId, planId, billingCycle, paymentMethod: migrationPaymentMethod })
+        });
+        const paymentResult = await paymentResponse.json().catch(() => ({}));
+        if (!paymentResponse.ok || !paymentResult.success || !paymentResult.authorizationUrl) {
+          throw new Error(paymentResult.error || 'Não foi possível preparar o pagamento.');
+        }
+        toast.success('Dados de faturamento salvos. Abrindo pagamento seguro...');
+        window.location.assign(paymentResult.authorizationUrl);
+        return;
+      }
+
       const checkoutResponse = await fetch('/api/billing/create-checkout', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ salonId, planId, billingCycle, customerData: data })
@@ -86,15 +103,16 @@ export default function BillingCustomerPage() {
   return (
     <div className="min-h-screen bg-background text-white flex items-center justify-center p-4">
       <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 sm:p-8 shadow-2xl">
-        <button type="button" onClick={() => navigate('/planos')} className="text-xs text-zinc-500 hover:text-white flex items-center gap-2 mb-6"><ArrowLeft className="w-4 h-4" /> Voltar para planos</button>
+        <button type="button" onClick={() => navigate('/dashboard/assinatura')} className="text-xs text-zinc-500 hover:text-white flex items-center gap-2 mb-6"><ArrowLeft className="w-4 h-4" /> Voltar para minha assinatura</button>
         <div className="flex items-start gap-3 mb-6"><div className="p-3 rounded-xl bg-[#D4AF37]/10 text-[#D4AF37]"><CreditCard className="w-6 h-6" /></div><div><h1 className="text-xl font-bold">Complete o cadastro de faturamento</h1><p className="text-sm text-zinc-400 mt-1">Esses dados identificam o responsável pela cobrança na Asaas. O cartão será informado no ambiente seguro da Asaas.</p></div></div>
+        {migration && <div className="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">A conta já possui pagamentos anteriores. Estes dados serão usados para vincular a próxima cobrança recorrente sem criar uma cobrança duplicada agora.</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">CPF ou CNPJ *</label><input required value={formatDocument(data.document)} onChange={e => setData({ ...data, document: e.target.value })} placeholder="CPF ou CNPJ" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">Nome completo ou razão social *</label><input required value={data.legalName} onChange={e => setData({ ...data, legalName: e.target.value })} placeholder="Nome / Razão social" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">E-mail de cobrança *</label><input required type="email" value={data.email} onChange={e => setData({ ...data, email: e.target.value })} placeholder="financeiro@empresa.com" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">Telefone / WhatsApp *</label><input required value={formatPhone(data.mobilePhone)} onChange={e => setData({ ...data, mobilePhone: e.target.value })} placeholder="(00) 00000-0000" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex gap-3"><ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" /><p className="text-xs text-zinc-400 leading-relaxed">O LumièreOS não armazena dados do cartão. A escolha do meio de pagamento e a inserção dos dados de cartão acontecem diretamente no ambiente seguro da Asaas.</p></div>
-          <button disabled={saving} type="submit" className="w-full h-12 rounded-xl bg-[#D4AF37] hover:bg-[#Bca032] disabled:opacity-50 text-black font-bold flex items-center justify-center gap-2">{saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}{saving ? 'Salvando e preparando pagamento...' : 'Salvar e ir para pagamento'}</button>
+          <button disabled={saving} type="submit" className="w-full h-12 rounded-xl bg-[#D4AF37] hover:bg-[#Bca032] disabled:opacity-50 text-black font-bold flex items-center justify-center gap-2">{saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}{saving ? 'Salvando e preparando pagamento...' : migration ? 'Salvar dados e configurar pagamento' : 'Salvar e ir para pagamento'}</button>
         </form>
       </div>
     </div>
