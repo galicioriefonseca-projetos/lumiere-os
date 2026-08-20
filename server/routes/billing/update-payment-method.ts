@@ -96,7 +96,6 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
 
     const subscriptionId = salonData?.billing?.subscriptionId || salonData?.providerSubscriptionId;
 
-    // Assinatura já existente: altera a recorrência no próprio Asaas.
     if (subscriptionId) {
       if (paymentMethod === 'CREDIT_CARD') {
         const creditCardToken = body.creditCardToken;
@@ -111,7 +110,6 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
           return res.status(200).json({ success: true, message: 'Cartão atualizado com segurança.', billingType: 'CREDIT_CARD' });
         }
 
-        // Sem dados do cartão, abre a cobrança pendente para a jornada segura do Asaas.
         const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
         const pending = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
         if (pending?.invoiceUrl) return res.status(200).json({ success: true, checkoutUrl: pending.invoiceUrl, authorizationUrl: pending.invoiceUrl, billingType: 'CREDIT_CARD', message: 'Abra a página segura do Asaas para configurar o pagamento.' });
@@ -123,7 +121,6 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       return res.status(200).json({ success: true, message: 'Forma de pagamento atualizada com sucesso.', billingType: paymentMethod, subscription });
     }
 
-    // Cliente que já pagou manualmente: cria uma migração segura sem criar uma assinatura duplicada.
     const isManualPaid = Boolean(salonData?.billingProvider === 'manual' || salonData?.billingProvider === 'manual_pix' || salonData?.paymentStatus === 'paid' || salonData?.lastPaymentAt || salonData?.billing?.lastPaymentDate);
     if (!isManualPaid) return res.status(409).json({ error: 'Esta conta ainda não possui assinatura Asaas nem pagamento manual identificado. Conclua o checkout inicial antes de configurar a forma de pagamento.' });
 
@@ -139,7 +136,11 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
 
     const nextDueDate = resolveNextDueDate(salonData, cycle);
     const customerData = buildCustomerData(salonData);
-    if (!customerData.cpfCnpj || !customerData.email || !customerData.name) return res.status(422).json({ error: 'Complete CPF/CNPJ, nome e e-mail em Dados de faturamento antes de configurar a forma de pagamento.' });
+    if (!customerData.cpfCnpj || !customerData.email || !customerData.name) {
+      const appUrl = String(env.app.url || '').replace(/\/$/, '');
+      const setupUrl = `${appUrl}/dashboard/dados-faturamento?salonId=${encodeURIComponent(salonId)}&planId=${encodeURIComponent(planId)}&billingCycle=${encodeURIComponent(cycle)}&migration=1&paymentMethod=${encodeURIComponent(paymentMethod)}`;
+      return res.status(200).json({ success: true, requiresBillingData: true, authorizationUrl: setupUrl, setupUrl, message: 'Antes de configurar o pagamento, complete os dados de faturamento (CPF/CNPJ, nome e e-mail).' });
+    }
 
     const lockRef = db.collection('billing_checkout_locks').doc(salonId);
     const lockToken = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
