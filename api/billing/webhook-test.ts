@@ -3,6 +3,17 @@ import { getAdminDb } from '../../server/shared/firebaseAdmin.js';
 import { verifyIdToken, resolvePlatformAdmin } from '../../server/shared/auth.js';
 import { billingService } from '../../server/billing/BillingService.js';
 
+const EVENT_ALIASES: Record<string, string> = {
+  purchase_approved: 'PAYMENT_CONFIRMED',
+  payment_approved: 'PAYMENT_CONFIRMED',
+  payment_received: 'PAYMENT_RECEIVED',
+  payment_overdue: 'PAYMENT_OVERDUE',
+  subscription_updated: 'SUBSCRIPTION_UPDATED',
+  subscription_cancelled: 'SUBSCRIPTION_CANCELLED',
+  subscription_canceled: 'SUBSCRIPTION_CANCELLED',
+  subscription_deleted: 'SUBSCRIPTION_DELETED',
+};
+
 const ALLOWED_EVENTS = new Set([
   'PAYMENT_RECEIVED',
   'PAYMENT_CONFIRMED',
@@ -29,15 +40,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Somente o Platform Admin pode executar simulações de billing.' });
     }
 
-    const { salonId, event, paymentStatus, planId, billingCycle } = req.body || {};
+    const body = req.body || {};
+    const salonId = String(body.salonId || '');
     if (!salonId) return res.status(400).json({ error: 'salonId é obrigatório.' });
 
-    const simulatedEvent = String(event || '').toUpperCase();
+    const requestedEvent = String(body.event || '').toLowerCase();
+    const simulatedEvent = EVENT_ALIASES[requestedEvent] || requestedEvent.toUpperCase();
     if (!ALLOWED_EVENTS.has(simulatedEvent)) {
       return res.status(400).json({ error: 'Evento de teste inválido.', allowedEvents: [...ALLOWED_EVENTS] });
     }
 
-    const salonRef = adminDb.collection('salons').doc(String(salonId));
+    const salonRef = adminDb.collection('salons').doc(salonId);
     const salonSnap = await salonRef.get();
     if (!salonSnap.exists) return res.status(404).json({ error: 'Salão não encontrado.' });
 
@@ -48,9 +61,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(422).json({ error: 'O salão não possui customerId do Asaas. A simulação não cria cliente nem chama a API do Asaas.' });
     }
 
-    const subscriptionId = billing.subscriptionId || makeId('sub');
-    const resolvedPlanId = String(planId || billing.planId || 'essential');
-    const resolvedCycle = String(billingCycle || billing.billingCycle || 'MONTHLY').toUpperCase();
+    const subscriptionId = billing.subscriptionId || String(body.subscriptionId || makeId('sub'));
+    const resolvedPlanId = String(body.planId || body.offerId || billing.planId || 'essential');
+    const resolvedCycle = String(body.billingCycle || billing.billingCycle || 'MONTHLY').toUpperCase();
     const resolvedValue = Number(billing.value || 197);
     const dueDate = billing.nextDueDate || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
@@ -67,13 +80,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         billingType: billing.paymentMethod || 'UNDEFINED',
       },
       payment: {
-        id: makeId('pay'),
+        id: String(body.orderId || makeId('pay')),
         customer: customerId,
         subscription: subscriptionId,
         value: resolvedValue,
         dueDate,
         billingType: billing.paymentMethod || 'UNDEFINED',
-        status: paymentStatus || (simulatedEvent === 'PAYMENT_OVERDUE' ? 'OVERDUE' : 'RECEIVED'),
+        status: body.paymentStatus || (simulatedEvent === 'PAYMENT_OVERDUE' ? 'OVERDUE' : 'RECEIVED'),
       },
       simulation: {
         source: 'lumiere-master',
