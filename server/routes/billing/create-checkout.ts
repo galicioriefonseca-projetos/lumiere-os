@@ -150,6 +150,14 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(422).json({ success: false, code: 'BILLING_DATA_INVALID', error: validationError.message, missingFields: ['document', 'legalName', 'email', 'mobilePhone'] });
     }
 
+    const appUrl = env.app.url.replace(/\/$/, '');
+    const paymentCallback = {
+      successUrl: `${appUrl}/aguardando-pagamento?payment=success`,
+      cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`,
+      expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`,
+      autoRedirect: true
+    };
+
     // Semestral/anual são contratos de prazo fechado. No cartão, o Checkout
     // usa INSTALLMENT (parcelamento da compra); no Pix, usa DETACHED (à vista).
     // Não tratamos esses ciclos como assinatura recorrente, pois isso cobraria
@@ -190,14 +198,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     }
 
     const billingType = 'UNDEFINED' as const;
-    const appUrl = env.app.url.replace(/\/$/, '');
-    const paymentCallback = {
-      successUrl: `${appUrl}/aguardando-pagamento?payment=success`,
-      cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`,
-      expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`,
-      autoRedirect: true
-    };
-
     const subscription = await billingService.createSubscription(
       salonId,
       planId,
