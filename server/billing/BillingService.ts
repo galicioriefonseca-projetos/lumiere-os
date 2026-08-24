@@ -200,6 +200,55 @@ export class BillingService {
     }
   }
 
+  async createTermCheckout(
+    salonId: string,
+    planId: string,
+    cycle: 'SEMIANNUALLY' | 'YEARLY',
+    value: number,
+    salonData: any,
+    maxInstallmentCount: number
+  ) {
+    const adminDb = getAdminDb();
+    const settings = await this.getSettings();
+    if (!Number.isFinite(value) || value <= 0) throw new Error('Valor do contrato inválido.');
+    const termMonths = cycle === 'YEARLY' ? 12 : 6;
+    const customerId = await this.ensureCustomer(salonId, salonData);
+    const customerData = {
+      name: salonData.billing?.legalName || salonData.name,
+      email: salonData.billing?.email || salonData.billingEmail || salonData.ownerEmail,
+      cpfCnpj: salonData.billing?.document || salonData.document || salonData.cnpj,
+      phone: salonData.billing?.mobilePhone || salonData.phone || salonData.whatsapp,
+      mobilePhone: salonData.billing?.mobilePhone || salonData.phone || salonData.whatsapp,
+      postalCode: salonData.billing?.postalCode || salonData.postalCode,
+      address: salonData.billing?.address || salonData.address,
+      addressNumber: salonData.billing?.addressNumber || salonData.addressNumber,
+      complement: salonData.billing?.complement || salonData.complement,
+      province: salonData.billing?.province || salonData.province,
+      city: salonData.billing?.city || salonData.city,
+    };
+    const termEndDate = new Date();
+    termEndDate.setMonth(termEndDate.getMonth() + termMonths);
+    const checkout = await asaasProvider.createTermCheckout(settings.mode, settings.apiKey, {
+      billingTypes: ['PIX', 'CREDIT_CARD'],
+      chargeTypes: ['DETACHED', 'INSTALLMENT'],
+      minutesToExpire: 60,
+      callback: salonData.callback,
+      items: [{ name: 'LumièreOS - ' + planId, description: 'Plano ' + (cycle === 'YEARLY' ? 'anual' : 'semestral'), quantity: 1, value }],
+      customerData,
+      externalReference: 'term:' + salonId + ':' + cycle + ':' + crypto.randomUUID(),
+      installment: { maxInstallmentCount },
+    });
+    const checkoutUrl = checkout.link || checkout.url || null;
+    await adminDb.collection('salons').doc(salonId).set({ billing: {
+      provider: 'asaas', customerId, planId, billingCycle: cycle, value,
+      status: 'PENDING_PAYMENT', pendingTermCheckout: true,
+      termMonths, termEndDate: termEndDate.toISOString().split('T')[0],
+      installmentCount: maxInstallmentCount, checkoutId: checkout.id || null,
+      checkoutUrl, paymentMethod: 'UNDEFINED', updatedAt: new Date().toISOString()
+    }, asaasCustomerId: customerId }, { merge: true });
+    return checkout;
+  }
+
   async cancelSubscription(salonId: string) {
     const adminDb = getAdminDb();
     const salonDoc = await adminDb.collection('salons').doc(salonId).get();
