@@ -60,6 +60,22 @@ export class AsaasProvider implements BillingProvider {
     return this.request(mode, apiKey, '/checkouts', 'POST', payload);
   }
 
+
+  async createTermCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
+    const chargeTypes = data.chargeTypes || ['DETACHED', 'INSTALLMENT'];
+    const payload = {
+      billingTypes: data.billingTypes || ['PIX', 'CREDIT_CARD'],
+      chargeTypes,
+      minutesToExpire: data.minutesToExpire || 60,
+      callback: data.callback,
+      items: data.items,
+      customerData: data.customerData,
+      externalReference: data.externalReference,
+      installment: data.installment,
+    };
+    return this.request(mode, apiKey, '/checkouts', 'POST', payload);
+  }
+
   async updateSubscriptionCreditCard(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<any> {
     return this.request(mode, apiKey, `/subscriptions/${id}/creditCard`, 'PUT', data);
   }
