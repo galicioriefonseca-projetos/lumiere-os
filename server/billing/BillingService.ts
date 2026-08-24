@@ -378,6 +378,11 @@ export class BillingService {
       let billingStatus: 'ACTIVE' | 'OVERDUE' | 'CANCELLED' | null = null;
       let tenantStatus: 'active' | 'overdue' | 'cancelled' | null = null;
       switch (event) {
+        case 'PAYMENT_CREATED':
+        case 'PAYMENT_UPDATED':
+        case 'PAYMENT_AWAITING_RISK_ANALYSIS':
+        case 'PAYMENT_APPROVED_BY_RISK_ANALYSIS':
+          break;
         case 'PAYMENT_RECEIVED':
         case 'PAYMENT_CONFIRMED': billingStatus = 'ACTIVE'; tenantStatus = 'active'; break;
         case 'PAYMENT_OVERDUE': billingStatus = 'OVERDUE'; tenantStatus = 'overdue'; break;
@@ -405,13 +410,23 @@ export class BillingService {
         const now = new Date();
         const isPaymentConfirmed = event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED';
         const lastPayment = isPaymentConfirmed ? now : (currentBilling.lastPaymentDate ? new Date(currentBilling.lastPaymentDate) : null);
-        const resolvedNextDueDate = (payment?.dueDate || subscription?.nextDueDate) ? new Date(payment?.dueDate || subscription?.nextDueDate) : (currentBilling.nextDueDate ? new Date(currentBilling.nextDueDate) : null);
+        const isFixedTerm = currentBilling.billingCycle === 'SEMIANNUALLY' || currentBilling.billingCycle === 'YEARLY' || currentBilling.pendingTermCheckout === true;
+        const paymentDueDate = (payment?.dueDate || subscription?.nextDueDate) ? new Date(payment?.dueDate || subscription?.nextDueDate) : null;
+        const resolvedNextDueDate = isFixedTerm
+          ? (currentBilling.termEndDate ? new Date(currentBilling.termEndDate) : (currentBilling.nextDueDate ? new Date(currentBilling.nextDueDate) : null))
+          : (paymentDueDate || (currentBilling.nextDueDate ? new Date(currentBilling.nextDueDate) : null));
         const asaasSubscriptionId = subscription?.id || payment?.subscription || currentBilling.subscriptionId || '';
-        const activePlanId = currentBilling.planId || 'performance';
+        const activePlanId = currentBilling.planId || 'essential';
         const billingUpdate: any = { ...currentBilling, updatedAt: now.toISOString(), customerId };
         if (billingStatus) billingUpdate.status = billingStatus;
         if (asaasSubscriptionId) billingUpdate.subscriptionId = asaasSubscriptionId;
         if (payment?.billingType || subscription?.billingType) billingUpdate.paymentMethod = payment?.billingType || subscription?.billingType;
+        if (payment?.installment) {
+          billingUpdate.installmentId = typeof payment.installment === 'string' ? payment.installment : payment.installment.id || null;
+          billingUpdate.installmentNumber = Number(payment.installmentNumber || payment.installment?.number || currentBilling.installmentNumber || 1);
+          billingUpdate.installmentTotal = Number(payment.installmentCount || payment.installment?.count || currentBilling.installmentTotal || currentBilling.installmentCount || 1);
+          if (paymentDueDate) billingUpdate.nextInstallmentDueDate = paymentDueDate.toISOString().split('T')[0];
+        }
         if (lastPayment) billingUpdate.lastPaymentDate = lastPayment.toISOString();
         if (resolvedNextDueDate) billingUpdate.nextDueDate = resolvedNextDueDate.toISOString().split('T')[0];
         if (subscription?.status) billingUpdate.providerStatus = subscription.status;
@@ -420,7 +435,21 @@ export class BillingService {
         else if (subscription?.value != null) billingUpdate.value = Number(subscription.value);
         transaction.set(salonRef, { billing: billingUpdate }, { merge: true });
         if (tenantStatus) transaction.set(tenantRef, { id: salonId, status: tenantStatus, subscriptionStatus: tenantStatus, active: tenantStatus === 'active', updatedAt: now.toISOString() }, { merge: true });
-        transaction.set(subRef, { tenantId: salonId, provider: 'asaas', subscriptionId: asaasSubscriptionId, status: billingStatus || currentBilling.status || 'PENDING_PAYMENT', planId: activePlanId, customerId, billingCycle: subscription?.cycle || currentBilling.billingCycle || 'MONTHLY', value: subscription?.value != null ? Number(subscription.value) : currentBilling.value || null, lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null, nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null, updatedAt: now.toISOString() }, { merge: true });
+        transaction.set(subRef, {
+          tenantId: salonId,
+          provider: 'asaas',
+          subscriptionId: asaasSubscriptionId || null,
+          installmentId: billingUpdate.installmentId || currentBilling.installmentId || null,
+          status: billingStatus || currentBilling.status || 'PENDING_PAYMENT',
+          planId: activePlanId,
+          customerId,
+          billingCycle: subscription?.cycle || currentBilling.billingCycle || 'MONTHLY',
+          value: subscription?.value != null ? Number(subscription.value) : currentBilling.value || null,
+          lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null,
+          nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null,
+          nextInstallmentDueDate: billingUpdate.nextInstallmentDueDate || currentBilling.nextInstallmentDueDate || null,
+          updatedAt: now.toISOString()
+        }, { merge: true });
       });
       if (eventId) await adminDb.collection('billing_events').doc(eventId).update({ status: 'PROCESSED', processed: true, processedAt: new Date().toISOString() });
     } catch (err: any) {
