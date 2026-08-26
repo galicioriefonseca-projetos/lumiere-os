@@ -1,54 +1,72 @@
 import { describe, it, expect, vi } from 'vitest';
 import asaasWebhookHandler from '../../server/routes/billing/webhook';
 
-// Mocks
-vi.mock('../../server/shared/firebaseAdmin.js', () => {
-  return {
-    getAdminDb: vi.fn(() => ({
-      collection: vi.fn(() => ({
-        doc: vi.fn(() => ({
-          get: vi.fn().mockResolvedValue({
-            data: () => ({ webhookToken: 'secure-token-123' })
-          })
-        }))
+const handleWebhook = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('../../server/shared/firebaseAdmin.js', () => ({
+  getAdminDb: vi.fn(() => ({
+    collection: vi.fn(() => ({
+      doc: vi.fn(() => ({
+        get: vi.fn().mockResolvedValue({
+          data: () => ({ webhookToken: 'secure-token-123' })
+        })
       }))
     }))
-  };
-});
+  }))
+}));
+
+vi.mock('../../server/billing/BillingService.js', () => ({
+  billingService: { handleWebhook }
+}));
 
 describe('Webhook Security', () => {
+  const makeResponse = () => ({
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn()
+  } as any);
+
   it('should reject requests without a valid token', async () => {
     const req = {
+      method: 'POST',
       headers: { 'asaas-access-token': 'wrong-token' },
       body: { event: 'PAYMENT_CONFIRMED' }
     } as any;
-
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn()
-    } as any;
+    const res = makeResponse();
 
     await asaasWebhookHandler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ error: 'Token inválido' });
+    expect(handleWebhook).not.toHaveBeenCalled();
   });
 
-  it('should process request with valid token', async () => {
+  it('should reject requests without the Asaas token', async () => {
     const req = {
+      method: 'POST',
+      headers: {},
+      body: { event: 'PAYMENT_CONFIRMED' }
+    } as any;
+    const res = makeResponse();
+
+    await asaasWebhookHandler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Token inválido' });
+    expect(handleWebhook).not.toHaveBeenCalled();
+  });
+
+  it('should process request with the valid Asaas token', async () => {
+    const req = {
+      method: 'POST',
       headers: { 'asaas-access-token': 'secure-token-123' },
       body: { event: 'PAYMENT_CONFIRMED' }
     } as any;
+    const res = makeResponse();
 
-    // Needs further mocking of billingService if we want it to succeed
-    // For now we just verify it doesn't fail with 401
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn()
-    } as any;
-
-    // Because billingService is not mocked, it might throw, but it won't be 401
     await asaasWebhookHandler(req, res);
-    expect(res.status).not.toHaveBeenCalledWith(401);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+    expect(handleWebhook).toHaveBeenCalledWith('PAYMENT_CONFIRMED', req.body);
   });
 });
