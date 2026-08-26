@@ -2,6 +2,12 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { billingService } from '../../billing/BillingService.js';
 
+function getWebhookToken(req: VercelRequest): string {
+  const raw = req.headers['asaas-access-token'];
+  if (Array.isArray(raw)) return raw[0] || '';
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
 export default async function asaasWebhookHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method && req.method !== 'POST') {
     if (typeof res.setHeader === 'function') res.setHeader('Allow', 'POST');
@@ -11,10 +17,22 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
   try {
     const adminDb = getAdminDb();
     const billingSettingsDoc = await adminDb.collection('settings').doc('asaas').get();
-    const billingSettings = billingSettingsDoc.data();
+    const billingSettings = billingSettingsDoc.data() || {};
 
-    const token = req.headers['asaas-access-token'];
-    if (billingSettings?.webhookToken && token !== billingSettings.webhookToken) {
+    // Fail closed: a webhook without a configured secret must never be accepted.
+    // The token is stored per Asaas environment in settings/asaas, so Sandbox and
+    // Production can use different credentials without sharing secrets.
+    const expectedToken = typeof billingSettings.webhookToken === 'string'
+      ? billingSettings.webhookToken.trim()
+      : '';
+    const receivedToken = getWebhookToken(req);
+
+    if (!expectedToken) {
+      console.error('[Asaas Webhook] Webhook token não configurado. Evento rejeitado por segurança.');
+      return res.status(503).json({ error: 'Webhook não configurado.' });
+    }
+
+    if (!receivedToken || receivedToken !== expectedToken) {
       console.warn('[Asaas Webhook] Tentativa de acesso não autorizada com token inválido.');
       return res.status(401).json({ error: 'Token inválido' });
     }
