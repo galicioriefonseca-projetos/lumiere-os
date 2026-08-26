@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { billingService } from '../../billing/BillingService.js';
+import { env } from '../../config/env.js';
 
 function getWebhookToken(req: VercelRequest): string {
   const raw = req.headers['asaas-access-token'];
@@ -18,15 +19,10 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     const adminDb = getAdminDb();
     const billingSettingsDoc = await adminDb.collection('settings').doc('asaas').get();
     const billingSettings = billingSettingsDoc.data() || {};
-
-    // Fail closed: a webhook without a configured secret must never be accepted.
-    // The token is stored per Asaas environment in settings/asaas, so Sandbox and
-    // Production can use different credentials without sharing secrets.
-    const expectedToken = typeof billingSettings.webhookToken === 'string'
-      ? billingSettings.webhookToken.trim()
-      : '';
+    const expectedToken = String(env.asaas.webhookToken || billingSettings.webhookToken || '').trim();
     const receivedToken = getWebhookToken(req);
 
+    // Fail closed: without a configured secret, the public webhook cannot accept events.
     if (!expectedToken) {
       console.error('[Asaas Webhook] Webhook token não configurado. Evento rejeitado por segurança.');
       return res.status(503).json({ error: 'Webhook não configurado.' });
@@ -47,10 +43,6 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     const customerId = body.payment?.customer || body.subscription?.customer || body.customer;
     const externalReference = String(body.subscription?.externalReference || body.payment?.externalReference || '');
 
-    // Checkout de migração usa externalReference=manual-migration:{salonId}.
-    // O Checkout pode criar/vincular o cliente no Asaas sem o externalReference do
-    // salão no documento local. Reconciliamos essa relação antes do processamento
-    // normal para que os eventos seguintes (inclusive PAYMENT_RECEIVED) não caiam na DLQ.
     if (customerId && externalReference.startsWith('manual-migration:')) {
       const salonId = externalReference.slice('manual-migration:'.length);
       if (salonId) {
