@@ -22,8 +22,8 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async testConnection(mode: 'sandbox' | 'production', apiKey: string) {
-    try { await this.request(mode, apiKey, '/customers?limit=1'); return true; }
-    catch (err: any) { console.error('[AsaasProvider] testConnection error:', err); return false; }
+    await this.request(mode, apiKey, '/customers?limit=1');
+    return true;
   }
 
   async createCustomer(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<Customer> {
@@ -59,7 +59,6 @@ export class AsaasProvider implements BillingProvider {
     };
     return this.request(mode, apiKey, '/checkouts', 'POST', payload);
   }
-
 
   async createTermCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
     const chargeTypes = data.chargeTypes || ['DETACHED', 'INSTALLMENT'];
