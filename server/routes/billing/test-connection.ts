@@ -1,50 +1,54 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
-import { billingService } from '../../billing/BillingService.js';
+import { asaasProvider } from '../../billing/AsaasProvider.js';
 import { verifyIdToken, resolvePlatformAdmin } from '../../shared/auth.js';
 
 export default async function asaasTestConnectionHandler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido.' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
   try {
     const adminDb = getAdminDb();
-
-    // 1. Verificação de Autenticação
     let user;
-    try {
-      user = await verifyIdToken(req);
-    } catch (err: any) {
-      return res.status(401).json({ error: err.message || 'Não autorizado' });
-    }
+    try { user = await verifyIdToken(req); }
+    catch (err: any) { return res.status(401).json({ error: err.message || 'Não autorizado' }); }
 
-    // 2. Verificação de Autorização (Platform Admin)
-    const isPlatformAdmin = await resolvePlatformAdmin(user, adminDb);
-    if (!isPlatformAdmin) {
+    if (!(await resolvePlatformAdmin(user, adminDb))) {
       return res.status(403).json({ error: 'Acesso negado: apenas administradores da plataforma podem testar e alterar credenciais do Asaas.' });
     }
 
-    const { mode, apiKey, webhookToken } = req.body || {};
-    if (!apiKey) {
-      return res.status(400).json({ error: 'API Key é obrigatória' });
+    const body = req.body || {};
+    const mode = String(body.mode || 'sandbox').trim().toLowerCase() as 'sandbox' | 'production';
+    const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+    const webhookToken = typeof body.webhookToken === 'string' ? body.webhookToken.trim() : '';
+
+    if (mode !== 'sandbox' && mode !== 'production') return res.status(400).json({ error: 'Ambiente Asaas inválido. Escolha Sandbox ou Produção.' });
+    if (!apiKey) return res.status(400).json({ error: 'API Key é obrigatória.' });
+
+    const expectedPrefix = mode === 'sandbox' ? '$aact_hmlg_' : '$aact_prod_';
+    if (!apiKey.startsWith(expectedPrefix)) {
+      return res.status(400).json({ error: `A API Key não pertence ao ambiente selecionado. Para ${mode === 'sandbox' ? 'Sandbox' : 'Produção'}, a chave deve começar com ${expectedPrefix}.` });
     }
 
-    const isConnected = await billingService.testConnection({ mode, apiKey, webhookToken });
-    
-    if (isConnected) {
-      await adminDb.collection('settings').doc('asaas').set({
-        mode,
-        apiKey,
-        webhookToken,
-        updatedAt: Date.now()
-      });
-      return res.status(200).json({ message: 'Conectado com sucesso' });
-    } else {
-      return res.status(400).json({ error: 'Credenciais inválidas' });
+    try {
+      await asaasProvider.testConnection(mode, apiKey);
+    } catch (error: any) {
+      const raw = String(error?.message || error);
+      const status = Number(raw.match(/Asaas API Error:\s*(\d+)/i)?.[1] || 0);
+      if (status === 401 || status === 403) {
+        return res.status(400).json({
+          error: 'A API Key foi rejeitada pelo Asaas. Confirme se ela foi gerada no mesmo ambiente, se o prefixo está completo e se a chave continua ativa.',
+          environment: mode,
+          status,
+          hint: mode === 'sandbox' ? 'Use uma chave gerada em sandbox.asaas.com e mantenha o prefixo $aact_hmlg_.' : 'Use uma chave gerada no ambiente de produção e mantenha o prefixo $aact_prod_.'
+        });
+      }
+      return res.status(400).json({ error: 'O Asaas não aceitou a conexão.', environment: mode, status: status || undefined, detail: raw.replace(/\$aact_[^\s"']+/g, '[REDACTED]') });
     }
+
+    await adminDb.collection('settings').doc('asaas').set({ mode, apiKey, webhookToken, updatedAt: Date.now() }, { merge: true });
+    return res.status(200).json({ message: 'Conectado com sucesso', environment: mode });
   } catch (error: any) {
     console.error('[Asaas Test] Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: 'Não foi possível testar a conexão com o Asaas.' });
   }
 }
