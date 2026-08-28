@@ -3,6 +3,17 @@ import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { asaasProvider } from '../../billing/AsaasProvider.js';
 import { verifyIdToken, resolvePlatformAdmin } from '../../shared/auth.js';
 
+type AsaasMode = 'sandbox' | 'production';
+
+function resolveMode(rawMode: unknown, apiKey: string): AsaasMode | null {
+  const mode = String(rawMode || '').trim().toLowerCase();
+  if (mode === 'sandbox' || mode === 'production') return mode;
+  // Sandbox keys use the $aact_hmlg_ prefix; production keys use $aact_prod_.
+  if (apiKey.startsWith('$aact_hmlg_')) return 'sandbox';
+  if (apiKey.startsWith('$aact_prod_')) return 'production';
+  return null;
+}
+
 export default async function asaasTestConnectionHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
 
@@ -17,16 +28,21 @@ export default async function asaasTestConnectionHandler(req: VercelRequest, res
     }
 
     const body = req.body || {};
-    const mode = String(body.mode || 'sandbox').trim().toLowerCase() as 'sandbox' | 'production';
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
     const webhookToken = typeof body.webhookToken === 'string' ? body.webhookToken.trim() : '';
-
-    if (mode !== 'sandbox' && mode !== 'production') return res.status(400).json({ error: 'Ambiente Asaas inválido. Escolha Sandbox ou Produção.' });
     if (!apiKey) return res.status(400).json({ error: 'API Key é obrigatória.' });
+
+    const mode = resolveMode(body.mode, apiKey);
+    if (!mode) {
+      return res.status(400).json({ error: 'Ambiente Asaas inválido ou ausente. Selecione Sandbox ou Produção.' });
+    }
 
     const expectedPrefix = mode === 'sandbox' ? '$aact_hmlg_' : '$aact_prod_';
     if (!apiKey.startsWith(expectedPrefix)) {
-      return res.status(400).json({ error: `A API Key não pertence ao ambiente selecionado. Para ${mode === 'sandbox' ? 'Sandbox' : 'Produção'}, a chave deve começar com ${expectedPrefix}.` });
+      return res.status(400).json({
+        error: `A API Key não pertence ao ambiente selecionado. Para ${mode === 'sandbox' ? 'Sandbox' : 'Produção'}, a chave deve começar com ${expectedPrefix}.`,
+        environment: mode
+      });
     }
 
     try {
@@ -36,16 +52,26 @@ export default async function asaasTestConnectionHandler(req: VercelRequest, res
       const status = Number(raw.match(/Asaas API Error:\s*(\d+)/i)?.[1] || 0);
       if (status === 401 || status === 403) {
         return res.status(400).json({
-          error: 'A API Key foi rejeitada pelo Asaas. Confirme se ela foi gerada no mesmo ambiente, se o prefixo está completo e se a chave continua ativa.',
+          error: 'A API Key foi rejeitada pelo Asaas. Confirme se ela foi gerada no mesmo ambiente e se continua ativa.',
           environment: mode,
-          status,
-          hint: mode === 'sandbox' ? 'Use uma chave gerada em sandbox.asaas.com e mantenha o prefixo $aact_hmlg_.' : 'Use uma chave gerada no ambiente de produção e mantenha o prefixo $aact_prod_.'
+          status
         });
       }
-      return res.status(400).json({ error: 'O Asaas não aceitou a conexão.', environment: mode, status: status || undefined, detail: raw.replace(/\$aact_[^\s"']+/g, '[REDACTED]') });
+      return res.status(400).json({
+        error: 'O Asaas não aceitou a conexão.',
+        environment: mode,
+        status: status || undefined,
+        detail: raw.replace(/\$aact_[^\s"']+/g, '[REDACTED]')
+      });
     }
 
-    await adminDb.collection('settings').doc('asaas').set({ mode, apiKey, webhookToken, updatedAt: Date.now() }, { merge: true });
+    await adminDb.collection('settings').doc('asaas').set({
+      mode,
+      apiKey,
+      ...(webhookToken ? { webhookToken } : {}),
+      updatedAt: Date.now()
+    }, { merge: true });
+
     return res.status(200).json({ message: 'Conectado com sucesso', environment: mode });
   } catch (error: any) {
     console.error('[Asaas Test] Error:', error);
