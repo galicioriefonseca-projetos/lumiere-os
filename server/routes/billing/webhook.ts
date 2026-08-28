@@ -1,6 +1,13 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { billingService } from '../../billing/BillingService.js';
+import { env } from '../../config/env.js';
+
+function getWebhookToken(req: VercelRequest): string {
+  const raw = req.headers['asaas-access-token'];
+  if (Array.isArray(raw)) return raw[0] || '';
+  return typeof raw === 'string' ? raw.trim() : '';
+}
 
 export default async function asaasWebhookHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method && req.method !== 'POST') {
@@ -11,10 +18,17 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
   try {
     const adminDb = getAdminDb();
     const billingSettingsDoc = await adminDb.collection('settings').doc('asaas').get();
-    const billingSettings = billingSettingsDoc.data();
+    const billingSettings = billingSettingsDoc.data() || {};
+    const expectedToken = String(env.asaas.webhookToken || billingSettings.webhookToken || '').trim();
+    const receivedToken = getWebhookToken(req);
 
-    const token = req.headers['asaas-access-token'];
-    if (billingSettings?.webhookToken && token !== billingSettings.webhookToken) {
+    // Fail closed: without a configured secret, the public webhook cannot accept events.
+    if (!expectedToken) {
+      console.error('[Asaas Webhook] Webhook token não configurado. Evento rejeitado por segurança.');
+      return res.status(503).json({ error: 'Webhook não configurado.' });
+    }
+
+    if (!receivedToken || receivedToken !== expectedToken) {
       console.warn('[Asaas Webhook] Tentativa de acesso não autorizada com token inválido.');
       return res.status(401).json({ error: 'Token inválido' });
     }
@@ -29,10 +43,6 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     const customerId = body.payment?.customer || body.subscription?.customer || body.customer;
     const externalReference = String(body.subscription?.externalReference || body.payment?.externalReference || '');
 
-    // Checkout de migração usa externalReference=manual-migration:{salonId}.
-    // O Checkout pode criar/vincular o cliente no Asaas sem o externalReference do
-    // salão no documento local. Reconciliamos essa relação antes do processamento
-    // normal para que os eventos seguintes (inclusive PAYMENT_RECEIVED) não caiam na DLQ.
     if (customerId && externalReference.startsWith('manual-migration:')) {
       const salonId = externalReference.slice('manual-migration:'.length);
       if (salonId) {

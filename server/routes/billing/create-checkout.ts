@@ -150,7 +150,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(422).json({ success: false, code: 'BILLING_DATA_INVALID', error: validationError.message, missingFields: ['document', 'legalName', 'email', 'mobilePhone'] });
     }
 
-    const billingType = 'UNDEFINED' as const;
     const appUrl = env.app.url.replace(/\/$/, '');
     const paymentCallback = {
       successUrl: `${appUrl}/aguardando-pagamento?payment=success`,
@@ -159,6 +158,46 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       autoRedirect: true
     };
 
+    // Semestral/anual são contratos de prazo fechado. No cartão, o Checkout
+    // usa INSTALLMENT (parcelamento da compra); no Pix, usa DETACHED (à vista).
+    // Não tratamos esses ciclos como assinatura recorrente, pois isso cobraria
+    // novamente a cada 6/12 meses e não permitiria o parcelamento desejado.
+    if (selectedCycle === 'SEMIANNUALLY' || selectedCycle === 'YEARLY') {
+      const termMonths = selectedCycle === 'YEARLY' ? 12 : 6;
+      const maxInstallmentCount = termMonths;
+      const termEndDate = new Date();
+      termEndDate.setMonth(termEndDate.getMonth() + termMonths);
+      const checkout = await billingService.createTermCheckout(
+        salonId,
+        planId,
+        selectedCycle as 'SEMIANNUALLY' | 'YEARLY',
+        planCyclePrice(plan, selectedCycle),
+        {
+          ...salonData,
+          billing: billingData,
+          callback: paymentCallback,
+        },
+        maxInstallmentCount
+      );
+      const checkoutUrl = checkout.link || checkout.url || null;
+      if (!checkoutUrl) return res.status(502).json({ success: false, error: 'O Asaas criou o checkout, mas não retornou o link de pagamento.', providerCheckoutId: checkout.id });
+      await salonRef.update({
+        'billing.pendingTermCheckout': true,
+        'billing.termMonths': termMonths,
+        'billing.termEndDate': termEndDate.toISOString().split('T')[0],
+        'billing.installmentCount': maxInstallmentCount,
+        'billing.value': planCyclePrice(plan, selectedCycle),
+        'billing.billingCycle': selectedCycle,
+        'billing.paymentMethod': 'UNDEFINED',
+        'billing.checkoutId': checkout.id || null,
+        'billing.checkoutUrl': checkoutUrl,
+        'billing.status': 'PENDING_PAYMENT',
+        'billing.updatedAt': new Date().toISOString(),
+      });
+      return res.status(200).json({ success: true, checkoutUrl, authorizationUrl: checkoutUrl, providerCheckoutId: checkout.id, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), termMonths, maxInstallmentCount, termEndDate: termEndDate.toISOString().split('T')[0] });
+    }
+
+    const billingType = 'UNDEFINED' as const;
     const subscription = await billingService.createSubscription(
       salonId,
       planId,

@@ -20,6 +20,12 @@ export function validateEnv() {
     process.exit(1);
   }
 
+  const asaasMode = String(process.env.ASAAS_MODE || '').toLowerCase();
+  if (asaasMode && !['sandbox', 'production'].includes(asaasMode)) {
+    console.error('[CRÍTICO] ASAAS_MODE deve ser sandbox ou production.');
+    process.exit(1);
+  }
+
   return {
     firebase: {
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -30,6 +36,7 @@ export function validateEnv() {
       apiKey: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY,
     },
     asaas: {
+      mode: (asaasMode || undefined) as 'sandbox' | 'production' | undefined,
       apiKey: process.env.ASAAS_API_KEY,
       webhookToken: process.env.ASAAS_WEBHOOK_TOKEN,
       webhookSecret: process.env.ASAAS_WEBHOOK_SECRET,
