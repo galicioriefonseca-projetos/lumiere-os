@@ -1,0 +1,1 @@
+The production health check is intentionally lightweight and does not initialize Firebase Admin.
