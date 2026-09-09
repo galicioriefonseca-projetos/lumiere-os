@@ -1,14 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import serverless from 'serverless-http';
 import app from '../server/app.js';
 
 /**
  * Single catch-all Serverless Function for the Express API.
- * This keeps the API surface within Vercel's Hobby function limit while
- * preserving all routes registered in server/app.ts.
+ * Vercel's Node runtime natively supports the Express request/response handler.
+ * Keeping a single catch-all function avoids exceeding the Hobby plan limit.
  */
-const handler = serverless(app);
-
 export default function api(req: VercelRequest, res: VercelResponse) {
-  return handler(req as any, res as any);
+  return app(req as any, res as any);
 }
