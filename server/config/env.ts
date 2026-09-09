@@ -15,9 +15,8 @@ export function validateEnv() {
   const missingVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
   if (missingVars.length > 0) {
-    console.error(`[CRÍTICO] Falha na inicialização. Variáveis de ambiente obrigatórias ausentes: ${missingVars.join(', ')}`);
-    console.error(`Certifique-se de configurar essas variáveis no Vercel e no arquivo .env local.`);
-    process.exit(1);
+    console.warn(`[CONFIG] Variáveis de ambiente ausentes: ${missingVars.join(', ')}`);
+    console.warn('[CONFIG] A aplicação continuará inicializando; recursos que dependem dessas configurações retornarão erro controlado.');
   }
 
   return {
@@ -45,9 +44,6 @@ export function validateEnv() {
     app: {
       env: process.env.NODE_ENV || 'development',
       platformAdminEmail: process.env.PLATFORM_ADMIN_EMAIL,
-      // APP_URL pode ser sobrescrita no Vercel quando houver domínio próprio.
-      // O fallback aponta para o domínio de produção atual para que o retorno
-      // da Asaas nunca seja enviado para um endereço inexistente.
       url: process.env.APP_URL || 'https://lumiere-os.vercel.app',
       emailFrom: process.env.EMAIL_FROM || 'LumièreOS <onboarding@resend.dev>',
       healthcheckSecret: process.env.HEALTHCHECK_SECRET,
