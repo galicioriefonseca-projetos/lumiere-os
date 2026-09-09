@@ -96,9 +96,33 @@ export const AuthService = {
           console.error("[PlatformAuth] Erro ao gravar perfil de owner no Firestore:", writeErr);
         }
       } else {
-        console.log("[PlatformAuth] Bloqueando login: Usuário normal não registrado."); 
-        await signOut(activeAuth); 
-        throw { code: 'auth/user-not-registered-google' };
+        // Tenta sincronizar a conta via backend (caso seja dono de salão registrado por e-mail ou admin)
+        let synced = false;
+        try {
+          const idToken = await user.getIdToken(true);
+          const syncRes = await fetch('/api/auth/sync-google-account', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            }
+          });
+          if (syncRes.ok) {
+            const syncData = await syncRes.json();
+            console.log("[PlatformAuth] Sincronização Google no backend bem-sucedida:", syncData);
+            if (syncData.status === 'synced' || syncData.status === 'existing') {
+              synced = true;
+            }
+          }
+        } catch (syncErr) {
+          console.warn("[PlatformAuth] Falha na sincronização Google via backend:", syncErr);
+        }
+
+        if (!synced) {
+          console.log("[PlatformAuth] Bloqueando login: Usuário normal não registrado."); 
+          await signOut(activeAuth); 
+          throw { code: 'auth/user-not-registered-google' };
+        }
       }
     } else {
       // User doc already exists. Sync role if they are found in platformAdmins

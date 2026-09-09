@@ -1,5 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { asaasProvider } from '../../billing/AsaasProvider.js';
+import { BillingService } from '../../billing/BillingService.js';
 import { BillingCycle, PaymentMethod } from '../../billing/types.js';
 import { commercialPlan, commercialPlanPrice, normalizePlanId } from '../../billing/commercialPlans.js';
 import { env } from '../../config/env.js';
@@ -60,7 +61,11 @@ async function getSettings() {
   const db = getAdminDb();
   const doc = await db.collection('settings').doc('asaas').get();
   const data = doc.exists ? doc.data() || {} : {};
-  return { mode: (data.mode || 'production') as 'sandbox' | 'production', apiKey: String(data.apiKey || env.asaas.apiKey || '') };
+  let rawKey = String(data.apiKey || env.asaas.apiKey || '');
+  const secondIndex = rawKey.indexOf('$aact_', 1);
+  if (secondIndex > 0) rawKey = rawKey.slice(0, secondIndex).trim();
+  const mode = (data.mode || (rawKey.startsWith('$aact_prod_') ? 'production' : 'sandbox')) as 'sandbox' | 'production';
+  return { mode, apiKey: rawKey };
 }
 
 export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest, res: VercelResponse) {
@@ -72,12 +77,18 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
   try {
     const body = req.body || {};
     const salonId = String(body.salonId || '');
-    const requested = String(body.paymentMethod || '').toUpperCase();
-    const paymentMethod: PaymentMethod | '' = requested === 'CREDIT_CARD' || requested === 'PIX' || requested === 'BOLETO' || requested === 'UNDEFINED'
-      ? requested as PaymentMethod
-      : '';
+    const requested = String(body.paymentMethod || '').trim().toUpperCase();
+    let paymentMethod: PaymentMethod | '' = '';
+    if (requested === 'CREDIT_CARD' || requested === 'CARTAO' || requested === 'CARTÃO' || requested === 'CARD') {
+      paymentMethod = 'CREDIT_CARD';
+    } else if (requested === 'PIX' || requested === 'PIX_AUTOMATIC') {
+      paymentMethod = 'PIX';
+    } else if (requested === 'BOLETO') {
+      return res.status(400).json({ error: 'A forma de pagamento Boleto não está disponível. Escolha Cartão de Crédito ou Pix.' });
+    }
+
     if (!salonId) return res.status(400).json({ error: 'Informe o salonId.' });
-    if (!paymentMethod) return res.status(400).json({ error: 'Forma de pagamento inválida.' });
+    if (!paymentMethod) return res.status(400).json({ error: 'Forma de pagamento inválida. Escolha Cartão de Crédito ou Pix.' });
 
     let user;
     try { user = await verifyIdToken(req); }
@@ -95,8 +106,20 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
     if (!settings.apiKey) return res.status(500).json({ error: 'Asaas não está configurado.' });
 
     const subscriptionId = salonData?.billing?.subscriptionId || salonData?.providerSubscriptionId;
+    let validRemoteSubscription = false;
 
-    if (subscriptionId) {
+    if (subscriptionId && salonData?.billing?.status !== 'CANCELLED') {
+      try {
+        const remote = await asaasProvider.getSubscription(settings.mode, settings.apiKey, subscriptionId);
+        if (remote && remote.status !== 'INACTIVE') {
+          validRemoteSubscription = true;
+        }
+      } catch (err: any) {
+        console.warn(`[update-payment-method] Assinatura ${subscriptionId} não encontrada no Asaas (404).`);
+      }
+    }
+
+    if (subscriptionId && validRemoteSubscription) {
       if (paymentMethod === 'CREDIT_CARD') {
         const creditCardToken = body.creditCardToken;
         const creditCard = body.creditCard;
@@ -106,19 +129,141 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
           if (creditCardToken) payload.creditCardToken = creditCardToken;
           else { payload.creditCard = creditCard; payload.creditCardHolderInfo = creditCardHolderInfo; }
           await asaasProvider.updateSubscriptionCreditCard(settings.mode, settings.apiKey, subscriptionId, payload);
+          await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, { billingType: 'CREDIT_CARD', updatePendingPayments: true });
           await salonRef.update({ 'billing.paymentMethod': 'CREDIT_CARD', 'billing.updatedAt': new Date().toISOString() });
           return res.status(200).json({ success: true, message: 'Cartão atualizado com segurança.', billingType: 'CREDIT_CARD' });
         }
 
+        // Atualiza a assinatura no Asaas para CREDIT_CARD com sincronização dos pagamentos pendentes
+        const subscription = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, {
+          billingType: 'CREDIT_CARD',
+          updatePendingPayments: true
+        });
+
+        // Atualiza o salão no banco de dados imediatamente
+        await salonRef.update({
+          'billing.paymentMethod': 'CREDIT_CARD',
+          'billing.nextDueDate': subscription.nextDueDate,
+          'billing.providerStatus': subscription.status,
+          'billing.updatedAt': new Date().toISOString()
+        });
+
+        // Busca cobranças pendentes da assinatura
         const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
         const pending = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
-        if (pending?.invoiceUrl) return res.status(200).json({ success: true, checkoutUrl: pending.invoiceUrl, authorizationUrl: pending.invoiceUrl, billingType: 'CREDIT_CARD', message: 'Abra a página segura do Asaas para configurar o pagamento.' });
-        return res.status(400).json({ error: 'Para atualizar o cartão, informe os dados do cartão ou abra uma cobrança pendente do Asaas.' });
+
+        if (pending) {
+          // Garante que a cobrança pendente esteja configurada como CREDIT_CARD no Asaas
+          if (pending.billingType !== 'CREDIT_CARD') {
+            try {
+              await asaasProvider.updatePaymentMethod(settings.mode, settings.apiKey, pending.id, 'CREDIT_CARD');
+              pending.billingType = 'CREDIT_CARD';
+            } catch (pmErr: any) {
+              console.warn(`[update-payment-method] Falha ao atualizar método de cobrança ${pending.id} para CREDIT_CARD:`, pmErr?.message || pmErr);
+            }
+          }
+
+          if (pending.invoiceUrl) {
+            return res.status(200).json({
+              success: true,
+              checkoutUrl: pending.invoiceUrl,
+              authorizationUrl: pending.invoiceUrl,
+              billingType: 'CREDIT_CARD',
+              subscription,
+              message: 'Abra a página segura do Asaas para inserir os dados do cartão de crédito.'
+            });
+          }
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: 'Forma de pagamento atualizada para Cartão de Crédito com sucesso. As próximas mensalidades serão cobradas em cartão.',
+          billingType: 'CREDIT_CARD',
+          subscription
+        });
       }
 
-      const subscription = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, { billingType: paymentMethod, updatePendingPayments: true });
-      await salonRef.update({ 'billing.paymentMethod': paymentMethod, 'billing.nextDueDate': subscription.nextDueDate, 'billing.providerStatus': subscription.status, 'billing.updatedAt': new Date().toISOString() });
-      return res.status(200).json({ success: true, message: 'Forma de pagamento atualizada com sucesso.', billingType: paymentMethod, subscription });
+      const subscription = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, {
+        billingType: paymentMethod,
+        updatePendingPayments: true
+      });
+
+      const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
+      const pending = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
+      if (pending && pending.billingType !== paymentMethod) {
+        try {
+          await asaasProvider.updatePaymentMethod(settings.mode, settings.apiKey, pending.id, paymentMethod);
+          pending.billingType = paymentMethod;
+        } catch (err: any) {
+          console.warn(`[update-payment-method] Falha ao atualizar cobrança pendente para ${paymentMethod}:`, err?.message || err);
+        }
+      }
+
+      await salonRef.update({
+        'billing.paymentMethod': paymentMethod,
+        'billing.nextDueDate': subscription.nextDueDate,
+        'billing.providerStatus': subscription.status,
+        'billing.updatedAt': new Date().toISOString()
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Forma de pagamento atualizada para ${paymentMethod === 'PIX' ? 'Pix' : 'Cartão de Crédito'} com sucesso.`,
+        billingType: paymentMethod,
+        authorizationUrl: pending?.invoiceUrl || undefined,
+        checkoutUrl: pending?.invoiceUrl || undefined,
+        subscription
+      });
+    }
+
+    if (!subscriptionId || !validRemoteSubscription) {
+      const billingService = new BillingService();
+      const customerId = await billingService.ensureCustomer(salonId, salonData);
+      const requestedPlanId = String(body.planId || salonData?.billing?.planId || salonData?.plan || 'essential');
+      const planId = normalizePlanId(requestedPlanId);
+      const plan = commercialPlan(planId);
+      const cycle = toCycle(body.billingCycle || salonData?.billing?.billingCycle || 'MONTHLY');
+      const value = commercialPlanPrice(planId, cycle);
+
+      const nextDueDate = new Date();
+      nextDueDate.setDate(nextDueDate.getDate() + (plan?.trialDays || 3));
+
+      const newSub = await asaasProvider.createSubscription(settings.mode, settings.apiKey, {
+        customer: customerId,
+        billingType: paymentMethod,
+        value,
+        nextDueDate: nextDueDate.toISOString().split('T')[0],
+        cycle,
+        description: `Assinatura ${plan?.name || 'LumièreOS'} - LumièreOS`,
+        externalReference: salonId
+      });
+
+      await salonRef.update({
+        'billing.provider': 'asaas',
+        'billing.subscriptionId': newSub.id,
+        'billing.customerId': customerId,
+        'billing.planId': planId,
+        'billing.value': value,
+        'billing.billingCycle': cycle,
+        'billing.status': 'ACTIVE',
+        'billing.paymentMethod': paymentMethod,
+        'billing.nextDueDate': newSub.nextDueDate,
+        'billing.providerStatus': newSub.status,
+        'billing.updatedAt': new Date().toISOString(),
+        plan: planId
+      });
+
+      const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, newSub.id);
+      const pending = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
+
+      return res.status(200).json({
+        success: true,
+        message: `Assinatura configurada com ${paymentMethod === 'CREDIT_CARD' ? 'Cartão de Crédito' : 'Pix'}.`,
+        billingType: paymentMethod,
+        authorizationUrl: pending?.invoiceUrl || undefined,
+        checkoutUrl: pending?.invoiceUrl || undefined,
+        subscription: newSub
+      });
     }
 
     const isManualPaid = Boolean(salonData?.billingProvider === 'manual' || salonData?.billingProvider === 'manual_pix' || salonData?.paymentStatus === 'paid' || salonData?.lastPaymentAt || salonData?.billing?.lastPaymentDate);
@@ -159,7 +304,7 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
         autoRedirect: true,
       };
       const checkout = await asaasProvider.createRecurringCheckout(settings.mode, settings.apiKey, {
-        billingTypes: paymentMethod === 'CREDIT_CARD' ? ['CREDIT_CARD', 'PIX'] : [paymentMethod],
+        billingTypes: [paymentMethod],
         minutesToExpire: 60,
         callback,
         externalReference: `manual-migration:${salonId}`,

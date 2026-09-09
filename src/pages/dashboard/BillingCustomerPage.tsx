@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, CreditCard, Loader2, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Check, CreditCard, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 import { auth } from '@/lib/firebase';
 import { toast } from 'sonner';
 
@@ -32,6 +32,7 @@ export default function BillingCustomerPage() {
   const migrationPaymentMethod = (params.get('paymentMethod') || 'CREDIT_CARD').toUpperCase();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [data, setData] = useState({ document: '', legalName: '', email: '', mobilePhone: '' });
 
   useEffect(() => {
@@ -90,7 +91,16 @@ export default function BillingCustomerPage() {
       if (!checkoutResponse.ok || !checkoutResult.success || !checkoutResult.checkoutUrl) throw new Error(checkoutResult.error || 'Não foi possível gerar o pagamento.');
 
       toast.success('Dados de faturamento salvos. Abrindo pagamento seguro...');
-      window.location.assign(checkoutResult.checkoutUrl);
+      const targetUrl = checkoutResult.checkoutUrl;
+      setCheckoutUrl(targetUrl);
+      try {
+        const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+        if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+          window.location.assign(targetUrl);
+        }
+      } catch {
+        window.location.assign(targetUrl);
+      }
     } catch (error: any) {
       toast.error(error.message || 'Erro ao continuar para o pagamento.');
     } finally {
@@ -115,6 +125,37 @@ export default function BillingCustomerPage() {
           <button disabled={saving} type="submit" className="w-full h-12 rounded-xl bg-[#D4AF37] hover:bg-[#Bca032] disabled:opacity-50 text-black font-bold flex items-center justify-center gap-2">{saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}{saving ? 'Salvando e preparando pagamento...' : migration ? 'Salvar dados e configurar pagamento' : 'Salvar e ir para pagamento'}</button>
         </form>
       </div>
+
+      {checkoutUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-[#D4AF37]/40 bg-zinc-950 p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#D4AF37]/10 text-[#D4AF37]">
+              <ExternalLink className="h-6 w-6" />
+            </div>
+            <h3 className="text-xl font-bold text-white">Checkout Seguro Asaas Pronto</h3>
+            <p className="mt-2 text-sm text-zinc-400">
+              Sua fatura foi gerada no Asaas. Caso não tenha aberto automaticamente, clique abaixo para acessar:
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <a
+                href={checkoutUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-3 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/25 hover:bg-[#c49f2c] transition"
+              >
+                Abrir Checkout no Asaas <ExternalLink className="h-4 w-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setCheckoutUrl(null)}
+                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-xs text-zinc-400 hover:text-white transition"
+              >
+                Fechar janela
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

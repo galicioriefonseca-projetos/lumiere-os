@@ -22,8 +22,8 @@ export interface Plan {
   legacy?: boolean;
 }
 
-// UNDEFINED lets the payer choose the payment method on the Asaas hosted invoice.
-export type PaymentMethod = 'UNDEFINED' | 'PIX' | 'CREDIT_CARD' | 'BOLETO';
+// Allowed payment methods in LumièreOS: PIX or CREDIT_CARD
+export type PaymentMethod = 'UNDEFINED' | 'PIX' | 'CREDIT_CARD';
 
 export interface Customer {
   id: string;

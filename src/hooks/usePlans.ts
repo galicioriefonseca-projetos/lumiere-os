@@ -38,7 +38,7 @@ export function usePlans() {
       { ...catalogPlans.find(p => p.id === 'professional')!, id: 'founder', legacy: true },
       { ...catalogPlans.find(p => p.id === 'multiunit')!, id: 'network', legacy: true },
       { ...catalogPlans.find(p => p.id === 'essential')!, id: 'start', legacy: true },
-    ] as Plan[];
+    ] as unknown as Plan[];
 
     return [...catalogPlans, ...aliases];
   }, []);

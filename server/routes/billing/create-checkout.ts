@@ -30,10 +30,16 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
   }
 
   try {
-    const { salonId, planId, billingCycle, customerData } = req.body || {};
+    const { salonId, planId, billingCycle, customerData, paymentMethod: rawPaymentMethod } = req.body || {};
     const selectedCycle = String(billingCycle || 'MONTHLY').toUpperCase();
     if (!salonId || !planId) return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
+
+    const reqMethod = String(rawPaymentMethod || '').trim().toUpperCase();
+    if (reqMethod === 'BOLETO') {
+      return res.status(400).json({ success: false, error: 'A forma de pagamento Boleto não está disponível. Escolha Cartão de Crédito ou Pix.' });
+    }
+    const chosenMethod: 'CREDIT_CARD' | 'PIX' = reqMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD';
 
     let user;
     try {
@@ -150,7 +156,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(422).json({ success: false, code: 'BILLING_DATA_INVALID', error: validationError.message, missingFields: ['document', 'legalName', 'email', 'mobilePhone'] });
     }
 
-    const billingType = 'UNDEFINED' as const;
+    const billingType = chosenMethod;
     const appUrl = env.app.url.replace(/\/$/, '');
     const paymentCallback = {
       successUrl: `${appUrl}/aguardando-pagamento?payment=success`,

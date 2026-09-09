@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { auth, db } from '@/lib/firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
@@ -8,9 +9,21 @@ import { isRealProviderSubscription } from '../../lib/billing';
 import { toast } from 'sonner';
 import {
   AlertTriangle, ArrowRight, CalendarDays, Check, ChevronDown, CreditCard,
-  FileText, Loader2, Lock, ReceiptText, RefreshCw, ShieldCheck, Sparkles,
-  WalletCards, XCircle
+  ExternalLink, FileText, Loader2, Lock, ReceiptText, RefreshCw, ShieldCheck, Sparkles,
+  WalletCards, X, XCircle, Zap
 } from 'lucide-react';
+
+function formatDocument(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 14);
+  if (digits.length <= 11) return digits.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  return digits.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2');
+}
+
+function formatPhone(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 10) return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
+  return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
+}
 
 type BillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
 type Tab = 'overview' | 'plan' | 'payment' | 'charges' | 'documents';
@@ -42,20 +55,40 @@ function cycleMonthlyEquivalent(monthly: number, cycle: BillingCycle) {
   return cyclePrice(monthly, cycle) / (cycle === 'MONTHLY' ? 1 : cycle === 'SEMIANNUALLY' ? 6 : 12);
 }
 
+function formatBillingMethod(method?: string) {
+  if (!method) return 'Ainda não configurada';
+  const m = String(method).toUpperCase();
+  if (m === 'CREDIT_CARD' || m === 'CARTAO' || m === 'CARTÃO') return 'Cartão de Crédito';
+  if (m === 'PIX') return 'Pix';
+  if (m === 'UNDEFINED') return 'Aguardando definição';
+  return method;
+}
+
 export default function SubscriptionCenterPage() {
+  const navigate = useNavigate();
   const { salonData, userData, refreshUserData, isPlatformAdmin } = useAuth();
   const { plans, loading: plansLoading } = usePlans();
   const [tab, setTab] = useState<Tab>('overview');
   const [cycle, setCycle] = useState<BillingCycle>('MONTHLY');
   const [savingCycle, setSavingCycle] = useState(false);
   const [changingPlan, setChangingPlan] = useState<string | null>(null);
+  const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<string | null>(null);
   const [realSub, setRealSub] = useState<any>(null);
   const [realSubLoading, setRealSubLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'CREDIT_CARD' | 'PIX' | 'BOLETO'>('CREDIT_CARD');
+  const [paymentMethod, setPaymentMethod] = useState<'CREDIT_CARD' | 'PIX'>('CREDIT_CARD');
   const [updatingPayment, setUpdatingPayment] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [showCancelHint, setShowCancelHint] = useState(false);
+  const [pendingCheckoutUrl, setPendingCheckoutUrl] = useState<string | null>(null);
+  const [showBillingModal, setShowBillingModal] = useState(false);
+  const [billingForm, setBillingForm] = useState({
+    document: '',
+    legalName: '',
+    email: '',
+    mobilePhone: ''
+  });
+  const [savingBillingForm, setSavingBillingForm] = useState(false);
 
   const currentPlanId = salonData?.billing?.planId || salonData?.plan || 'essential';
   const currentPlan = plans.find((p: any) => p.id === currentPlanId) || planCatalog.plans.find((p: any) => p.id === currentPlanId);
@@ -120,53 +153,127 @@ export default function SubscriptionCenterPage() {
 
   const availablePlans = useMemo(() => plans.filter((p: any) => p.active !== false && !p.legacy && !p.customPricing && Number(p.price || 0) > 0), [plans]);
 
+  const chosenPlanId = selectedPlanForCheckout || currentPlanId;
+  const chosenPlanObj = plans.find((p: any) => p.id === chosenPlanId) || currentPlan || planCatalog.plans.find((p: any) => p.id === chosenPlanId);
+  const chosenPlanMonthlyBase = Number((chosenPlanObj as any)?.price ?? (chosenPlanObj as any)?.monthlyPrice ?? 0);
+  const chosenPlanMonthlyEq = cycleMonthlyEquivalent(chosenPlanMonthlyBase, cycle);
+  const chosenPlanCycleTotal = cyclePrice(chosenPlanMonthlyBase, cycle);
+
   async function token() {
     const user = auth.currentUser;
     if (!user) throw new Error('Sessão expirada. Entre novamente.');
     return user.getIdToken(true);
   }
 
+  function redirectToCheckout(url: string) {
+    if (url.startsWith('/')) {
+      navigate(url);
+      return;
+    }
+    setPendingCheckoutUrl(url);
+    toast.success('Redirecionando para o ambiente seguro do Asaas...');
+    try {
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+        window.location.assign(url);
+      }
+    } catch {
+      window.location.assign(url);
+    }
+  }
+
+  async function goToCheckout(overridePaymentMethod?: 'CREDIT_CARD' | 'PIX', customCustomerData?: any) {
+    if (!salonData?.id) return;
+    setUpdatingPayment(true);
+    const methodToUse = overridePaymentMethod || paymentMethod;
+    const planToUse = selectedPlanForCheckout || currentPlanId;
+
+    try {
+      const t = await token();
+      const payload: any = { 
+         salonId: salonData.id, 
+         planId: planToUse,
+         billingCycle: cycle,
+         paymentMethod: methodToUse,
+         billingType: methodToUse 
+      };
+      if (customCustomerData) {
+        payload.customerData = customCustomerData;
+      }
+
+      const res = await fetch('/api/billing/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Não foi possível iniciar o pagamento.');
+
+      if (data.requiresBillingData) {
+        setBillingForm({
+          document: salonData?.billing?.document || (salonData as any)?.document || (salonData as any)?.cnpj || '',
+          legalName: salonData?.billing?.legalName || salonData?.name || (salonData as any)?.ownerName || '',
+          email: salonData?.billing?.email || (salonData as any)?.billingEmail || (salonData as any)?.ownerEmail || auth.currentUser?.email || '',
+          mobilePhone: salonData?.billing?.mobilePhone || (salonData as any)?.phone || ''
+        });
+        setShowBillingModal(true);
+        toast.info('Complete os dados de faturamento para gerar sua fatura no Asaas.');
+        return;
+      }
+
+      if (data.checkoutUrl) {
+        setShowBillingModal(false);
+        redirectToCheckout(data.checkoutUrl);
+      } else {
+        toast.success('Assinatura e pagamento atualizados com sucesso.');
+        await refreshUserData();
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Falha ao ir para o pagamento.');
+    } finally {
+      setUpdatingPayment(false);
+    }
+  }
+
+  async function handleSaveBillingAndCheckout(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingBillingForm(true);
+    try {
+      await goToCheckout(paymentMethod, billingForm);
+    } finally {
+      setSavingBillingForm(false);
+    }
+  }
+
   async function changeCycle(next: BillingCycle) {
-    if (!salonData?.id || next === activeCycle) return;
+    if (!salonData?.id) return;
+    setCycle(next);
+
     setSavingCycle(true);
     try {
       const t = await token();
       const res = await fetch('/api/billing/change-cycle', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
         body: JSON.stringify({ salonId: salonData.id, billingCycle: next })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Não foi possível alterar a periodicidade.');
-      setCycle(next);
-      await refreshUserData();
-      toast.success(data.message || 'Periodicidade atualizada com sucesso.');
+      if (res.ok) {
+        toast.success(data.message || `Periodicidade alterada para ${CYCLE_META[next]?.label}.`);
+        await refreshUserData();
+      } else {
+        console.warn('Aviso ao sincronizar ciclo:', data.error);
+      }
     } catch (e: any) {
-      setCycle(activeCycle);
-      toast.error(e.message || 'Falha ao alterar a periodicidade.');
+      console.warn('Falha na rota change-cycle:', e);
     } finally {
       setSavingCycle(false);
     }
   }
 
-  async function changePlan(planId: string) {
-    if (!salonData?.id || planId === currentPlanId) return;
-    setChangingPlan(planId);
-    try {
-      const t = await token();
-      const res = await fetch('/api/billing/change-plan', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
-        body: JSON.stringify({ salonId: salonData.id, planId, action: 'change' })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error(data.error || 'Não foi possível alterar o plano.');
-      await refreshUserData();
-      toast.success('Plano atualizado. A cobrança seguirá a periodicidade atual.');
-      setTab('overview');
-    } catch (e: any) {
-      toast.error(e.message || 'Falha ao alterar o plano.');
-    } finally {
-      setChangingPlan(null);
-    }
+  function selectPlan(planId: string) {
+    setSelectedPlanForCheckout(planId);
+    toast.success('Plano selecionado! Escolha a forma de pagamento e clique em "Ir para pagamento".');
   }
 
   async function updatePayment() {
@@ -175,14 +282,18 @@ export default function SubscriptionCenterPage() {
     try {
       const t = await token();
       const res = await fetch('/api/billing/update-payment-method', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
         body: JSON.stringify({ salonId: salonData.id, paymentMethod })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Não foi possível atualizar a forma de pagamento.');
-      if (data.authorizationUrl) window.open(data.authorizationUrl, '_blank', 'noopener,noreferrer');
-      toast.success(data.message || 'Forma de pagamento atualizada.');
-      await refreshUserData();
+      if (data.authorizationUrl || data.checkoutUrl) {
+        window.location.assign(data.authorizationUrl || data.checkoutUrl);
+      } else {
+        toast.success(data.message || 'Forma de pagamento atualizada.');
+        await refreshUserData();
+      }
     } catch (e: any) {
       toast.error(e.message || 'Falha ao atualizar a forma de pagamento.');
     } finally {
@@ -233,10 +344,33 @@ export default function SubscriptionCenterPage() {
               <div className="flex items-start justify-between gap-4"><div><p className="text-sm text-zinc-500">Assinatura ativa</p><h2 className="mt-1 text-2xl font-semibold">{(currentPlan as any)?.name || 'Plano atual'}</h2></div><ShieldCheck className="h-7 w-7 text-emerald-400" /></div>
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <div><p className="text-xs text-zinc-500">Próxima cobrança</p><p className="mt-1 font-medium">{date(nextDueDate)}</p></div>
-                <div><p className="text-xs text-zinc-500">Forma de pagamento</p><p className="mt-1 font-medium">{realSub?.billingType || salonData.billing?.paymentMethod || 'Ainda não configurada'}</p></div>
+                <div><p className="text-xs text-zinc-500">Forma de pagamento</p><p className="mt-1 font-medium">{formatBillingMethod(realSub?.billingType || salonData.billing?.paymentMethod)}</p></div>
               </div>
               {pendingPayment && <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4"><div className="flex gap-3"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" /><div><p className="font-medium text-amber-200">Existe uma cobrança pendente</p><p className="mt-1 text-sm text-zinc-400">A cobrança já gerada mantém suas condições originais. Alterações de ciclo valem para cobranças futuras.</p></div></div></div>}
-              <div className="mt-6 flex flex-wrap gap-3"><button onClick={() => setTab('plan')} className="rounded-xl bg-[#D4AF37] px-4 py-2.5 text-sm font-semibold text-black">Gerenciar plano <ArrowRight className="ml-1 inline h-4 w-4" /></button><button onClick={() => setTab('payment')} className="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-900">Forma de pagamento</button></div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                {(!hasRealSubscription || status !== 'ACTIVE') && (
+                  <button
+                    disabled={updatingPayment}
+                    onClick={() => {
+                      setSelectedPlanForCheckout(currentPlanId);
+                      void goToCheckout();
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/20 hover:bg-[#c49f2c] transition active:scale-95 disabled:opacity-50"
+                  >
+                    {updatingPayment ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Conectando ao Asaas...
+                      </>
+                    ) : (
+                      <>
+                        Ir para pagamento <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                )}
+                <button onClick={() => setTab('plan')} className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${hasRealSubscription && status === 'ACTIVE' ? 'bg-[#D4AF37] text-black' : 'border border-zinc-700 text-white hover:bg-zinc-900'}`}>Gerenciar plano <ArrowRight className="ml-1 inline h-4 w-4" /></button>
+                <button onClick={() => setTab('payment')} className="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-900">Forma de pagamento</button>
+              </div>
             </div>
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"><p className="text-sm font-medium">Segurança financeira</p><div className="mt-5 space-y-4 text-sm text-zinc-400"><div className="flex gap-3"><Lock className="h-5 w-5 text-[#D4AF37]" /><span>Os dados sensíveis de cartão são processados pelo Asaas.</span></div><div className="flex gap-3"><CalendarDays className="h-5 w-5 text-[#D4AF37]" /><span>O ciclo real é sincronizado com a assinatura do gateway.</span></div><div className="flex gap-3"><ReceiptText className="h-5 w-5 text-[#D4AF37]" /><span>Cobranças e documentos ficam organizados no histórico.</span></div></div></div>
           </section>
@@ -245,29 +379,237 @@ export default function SubscriptionCenterPage() {
         {tab === 'plan' && (
           <section className="space-y-6">
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-              <div><p className="text-xs uppercase tracking-widest text-[#D4AF37]">Periodicidade</p><h2 className="mt-1 text-2xl font-semibold">Escolha como prefere contratar</h2><p className="mt-2 text-sm text-zinc-400">O valor mostrado abaixo é o equivalente mensal do ciclo. O total do próximo ciclo aparece na confirmação antes da alteração.</p></div>
+              <div>
+                <p className="text-xs uppercase tracking-widest text-[#D4AF37]">Periodicidade</p>
+                <h2 className="mt-1 text-2xl font-semibold">Escolha como prefere contratar</h2>
+                <p className="mt-2 text-sm text-zinc-400">O valor mostrado abaixo é o equivalente mensal do ciclo. Descontos exclusivos aplicados nos ciclos semestral e anual.</p>
+              </div>
               <div className="mt-6 grid gap-3 md:grid-cols-3">
                 {(Object.keys(CYCLE_META) as BillingCycle[]).map(c => {
                   const selected = cycle === c;
-                  const monthlyEq = cycleMonthlyEquivalent(currentMonthly, c);
-                  return <button disabled={savingCycle || !hasRealSubscription} key={c} onClick={() => void changeCycle(c)} className={`relative rounded-2xl border p-5 text-left transition ${selected ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-zinc-800 bg-black/20 hover:border-zinc-600'} ${!hasRealSubscription ? 'cursor-not-allowed opacity-50' : ''}`}>
-                    {CYCLE_META[c].discount > 0 && <span className="absolute right-4 top-4 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300">-{CYCLE_META[c].discount}%</span>}
-                    <p className="text-sm text-zinc-400">{CYCLE_META[c].label}</p><p className="mt-2 text-2xl font-bold">{money(monthlyEq)}<span className="text-xs font-normal text-zinc-500"> / mês</span></p><p className="mt-1 text-xs text-zinc-500">{CYCLE_META[c].short}</p>{selected && <div className="mt-4 flex items-center gap-2 text-xs text-[#D4AF37]"><Check className="h-4 w-4" /> Ciclo atual</div>}
-                  </button>;
+                  const monthlyEq = cycleMonthlyEquivalent(chosenPlanMonthlyBase, c);
+                  return (
+                    <button
+                      disabled={savingCycle}
+                      key={c}
+                      onClick={() => void changeCycle(c)}
+                      className={`relative rounded-2xl border p-5 text-left transition ${
+                        selected ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-zinc-800 bg-black/20 hover:border-zinc-600'
+                      }`}
+                    >
+                      {CYCLE_META[c].discount > 0 && (
+                        <span className="absolute right-4 top-4 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300">
+                          -{CYCLE_META[c].discount}%
+                        </span>
+                      )}
+                      <p className="text-sm text-zinc-400">{CYCLE_META[c].label}</p>
+                      <p className="mt-2 text-2xl font-bold">
+                        {money(monthlyEq)}
+                        <span className="text-xs font-normal text-zinc-500"> / mês</span>
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">{CYCLE_META[c].short}</p>
+                      {selected && (
+                        <div className="mt-4 flex items-center gap-2 text-xs text-[#D4AF37]">
+                          <Check className="h-4 w-4" /> Ciclo selecionado
+                        </div>
+                      )}
+                    </button>
+                  );
                 })}
               </div>
-              {!hasRealSubscription && <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">Configure a assinatura no Asaas primeiro para poder trocar a periodicidade aqui.</div>}
-              {savingCycle && <div className="mt-4 flex items-center gap-2 text-sm text-zinc-400"><Loader2 className="h-4 w-4 animate-spin" /> Atualizando assinatura no Asaas…</div>}
+              {savingCycle && (
+                <div className="mt-4 flex items-center gap-2 text-sm text-zinc-400">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Atualizando assinatura…
+                </div>
+              )}
             </div>
 
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"><p className="text-xs uppercase tracking-widest text-[#D4AF37]">Plano</p><h2 className="mt-1 text-2xl font-semibold">Mude o nível da sua operação</h2><div className="mt-5 grid gap-4 lg:grid-cols-3">{availablePlans.map((p: any) => { const selected = p.id === currentPlanId; return <div key={p.id} className={`rounded-2xl border p-5 ${selected ? 'border-[#D4AF37]/60 bg-[#D4AF37]/5' : 'border-zinc-800'}`}><div className="flex items-start justify-between gap-2"><div><h3 className="font-semibold">{p.name}</h3><p className="mt-1 text-xs text-zinc-500">Até {p.maxProfessionals} profissionais</p></div>{p.badge && <span className="rounded-full bg-[#D4AF37]/10 px-2 py-1 text-[10px] text-[#D4AF37]">{p.badge}</span>}</div><p className="mt-5 text-2xl font-bold">{money(Number(p.price))}<span className="text-xs font-normal text-zinc-500"> / mês</span></p><ul className="mt-4 space-y-2 text-xs text-zinc-400">{(p.features || []).slice(0, 6).map((f: string) => <li key={f} className="flex gap-2"><Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />{f}</li>)}</ul><button disabled={selected || changingPlan !== null || !hasRealSubscription} onClick={() => void changePlan(p.id)} className={`mt-5 w-full rounded-xl px-3 py-2.5 text-sm font-semibold ${selected ? 'bg-zinc-800 text-zinc-500' : 'bg-white text-black hover:bg-zinc-200'}`}>{changingPlan === p.id ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : selected ? 'Plano atual' : 'Escolher plano'}</button></div>; })}</div></div>
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+              <p className="text-xs uppercase tracking-widest text-[#D4AF37]">Plano</p>
+              <h2 className="mt-1 text-2xl font-semibold">Mude o nível da sua operação</h2>
+              <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                {availablePlans.map((p: any) => {
+                  const isSelected = (selectedPlanForCheckout || currentPlanId) === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex flex-col justify-between rounded-2xl border p-5 transition ${
+                        isSelected ? 'border-[#D4AF37] bg-[#D4AF37]/5 ring-1 ring-[#D4AF37]/40' : 'border-zinc-800'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 className="font-semibold">{p.name}</h3>
+                            <p className="mt-1 text-xs text-zinc-500">Até {p.maxProfessionals} profissionais</p>
+                          </div>
+                          {p.badge && <span className="rounded-full bg-[#D4AF37]/10 px-2 py-1 text-[10px] text-[#D4AF37]">{p.badge}</span>}
+                        </div>
+                        <p className="mt-5 text-2xl font-bold">
+                          {money(cycleMonthlyEquivalent(Number(p.price || 0), cycle))}
+                          <span className="text-xs font-normal text-zinc-500"> / mês no {CYCLE_META[cycle]?.label.toLowerCase()}</span>
+                        </p>
+                        <ul className="mt-4 space-y-2 text-xs text-zinc-400">
+                          {(p.features || []).slice(0, 6).map((f: string) => (
+                            <li key={f} className="flex gap-2">
+                              <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <button
+                        onClick={() => selectPlan(p.id)}
+                        className={`mt-6 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                          isSelected
+                            ? 'bg-[#D4AF37] text-black font-bold'
+                            : 'bg-white text-black hover:bg-zinc-200'
+                        }`}
+                      >
+                        {isSelected ? 'Plano Selecionado' : 'Escolher plano'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Box de Confirmação & Ir para Pagamento */}
+            <div className="rounded-3xl border border-[#D4AF37]/40 bg-gradient-to-br from-zinc-950 via-zinc-900 to-black p-6 shadow-2xl">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#D4AF37]/15 px-3 py-1 text-xs font-semibold text-[#D4AF37]">
+                      <Sparkles className="h-3.5 w-3.5" /> Confirmar e Contratar
+                    </span>
+                    <span className="text-xs text-zinc-400">Defina a forma de pagamento e avance para o checkout</span>
+                  </div>
+                  <h3 className="text-2xl font-bold text-white">
+                    {(chosenPlanObj as any)?.name || 'Plano Selecionado'} · {CYCLE_META[cycle]?.label}
+                  </h3>
+                  <p className="text-sm text-zinc-400">
+                    Total deste ciclo: <strong className="text-white font-semibold">{money(chosenPlanCycleTotal)}</strong> ({money(chosenPlanMonthlyEq)} / mês). Pagamento seguro processado via Asaas.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+                  <div className="flex items-center gap-2 rounded-2xl border border-zinc-800 bg-black/60 p-1.5">
+                    <button
+                      onClick={() => setPaymentMethod('CREDIT_CARD')}
+                      className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition ${
+                        paymentMethod === 'CREDIT_CARD' ? 'bg-[#D4AF37] text-black font-bold' : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <CreditCard className="h-4 w-4" /> Cartão
+                    </button>
+                    <button
+                      onClick={() => setPaymentMethod('PIX')}
+                      className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition ${
+                        paymentMethod === 'PIX' ? 'bg-[#D4AF37] text-black font-bold' : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <Zap className="h-4 w-4" /> Pix
+                    </button>
+                  </div>
+
+                  <button
+                    disabled={updatingPayment}
+                    onClick={() => void goToCheckout()}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-6 py-3.5 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/25 hover:bg-[#c49f2c] transition active:scale-95 disabled:opacity-50"
+                  >
+                    {updatingPayment ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Conectando ao checkout...
+                      </>
+                    ) : (
+                      <>
+                        Ir para pagamento <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         )}
 
         {tab === 'payment' && (
           <section className="grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"><div className="flex items-start justify-between"><div><p className="text-xs uppercase tracking-widest text-[#D4AF37]">Pagamento</p><h2 className="mt-1 text-2xl font-semibold">Forma de pagamento</h2></div><CreditCard className="h-7 w-7 text-zinc-500" /></div><div className="mt-6 rounded-2xl border border-zinc-800 bg-black/20 p-5"><p className="text-xs text-zinc-500">Forma atual</p><p className="mt-1 text-lg font-semibold">{realSub?.billingType || salonData.billing?.paymentMethod || 'Não configurada'}</p><p className="mt-2 text-sm text-zinc-500">Alterar o cartão não cria uma cobrança imediata.</p></div><div className="mt-6 grid gap-3 sm:grid-cols-3">{(['CREDIT_CARD', 'PIX', 'BOLETO'] as const).map(m => <button key={m} onClick={() => setPaymentMethod(m)} className={`rounded-xl border p-4 text-left ${paymentMethod === m ? 'border-[#D4AF37] bg-[#D4AF37]/5' : 'border-zinc-800 hover:border-zinc-600'}`}><p className="text-sm font-medium">{m === 'CREDIT_CARD' ? 'Cartão' : m === 'PIX' ? 'Pix' : 'Boleto'}</p><p className="mt-1 text-xs text-zinc-500">{m === 'CREDIT_CARD' ? 'Atualizar cartão' : 'Próximas cobranças'}</p></button>)}</div><button disabled={updatingPayment} onClick={() => void updatePayment()} className="mt-5 rounded-xl bg-[#D4AF37] px-5 py-3 text-sm font-semibold text-black">{updatingPayment ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Atualizar forma de pagamento'}</button></div>
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"><div className="flex gap-3"><ShieldCheck className="h-5 w-5 text-emerald-400" /><div><p className="font-medium">Pagamento seguro</p><p className="mt-2 text-sm leading-6 text-zinc-400">O LumièreOS não precisa armazenar os dados completos do cartão. O processamento e a recorrência são administrados pelo Asaas.</p></div></div>{realSubLoading && <div className="mt-6 flex items-center gap-2 text-xs text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Sincronizando assinatura…</div>}</div>
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-[#D4AF37]">Pagamento</p>
+                  <h2 className="mt-1 text-2xl font-semibold">Forma de pagamento</h2>
+                </div>
+                <CreditCard className="h-7 w-7 text-zinc-500" />
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-zinc-800 bg-black/20 p-5">
+                <p className="text-xs text-zinc-500">Plano e periodicidade</p>
+                <p className="mt-1 text-lg font-semibold">{(chosenPlanObj as any)?.name || 'Plano'} · {CYCLE_META[cycle]?.label}</p>
+                <p className="mt-1 text-sm text-zinc-400">
+                  Total do ciclo: <strong className="text-white">{money(chosenPlanCycleTotal)}</strong> ({money(chosenPlanMonthlyEq)} / mês)
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <p className="text-xs text-zinc-400 mb-3">Escolha a forma de pagamento desejada:</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(['CREDIT_CARD', 'PIX'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setPaymentMethod(m)}
+                      className={`rounded-xl border p-4 text-left transition ${
+                        paymentMethod === m ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-zinc-800 bg-black/20 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">{m === 'CREDIT_CARD' ? 'Cartão de Crédito' : 'Pix'}</p>
+                        {paymentMethod === m && <Check className="h-4 w-4 text-[#D4AF37]" />}
+                      </div>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {m === 'CREDIT_CARD' ? 'Pagamento recorrente no cartão' : 'Pagar via Pix (QRCode e Copia e Cola)'}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-zinc-800/80 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <button
+                  disabled={updatingPayment}
+                  onClick={() => void goToCheckout()}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-6 py-3.5 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/20 hover:bg-[#c49f2c] transition active:scale-95 disabled:opacity-50"
+                >
+                  {updatingPayment ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Conectando ao checkout...
+                    </>
+                  ) : (
+                    <>
+                      Ir para pagamento <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+              <div className="flex gap-3">
+                <ShieldCheck className="h-5 w-5 text-emerald-400" />
+                <div>
+                  <p className="font-medium">Pagamento 100% seguro via Asaas</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-400">
+                    O LumièreOS não armazena dados de cartão de crédito. Ao clicar em &quot;Ir para pagamento&quot;, você é levado à página oficial de checkout do Asaas para autorizar com total segurança.
+                  </p>
+                </div>
+              </div>
+              {realSubLoading && (
+                <div className="mt-6 flex items-center gap-2 text-xs text-zinc-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Sincronizando assinatura…
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -282,6 +624,134 @@ export default function SubscriptionCenterPage() {
         <footer className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-5 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between"><span>As alterações de assinatura são sincronizadas com o gateway antes de atualizar a conta.</span><button onClick={() => setShowCancelHint(v => !v)} className="text-zinc-400 hover:text-white">Precisa cancelar?</button></footer>
         {showCancelHint && <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-zinc-300"><div className="flex gap-3"><XCircle className="h-5 w-5 text-red-400" /><div><p className="font-medium text-white">Cancelamento</p><p className="mt-1 text-zinc-400">Para evitar cancelamentos acidentais, o cancelamento deve ser confirmado pelo responsável financeiro. A assinatura e as cobranças já geradas não são apagadas automaticamente.</p></div></div></div>}
       </div>
+
+      {/* Modal de Dados de Faturamento / CPF / CNPJ */}
+      {showBillingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-zinc-800 bg-zinc-950 p-6 md:p-8 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#D4AF37]/10 text-[#D4AF37]">
+                  <CreditCard className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Dados de faturamento</h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">Exigidos pelo Asaas para emissão da cobrança e nota fiscal.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBillingModal(false)}
+                className="rounded-xl p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBillingAndCheckout} className="mt-6 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">CPF ou CNPJ do Titular *</label>
+                <input
+                  required
+                  value={formatDocument(billingForm.document)}
+                  onChange={e => setBillingForm({ ...billingForm, document: e.target.value })}
+                  placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                  className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Nome completo ou Razão Social *</label>
+                <input
+                  required
+                  value={billingForm.legalName}
+                  onChange={e => setBillingForm({ ...billingForm, legalName: e.target.value })}
+                  placeholder="Nome do titular ou da empresa"
+                  className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">E-mail para recebimento das faturas *</label>
+                <input
+                  required
+                  type="email"
+                  value={billingForm.email}
+                  onChange={e => setBillingForm({ ...billingForm, email: e.target.value })}
+                  placeholder="financeiro@empresa.com"
+                  className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Celular / WhatsApp *</label>
+                <input
+                  required
+                  value={formatPhone(billingForm.mobilePhone)}
+                  onChange={e => setBillingForm({ ...billingForm, mobilePhone: e.target.value })}
+                  placeholder="(00) 00000-0000"
+                  className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3.5 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37]"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex gap-3 text-xs text-zinc-400 leading-relaxed">
+                <ShieldCheck className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                <span>O LumièreOS não armazena dados de cartão. O pagamento é realizado diretamente na página oficial e segura do Asaas.</span>
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBillingModal(false)}
+                  className="flex-1 h-12 rounded-xl border border-zinc-800 text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-900 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  disabled={savingBillingForm}
+                  type="submit"
+                  className="flex-[1.5] h-12 rounded-xl bg-[#D4AF37] hover:bg-[#c49f2c] text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#D4AF37]/20 transition disabled:opacity-50"
+                >
+                  {savingBillingForm ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                  {savingBillingForm ? 'Preparando Asaas...' : 'Confirmar e ir para o Asaas'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Banner de Redirecionamento Asaas */}
+      {pendingCheckoutUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl border border-[#D4AF37]/40 bg-zinc-950 p-6 md:p-8 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#D4AF37]/10 text-[#D4AF37]">
+              <ExternalLink className="h-7 w-7" />
+            </div>
+            <h3 className="text-xl font-bold text-white">Checkout Seguro Asaas Pronto</h3>
+            <p className="mt-2 text-sm text-zinc-400">
+              Sua cobrança foi gerada no Asaas. Clique no botão abaixo para abrir a página de pagamento:
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <a
+                href={pendingCheckoutUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-3 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/25 hover:bg-[#c49f2c] transition"
+              >
+                Abrir Checkout no Asaas <ExternalLink className="h-4 w-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setPendingCheckoutUrl(null)}
+                className="rounded-xl border border-zinc-800 px-4 py-2.5 text-xs text-zinc-400 hover:text-white hover:bg-zinc-900 transition"
+              >
+                Fechar janela
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

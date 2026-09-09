@@ -251,7 +251,7 @@ export default function SubscriptionPage() {
   const [awareOfDowngradeLimits, setAwareOfDowngradeLimits] = useState(false);
 
   // States for next billing payment method authorization
-  const [selectedNextMethod, setSelectedNextMethod] = useState<'credit_card' | 'pix_automatic' | 'pix' | 'boleto'>('credit_card');
+  const [selectedNextMethod, setSelectedNextMethod] = useState<'credit_card' | 'pix_automatic' | 'pix'>('credit_card');
   const [realSub, setRealSub] = useState<any | null>(null);
   const [isLoadingRealSub, setIsLoadingRealSub] = useState(false);
   const [realSubError, setRealSubError] = useState<string | null>(null);
@@ -1651,36 +1651,6 @@ export default function SubscriptionPage() {
                           </div>
                           <p className="text-[11px] text-zinc-400 leading-relaxed">
                             Você receberá um lembrete com a chave copia-e-cola via WhatsApp e e-mail no dia do vencimento para efetuar o pagamento manualmente.
-                          </p>
-                        </div>
-                      </label>
-
-                      {/* Boleto Manual */}
-                      <label 
-                        onClick={() => setSelectedNextMethod('boleto')}
-                        className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-4 ${
-                          selectedNextMethod === 'boleto' 
-                            ? 'bg-[#D4AF37]/5 border-[#D4AF37] text-white' 
-                            : 'bg-zinc-950/40 border-zinc-900 hover:border-zinc-800 text-zinc-300'
-                        }`}
-                      >
-                        <input 
-                          type="radio" 
-                          name="next_payment_method" 
-                          checked={selectedNextMethod === 'boleto'}
-                          onChange={() => {}} 
-                          className="sr-only" 
-                        />
-                        <div className={`p-2 rounded-lg shrink-0 ${selectedNextMethod === 'boleto' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-zinc-900 text-zinc-400'}`}>
-                          <FileText className="w-5 h-5" />
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
-                            Boleto Bancário (Manual)
-                            <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-normal uppercase tracking-wide">Manual</span>
-                          </div>
-                          <p className="text-[11px] text-zinc-400 leading-relaxed">
-                            Emissão de boleto enviada para o seu e-mail cadastrado 5 dias antes de vencer.
                           </p>
                         </div>
                       </label>

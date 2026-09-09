@@ -84,7 +84,18 @@ export async function saveBillingCustomerData(salonId: string, input: any) {
   };
 
   if (customerId) {
-    await asaasProvider.updateCustomer(mode, apiKey, customerId, customerPayload);
+    try {
+      await asaasProvider.updateCustomer(mode, apiKey, customerId, customerPayload);
+    } catch (updateErr: any) {
+      const errMsg = String(updateErr?.message || updateErr);
+      if (errMsg.includes('404')) {
+        console.warn(`[Asaas] Cliente ${customerId} não encontrado no Asaas (404). Recriando...`);
+        const customer = await asaasProvider.createCustomer(mode, apiKey, customerPayload);
+        asaasCustomerId = customer.id;
+      } else {
+        throw updateErr;
+      }
+    }
   } else {
     const customer = await asaasProvider.createCustomer(mode, apiKey, customerPayload);
     asaasCustomerId = customer.id;

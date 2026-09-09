@@ -25,20 +25,40 @@ export default async function asaasTestConnectionHandler(req: VercelRequest, res
       return res.status(403).json({ error: 'Acesso negado: apenas administradores da plataforma podem testar e alterar credenciais do Asaas.' });
     }
 
-    const { mode, apiKey, webhookToken } = req.body || {};
+    let { mode, apiKey, webhookToken } = req.body || {};
+    if (!apiKey) {
+      const savedDoc = await adminDb.collection('settings').doc('asaas').get();
+      const saved = savedDoc.data() || {};
+      apiKey = saved.apiKey;
+      if (!mode) mode = saved.mode;
+      if (!webhookToken) webhookToken = saved.webhookToken;
+    }
+
     if (!apiKey) {
       return res.status(400).json({ error: 'API Key é obrigatória' });
     }
 
-    const isConnected = await billingService.testConnection({ mode, apiKey, webhookToken });
+    let cleanKey = String(apiKey).trim();
+    const secondIndex = cleanKey.indexOf('$aact_', 1);
+    if (secondIndex > 0) cleanKey = cleanKey.slice(0, secondIndex).trim();
+
+    if (!mode) {
+      mode = cleanKey.startsWith('$aact_prod_') ? 'production' : 'sandbox';
+    } else if (cleanKey.startsWith('$aact_hmlg_')) {
+      mode = 'sandbox';
+    } else if (cleanKey.startsWith('$aact_prod_')) {
+      mode = 'production';
+    }
+
+    const isConnected = await billingService.testConnection({ mode, apiKey: cleanKey, webhookToken });
     
     if (isConnected) {
       await adminDb.collection('settings').doc('asaas').set({
         mode,
-        apiKey,
-        webhookToken,
+        apiKey: cleanKey,
+        webhookToken: webhookToken || '',
         updatedAt: Date.now()
-      });
+      }, { merge: true });
       return res.status(200).json({ message: 'Conectado com sucesso' });
     } else {
       return res.status(400).json({ error: 'Credenciais inválidas' });

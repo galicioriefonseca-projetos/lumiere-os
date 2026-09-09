@@ -15,7 +15,7 @@ export interface Plan {
   maxProfessionals?: number;
 }
 
-export type PaymentMethod = 'PIX' | 'CREDIT_CARD' | 'BOLETO';
+export type PaymentMethod = 'PIX' | 'CREDIT_CARD';
 
 export interface BillingInfo {
   provider: 'asaas';

@@ -21,7 +21,7 @@ export default function PricingPage() {
   const [cycle, setCycle] = useState<PublicBillingCycle>('MONTHLY');
   const plans = useMemo(() => planCatalog.plans as Array<any>, []);
 
-  const choose = (planId: PublicPlanId) => {
+  const choose = (planId: PublicPlanId | string) => {
     if (planId === 'enterprise') {
       window.location.href = 'mailto:comercial@lumiere-os.com?subject=Enterprise%20LumièreOS';
       return;

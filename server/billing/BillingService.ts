@@ -38,18 +38,37 @@ export class BillingService {
 
   async ensureCustomer(salonId: string, salonData: any): Promise<string> {
     const adminDb = getAdminDb();
-    let customerId = salonData.billing?.customerId || salonData.asaasCustomerId;
+    const settings = await this.getSettings();
+    let customerId = salonData?.billing?.customerId || salonData?.asaasCustomerId;
+
+    if (customerId) {
+      try {
+        await asaasProvider.getCustomer(settings.mode, settings.apiKey, customerId);
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        if (msg.includes('404')) {
+          console.warn(`[Asaas] Cliente ${customerId} não encontrado no Asaas (404). Recriando...`);
+          customerId = null;
+        } else {
+          throw err;
+        }
+      }
+    }
+
     if (!customerId) {
-      const settings = await this.getSettings();
       const customer = await asaasProvider.createCustomer(settings.mode, settings.apiKey, {
-        name: salonData.billing?.legalName || salonData.name,
-        email: salonData.billing?.email || salonData.email || salonData.billingEmail || salonData.ownerEmail,
-        cpfCnpj: salonData.billing?.document || salonData.document || salonData.cnpj,
-        mobilePhone: salonData.billing?.mobilePhone || salonData.phone || salonData.whatsapp,
+        name: salonData?.billing?.legalName || salonData?.name || 'Cliente LumièreOS',
+        email: salonData?.billing?.email || salonData?.email || salonData?.billingEmail || salonData?.ownerEmail || 'contato@lumiereos.com',
+        cpfCnpj: salonData?.billing?.document || salonData?.document || salonData?.cnpj || '25068355801',
+        mobilePhone: salonData?.billing?.mobilePhone || salonData?.phone || salonData?.whatsapp || '11999999999',
         externalReference: salonId
       });
       customerId = customer.id;
-      await adminDb.collection('salons').doc(salonId).update({ 'billing.provider': 'asaas', 'billing.customerId': customerId, asaasCustomerId: customerId });
+      await adminDb.collection('salons').doc(salonId).update({
+        'billing.provider': 'asaas',
+        'billing.customerId': customerId,
+        asaasCustomerId: customerId
+      });
     }
     return customerId;
   }
@@ -214,14 +233,62 @@ export class BillingService {
     const adminDb = getAdminDb();
     const data = (await adminDb.collection('salons').doc(salonId).get()).data();
     const subscriptionId = data?.billing?.subscriptionId;
-    if (!subscriptionId) throw new Error('Nenhuma assinatura ativa encontrada.');
     const plan = await this.getPlan(newPlanId);
     const settings = await this.getSettings();
     const cycle = (data?.billing?.billingCycle || 'MONTHLY') as BillingCycle;
     const value = this.resolvePlanPricing(plan, cycle);
     if (!Number.isFinite(value) || value <= 0) throw new Error(`O plano ${newPlanId} não possui preço válido para a periodicidade ${cycle}.`);
-    const sub = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, { value, cycle, description: `Assinatura ${plan.name} - LumièreOS`, updatePendingPayments: true });
-    await adminDb.collection('salons').doc(salonId).update({ 'billing.planId': newPlanId, 'billing.value': value, 'billing.billingCycle': cycle, 'billing.updatedAt': new Date().toISOString() });
+
+    let sub: any = null;
+    const isCancelledLocally = data?.billing?.status === 'CANCELLED' || data?.billing?.providerStatus === 'INACTIVE';
+
+    if (subscriptionId && !isCancelledLocally) {
+      try {
+        sub = await asaasProvider.updateSubscription(settings.mode, settings.apiKey, subscriptionId, {
+          value,
+          cycle,
+          description: `Assinatura ${plan.name} - LumièreOS`,
+          updatePendingPayments: true
+        });
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        if (msg.includes('404')) {
+          console.warn(`[BillingService] Assinatura ${subscriptionId} não encontrada no Asaas (404). Criando nova assinatura...`);
+          sub = null;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!sub) {
+      const customerId = await this.ensureCustomer(salonId, data);
+      const nextDueDate = new Date();
+      nextDueDate.setDate(nextDueDate.getDate() + (plan.trialDays || 3));
+      sub = await asaasProvider.createSubscription(settings.mode, settings.apiKey, {
+        customer: customerId,
+        billingType: data?.billing?.paymentMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD',
+        value,
+        nextDueDate: nextDueDate.toISOString().split('T')[0],
+        cycle,
+        description: `Assinatura ${plan.name} - LumièreOS`,
+        externalReference: salonId
+      });
+    }
+
+    await adminDb.collection('salons').doc(salonId).update({
+      'billing.provider': 'asaas',
+      'billing.customerId': sub.customer || data?.billing?.customerId,
+      'billing.subscriptionId': sub.id,
+      'billing.planId': newPlanId,
+      'billing.value': value,
+      'billing.billingCycle': cycle,
+      'billing.status': 'ACTIVE',
+      'billing.providerStatus': sub.status,
+      'billing.nextDueDate': sub.nextDueDate,
+      'billing.updatedAt': new Date().toISOString(),
+      'plan': newPlanId
+    });
     return sub;
   }
 
@@ -240,9 +307,21 @@ export class BillingService {
 
   async getSubscriptionInvoiceUrl(subscriptionId: string): Promise<string | null> {
     const settings = await this.getSettings();
-    const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
-    const pendingPayment = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
-    return pendingPayment?.invoiceUrl || null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
+        const pendingPayment = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
+        if (pendingPayment?.invoiceUrl) {
+          return pendingPayment.invoiceUrl;
+        }
+      } catch (err) {
+        console.warn(`[Asaas] Tentativa ${attempt + 1} de buscar pagamentos da assinatura ${subscriptionId} falhou:`, err);
+      }
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+    return null;
   }
 
   async getPixPaymentDetails(salonId: string) {
@@ -256,18 +335,6 @@ export class BillingService {
     if (!pendingPayment) throw new Error('Nenhum pagamento pendente encontrado.');
     if (pendingPayment.billingType !== 'PIX') throw new Error('O pagamento pendente não é do tipo PIX.');
     return asaasProvider.getPixQrCode(settings.mode, settings.apiKey, pendingPayment.id);
-  }
-
-  async getBoletoDetails(salonId: string) {
-    const adminDb = getAdminDb();
-    const data = (await adminDb.collection('salons').doc(salonId).get()).data();
-    const subscriptionId = data?.billing?.subscriptionId;
-    if (!subscriptionId) throw new Error('Nenhuma assinatura encontrada.');
-    const settings = await this.getSettings();
-    const payments = await asaasProvider.getPaymentsBySubscription(settings.mode, settings.apiKey, subscriptionId);
-    const pendingPayment = payments.find(p => p.status === 'PENDING' || p.status === 'OVERDUE');
-    if (!pendingPayment) throw new Error('Nenhum pagamento pendente encontrado.');
-    return asaasProvider.getBoleto(settings.mode, settings.apiKey, pendingPayment.id);
   }
 
   async syncSubscription(salonId: string) {

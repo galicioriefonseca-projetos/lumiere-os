@@ -418,7 +418,6 @@ export default function FinancialPage() {
                     <option value="Pix">Pix</option>
                     <option value="Cartão de Crédito">Cartão de Crédito</option>
                     <option value="Cartão de Débito">Cartão de Débito</option>
-                    <option value="Boleto Sinc">Boleto</option>
                   </select>
                 </div>
               </div>

@@ -1,17 +1,43 @@
 import { BillingProvider, Subscription, PaymentMethod, BillingCycle, Customer } from './types.js';
 
 export class AsaasProvider implements BillingProvider {
-  private getBaseUrl(mode: 'sandbox' | 'production') {
-    return mode === 'sandbox' ? 'https://api-sandbox.asaas.com/v3' : 'https://api.asaas.com/v3';
+  private cleanApiKey(apiKey: string): string {
+    if (!apiKey) return '';
+    let key = apiKey.trim();
+    const secondIndex = key.indexOf('$aact_', 1);
+    if (secondIndex > 0) {
+      key = key.slice(0, secondIndex).trim();
+    }
+    return key;
+  }
+
+  private resolveEnvironment(mode: 'sandbox' | 'production', apiKey?: string): 'sandbox' | 'production' {
+    if (!apiKey) return mode;
+    const cleanKey = this.cleanApiKey(apiKey);
+    if (cleanKey.startsWith('$aact_hmlg_')) {
+      return 'sandbox';
+    }
+    if (cleanKey.startsWith('$aact_prod_')) {
+      return 'production';
+    }
+    return mode;
+  }
+
+  private getBaseUrl(mode: 'sandbox' | 'production', apiKey?: string) {
+    const resolvedMode = this.resolveEnvironment(mode, apiKey);
+    return resolvedMode === 'sandbox' ? 'https://api-sandbox.asaas.com/v3' : 'https://api.asaas.com/v3';
   }
 
   private getHeaders(apiKey: string) {
-    return { 'Content-Type': 'application/json', 'access_token': apiKey, 'User-Agent': 'LumiereOS' };
+    const cleanKey = this.cleanApiKey(apiKey);
+    return { 'Content-Type': 'application/json', 'access_token': cleanKey, 'User-Agent': 'LumiereOS' };
   }
 
   private async request(mode: 'sandbox' | 'production', apiKey: string, endpoint: string, method: string = 'GET', body?: any) {
-    const url = `${this.getBaseUrl(mode)}${endpoint}`;
-    const options: RequestInit = { method, headers: this.getHeaders(apiKey), body: body ? JSON.stringify(body) : undefined };
+    const cleanKey = this.cleanApiKey(apiKey);
+    const resolvedMode = this.resolveEnvironment(mode, cleanKey);
+    const url = `${this.getBaseUrl(resolvedMode, cleanKey)}${endpoint}`;
+    const options: RequestInit = { method, headers: this.getHeaders(cleanKey), body: body ? JSON.stringify(body) : undefined };
     const response = await fetch(url, options);
     const json = await response.json().catch(() => null);
     if (!response.ok) {
@@ -87,17 +113,18 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async getPaymentsBySubscription(mode: 'sandbox' | 'production', apiKey: string, subscriptionId: string): Promise<any[]> {
-    const res = await this.request(mode, apiKey, `/payments?subscription=${subscriptionId}`);
-    return res.data || [];
+    if (!subscriptionId) return [];
+    try {
+      const res = await this.request(mode, apiKey, `/payments?subscription=${subscriptionId}`);
+      return res.data || [];
+    } catch (err: any) {
+      console.warn(`[AsaasProvider] getPaymentsBySubscription(${subscriptionId}) avisos:`, err?.message || err);
+      return [];
+    }
   }
 
   async getPixQrCode(mode: 'sandbox' | 'production', apiKey: string, paymentId: string): Promise<any> {
     return this.request(mode, apiKey, `/payments/${paymentId}/pixQrCode`);
-  }
-
-  async getBoleto(mode: 'sandbox' | 'production', apiKey: string, paymentId: string): Promise<any> {
-    const res = await this.request(mode, apiKey, `/payments/${paymentId}`);
-    return { bankSlipUrl: res.bankSlipUrl, identificationField: res.identificationField };
   }
 
   async updatePaymentMethod(mode: 'sandbox' | 'production', apiKey: string, paymentId: string, billingType: PaymentMethod, creditCard?: any, creditCardHolderInfo?: any): Promise<any> {

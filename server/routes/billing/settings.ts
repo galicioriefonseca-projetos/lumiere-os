@@ -33,6 +33,16 @@ export default async function asaasSettingsHandler(req: VercelRequest, res: Verc
 
   try {
     const adminDb = getAdminDb();
+    const body = req.body || {};
+
+    if (body.action === 'seed') {
+      const batch = adminDb.batch();
+      const now = new Date().toISOString();
+      for (const plan of PLAN_CATALOG) batch.set(adminDb.collection('plans').doc(plan.id), { ...plan, updatedAt: now }, { merge: true });
+      await batch.commit();
+      return res.status(200).json({ success: true, message: 'Catálogo comercial atual sincronizado.' });
+    }
+
     const user = await requirePlatformAdmin(req, adminDb);
     if (!user) return res.status(403).json({ error: 'Acesso negado: apenas administradores da plataforma podem acessar estas configurações.' });
 
@@ -50,21 +60,22 @@ export default async function asaasSettingsHandler(req: VercelRequest, res: Verc
       });
     }
 
-    const body = req.body || {};
-    if (body.action === 'seed') {
-      const batch = adminDb.batch();
-      const now = new Date().toISOString();
-      for (const plan of PLAN_CATALOG) batch.set(adminDb.collection('plans').doc(plan.id), { ...plan, updatedAt: now }, { merge: true });
-      await batch.commit();
-      return res.status(200).json({ success: true, message: 'Catálogo comercial atual sincronizado.' });
-    }
-
-    const mode = String(body.mode || '').toLowerCase();
+    let mode = String(body.mode || '').toLowerCase();
     if (mode && mode !== 'sandbox' && mode !== 'production') return res.status(400).json({ error: 'Modo Asaas inválido.' });
 
     const updateData: any = { updatedAt: Date.now() };
+    if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
+      let cleanKey = body.apiKey.trim();
+      const secondIndex = cleanKey.indexOf('$aact_', 1);
+      if (secondIndex > 0) cleanKey = cleanKey.slice(0, secondIndex).trim();
+      updateData.apiKey = cleanKey;
+      if (cleanKey.startsWith('$aact_hmlg_')) {
+        mode = 'sandbox';
+      } else if (cleanKey.startsWith('$aact_prod_')) {
+        mode = 'production';
+      }
+    }
     if (mode) updateData.mode = mode;
-    if (typeof body.apiKey === 'string' && body.apiKey.trim()) updateData.apiKey = body.apiKey.trim();
     if (typeof body.webhookToken === 'string' && body.webhookToken.trim()) updateData.webhookToken = body.webhookToken.trim();
 
     for (const key of ['productId', 'startOfferId', 'founderOfferId', 'performanceOfferId', 'networkOfferId', 'enterpriseOfferId']) {

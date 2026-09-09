@@ -32,9 +32,6 @@ export default async function changeBillingCycleHandler(req: VercelRequest, res:
     if (!authResult.authorized) return res.status(403).json({ error: authResult.reason || 'Sem permissão para alterar a assinatura.' });
 
     const billing = salon.billing || {};
-    if (!billing.subscriptionId) return res.status(409).json({ error: 'Esta conta ainda não possui uma assinatura Asaas ativa. Configure o pagamento antes de alterar a periodicidade.' });
-    if (String(billing.status || '').toUpperCase() !== 'ACTIVE') return res.status(409).json({ error: 'A periodicidade só pode ser alterada em uma assinatura ativa.' });
-
     const currentCycle = (billing.billingCycle || 'MONTHLY') as BillingCycle;
     if (currentCycle === billingCycle) return res.status(200).json({ success: true, unchanged: true, message: 'A assinatura já utiliza esta periodicidade.' });
 
@@ -45,7 +42,7 @@ export default async function changeBillingCycleHandler(req: VercelRequest, res:
       value: result.value,
       subscription: result.subscription,
       nextDueDate: result.subscription?.nextDueDate || billing.nextDueDate,
-      message: 'Periodicidade atualizada. A nova condição será aplicada às próximas cobranças.'
+      message: 'Periodicidade atualizada com sucesso.'
     });
   } catch (error: any) {
     console.error('[Asaas Change Billing Cycle]', error);

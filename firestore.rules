@@ -512,5 +512,12 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update, delete: if false;
     }
+
+    // 23. Activation Tokens (for executive salon activation)
+    match /activationTokens/{token} {
+      allow get: if true;
+      allow list: if isPlatformAdmin();
+      allow write: if isPlatformAdmin();
+    }
   }
 }

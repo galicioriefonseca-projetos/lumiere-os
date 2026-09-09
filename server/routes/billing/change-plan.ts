@@ -1,7 +1,8 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { asaasProvider } from '../../billing/AsaasProvider.js';
-import { BillingCycle } from '../../billing/types.js';
+import { BillingService } from '../../billing/BillingService.js';
+import { BillingCycle, PaymentMethod } from '../../billing/types.js';
 import { commercialPlan, commercialPlanPrice, normalizePlanId } from '../../billing/commercialPlans.js';
 import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 
@@ -42,33 +43,75 @@ export default async function asaasChangePlanHandler(req: VercelRequest, res: Ve
     if (plan.customPricing) return res.status(400).json({ error: 'Este plano requer contato com a equipe comercial.' });
 
     const subscriptionId = salonData?.billing?.subscriptionId;
-    if (!subscriptionId) return res.status(409).json({ error: 'Esta conta ainda não possui uma assinatura Asaas ativa. Configure o pagamento primeiro.' });
+    const isCancelledLocally = salonData?.billing?.status === 'CANCELLED' || salonData?.billing?.providerStatus === 'INACTIVE';
 
     const settingsDoc = await adminDb.collection('settings').doc('asaas').get();
     const settings = settingsDoc.data() || {};
-    const mode = (settings.mode || 'production') as 'sandbox' | 'production';
-    const apiKey = String(settings.apiKey || '');
+    let apiKey = String(settings.apiKey || '');
+    const secondIndex = apiKey.indexOf('$aact_', 1);
+    if (secondIndex > 0) apiKey = apiKey.slice(0, secondIndex).trim();
     if (!apiKey) return res.status(500).json({ error: 'Asaas não está configurado.' });
+    const mode = (settings.mode || (apiKey.startsWith('$aact_prod_') ? 'production' : 'sandbox')) as 'sandbox' | 'production';
 
     const cycle = String(salonData?.billing?.billingCycle || 'MONTHLY').toUpperCase() as BillingCycle;
     const value = commercialPlanPrice(normalizedPlanId, cycle);
     if (!value || value <= 0) return res.status(400).json({ error: `O plano ${normalizedPlanId} não possui preço válido para a periodicidade ${cycle}.` });
 
-    const subscription = await asaasProvider.updateSubscription(mode, apiKey, subscriptionId, {
-      value,
-      cycle,
-      description: `Assinatura ${plan.name} - LumièreOS`,
-      updatePendingPayments: true,
-    });
+    let subscription: any = null;
+
+    if (subscriptionId && !isCancelledLocally) {
+      try {
+        subscription = await asaasProvider.updateSubscription(mode, apiKey, subscriptionId, {
+          value,
+          cycle,
+          description: `Assinatura ${plan.name} - LumièreOS`,
+          updatePendingPayments: true,
+        });
+      } catch (updateErr: any) {
+        const errMsg = String(updateErr?.message || updateErr);
+        if (errMsg.includes('404')) {
+          console.warn(`[Asaas Change Plan] Assinatura ${subscriptionId} não encontrada no Asaas (404). Criando nova assinatura para o salão...`);
+          subscription = null;
+        } else {
+          throw updateErr;
+        }
+      }
+    }
+
+    if (!subscription) {
+      const billingService = new BillingService();
+      const customerId = await billingService.ensureCustomer(salonId, salonData);
+
+      const nextDueDate = new Date();
+      nextDueDate.setDate(nextDueDate.getDate() + (plan.trialDays || 3));
+
+      const rawMethod = String(salonData?.billing?.paymentMethod || '').toUpperCase();
+      const billingType = (rawMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD') as PaymentMethod;
+
+      subscription = await asaasProvider.createSubscription(mode, apiKey, {
+        customer: customerId,
+        billingType,
+        value,
+        nextDueDate: nextDueDate.toISOString().split('T')[0],
+        cycle,
+        description: `Assinatura ${plan.name} - LumièreOS`,
+        externalReference: salonId,
+      });
+    }
 
     await salonRef.update({
+      'billing.provider': 'asaas',
+      'billing.subscriptionId': subscription.id,
+      'billing.customerId': subscription.customer || salonData?.billing?.customerId,
       'billing.planId': normalizedPlanId,
       'billing.value': value,
       'billing.billingCycle': cycle,
+      'billing.status': 'ACTIVE',
       'billing.nextDueDate': subscription.nextDueDate,
       'billing.paymentMethod': subscription.billingType,
       'billing.providerStatus': subscription.status,
       'billing.updatedAt': new Date().toISOString(),
+      'plan': normalizedPlanId,
     });
 
     return res.status(200).json({ success: true, message: 'Plano alterado com sucesso no Asaas.', subscription });

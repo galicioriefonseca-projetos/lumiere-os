@@ -359,7 +359,27 @@ export default function LoginPage() {
     setStatusText('Criando salão de testes empresarial...');
 
     try {
-      // 1. Create a simulated, pending salon in Firestore
+      // Tenta rota de backend com permissões administrativas
+      const response = await fetch('/api/auth/simulate-activation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          simEmail: simEmail.trim().toLowerCase(),
+          simSalon: simSalon || 'Salão Lumière Classic',
+          simName: simName || 'Proprietário Simulado',
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.token && data.salonId) {
+        setSimCreatedSalonId(data.salonId);
+        setSimCreatedToken(data.token);
+        setLoading(false);
+        setSimEmailSent(true);
+        return;
+      }
+
+      // Fallback para Firestore direto
       const mockSalonId = 'salon_sim_' + Math.random().toString(36).substring(2, 9).toUpperCase();
       const now = Date.now();
       
@@ -374,14 +394,13 @@ export default function LoginPage() {
         city: 'São Paulo',
         state: 'SP',
         plan: 'performance',
-        subscriptionStatus: 'pending', // Waiting for activation
+        subscriptionStatus: 'pending',
         activationStatus: 'pending',
         isActive: false,
         createdAt: now,
         updatedAt: now
       });
 
-      // 2. Create the activation token
       setStatusText('Gerando token de ativação seguro...');
       const token = await createActivationToken(simEmail.trim().toLowerCase(), mockSalonId);
 
@@ -536,6 +555,19 @@ export default function LoginPage() {
                 </svg>
                 <span>Conectar com Conta Google</span>
               </button>
+
+              {/* Sugestão de cadastro direto se não encontrado */}
+              {error && error.includes('cadastro') && (
+                <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
+                  <span className="text-xs text-amber-200">Primeira vez no LumièreOS?</span>
+                  <Link
+                    to="/cadastro"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-neutral-950 hover:bg-amber-400 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    Cadastrar Salão
+                  </Link>
+                </div>
+              )}
 
               {/* Extra helper links: Activation Simulation or Back */}
               <div className="mt-8 pt-6 border-t border-neutral-800/60 flex flex-col items-center gap-3">
