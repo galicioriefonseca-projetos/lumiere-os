@@ -1,5 +1,6 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { billingService } from '../../billing/BillingService.js';
+import { asaasProvider } from '../../billing/AsaasProvider.js';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
 import { normalizeBillingCustomerData, saveBillingCustomerData } from '../../billing/BillingCustomerService.js';
@@ -21,6 +22,42 @@ function planCyclePrice(plan: any, cycle: string): number {
   if (cycle === 'MONTHLY') return Number(plan.price || 0);
   if (cycle === 'SEMIANNUALLY') return Number(plan.semiannualPrice || 0);
   return Number(plan.annualPrice || 0);
+}
+
+/**
+ * Asaas can take a few seconds to generate the first charge after a subscription
+ * is created. Resolve the hosted invoice directly from the subscription's first
+ * payment, with a short bounded retry window.
+ */
+async function resolveAsaasInvoiceUrl(subscriptionId: string, adminDb: FirebaseFirestore.Firestore): Promise<string | null> {
+  const settingsDoc = await adminDb.collection('settings').doc('asaas').get();
+  const settingsData = settingsDoc.exists ? settingsDoc.data() || {} : {};
+  const apiKey = String(settingsData.apiKey || env.asaas.apiKey || '').trim();
+  const mode = settingsData.mode === 'production' ? 'production' : 'sandbox';
+
+  if (!apiKey) {
+    throw new Error('O serviço de pagamento ainda não está configurado. Configure a chave do Asaas para continuar.');
+  }
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const payments = await asaasProvider.getPaymentsBySubscription(mode, apiKey, subscriptionId);
+      const payment = payments.find((item: any) => item?.invoiceUrl && ['PENDING', 'OVERDUE'].includes(String(item.status || '').toUpperCase()))
+        || payments.find((item: any) => item?.invoiceUrl);
+
+      if (payment?.invoiceUrl) {
+        return `${payment.invoiceUrl}${payment.invoiceUrl.includes('?') ? '&' : '?'}autoRedirect=true`;
+      }
+    } catch (error: any) {
+      console.warn(`[Asaas] Falha ao consultar a cobrança da assinatura (tentativa ${attempt + 1}/8):`, error?.message || error);
+    }
+
+    if (attempt < 7) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+
+  return null;
 }
 
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
@@ -62,9 +99,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     let salonData: any;
 
     if (!salonDoc.exists) {
-      // New self-service registration: the client creates the Firebase user first,
-      // then this authenticated endpoint creates the tenant before billing starts.
-      // The deterministic salon_${uid} id prevents creating a tenant for another user.
       if (salonId !== `salon_${user.uid}`) {
         return res.status(403).json({ success: false, error: 'Identificador de empresa inválido.' });
       }
@@ -177,12 +211,14 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
 
     let invoiceUrl: string | null = null;
     try {
-      invoiceUrl = await billingService.getSubscriptionInvoiceUrl(subscription.id);
-    } catch (err) {
-      console.warn('[Asaas] Não foi possível obter a invoiceUrl da assinatura:', err);
+      invoiceUrl = await resolveAsaasInvoiceUrl(subscription.id, adminDb);
+    } catch (err: any) {
+      console.error('[Asaas] Falha ao resolver URL de pagamento:', err?.message || err);
+      return res.status(502).json({ success: false, code: 'PAYMENT_PROVIDER_NOT_CONFIGURED', error: err?.message || 'Não foi possível preparar o pagamento.' });
     }
+
     if (!invoiceUrl) {
-      return res.status(502).json({ success: false, error: 'A assinatura foi criada, mas o Asaas ainda não disponibilizou uma página de pagamento. Aguarde alguns segundos e tente novamente.', providerSubscriptionId: subscription.id });
+      return res.status(502).json({ success: false, code: 'PAYMENT_PAGE_NOT_READY', error: 'A assinatura foi criada, mas o Asaas ainda está preparando a página de pagamento. Aguarde alguns segundos e tente novamente.', providerSubscriptionId: subscription.id });
     }
 
     return res.status(200).json({ success: true, checkoutUrl: invoiceUrl, invoiceUrl, bankSlipUrl: invoiceUrl, providerSubscriptionId: subscription.id, returnUrl: paymentCallback.successUrl, billingCycle: selectedCycle });
@@ -190,6 +226,11 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     console.error('[Asaas] Create Checkout Error:', error);
     const statusCode = Number(error?.statusCode);
     if (statusCode === 409) return res.status(409).json({ success: false, code: 'CHECKOUT_IN_PROGRESS', error: error.message || 'Já existe uma tentativa de checkout em andamento.' });
-    return res.status(500).json({ success: false, error: error?.message || 'Erro interno ao criar pagamento.' });
+
+    const rawMessage = String(error?.message || '').trim();
+    const safeMessage = rawMessage.startsWith('Asaas API Error:')
+      ? 'O Asaas recusou a criação do pagamento. Verifique a configuração da conta de pagamentos e tente novamente.'
+      : (rawMessage || 'Erro interno ao criar pagamento.');
+    return res.status(500).json({ success: false, error: safeMessage });
   }
 }
