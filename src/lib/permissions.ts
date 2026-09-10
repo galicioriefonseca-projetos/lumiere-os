@@ -14,8 +14,16 @@ export function isManager(role: Role | string | undefined): boolean {
   return role === 'manager';
 }
 
+export function isReceptionist(role: Role | string | undefined): boolean {
+  return role === 'receptionist';
+}
+
 export function isAttendant(role: Role | string | undefined): boolean {
-  return role === 'attendant' || role === 'receptionist';
+  return role === 'attendant';
+}
+
+export function isFrontDesk(role: Role | string | undefined): boolean {
+  return role === 'receptionist' || role === 'attendant';
 }
 
 export function isProfessional(role: Role | string | undefined): boolean {
@@ -31,7 +39,7 @@ export function canManageSalonOperations(role: Role | string | undefined): boole
 }
 
 export function canManageChecklist(role: Role | string | undefined): boolean {
-  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'receptionist' || role === 'attendant';
+  return role === 'owner' || role === 'manager' || role === 'platform_admin';
 }
 
 export function canEvaluateTeam(role: Role | string | undefined): boolean {
@@ -39,7 +47,7 @@ export function canEvaluateTeam(role: Role | string | undefined): boolean {
 }
 
 export function canManageGoals(role: Role | string | undefined): boolean {
-  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'receptionist' || role === 'attendant';
+  return role === 'owner' || role === 'manager' || role === 'platform_admin';
 }
 
 export function canCreateInvites(role: Role | string | undefined): boolean {
@@ -55,15 +63,15 @@ export function canAccessChecklist(role: Role | string | undefined): boolean {
 }
 
 export function canAccessGoals(role: Role | string | undefined): boolean {
-  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'receptionist' || role === 'attendant';
+  return role === 'owner' || role === 'manager' || role === 'platform_admin';
 }
 
 export function canAccessProduction(role: Role | string | undefined): boolean {
-  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'receptionist' || role === 'attendant';
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'attendant';
 }
 
 export function canManageProduction(role: Role | string | undefined): boolean {
-  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'receptionist' || role === 'attendant';
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'attendant';
 }
 
 export function canAccessClients(role: Role | string | undefined): boolean {
@@ -86,6 +94,10 @@ export function canManageServices(role: Role | string | undefined): boolean {
   return role === 'owner' || role === 'manager' || role === 'platform_admin';
 }
 
+export function canAccessServices(role: Role | string | undefined): boolean {
+  return role === 'owner' || role === 'manager' || role === 'platform_admin';
+}
+
 export function canManageBilling(role: Role | string | undefined): boolean {
   return role === 'owner' || role === 'platform_admin';
 }
@@ -95,7 +107,7 @@ export function canTransferOwnership(role: Role | string | undefined): boolean {
 }
 
 export function canCreateProductionEntry(role: Role | string | undefined): boolean {
-  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'receptionist' || role === 'attendant';
+  return role === 'owner' || role === 'manager' || role === 'platform_admin' || role === 'attendant';
 }
 
 export function canViewCommissions(role: Role | string | undefined): boolean {
@@ -124,81 +136,85 @@ export function canAccessProfessionalDashboard(role: Role | string | undefined):
 
 export function canAccessRoute(role: Role | undefined, route: string): boolean {
   if (!role || !ROLES.includes(role)) return false;
-  
   if (isPlatformAdmin(role)) return true;
 
-  // Normalise routes
-  const cleanRoute = route.split('?')[0].replace(/\/$/, "");
+  const cleanRoute = route.split('?')[0].replace(/\/$/, '');
 
-  if (cleanRoute === '/master') {
-    return isPlatformAdmin(role);
-  }
+  if (cleanRoute === '/master') return false;
 
-  // Common public or onboarding routes
   if (cleanRoute === '/' || cleanRoute === '/login' || cleanRoute === '/cadastro' || cleanRoute === '/cadastro-profissional') {
     return true;
   }
 
   if (cleanRoute.startsWith('/onboarding')) {
-    // Only owner, manager and platform_admin can do onboarding of the salon
-    return isOwner(role) || isManager(role) || isPlatformAdmin(role);
+    return isOwner(role) || isManager(role);
   }
 
-  // Professional sub-route restrictions
   if (isProfessional(role)) {
     return cleanRoute === '/dashboard' || cleanRoute === '/dashboard/meu-painel' || cleanRoute === '/dashboard/profissional' || cleanRoute === '/dashboard/gamificacao';
   }
 
-  // Dashboard root is accessible to anyone logged in
   if (cleanRoute === '/dashboard' || cleanRoute === '/dashboard/') {
     return true;
   }
 
-  // Attendant/Receptionist restrictions
+  // Reception and attendants have an intentionally limited operational scope.
+  if (isReceptionist(role)) {
+    const allowedReceptionistRoutes = [
+      '/dashboard',
+      '/dashboard/agendamentos',
+      '/dashboard/clientes',
+      '/dashboard/crm',
+      '/dashboard/checklist',
+      '/dashboard/gamificacao',
+      '/dashboard/minha-conta'
+    ];
+    return allowedReceptionistRoutes.includes(cleanRoute);
+  }
+
   if (isAttendant(role)) {
-    // Only can access allowed sub-routes
     const allowedAttendantRoutes = [
       '/dashboard',
       '/dashboard/agendamentos',
       '/dashboard/clientes',
       '/dashboard/crm',
-      '/dashboard/servicos',
-      '/dashboard/precificacao',
       '/dashboard/checklist',
-      '/dashboard/metas',
-      '/dashboard/gamificacao'
+      '/dashboard/gamificacao',
+      '/dashboard/minha-conta'
     ];
     return allowedAttendantRoutes.includes(cleanRoute);
   }
 
-  // Professional-specific panel
-  if (cleanRoute === '/dashboard/profissional' || cleanRoute === '/dashboard/meu-painel') {
-    return true; // We can let professionals and owners/managers enter as needed
-  }
-
-  // Route-specific checks
+  // Owner/manager route-specific checks.
   switch (cleanRoute) {
     case '/dashboard/comissoes':
       return canViewCommissions(role);
     case '/dashboard/minha-conta':
-      return true; // All signed-in roles can see their relevant My Account view
+      return true;
     case '/dashboard/equipe':
       return canManageTeam(role);
     case '/dashboard/metas':
-      return canManageGoals(role);
+      return canAccessGoals(role);
     case '/dashboard/checklist':
       return canAccessOperationalChecklist(role);
     case '/dashboard/servicos':
-      // Owner, Manager, Receptionist, Attendant have access (read-only or manage)
-      return isOwner(role) || isManager(role) || isAttendant(role);
+      return canAccessServices(role);
     case '/dashboard/categorias':
       return isOwner(role) || isManager(role);
     case '/dashboard/clientes':
     case '/dashboard/crm':
-      return isOwner(role) || isManager(role) || isAttendant(role);
+      return canAccessClients(role);
     case '/dashboard/agendamentos':
-      return true; // Others see full. All have access.
+      return canAccessAgenda(role);
+    case '/dashboard/financeiro':
+    case '/dashboard/estoque':
+    case '/dashboard/precificacao':
+    case '/dashboard/relatorios':
+      return isOwner(role) || isManager(role);
+    case '/dashboard/assinatura':
+    case '/dashboard/dados-faturamento':
+      return isOwner(role);
     default:
-      return true;
+      return isOwner(role) || isManager(role);
   }
 }
