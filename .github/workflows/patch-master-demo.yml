@@ -2,7 +2,8 @@ name: Apply Master Demo Panel Patch
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - 'scripts/patch-master-demo.mjs'
       - 'src/pages/MasterPanel.tsx'
@@ -13,7 +14,6 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, 'chore(master): apply demo panel patch') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
