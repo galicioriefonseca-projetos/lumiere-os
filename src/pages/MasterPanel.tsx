@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
 import { APP_INFO } from '../config/appInfo';
+import DemoControlCard from '../components/admin/DemoControlCard';
 
 export default function MasterPanel() {
   const { logout, isPlatformAdmin, userData, diagnostics, currentUser } = useAuth();
@@ -26,7 +27,7 @@ export default function MasterPanel() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [founderMigrationOption, setFounderMigrationOption] = useState<'A' | 'B'>('A');
 
-  const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'asaas'>('salons');
+  const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'asaas' | 'demo'>('salons');
   const [billingSettings, setAsaasSettings] = useState<any>({
     mode: 'sandbox' as 'sandbox' | 'production',
     apiKey: '',
@@ -628,6 +629,16 @@ export default function MasterPanel() {
             }`}
           >
             Empresas ({salons.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('demo')}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all relative ${
+              activeTab === 'demo'
+                ? 'border-[#D4AF37] text-[#D4AF37] font-semibold'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Demonstração
           </button>
           <button
             onClick={() => setActiveTab('bugs')}
