@@ -1,11 +1,11 @@
-import { 
-  LayoutDashboard, 
-  Users, 
-  Scissors, 
-  CalendarDays, 
-  Target, 
-  CheckSquare, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Users,
+  Scissors,
+  CalendarDays,
+  Target,
+  CheckSquare,
+  Settings,
   CreditCard,
   FileText,
   TrendingUp,
@@ -49,8 +49,10 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
       }
     ];
   }
-  
-  if (role === 'attendant' || role === 'receptionist') {
+
+  // Receptionist: front-desk operation only. No management, finance,
+  // team, commission, pricing, goals or strategic reporting.
+  if (role === 'receptionist') {
     return [
       {
         category: 'Principal',
@@ -59,26 +61,49 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
         ]
       },
       {
-        category: 'Atendimentos & Vendas',
+        category: 'Atendimento',
         items: [
           { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
           { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+          { name: 'CRM', href: '/dashboard/crm', icon: Users },
+        ]
+      },
+      {
+        category: 'Rotina',
+        items: [
+          { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
+          { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
+          { name: 'Minha Conta', href: '/dashboard/minha-conta', icon: Settings },
+        ]
+      }
+    ];
+  }
+
+  // Attendant: operational access plus production recording, but no
+  // management, finance, team, commission, pricing or strategic reporting.
+  if (role === 'attendant') {
+    return [
+      {
+        category: 'Principal',
+        items: [
+          { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        ]
+      },
+      {
+        category: 'Atendimento',
+        items: [
+          { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
+          { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+          { name: 'CRM', href: '/dashboard/crm', icon: Users },
           { name: 'Registro de Produção', href: '/dashboard/agendamentos', icon: FileText },
         ]
       },
       {
-        category: 'Supervisão & Qualidade',
+        category: 'Rotina',
         items: [
           { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
-          { name: 'Metas', href: '/dashboard/metas', icon: Target },
           { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
-        ]
-      },
-      {
-        category: 'Serviços',
-        items: [
-          { name: 'Serviços do Salão', href: '/dashboard/servicos', icon: Scissors },
-          { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
+          { name: 'Minha Conta', href: '/dashboard/minha-conta', icon: Settings },
         ]
       }
     ];
