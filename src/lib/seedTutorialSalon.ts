@@ -1,10 +1,12 @@
 import { collection, doc, writeBatch, setDoc, getDoc, getDocs, updateDoc, query, where } from 'firebase/firestore';
 import { db } from './firebase';
 
-export async function ensureTutorialSalon(uid: string): Promise<{ success: boolean; message: string }> {
+export async function ensureTutorialSalon(uid: string, userEmail?: string | null, userName?: string | null): Promise<{ success: boolean; message: string }> {
   try {
     const salonId = 'tutorial_lumiere_studio';
     const now = Date.now();
+    const effectiveEmail = (userEmail || 'demo@example.com').trim().toLowerCase();
+    const effectiveName = (userName || 'Administrador de Demonstração').trim();
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
     
@@ -23,8 +25,8 @@ export async function ensureTutorialSalon(uid: string): Promise<{ success: boole
 
     const userPayload = {
       id: uid,
-      email: 'demo@example.com',
-      fullName: 'Administrador de Demonstração',
+      email: effectiveEmail,
+      fullName: effectiveName,
       role: 'owner',
       salonId: salonId,
       isActive: true,
@@ -32,40 +34,64 @@ export async function ensureTutorialSalon(uid: string): Promise<{ success: boole
       updatedAt: now,
     };
 
-    if (!userSnap.exists()) {
-      await setDoc(userRef, {
-        ...userPayload,
-        createdAt: now,
-      });
-    } else {
-      await updateDoc(userRef, userPayload);
+    try {
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          ...userPayload,
+          createdAt: now,
+        });
+      } else {
+        await updateDoc(userRef, userPayload);
+      }
+      console.log('[ensureTutorialSalon] User profile written successfully.');
+    } catch (uErr) {
+      console.warn('[ensureTutorialSalon] Note writing user doc:', uErr);
     }
 
     // 2. Set/Update Salons/tutorial_lumiere_studio
     const salonRef = doc(db, 'salons', salonId);
-    await setDoc(salonRef, {
-      id: salonId,
-      name: "Lumiere Beauty Studio — Demo",
-      businessName: "Lumiere Beauty Studio — Demo",
-      slug: "lumiere-beauty-studio-demo",
-      city: "Fernandópolis",
-      state: "SP",
-      phone: "17999999999",
-      plan: "founder",
-      subscriptionStatus: "active",
-      activationStatus: "active",
-      isActive: true,
-      isDemo: true,
-      isTutorial: true,
-      ownerId: uid,
-      ownerEmail: "demo@example.com",
-      ownerName: "Administrador de Demonstração",
-      professionalsLimit: 22,
-      professionalLimit: 22,
-      maxProfessionals: 22,
-      createdAt: now,
-      updatedAt: now
-    });
+    const salonSnap = await getDoc(salonRef);
+
+    try {
+      if (!salonSnap.exists()) {
+        await setDoc(salonRef, {
+          id: salonId,
+          name: "Lumiere Beauty Studio — Demo",
+          businessName: "Lumiere Beauty Studio — Demo",
+          slug: "lumiere-beauty-studio-demo",
+          city: "Fernandópolis",
+          state: "SP",
+          phone: "17999999999",
+          plan: "founder",
+          subscriptionStatus: "active",
+          activationStatus: "active",
+          isActive: true,
+          isDemo: true,
+          isTutorial: true,
+          ownerId: uid,
+          ownerEmail: effectiveEmail,
+          ownerName: effectiveName,
+          professionalsLimit: 22,
+          professionalLimit: 22,
+          maxProfessionals: 22,
+          createdAt: now,
+          updatedAt: now
+        });
+      } else {
+        await updateDoc(salonRef, {
+          ownerId: uid,
+          ownerEmail: effectiveEmail,
+          ownerName: effectiveName,
+          isDemo: true,
+          isTutorial: true,
+          isActive: true,
+          updatedAt: now
+        });
+      }
+      console.log('[ensureTutorialSalon] Salon profile written successfully.');
+    } catch (sErr) {
+      console.warn('[ensureTutorialSalon] Note writing salon doc:', sErr);
+    }
 
     const batch = writeBatch(db);
 

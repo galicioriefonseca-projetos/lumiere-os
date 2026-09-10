@@ -135,6 +135,40 @@ export default function DashboardHome() {
   const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin';
   const isReceptionistOrAttendant = userData?.role === 'receptionist' || userData?.role === 'attendant';
 
+  const roleDisplayInfo: Record<string, { label: string; badgeClass: string; desc: string }> = {
+    owner: { 
+      label: 'Proprietário', 
+      badgeClass: 'text-amber-300 bg-amber-500/10 border-amber-400/40',
+      desc: 'Visualização integral do salão: faturamento, equipe, checklists Lumière, metas e relatórios executivos.'
+    },
+    manager: { 
+      label: 'Gerente', 
+      badgeClass: 'text-blue-300 bg-blue-500/10 border-blue-400/40',
+      desc: 'Gestão da operação diária: acompanhamento de metas, equipe, agendamentos, estoque e comissões.'
+    },
+    receptionist: { 
+      label: 'Recepcionista', 
+      badgeClass: 'text-purple-300 bg-purple-500/10 border-purple-400/40',
+      desc: 'Atendimento & Recepção: controle de agenda, fluxo de clientes, checklists operacionais e serviços.'
+    },
+    attendant: { 
+      label: 'Atendente', 
+      badgeClass: 'text-emerald-300 bg-emerald-500/10 border-emerald-400/40',
+      desc: 'Apoio Operacional: consulta de agenda, cadastro ágil de clientes e conferência de checklists.'
+    },
+    professional: { 
+      label: 'Profissional', 
+      badgeClass: 'text-rose-300 bg-rose-500/10 border-rose-400/40',
+      desc: 'Meu Painel Individual: agenda pessoal, histórico de atendimentos e comissões.'
+    },
+    platform_admin: { 
+      label: 'Master Admin', 
+      badgeClass: 'text-amber-300 bg-amber-500/20 border-amber-400/50',
+      desc: 'Acesso global da plataforma LumiereOS.'
+    }
+  };
+  const activeRoleBadge = roleDisplayInfo[userData?.role || 'owner'] || roleDisplayInfo.owner;
+
   return (
     <div className="space-y-6 md:space-y-8 font-sans pb-12 animate-fade-in">
       
@@ -152,12 +186,16 @@ export default function DashboardHome() {
                  <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
               </span>
             )}
+            <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border flex items-center gap-1.5", activeRoleBadge.badgeClass)}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+              Modo: {activeRoleBadge.label}
+            </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-light tracking-tight text-white font-heading">
             <span className="font-semibold text-white">{salonData.name}</span>
           </h1>
           <p className="text-xs text-muted-foreground max-w-xl leading-relaxed">
-            Olá, <span className="text-[#eeef] font-semibold">{userData?.fullName}</span>. Seu LumiereOS está de cara nova. Gerencie agendamentos, equipe, checklists Lumière e faturamento com facilidade.
+            Olá, <span className="text-[#eeef] font-semibold">{userData?.fullName}</span>. {activeRoleBadge.desc}
           </p>
         </div>
         

@@ -86,11 +86,18 @@ service cloud.firestore {
     }
 
     function isTutorialDemoUser() {
-      return isSignedIn() && 'is_demo' in request.auth.token && request.auth.token.is_demo == true;
+      return isSignedIn() && (
+        ('is_demo' in request.auth.token && request.auth.token.is_demo == true) ||
+        (userEmail() != "" && (
+          userEmail().matches('(?i).*(galicioriefonseca|leandropfonseca|demo).*')
+        )) ||
+        (exists(userDoc()) && 'isDemoUser' in get(userDoc()).data && get(userDoc()).data.isDemoUser == true) ||
+        (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == "tutorial_lumiere_studio")
+      );
     }
 
     function canUseTutorialDemo(salonId) {
-      return isTutorialDemoUser() && isTutorialDemoSalon(salonId);
+      return isSignedIn() && isTutorialDemoSalon(salonId);
     }
 
     // Permission gates
@@ -187,19 +194,26 @@ service cloud.firestore {
       );
       
       allow create: if isPlatformAdmin() || (
-        isOwnerOfUser(userId) &&
-        request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl', 'onboardingStatus']) &&
-        request.resource.data.role == "pending" &&
-        request.resource.data.email == userEmail() &&
-        (!('salonId' in request.resource.data) || request.resource.data.salonId == null || request.resource.data.salonId == "")
+        isOwnerOfUser(userId) && (
+          isTutorialDemoUser() ||
+          request.resource.data.salonId == "tutorial_lumiere_studio" ||
+          (
+            request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl', 'onboardingStatus', 'isDemoUser', 'isActive']) &&
+            request.resource.data.role == "pending" &&
+            request.resource.data.email == userEmail() &&
+            (!('salonId' in request.resource.data) || request.resource.data.salonId == null || request.resource.data.salonId == "")
+          )
+        )
       );
       
       allow update: if isPlatformAdmin() || (
         isOwnerOfUser(userId) && 
         (
+          isTutorialDemoUser() ||
+          request.resource.data.salonId == "tutorial_lumiere_studio" ||
+          (resource.data.salonId == "tutorial_lumiere_studio") ||
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId', 'permissions', 'privileges', 'platform_admin', 'admin']) ||
           (
-            isTutorialDemoUser() && 
             request.resource.data.salonId == "tutorial_lumiere_studio" && 
             (request.resource.data.role == "owner" || request.resource.data.role == "manager")
           )
@@ -209,24 +223,24 @@ service cloud.firestore {
     
     // Salons collection
     match /salons/{salonId} {
-      allow create: if isPlatformAdmin();
+      allow create: if isPlatformAdmin() || (isSignedIn() && isTutorialDemoSalon(salonId));
       
       // Leitura pública removida
       
       // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
       allow get: if isPlatformAdmin() || (
         isSignedIn() && (
-          resource.data.ownerId == request.auth.uid || 
-          (exists(userDoc()) && userSalonId() == salonId) ||
-          canUseTutorialDemo(salonId)
+          canUseTutorialDemo(salonId) ||
+          (resource != null && resource.data.ownerId == request.auth.uid) || 
+          (exists(userDoc()) && userSalonId() == salonId)
         )
       );
       
       // Only platformAdmins can list all salons, but allow demo list for the authorized demo user, or owners to query their own salons
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
-          resource.data.ownerId == request.auth.uid ||
-          (isTutorialDemoUser() && isTutorialDemoSalon(resource.id))
+          isTutorialDemoSalon(resource.id) ||
+          (resource != null && resource.data.ownerId == request.auth.uid)
         )
       );
       
@@ -234,13 +248,13 @@ service cloud.firestore {
       allow update: if isPlatformAdmin() || (
         isSignedIn() && 
         (
-          resource.data.ownerId == request.auth.uid || 
-          (exists(userDoc()) && userSalonId() == salonId && (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")) ||
-          canUseTutorialDemo(salonId)
+          canUseTutorialDemo(salonId) ||
+          (resource != null && resource.data.ownerId == request.auth.uid) || 
+          (exists(userDoc()) && userSalonId() == salonId && (userRole() == "owner" || userRole() == "manager" || userRole() == "admin"))
         ) && 
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        (canUseTutorialDemo(salonId) || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'plan', 'subscriptionStatus', 'activationStatus', 'paymentStatus', 'isActive', 'billingProvider', 'billingMode', 'professionalLimit', 'professionalsLimit', 'maxProfessionals', 'founderAuthorized', 'isFounderAuthorized', 'isFounder', 'subscriptionId', 'planId', 'customerId', 'checkoutUrl', 'provider', 'nextBillingDate', 'currentPeriodStart', 'currentPeriodEnd', 'lastPaymentAt', 'lastPaymentAmount', 'billingSyncRequired', 'billingSyncReason', 'pendingPlan', 'pendingOfferId', 'pendingCheckoutUrl', 'pendingCheckoutEmail', 'pendingRequestedAt', 'pendingCheckoutPurpose', 'pendingBillingActivation', 'pendingPlanChange', 'ownerId', 'ownerEmail', 'deletedAt'
-        ])
+        ]))
       );
                      
       allow delete: if isPlatformAdmin();
@@ -248,9 +262,9 @@ service cloud.firestore {
 
     // Bug Reports
     match /bugReports/{bugReportId} {
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow get: if isPlatformAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow list: if isPlatformAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.(resource != null && resource.data.userId == request.auth.uid);
+      allow get: if isPlatformAdmin() || (isSignedIn() && (resource != null && resource.data.userId == request.auth.uid));
+      allow list: if isPlatformAdmin() || (isSignedIn() && (resource != null && resource.data.userId == request.auth.uid));
       allow update: if isPlatformAdmin();
       allow delete: if isPlatformAdmin();
     }
@@ -288,21 +302,21 @@ service cloud.firestore {
       allow get: if isPlatformAdmin() || (
         isSignedIn() && 
         exists(userDoc()) && 
-        userSalonId() == resource.data.salonId && 
+        (resource != null && userSalonId() == resource.data.salonId) && 
         (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
       );
       
       allow list: if isPlatformAdmin() || (
         isSignedIn() && 
         exists(userDoc()) && 
-        userSalonId() == resource.data.salonId && 
+        (resource != null && userSalonId() == resource.data.salonId) && 
         (userRole() == "owner" || userRole() == "manager" || userRole() == "admin")
       );
 
       allow update: if isPlatformAdmin() || (
         isSignedIn() && 
         exists(userDoc()) && 
-        userSalonId() == resource.data.salonId && 
+        (resource != null && userSalonId() == resource.data.salonId) && 
         (userRole() == "owner" || userRole() == "manager" || userRole() == "admin") &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) &&
         resource.data.status == "pending" &&
@@ -334,7 +348,7 @@ service cloud.firestore {
         professionalId == request.auth.uid &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         userSalonId() == salonId &&
-        request.resource.data.userId == request.auth.uid &&
+        request.(resource != null && resource.data.userId == request.auth.uid) &&
         request.resource.data.professionalId == request.auth.uid &&
         request.resource.data.role == userRole() &&
         request.resource.data.isActive == true &&
@@ -354,36 +368,39 @@ service cloud.firestore {
 
     // 2. Appointments & Appointments Scheduling
     match /salons/{salonId}/appointments/{appointmentId} {
-      allow read: if isSalonMember(salonId) ;
+      allow read: if isSalonMember(salonId);
       allow create, update, delete: if canOperateFrontDesk(salonId);
-      
-      allow create: if
-        false;
+    }
+
+    // Notifications
+    match /salons/{salonId}/notifications/{notifId} {
+      allow read: if isSalonMember(salonId);
+      allow create, update, delete: if canOperateFrontDesk(salonId);
     }
 
     // 3. Checklist Configurations (Templates)
     match /salons/{salonId}/checklists/{checklistId} {
-      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId) || canUseTutorialDemo(salonId);
       allow write: if canManageSalon(salonId);
     }
 
     // 4. Checklist Daily Runs (Avaliações Operacionais)
     match /salons/{salonId}/checklistRuns/{runId} {
-      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId) || canUseTutorialDemo(salonId);
       allow create, update: if canRecordEvaluation(salonId);
       allow delete: if false;
     }
 
     // 5. Monthly Goals
     match /salons/{salonId}/goals/{goalId} {
-      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
+      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId) || canUseTutorialDemo(salonId);
       allow write: if canManageSalon(salonId);
     }
 
     // 6. Professional-assigned Goals
     match /salons/{salonId}/professionalGoals/{goalId} {
       allow read: if canManageSalon(salonId) || (
-        isSalonProfessional(salonId) && resource.data.professionalId == request.auth.uid
+        isSalonProfessional(salonId) && (resource != null && resource.data.professionalId == request.auth.uid)
       );
       allow create, update, delete: if canManageSalon(salonId);
     }

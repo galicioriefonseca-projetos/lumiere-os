@@ -163,6 +163,7 @@ export function canAccessRoute(role: Role | undefined, route: string): boolean {
       '/dashboard/clientes',
       '/dashboard/crm',
       '/dashboard/servicos',
+      '/dashboard/precificacao',
       '/dashboard/checklist',
       '/dashboard/metas',
       '/dashboard/gamificacao'

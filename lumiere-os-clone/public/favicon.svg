@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <rect width="512" height="512" rx="112" fill="#050505"/>
+  <g transform="translate(0, 16)">
+    <!-- Main base bar of the crown -->
+    <path d="M140 370 h232 v20 a10 10 0 0 1 -10 10 h-212 a10 10 0 0 1 -10 -10 z" fill="#D4AF37"/>
+    <path d="M145 350 h222 v12 h-222 z" fill="#D4AF37" opacity="0.8"/>
+    <!-- Five peaks of the crown -->
+    <!-- Middle peak (tallest) -->
+    <path d="M256 160 L285 340 H227 Z" fill="#D4AF37"/>
+    <!-- Left-middle peak -->
+    <path d="M200 200 L235 340 H185 Z" fill="#D4AF37"/>
+    <!-- Right-middle peak -->
+    <path d="M312 200 L327 340 H277 Z" fill="#D4AF37"/>
+    <!-- Left peak -->
+    <path d="M150 250 L185 340 H140 Z" fill="#D4AF37"/>
+    <!-- Right peak -->
+    <path d="M362 250 L372 340 H327 Z" fill="#D4AF37"/>
+    
+    <!-- Circles at peaks -->
+    <circle cx="150" cy="242" r="10" fill="#D4AF37"/>
+    <circle cx="200" cy="190" r="12" fill="#D4AF37"/>
+    <circle cx="256" cy="148" r="15" fill="#D4AF37"/>
+    <circle cx="312" cy="190" r="12" fill="#D4AF37"/>
+    <circle cx="362" cy="242" r="10" fill="#D4AF37"/>
+  </g>
+</svg>

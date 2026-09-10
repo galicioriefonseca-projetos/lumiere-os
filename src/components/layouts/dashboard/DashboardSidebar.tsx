@@ -141,9 +141,19 @@ export function DashboardSidebar({
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D4AF37]/15 to-[#D4AF37]/5 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] font-bold shadow-[0_0_10px_rgba(212,175,55,0.05)] font-heading">
             {userData?.fullName?.charAt(0).toUpperCase()}
           </div>
-          <div className="overflow-hidden">
+          <div className="overflow-hidden flex-1">
             <p className="text-xs font-semibold text-white truncate">{userData?.fullName}</p>
-            <p className="text-[10px] text-muted-foreground truncate">{isPlatformAdmin ? 'Administrador Global' : (salonData?.name || 'Sem salão')}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 font-semibold uppercase tracking-wider whitespace-nowrap">
+                {userData?.role === 'owner' ? 'Proprietário' :
+                 userData?.role === 'manager' ? 'Gerente' :
+                 userData?.role === 'receptionist' ? 'Recepcionista' :
+                 userData?.role === 'attendant' ? 'Atendente' :
+                 userData?.role === 'professional' ? 'Profissional' :
+                 userData?.role || 'Usuário'}
+              </span>
+              <span className="text-[10px] text-muted-foreground truncate">{isPlatformAdmin ? 'Admin Global' : (salonData?.name || 'Sem salão')}</span>
+            </div>
           </div>
         </div>
         <BugReportDialog />
