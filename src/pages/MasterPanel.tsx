@@ -665,6 +665,10 @@ export default function MasterPanel() {
           </button>
         </div>
 
+        {activeTab === 'demo' && (
+          <DemoControlCard salonId={salons.find((salon) => /lumiere\s*beauty/i.test(salon.name || ''))?.id} />
+        )}
+
         {activeTab === 'salons' && (
         <Card className="border-border bg-black/40">
            <CardHeader>
