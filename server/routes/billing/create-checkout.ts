@@ -24,12 +24,7 @@ function planCyclePrice(plan: any, cycle: string): number {
   return Number(plan.annualPrice || 0);
 }
 
-/**
- * Asaas can take a few seconds to generate the first charge after a subscription
- * is created. Resolve the hosted invoice directly from the subscription's first
- * payment, with a short bounded retry window.
- */
-async function resolveAsaasInvoiceUrl(subscriptionId: string, adminDb: FirebaseFirestore.Firestore): Promise<string | null> {
+async function resolveAsaasInvoiceUrl(subscriptionId: string, adminDb: any): Promise<string | null> {
   const settingsDoc = await adminDb.collection('settings').doc('asaas').get();
   const settingsData = settingsDoc.exists ? settingsDoc.data() || {} : {};
   const apiKey = String(settingsData.apiKey || env.asaas.apiKey || '').trim();
@@ -44,19 +39,14 @@ async function resolveAsaasInvoiceUrl(subscriptionId: string, adminDb: FirebaseF
       const payments = await asaasProvider.getPaymentsBySubscription(mode, apiKey, subscriptionId);
       const payment = payments.find((item: any) => item?.invoiceUrl && ['PENDING', 'OVERDUE'].includes(String(item.status || '').toUpperCase()))
         || payments.find((item: any) => item?.invoiceUrl);
-
       if (payment?.invoiceUrl) {
         return `${payment.invoiceUrl}${payment.invoiceUrl.includes('?') ? '&' : '?'}autoRedirect=true`;
       }
     } catch (error: any) {
       console.warn(`[Asaas] Falha ao consultar a cobrança da assinatura (tentativa ${attempt + 1}/8):`, error?.message || error);
     }
-
-    if (attempt < 7) {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    }
+    if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 1500));
   }
-
   return null;
 }
 
@@ -73,36 +63,24 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
 
     const reqMethod = String(rawPaymentMethod || '').trim().toUpperCase();
-    if (reqMethod === 'BOLETO') {
-      return res.status(400).json({ success: false, error: 'A forma de pagamento Boleto não está disponível. Escolha Cartão de Crédito ou Pix.' });
-    }
+    if (reqMethod === 'BOLETO') return res.status(400).json({ success: false, error: 'A forma de pagamento Boleto não está disponível. Escolha Cartão de Crédito ou Pix.' });
     const chosenMethod: 'CREDIT_CARD' | 'PIX' = reqMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD';
 
     let user;
-    try {
-      user = await verifyIdToken(req);
-    } catch (err: any) {
-      return res.status(401).json({ success: false, error: err.message || 'Não autorizado' });
-    }
+    try { user = await verifyIdToken(req); }
+    catch (err: any) { return res.status(401).json({ success: false, error: err.message || 'Não autorizado' }); }
 
     const adminDb = getAdminDb();
     const plan = await billingService.getPlan(planId);
-    if (plan.active === false || plan.legacy === true) {
-      return res.status(400).json({ success: false, code: 'PLAN_UNAVAILABLE', error: 'Este plano não está disponível para novas contratações.' });
-    }
-    if (plan.customPricing === true || Number(planCyclePrice(plan, selectedCycle)) <= 0) {
-      return res.status(400).json({ success: false, code: 'PLAN_CONTACT_SALES', error: 'Este plano requer contato com a equipe comercial.' });
-    }
+    if (plan.active === false || plan.legacy === true) return res.status(400).json({ success: false, code: 'PLAN_UNAVAILABLE', error: 'Este plano não está disponível para novas contratações.' });
+    if (plan.customPricing === true || Number(planCyclePrice(plan, selectedCycle)) <= 0) return res.status(400).json({ success: false, code: 'PLAN_CONTACT_SALES', error: 'Este plano requer contato com a equipe comercial.' });
 
     const salonRef = adminDb.collection('salons').doc(salonId);
     const salonDoc = await salonRef.get();
     let salonData: any;
 
     if (!salonDoc.exists) {
-      if (salonId !== `salon_${user.uid}`) {
-        return res.status(403).json({ success: false, error: 'Identificador de empresa inválido.' });
-      }
-
+      if (salonId !== `salon_${user.uid}`) return res.status(403).json({ success: false, error: 'Identificador de empresa inválido.' });
       const body = req.body || {};
       const now = Date.now();
       const ownerName = String(body.ownerName || body.customerData?.legalName || user.name || '').trim();
@@ -111,58 +89,20 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       const email = String(user.email || body.email || '').trim().toLowerCase();
       const city = String(body.city || '').trim();
       const state = String(body.state || '').trim().toUpperCase();
-      if (ownerName.length < 2 || salonName.length < 2 || !email) {
-        return res.status(422).json({ success: false, code: 'REGISTRATION_DATA_INVALID', error: 'Dados básicos do estabelecimento estão incompletos.' });
-      }
-
+      if (ownerName.length < 2 || salonName.length < 2 || !email) return res.status(422).json({ success: false, code: 'REGISTRATION_DATA_INVALID', error: 'Dados básicos do estabelecimento estão incompletos.' });
       salonData = {
-        id: salonId,
-        name: salonName,
-        ownerName,
-        ownerId: user.uid,
-        ownerEmail: email,
-        phone,
-        businessType: mapBusinessType(String(body.businessSegment || '')),
-        city,
-        state,
-        plan: planId,
-        subscriptionStatus: 'pending_payment',
-        activationStatus: 'pending',
-        paymentStatus: 'pending',
-        previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000,
-        isActive: false,
-        professionalsLimit: Number(plan.maxProfessionals || 0),
-        professionalLimit: Number(plan.maxProfessionals || 0),
-        maxProfessionals: Number(plan.maxProfessionals || 0),
-        billingEmail: email,
-        onboardingCompleted: false,
-        billing: {
-          provider: 'asaas',
-          status: 'PENDING_PAYMENT',
-          planId,
-          billingCycle: selectedCycle,
-          value: planCyclePrice(plan, selectedCycle),
-          updatedAt: new Date(now).toISOString()
-        },
-        createdAt: now,
-        updatedAt: now
+        id: salonId, name: salonName, ownerName, ownerId: user.uid, ownerEmail: email, phone,
+        businessType: mapBusinessType(String(body.businessSegment || '')), city, state, plan: planId,
+        subscriptionStatus: 'pending_payment', activationStatus: 'pending', paymentStatus: 'pending',
+        previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000, isActive: false,
+        professionalsLimit: Number(plan.maxProfessionals || 0), professionalLimit: Number(plan.maxProfessionals || 0), maxProfessionals: Number(plan.maxProfessionals || 0),
+        billingEmail: email, onboardingCompleted: false,
+        billing: { provider: 'asaas', status: 'PENDING_PAYMENT', planId, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), updatedAt: new Date(now).toISOString() },
+        createdAt: now, updatedAt: now
       };
-
       await salonRef.create(salonData);
-      await adminDb.collection('users').doc(user.uid).set({
-        id: user.uid,
-        email,
-        fullName: ownerName,
-        name: ownerName,
-        phone,
-        role: 'owner',
-        salonId,
-        onboardingStatus: 'pending_payment',
-        updatedAt: now
-      }, { merge: true });
-    } else {
-      salonData = salonDoc.data() || {};
-    }
+      await adminDb.collection('users').doc(user.uid).set({ id: user.uid, email, fullName: ownerName, name: ownerName, phone, role: 'owner', salonId, onboardingStatus: 'pending_payment', updatedAt: now }, { merge: true });
+    } else salonData = salonDoc.data() || {};
 
     const authResult = await canManageBilling(user, salonId, salonData);
     if (!authResult.authorized) return res.status(403).json({ success: false, error: authResult.reason || 'Sem permissão de faturamento para este salão.' });
@@ -180,43 +120,19 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     }
 
     try {
-      normalizeBillingCustomerData({
-        document,
-        legalName: billingData.legalName || salonData.name,
-        email: billingData.email || salonData.billingEmail || salonData.ownerEmail,
-        mobilePhone: billingData.mobilePhone || salonData.phone || salonData.whatsapp
-      });
+      normalizeBillingCustomerData({ document, legalName: billingData.legalName || salonData.name, email: billingData.email || salonData.billingEmail || salonData.ownerEmail, mobilePhone: billingData.mobilePhone || salonData.phone || salonData.whatsapp });
     } catch (validationError: any) {
       return res.status(422).json({ success: false, code: 'BILLING_DATA_INVALID', error: validationError.message, missingFields: ['document', 'legalName', 'email', 'mobilePhone'] });
     }
 
-    const billingType = chosenMethod;
     const appUrl = env.app.url.replace(/\/$/, '');
     const paymentCallback = {
-      successUrl: `${appUrl}/aguardando-pagamento?payment=success`,
-      cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`,
-      expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`,
-      autoRedirect: true
+      successUrl: `${appUrl}/aguardando-pagamento?payment=success`, cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`, expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`, autoRedirect: true
     };
 
-    const subscription = await billingService.createSubscription(
-      salonId,
-      planId,
-      billingType,
-      { ...salonData, billing: billingData, callback: paymentCallback },
-      undefined,
-      undefined,
-      selectedCycle as 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY'
-    );
+    const subscription = await billingService.createSubscription(salonId, planId, chosenMethod, { ...salonData, billing: billingData, callback: paymentCallback }, undefined, undefined, selectedCycle as 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY');
 
-    let invoiceUrl: string | null = null;
-    try {
-      invoiceUrl = await resolveAsaasInvoiceUrl(subscription.id, adminDb);
-    } catch (err: any) {
-      console.error('[Asaas] Falha ao resolver URL de pagamento:', err?.message || err);
-      return res.status(502).json({ success: false, code: 'PAYMENT_PROVIDER_NOT_CONFIGURED', error: err?.message || 'Não foi possível preparar o pagamento.' });
-    }
-
+    const invoiceUrl = await resolveAsaasInvoiceUrl(subscription.id, adminDb);
     if (!invoiceUrl) {
       return res.status(502).json({ success: false, code: 'PAYMENT_PAGE_NOT_READY', error: 'A assinatura foi criada, mas o Asaas ainda está preparando a página de pagamento. Aguarde alguns segundos e tente novamente.', providerSubscriptionId: subscription.id });
     }
@@ -226,11 +142,8 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     console.error('[Asaas] Create Checkout Error:', error);
     const statusCode = Number(error?.statusCode);
     if (statusCode === 409) return res.status(409).json({ success: false, code: 'CHECKOUT_IN_PROGRESS', error: error.message || 'Já existe uma tentativa de checkout em andamento.' });
-
     const rawMessage = String(error?.message || '').trim();
-    const safeMessage = rawMessage.startsWith('Asaas API Error:')
-      ? 'O Asaas recusou a criação do pagamento. Verifique a configuração da conta de pagamentos e tente novamente.'
-      : (rawMessage || 'Erro interno ao criar pagamento.');
+    const safeMessage = rawMessage.startsWith('Asaas API Error:') ? 'O Asaas recusou a criação do pagamento. Verifique a configuração da conta de pagamentos e tente novamente.' : (rawMessage || 'Erro interno ao criar pagamento.');
     return res.status(500).json({ success: false, error: safeMessage });
   }
 }
