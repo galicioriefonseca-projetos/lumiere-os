@@ -33,24 +33,31 @@ async function seedExistingSalon(salonId: string) {
   let batchWrites = 0;
   const commitIfNeeded = async () => { if (batchWrites >= 400) { await batch.commit(); batch = db.batch(); batchWrites = 0; } };
   const setDoc = async (path: string, data: Record<string, unknown>) => {
-    batch.set(db.doc(path), { ...data, demoData: true, demoSeedVersion: 2, updatedAt: now }, { merge: true });
+    batch.set(db.doc(path), { ...data, demoData: true, demoSeedVersion: 3, updatedAt: now }, { merge: true });
     writes++; batchWrites++; await commitIfNeeded();
   };
 
+  // A conta demo nunca deve herdar um plano comercial restritivo.
   await setDoc(`salons/${salonId}`, {
     name: salon.name || 'Lumiere Beauty Studio', businessName: salon.businessName || 'Lumiere Beauty Studio',
     businessType: 'salon', city: 'Fernandópolis', state: 'SP', country: 'Brasil',
     description: 'Studio de beleza completo para cabelos, unhas, estética e produção.',
     phone: salon.phone || '(17) 99700-0000', email: salon.email || 'contato@lumierebeauty.demo',
-    website: 'https://lumiere-os.vercel.app', plan: salon.plan || 'performance', subscriptionStatus: 'active',
+    website: 'https://lumiere-os.vercel.app', plan: 'performance_plus', subscriptionStatus: 'active',
     activationStatus: 'active', isActive: true, isDemo: true, demoData: true,
-    demoLabel: 'Conta de demonstração — todos os dados são fictícios', professionalsLimit: 30
+    demoLabel: 'Conta de demonstração — todos os dados são fictícios', professionalsLimit: 999,
+    demoUnlimitedFeatures: true
   });
 
   const roles = ['manager','receptionist','attendant','hair_stylist','colorist','hair_stylist','nail_designer','nail_designer','brow_designer','esthetician','makeup_artist','lash_designer','assistant','hair_stylist','colorist','nail_designer','waxing_specialist','sales_consultant','coordinator','professional'];
   const professionalIds: string[] = [];
+  const demoOwnerId = String(salon.ownerId || salon.ownerUid || salon.ownerUserId || '').trim();
   for (let i = 0; i < professionalNames.length; i++) {
-    const id = `${PREFIX}professional_${i + 1}`; professionalIds.push(id);
+    // Na simulação de "Profissional", o usuário autenticado é projetado sobre
+    // o primeiro profissional demo. Assim não é necessária uma conta Firebase
+    // separada apenas para visualizar o painel individual.
+    const id = i === 0 && demoOwnerId ? demoOwnerId : `${PREFIX}professional_${i + 1}`;
+    professionalIds.push(id);
     await setDoc(`salons/${salonId}/professionals/${id}`, {
       id, name: professionalNames[i], role: roles[i], primaryFunction: roles[i], professionalFunction: roles[i],
       phone: `(17) 9970-${String(1000 + i).slice(-4)}`, email: `profissional${i + 1}@lumierebeauty.demo`,
