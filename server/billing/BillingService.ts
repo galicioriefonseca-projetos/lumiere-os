@@ -56,11 +56,22 @@ export class BillingService {
     }
 
     if (!customerId) {
+      const billing = salonData?.billing || {};
+      const customerData = billing?.customerData || salonData?.billingData;
+      const name = billing?.legalName || customerData?.name || salonData?.name;
+      const email = billing?.email || customerData?.email || salonData?.email || salonData?.billingEmail || salonData?.ownerEmail;
+      const cpfCnpj = billing?.document || customerData?.cpfCnpj || salonData?.document || salonData?.cnpj;
+      const mobilePhone = billing?.mobilePhone || customerData?.mobilePhone || salonData?.phone || salonData?.whatsapp;
+
+      if (!name || !email || !cpfCnpj) {
+        throw new Error('Complete nome, e-mail e CPF/CNPJ em Dados de faturamento antes de configurar a forma de pagamento.');
+      }
+
       const customer = await asaasProvider.createCustomer(settings.mode, settings.apiKey, {
-        name: salonData?.billing?.legalName || salonData?.name || 'Cliente LumièreOS',
-        email: salonData?.billing?.email || salonData?.email || salonData?.billingEmail || salonData?.ownerEmail || 'contato@lumiereos.com',
-        cpfCnpj: salonData?.billing?.document || salonData?.document || salonData?.cnpj || '25068355801',
-        mobilePhone: salonData?.billing?.mobilePhone || salonData?.phone || salonData?.whatsapp || '11999999999',
+        name,
+        email,
+        cpfCnpj,
+        ...(mobilePhone ? { mobilePhone } : {}),
         externalReference: salonId
       });
       customerId = customer.id;
@@ -233,14 +244,17 @@ export class BillingService {
     const adminDb = getAdminDb();
     const data = (await adminDb.collection('salons').doc(salonId).get()).data();
     const subscriptionId = data?.billing?.subscriptionId;
+    const currentBilling = data?.billing || {};
+    const currentPlanId = currentBilling.planId || data?.plan;
     const plan = await this.getPlan(newPlanId);
     const settings = await this.getSettings();
-    const cycle = (data?.billing?.billingCycle || 'MONTHLY') as BillingCycle;
+    const cycle = (currentBilling.billingCycle || 'MONTHLY') as BillingCycle;
     const value = this.resolvePlanPricing(plan, cycle);
     if (!Number.isFinite(value) || value <= 0) throw new Error(`O plano ${newPlanId} não possui preço válido para a periodicidade ${cycle}.`);
+    if (currentPlanId === newPlanId) throw new Error('O estabelecimento já está neste plano.');
 
     let sub: any = null;
-    const isCancelledLocally = data?.billing?.status === 'CANCELLED' || data?.billing?.providerStatus === 'INACTIVE';
+    const isCancelledLocally = currentBilling.status === 'CANCELLED' || currentBilling.providerStatus === 'INACTIVE';
 
     if (subscriptionId && !isCancelledLocally) {
       try {
@@ -276,18 +290,19 @@ export class BillingService {
       });
     }
 
+    // A alteração fica pendente até confirmação financeira pelo webhook.
+    // O plano atual continua sendo a fonte de acesso enquanto o novo pagamento não for confirmado.
     await adminDb.collection('salons').doc(salonId).update({
       'billing.provider': 'asaas',
       'billing.customerId': sub.customer || data?.billing?.customerId,
       'billing.subscriptionId': sub.id,
-      'billing.planId': newPlanId,
-      'billing.value': value,
+      'billing.pendingPlanId': newPlanId,
+      'billing.pendingPlanValue': value,
       'billing.billingCycle': cycle,
-      'billing.status': 'ACTIVE',
+      'billing.status': 'PENDING_PAYMENT',
       'billing.providerStatus': sub.status,
       'billing.nextDueDate': sub.nextDueDate,
-      'billing.updatedAt': new Date().toISOString(),
-      'plan': newPlanId
+      'billing.updatedAt': new Date().toISOString()
     });
     return sub;
   }
@@ -425,7 +440,7 @@ export class BillingService {
         const lastPayment = isPaymentConfirmed ? now : (currentBilling.lastPaymentDate ? new Date(currentBilling.lastPaymentDate) : null);
         const resolvedNextDueDate = (payment?.dueDate || subscription?.nextDueDate) ? new Date(payment?.dueDate || subscription?.nextDueDate) : (currentBilling.nextDueDate ? new Date(currentBilling.nextDueDate) : null);
         const asaasSubscriptionId = subscription?.id || payment?.subscription || currentBilling.subscriptionId || '';
-        const activePlanId = currentBilling.planId || 'performance';
+        const activePlanId = currentBilling.planId || salonData?.plan || 'essential';
         const billingUpdate: any = { ...currentBilling, updatedAt: now.toISOString(), customerId };
         if (billingStatus) billingUpdate.status = billingStatus;
         if (asaasSubscriptionId) billingUpdate.subscriptionId = asaasSubscriptionId;
@@ -436,9 +451,19 @@ export class BillingService {
         if (subscription?.cycle) billingUpdate.billingCycle = subscription.cycle;
         if (payment?.value != null) billingUpdate.value = Number(payment.value);
         else if (subscription?.value != null) billingUpdate.value = Number(subscription.value);
+
+        if (isPaymentConfirmed && currentBilling.pendingPlanId) {
+          const confirmedPlanId = currentBilling.pendingPlanId;
+          billingUpdate.planId = confirmedPlanId;
+          billingUpdate.value = currentBilling.pendingPlanValue ?? billingUpdate.value;
+          delete billingUpdate.pendingPlanId;
+          delete billingUpdate.pendingPlanValue;
+          transaction.set(salonRef, { plan: confirmedPlanId }, { merge: true });
+        }
+
         transaction.set(salonRef, { billing: billingUpdate }, { merge: true });
         if (tenantStatus) transaction.set(tenantRef, { id: salonId, status: tenantStatus, subscriptionStatus: tenantStatus, active: tenantStatus === 'active', updatedAt: now.toISOString() }, { merge: true });
-        transaction.set(subRef, { tenantId: salonId, provider: 'asaas', subscriptionId: asaasSubscriptionId, status: billingStatus || currentBilling.status || 'PENDING_PAYMENT', planId: activePlanId, customerId, billingCycle: subscription?.cycle || currentBilling.billingCycle || 'MONTHLY', value: subscription?.value != null ? Number(subscription.value) : currentBilling.value || null, lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null, nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null, updatedAt: now.toISOString() }, { merge: true });
+        transaction.set(subRef, { tenantId: salonId, provider: 'asaas', subscriptionId: asaasSubscriptionId, status: billingStatus || currentBilling.status || 'PENDING_PAYMENT', planId: isPaymentConfirmed && currentBilling.pendingPlanId ? currentBilling.pendingPlanId : activePlanId, customerId, billingCycle: subscription?.cycle || currentBilling.billingCycle || 'MONTHLY', value: subscription?.value != null ? Number(subscription.value) : currentBilling.value || null, lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null, nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null, updatedAt: now.toISOString() }, { merge: true });
       });
       if (eventId) await adminDb.collection('billing_events').doc(eventId).update({ status: 'PROCESSED', processed: true, processedAt: new Date().toISOString() });
     } catch (err: any) {
