@@ -8,6 +8,7 @@ import OfflineIndicator from './components/OfflineIndicator';
 
 import PublicHomePage from './pages/PublicHomePage';
 import PricingPage from './pages/PricingPage';
+import DiagnosisPage from './pages/DiagnosisPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import InviteRegisterPage from './pages/auth/InviteRegisterPage';
@@ -58,6 +59,7 @@ function App() {
           <Routes>
             <Route path="/" element={<PublicHomePage />} />
             <Route path="/planos" element={<PricingPage />} />
+            <Route path="/diagnostico" element={<DiagnosisPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cadastro" element={<RegisterPage />} />
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
