@@ -13,10 +13,19 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     const billingSettingsDoc = await adminDb.collection('settings').doc('asaas').get();
     const billingSettings = billingSettingsDoc.data();
 
-    const token = req.headers['asaas-access-token'];
-    if (billingSettings?.webhookToken && token !== billingSettings.webhookToken) {
-      console.warn('[Asaas Webhook] Tentativa de acesso não autorizada com token inválido.');
-      return res.status(401).json({ error: 'Token inválido' });
+    const configuredToken = typeof billingSettings?.webhookToken === 'string'
+      ? billingSettings.webhookToken.trim()
+      : '';
+    const receivedHeader = req.headers['asaas-access-token'];
+    const receivedToken = Array.isArray(receivedHeader)
+      ? receivedHeader[0]?.trim() || ''
+      : String(receivedHeader || '').trim();
+
+    // Segurança: webhook deve falhar fechado. Sem segredo configurado, sem
+    // cabeçalho ou com segredo divergente, nenhum evento pode ser processado.
+    if (!configuredToken || !receivedToken || receivedToken !== configuredToken) {
+      console.warn('[Asaas Webhook] Requisição rejeitada: autenticação do webhook inválida ou não configurada.');
+      return res.status(401).json({ error: 'Não autorizado' });
     }
 
     const body = req.body;
