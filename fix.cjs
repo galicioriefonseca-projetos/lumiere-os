@@ -1,22 +1,25 @@
 const fs = require('fs');
+let code = fs.readFileSync('firestore.rules', 'utf8');
 
-let content = fs.readFileSync('src/services/AuthService.ts', 'utf8');
+const correctGet = `      allow get: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (
+        isSignedIn() && (
+          (resource != null && resource.data.ownerId == request.auth.uid) || 
+          (exists(userDoc()) && userSalonId() == salonId)
+        )
+      );`;
 
-const badInsertionStart = content.indexOf('          async signInWithGoogleForRegister(');
-const badInsertionEnd = content.indexOf('};        try {          await setDoc');
+const correctUpdate = `      allow update: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (
+        isSignedIn() && 
+        (
+          (resource != null && resource.data.ownerId == request.auth.uid) || 
+          (exists(userDoc()) && userSalonId() == salonId && (userRole() == "owner" || userRole() == "manager" || userRole() == "admin"))
+        ) && 
+        (canUseTutorialDemo(salonId) || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'plan', 'subscriptionStatus', 'activationStatus', 'paymentStatus', 'isActive', 'billingProvider', 'billingMode', 'professionalLimit', 'professionalsLimit', 'maxProfessionals', 'founderAuthorized', 'isFounderAuthorized', 'isFounder', 'subscriptionId', 'planId', 'customerId', 'checkoutUrl', 'provider', 'nextBillingDate', 'currentPeriodStart', 'currentPeriodEnd', 'lastPaymentAt', 'lastPaymentAmount', 'billingSyncRequired', 'billingSyncReason', 'pendingPlan', 'pendingOfferId', 'pendingCheckoutUrl', 'pendingCheckoutEmail', 'pendingRequestedAt', 'pendingCheckoutPurpose', 'pendingBillingActivation', 'pendingPlanChange', 'ownerId', 'ownerEmail', 'deletedAt'
+        ]))
+      );`;
 
-const extractedFunctions = content.substring(badInsertionStart, badInsertionEnd);
+code = code.replace(/allow get: if canUseTutorialDemo.*?;\n/s, correctGet + '\n');
+code = code.replace(/allow update: if canUseTutorialDemo.*?;\n/s, correctUpdate + '\n');
 
-// Remove the bad insertion
-content = content.substring(0, badInsertionStart) + '};' + content.substring(badInsertionEnd + 2);
-
-// Make sure the end of the file is correct, it might have an extra `};` at the very end
-content = content.trim();
-if (content.endsWith('};')) {
-    content = content.substring(0, content.length - 2);
-}
-
-// Append the extracted functions properly
-content = content + ',\n\n' + extractedFunctions + '\n';
-
-fs.writeFileSync('src/services/AuthService.ts', content);
+fs.writeFileSync('firestore.rules', code);

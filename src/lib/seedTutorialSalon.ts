@@ -21,8 +21,6 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
 
     // 1. Set/Update users/{uid} para o usuário de demonstração
     const userRef = doc(db, 'users', uid);
-    const userSnap = await getDoc(userRef);
-
     const userPayload = {
       id: uid,
       email: effectiveEmail,
@@ -35,6 +33,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
     };
 
     try {
+      const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) {
         await setDoc(userRef, {
           ...userPayload,
@@ -46,13 +45,19 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
       console.log('[ensureTutorialSalon] User profile written successfully.');
     } catch (uErr) {
       console.warn('[ensureTutorialSalon] Note writing user doc:', uErr);
+      // Fallback try setDoc with merge if getDoc failed
+      try {
+        await setDoc(userRef, { ...userPayload, createdAt: now }, { merge: true });
+        console.log('[ensureTutorialSalon] User profile written via merge fallback.');
+      } catch (uErr2) {
+        console.warn('[ensureTutorialSalon] Fallback setDoc also noted:', uErr2);
+      }
     }
 
     // 2. Set/Update Salons/tutorial_lumiere_studio
     const salonRef = doc(db, 'salons', salonId);
-    const salonSnap = await getDoc(salonRef);
-
     try {
+      const salonSnap = await getDoc(salonRef);
       if (!salonSnap.exists()) {
         await setDoc(salonRef, {
           id: salonId,
@@ -91,11 +96,38 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
       console.log('[ensureTutorialSalon] Salon profile written successfully.');
     } catch (sErr) {
       console.warn('[ensureTutorialSalon] Note writing salon doc:', sErr);
+      // Fallback try setDoc with merge
+      try {
+        await setDoc(salonRef, {
+          id: salonId,
+          name: "Lumiere Beauty Studio — Demo",
+          businessName: "Lumiere Beauty Studio — Demo",
+          slug: "lumiere-beauty-studio-demo",
+          ownerId: uid,
+          ownerEmail: effectiveEmail,
+          ownerName: effectiveName,
+          isDemo: true,
+          isTutorial: true,
+          isActive: true,
+          updatedAt: now
+        }, { merge: true });
+        console.log('[ensureTutorialSalon] Salon profile written via merge fallback.');
+      } catch (sErr2) {
+        console.warn('[ensureTutorialSalon] Fallback salon setDoc also noted:', sErr2);
+      }
     }
 
-    const batch = writeBatch(db);
+    const safeCommit = async (b: ReturnType<typeof writeBatch>, name: string) => {
+      try {
+        await b.commit();
+        console.log(`[ensureTutorialSalon] ${name} written successfully.`);
+      } catch (err) {
+        console.warn(`[ensureTutorialSalon] Warning writing ${name}:`, err);
+      }
+    };
 
     // 3. Categories Check & Creation
+    const categoriesBatch = writeBatch(db);
     const categoriesData = [
       'Cabelo', 'Coloração', 'Manicure e Nail Design', 'Estética Facial', 
       'Maquiagem', 'Sobrancelhas', 'Cílios', 'Depilação', 'Atendimento e Recepção', 'Penteado e Carga'
@@ -103,7 +135,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
     for (const c of categoriesData) {
       const cSlug = c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
       const cRef = doc(db, `salons/${salonId}/categories`, `cat_${cSlug}`);
-      batch.set(cRef, {
+      categoriesBatch.set(cRef, {
         id: `cat_${cSlug}`,
         name: c,
         isActive: true,
@@ -111,8 +143,10 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         updatedAt: now
       });
     }
+    await safeCommit(categoriesBatch, 'Categories');
 
     // 4. Professionals
+    const profBatch = writeBatch(db);
     const professionalsData = [
       {
         id: 'tutorial_maria',
@@ -218,7 +252,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
 
     for (const p of professionalsData) {
       const pRef = doc(db, `salons/${salonId}/professionals`, p.id);
-      batch.set(pRef, {
+      profBatch.set(pRef, {
         id: p.id,
         userId: null,
         name: p.name,
@@ -240,8 +274,10 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         updatedAt: now
       });
     }
+    await safeCommit(profBatch, 'Professionals');
 
     // 5. Services
+    const srvBatch = writeBatch(db);
     const servicesData = [
       { id: 'tutorial_srv_corte', name: 'Corte Feminino', category: 'Cabelo', price: 130, durationMinutes: 60 },
       { id: 'tutorial_srv_escova', name: 'Escova', category: 'Cabelo', price: 90, durationMinutes: 45 },
@@ -257,7 +293,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
 
     for (const s of servicesData) {
       const sRef = doc(db, `salons/${salonId}/services`, s.id);
-      batch.set(sRef, {
+      srvBatch.set(sRef, {
         id: s.id,
         name: s.name,
         category: s.category,
@@ -270,8 +306,10 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         updatedAt: now
       });
     }
+    await safeCommit(srvBatch, 'Services');
 
     // 6. Clients
+    const cliBatch = writeBatch(db);
     const clientsData = [
       { id: 'tutorial_cli_helena', name: 'Helena', phone: '17991112201', email: 'helena@demo.com', notes: 'Prefere atendimento silencioso.' },
       { id: 'tutorial_cli_priscila', name: 'Priscila', phone: '17991112202', email: 'priscila@demo.com', notes: 'Cliente VIP' },
@@ -285,7 +323,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
 
     for (const cl of clientsData) {
       const clRef = doc(db, `salons/${salonId}/clients`, cl.id);
-      batch.set(clRef, {
+      cliBatch.set(clRef, {
         id: cl.id,
         name: cl.name,
         phone: cl.phone,
@@ -295,8 +333,10 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         updatedAt: now
       });
     }
+    await safeCommit(cliBatch, 'Clients');
 
     // 7. Appointments
+    const apptBatch = writeBatch(db);
     const appointmentsData = [
       { id: 'tut_appt_1', date: todayStr, time: '09:00', status: 'completed', cli: clientsData[0], srv: servicesData[0], prof: professionalsData[0] },
       { id: 'tut_appt_2', date: todayStr, time: '10:30', status: 'completed', cli: clientsData[1], srv: servicesData[1], prof: professionalsData[9] },
@@ -316,7 +356,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
 
     for (const a of appointmentsData) {
       const aRef = doc(db, `salons/${salonId}/appointments`, a.id);
-      batch.set(aRef, {
+      apptBatch.set(aRef, {
         id: a.id,
         clientId: a.cli.id,
         clientName: a.cli.name,
@@ -332,11 +372,13 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         updatedAt: now
       });
     }
+    await safeCommit(apptBatch, 'Appointments');
 
-    // 8. Goals (Metas)
+    // 8. Goals & Checklists (Metas e Template)
+    const goalChkBatch = writeBatch(db);
     const currentMonthStr = todayStr.substring(0, 7);
     const gRef = doc(db, `salons/${salonId}/goals`, 'tutorial_goal_current');
-    batch.set(gRef, {
+    goalChkBatch.set(gRef, {
       id: 'tutorial_goal_current',
       month: currentMonthStr,
       targetAmount: 90000,
@@ -361,7 +403,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
       points: 5
     }));
 
-    batch.set(chkRef, {
+    goalChkBatch.set(chkRef, {
       id: 'tutorial_checklist_operacional',
       title: 'Avaliação Diária do Profissional — Operacional',
       type: 'professional_daily_evaluation',
@@ -371,9 +413,10 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
       createdAt: now,
       updatedAt: now
     });
+    await safeCommit(goalChkBatch, 'Goals & Checklists');
 
     // 10. Checklist Runs (Avaliações dos profissionais no dia de hoje)
-    // 8 present, 2 absent
+    const runsBatch = writeBatch(db);
     for (let i = 0; i < professionalsData.length; i++) {
       const p = professionalsData[i];
       const runRef = doc(db, `salons/${salonId}/checklistRuns`, `tutorial_run_${p.id}`);
@@ -390,7 +433,7 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         }
       }
 
-      batch.set(runRef, {
+      runsBatch.set(runRef, {
         id: `tutorial_run_${p.id}`,
         checklistId: 'tutorial_checklist_operacional',
         checklistTitle: 'Avaliação Diária do Profissional — Operacional',
@@ -413,10 +456,12 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         updatedAt: now
       });
     }
+    await safeCommit(runsBatch, 'Checklist Runs');
 
     // 11. Custom Notification for the dashboard
+    const notifBatch = writeBatch(db);
     const notifRef = doc(db, `salons/${salonId}/notifications`, 'tutorial_notification_daily');
-    batch.set(notifRef, {
+    notifBatch.set(notifRef, {
       id: 'tutorial_notification_daily',
       type: 'daily_checklist_pending',
       title: 'Checklist diário finalizado',
@@ -432,8 +477,8 @@ export async function ensureTutorialSalon(uid: string, userEmail?: string | null
         checklistId: 'tutorial_checklist_operacional'
       }
     });
+    await safeCommit(notifBatch, 'Notification');
 
-    await batch.commit();
     console.log("[ensureTutorialSalon] Seeding of tutorial salão completed successfully!");
     return { success: true, message: 'Salão tutorial/demo garantido com sucesso!' };
   } catch (error: any) {

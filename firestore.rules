@@ -2,9 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Safety Net - Allow Platform Admin globally, deny others by default
+    // Safety Net - Allow Platform Admin token claims globally, deny others by default
     match /{document=**} {
-      allow read, write: if isPlatformAdmin();
+      allow read, write: if isSignedIn() && (
+        ('role' in request.auth.token && request.auth.token.role == "platform_admin") ||
+        ('platform_admin' in request.auth.token && request.auth.token.platform_admin == true)
+      );
     }
 
     // --- Global Helper Functions ---
@@ -72,8 +75,8 @@ service cloud.firestore {
 
     function isSalonMember(salonId) {
       return isSignedIn() && (
-        isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
+        isPlatformAdmin() ||
         (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId) ||
         exists(/databases/$(database)/documents/salons/$(salonId)/professionals/$(request.auth.uid)) ||
         (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid)
@@ -103,7 +106,7 @@ service cloud.firestore {
     // Permission gates
     function canManageSalon(salonId) {
       return isSignedIn() && (
-        isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+        canUseTutorialDemo(salonId) || isPlatformAdmin() || (
           exists(/databases/$(database)/documents/salons/$(salonId)) && 
           'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && 
           get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid
@@ -117,7 +120,7 @@ service cloud.firestore {
     }
 
     function canOperateFrontDesk(salonId) {
-      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
         exists(userDoc()) && 
         'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
         'role' in get(userDoc()).data && 
@@ -126,7 +129,7 @@ service cloud.firestore {
     }
 
     function canModifyCrmStage(salonId) {
-      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
         exists(userDoc()) && 
         'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
         'role' in get(userDoc()).data && 
@@ -136,7 +139,7 @@ service cloud.firestore {
 
     // --- End Permission gates ---
     function canEvaluateTeam(salonId) {
-      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
         exists(userDoc()) && 
         'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
         'role' in get(userDoc()).data && 
@@ -145,7 +148,7 @@ service cloud.firestore {
     }
 
     function canRecordEvaluation(salonId) {
-      return isPlatformAdmin() || canUseTutorialDemo(salonId) || (
+      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
         exists(userDoc()) && 
         'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
         'role' in get(userDoc()).data && 
@@ -155,8 +158,8 @@ service cloud.firestore {
 
     function canManageBilling(salonId) {
       return isSignedIn() && (
-        isPlatformAdmin() ||
         canUseTutorialDemo(salonId) ||
+        isPlatformAdmin() ||
         (
           exists(userDoc()) && 
           'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
@@ -190,13 +193,13 @@ service cloud.firestore {
       allow list: if isPlatformAdmin() || (
         isSignedIn() && 
         exists(userDoc()) && 
-        resource.data.salonId == userSalonId()
+        ('salonId' in resource.data && resource.data.salonId == userSalonId())
       );
       
       allow create: if isPlatformAdmin() || (
         isOwnerOfUser(userId) && (
           isTutorialDemoUser() ||
-          request.resource.data.salonId == "tutorial_lumiere_studio" ||
+          ('salonId' in request.resource.data && request.resource.data.salonId == "tutorial_lumiere_studio") ||
           (
             request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl', 'onboardingStatus', 'isDemoUser', 'isActive']) &&
             request.resource.data.role == "pending" &&
@@ -210,11 +213,11 @@ service cloud.firestore {
         isOwnerOfUser(userId) && 
         (
           isTutorialDemoUser() ||
-          request.resource.data.salonId == "tutorial_lumiere_studio" ||
-          (resource.data.salonId == "tutorial_lumiere_studio") ||
+          ('salonId' in request.resource.data && request.resource.data.salonId == "tutorial_lumiere_studio") ||
+          ('salonId' in resource.data && resource.data.salonId == "tutorial_lumiere_studio") ||
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'salonId', 'permissions', 'privileges', 'platform_admin', 'admin']) ||
           (
-            request.resource.data.salonId == "tutorial_lumiere_studio" && 
+            ('salonId' in request.resource.data && request.resource.data.salonId == "tutorial_lumiere_studio") && 
             (request.resource.data.role == "owner" || request.resource.data.role == "manager")
           )
         )
@@ -228,9 +231,8 @@ service cloud.firestore {
       // Leitura pública removida
       
       // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
-      allow get: if isPlatformAdmin() || (
+            allow get: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (
         isSignedIn() && (
-          canUseTutorialDemo(salonId) ||
           (resource != null && resource.data.ownerId == request.auth.uid) || 
           (exists(userDoc()) && userSalonId() == salonId)
         )
@@ -245,10 +247,9 @@ service cloud.firestore {
       );
       
       // Updates allowed for platform_admin, owners, or managers, shielding sensitive pricing/billing/config fields
-      allow update: if isPlatformAdmin() || (
+            allow update: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (
         isSignedIn() && 
         (
-          canUseTutorialDemo(salonId) ||
           (resource != null && resource.data.ownerId == request.auth.uid) || 
           (exists(userDoc()) && userSalonId() == salonId && (userRole() == "owner" || userRole() == "manager" || userRole() == "admin"))
         ) && 
@@ -262,7 +263,7 @@ service cloud.firestore {
 
     // Bug Reports
     match /bugReports/{bugReportId} {
-      allow create: if isSignedIn() && request.(resource != null && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow get: if isPlatformAdmin() || (isSignedIn() && (resource != null && resource.data.userId == request.auth.uid));
       allow list: if isPlatformAdmin() || (isSignedIn() && (resource != null && resource.data.userId == request.auth.uid));
       allow update: if isPlatformAdmin();
@@ -348,7 +349,7 @@ service cloud.firestore {
         professionalId == request.auth.uid &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         userSalonId() == salonId &&
-        request.(resource != null && resource.data.userId == request.auth.uid) &&
+        request.resource.data.userId == request.auth.uid &&
         request.resource.data.professionalId == request.auth.uid &&
         request.resource.data.role == userRole() &&
         request.resource.data.isActive == true &&
@@ -380,20 +381,20 @@ service cloud.firestore {
 
     // 3. Checklist Configurations (Templates)
     match /salons/{salonId}/checklists/{checklistId} {
-      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId) || canUseTutorialDemo(salonId);
+      allow read: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
       allow write: if canManageSalon(salonId);
     }
 
     // 4. Checklist Daily Runs (Avaliações Operacionais)
     match /salons/{salonId}/checklistRuns/{runId} {
-      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId) || canUseTutorialDemo(salonId);
+      allow read: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
       allow create, update: if canRecordEvaluation(salonId);
       allow delete: if false;
     }
 
     // 5. Monthly Goals
     match /salons/{salonId}/goals/{goalId} {
-      allow read: if isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId) || canUseTutorialDemo(salonId);
+      allow read: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (isSignedIn() && exists(userDoc()) && userSalonId() == salonId);
       allow write: if canManageSalon(salonId);
     }
 
@@ -409,12 +410,15 @@ service cloud.firestore {
     match /salons/{salonId}/clients/{clientId} {
       allow get: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
       allow list: if canOperateFrontDesk(salonId);
-      allow create: if canOperateFrontDesk(salonId);
-      allow update: if canOperateFrontDesk(salonId) && (
-        request.resource.data.crmStage == resource.data.crmStage || 
-        canModifyCrmStage(salonId)
+      allow create: if canUseTutorialDemo(salonId) || canOperateFrontDesk(salonId);
+      allow update: if canUseTutorialDemo(salonId) || (
+        canOperateFrontDesk(salonId) && (
+          canModifyCrmStage(salonId) || 
+          (!('crmStage' in request.resource.data) && !('crmStage' in resource.data)) ||
+          (('crmStage' in request.resource.data) && ('crmStage' in resource.data) && request.resource.data.crmStage == resource.data.crmStage)
+        )
       );
-      allow delete: if false;
+      allow delete: if canUseTutorialDemo(salonId) || isPlatformAdmin();
 
       // History logs subcollection
       match /history/{historyId} {
