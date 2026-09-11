@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import PlanProtectedRoute from './components/PlanProtectedRoute';
 import { Toaster } from '@/components/ui/sonner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -51,6 +52,10 @@ const PageLoader = () => (
   </div>
 );
 
+function FeatureRoute({ feature, children }: { feature: 'operation' | 'team' | 'goals' | 'commissions' | 'checklists' | 'performance' | 'crm' | 'financial' | 'advanced_reports' | 'ai' | 'automation' | 'multiunit'; children: React.ReactNode }) {
+  return <PlanProtectedRoute feature={feature}>{children}</PlanProtectedRoute>;
+}
+
 function App() {
   return (
     <AuthProvider>
@@ -68,33 +73,33 @@ function App() {
             <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
-              <Route path="equipe" element={<OnboardingTeam />} />
-              <Route path="servicos" element={<OnboardingServices />} />
-              <Route path="metas" element={<OnboardingGoals />} />
-              <Route path="checklist" element={<OnboardingChecklist />} />
+              <Route path="equipe" element={<FeatureRoute feature="team"><OnboardingTeam /></FeatureRoute>} />
+              <Route path="servicos" element={<FeatureRoute feature="operation"><OnboardingServices /></FeatureRoute>} />
+              <Route path="metas" element={<FeatureRoute feature="goals"><OnboardingGoals /></FeatureRoute>} />
+              <Route path="checklist" element={<FeatureRoute feature="checklists"><OnboardingChecklist /></FeatureRoute>} />
               <Route index element={<Navigate to="equipe" replace />} />
             </Route>
             <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
               <Route index element={<DashboardHome />} />
               <Route path="profissional" element={<DashboardHome />} />
               <Route path="meu-painel" element={<DashboardHome />} />
-              <Route path="equipe" element={<ProfessionalsPage />} />
-              <Route path="servicos" element={<ServicesPage />} />
-              <Route path="categorias" element={<CategoriesPage />} />
-              <Route path="clientes" element={<ClientsPage />} />
-              <Route path="crm" element={<ClientsPage />} />
-              <Route path="agendamentos" element={<AppointmentsPage />} />
-              <Route path="metas" element={<GoalsPage />} />
-              <Route path="comissoes" element={<CommissionsPage />} />
-              <Route path="gamificacao" element={<GamificationPage />} />
-              <Route path="relatorios" element={<ReportsPage />} />
+              <Route path="equipe" element={<FeatureRoute feature="team"><ProfessionalsPage /></FeatureRoute>} />
+              <Route path="servicos" element={<FeatureRoute feature="operation"><ServicesPage /></FeatureRoute>} />
+              <Route path="categorias" element={<FeatureRoute feature="operation"><CategoriesPage /></FeatureRoute>} />
+              <Route path="clientes" element={<FeatureRoute feature="operation"><ClientsPage /></FeatureRoute>} />
+              <Route path="crm" element={<FeatureRoute feature="crm"><ClientsPage /></FeatureRoute>} />
+              <Route path="agendamentos" element={<FeatureRoute feature="operation"><AppointmentsPage /></FeatureRoute>} />
+              <Route path="metas" element={<FeatureRoute feature="goals"><GoalsPage /></FeatureRoute>} />
+              <Route path="comissoes" element={<FeatureRoute feature="commissions"><CommissionsPage /></FeatureRoute>} />
+              <Route path="gamificacao" element={<FeatureRoute feature="performance"><GamificationPage /></FeatureRoute>} />
+              <Route path="relatorios" element={<FeatureRoute feature="advanced_reports"><ReportsPage /></FeatureRoute>} />
               <Route path="minha-conta" element={<AccountPage />} />
-              <Route path="checklist" element={<ChecklistPage />} />
+              <Route path="checklist" element={<FeatureRoute feature="checklists"><ChecklistPage /></FeatureRoute>} />
               <Route path="assinatura" element={<SubscriptionPage />} />
               <Route path="dados-faturamento" element={<BillingCustomerPage />} />
-              <Route path="financeiro" element={<FinancialPage />} />
-              <Route path="estoque" element={<InventoryPage />} />
-              <Route path="precificacao" element={<PricingCalculatorPage />} />
+              <Route path="financeiro" element={<FeatureRoute feature="financial"><FinancialPage /></FeatureRoute>} />
+              <Route path="estoque" element={<FeatureRoute feature="financial"><InventoryPage /></FeatureRoute>} />
+              <Route path="precificacao" element={<FeatureRoute feature="financial"><PricingCalculatorPage /></FeatureRoute>} />
             </Route>
             <Route path="/master" element={<ProtectedRoute requireAdmin><MasterPanel /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
