@@ -1,18 +1,20 @@
 import { LockKeyhole, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { FEATURE_LABELS, PlanFeature, requiredPlanForFeature } from '@/config/planFeatures';
+import { FEATURE_LABELS, type PlanFeature, requiredPlanForFeature } from '@/config/planFeatures';
+import type { ReactNode } from 'react';
 
 const PLAN_NAMES: Record<string, string> = {
   essential: 'Essencial',
   professional: 'Gestão',
   performance_plus: 'Performance',
   multiunit: 'Multiunidade',
+  enterprise_custom: 'Enterprise',
 };
 
 type Props = {
   feature: PlanFeature;
-  children: React.ReactNode;
+  children: ReactNode;
   allowed: boolean;
 };
 
