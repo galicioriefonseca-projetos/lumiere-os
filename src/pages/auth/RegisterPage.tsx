@@ -30,8 +30,6 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
-  // Compatibilidade com os dois formatos usados atualmente pela navegação pública:
-  // /cadastro?plan=...&cycle=... e /cadastro?planId=...&billingCycle=...
   const rawPlan = params.get('plan') || params.get('planId');
   const rawCycle = params.get('cycle') || params.get('billingCycle');
   const initialPlan = rawPlan && rawPlan in PUBLIC_PLANS ? rawPlan as PlanId : null;
@@ -55,198 +53,246 @@ export default function RegisterPage() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (!user?.email) return;
-      setFormData(prev => ({ ...prev, email: prev.email || user.email || '' }));
+      setFormData(prev => ({
+        ...prev,
+        email: prev.email || user.email || '',
+        ownerName: prev.ownerName || user.displayName || '',
+      }));
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          if (data?.salonId && data?.role !== 'pending') setExistingSalonInfo({ salonId: data.salonId, role: data.role });
+        }
+      } catch (error) {
+        console.warn('[RegisterPage] Não foi possível verificar salão do usuário:', error);
+      }
     });
-    return unsub;
+    return () => unsub();
   }, []);
 
-  const selectedPlanData = selectedPlan ? PUBLIC_PLANS[selectedPlan] : null;
-  const currentPrice = selectedPlan ? priceFor(selectedPlan, cycle) : 0;
+  const recommendedPlan = useMemo<PlanId>(() => {
+    switch (formData.estimatedProfessionals) {
+      case 'Apenas eu':
+      case '2 a 5': return 'essential';
+      case '6 a 15': return 'professional';
+      case '16 a 30': return 'performance_plus';
+      default: return 'multiunit';
+    }
+  }, [formData.estimatedProfessionals]);
 
-  const selectPlan = (plan: PlanId) => {
-    setSelectedPlan(plan);
-    setStep(2);
+  const capacityWarning = useMemo(() => {
+    if (!selectedPlan || !formData.estimatedProfessionals) return null;
+    const exceeds = (
+      selectedPlan === 'essential' && ['6 a 15', '16 a 30', '31 a 60', 'Mais de 60'].includes(formData.estimatedProfessionals)
+    ) || (
+      selectedPlan === 'professional' && ['16 a 30', '31 a 60', 'Mais de 60'].includes(formData.estimatedProfessionals)
+    ) || (
+      selectedPlan === 'performance_plus' && ['31 a 60', 'Mais de 60'].includes(formData.estimatedProfessionals)
+    );
+    return exceeds ? `O plano ${PUBLIC_PLANS[selectedPlan].name} atende até ${PUBLIC_PLANS[selectedPlan].limit} profissionais. A quantidade informada pode exigir um plano superior.` : null;
+  }, [selectedPlan, formData.estimatedProfessionals]);
+
+  const update = (name: string, value: string | boolean) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (name === 'email') setExistingAccountPrompt(false);
   };
 
-  const goToCheckout = async () => {
-    if (!selectedPlan) {
-      toast.error('Escolha um plano para continuar.');
-      setStep(1);
-      return;
-    }
+  const isAlreadyAuthWithSameEmail = Boolean(currentUser?.email && currentUser.email.toLowerCase() === formData.email.trim().toLowerCase());
 
-    if (!formData.ownerName || !formData.salonName || !formData.phone || !formData.email || !formData.city || !formData.state) {
-      toast.error('Preencha os dados obrigatórios para continuar.');
-      return;
-    }
-
-    if (!formData.acceptedTerms) {
-      toast.error('É necessário aceitar os termos para continuar.');
-      return;
-    }
-
-    setLoading(true);
+  const handleGoogleAuth = async () => {
     try {
-      let firebaseUser = currentUser;
-      if (!firebaseUser) {
-        if (!formData.password || formData.password.length < 6) {
-          toast.error('A senha precisa ter pelo menos 6 caracteres.');
-          setLoading(false);
+      setLoading(true);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      setCurrentUser(result.user);
+      setFormData(prev => ({ ...prev, email: result.user.email || prev.email, ownerName: prev.ownerName || result.user.displayName || '' }));
+      const userSnap = await getDoc(doc(db, 'users', result.user.uid));
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        if (data?.salonId && data?.role !== 'pending') {
+          setExistingSalonInfo({ salonId: data.salonId, role: data.role });
+          toast.info('Sua conta já possui uma empresa ativa no LumièreOS.');
           return;
         }
-        if (formData.password !== formData.confirmPassword) {
-          toast.error('As senhas não conferem.');
-          setLoading(false);
-          return;
-        }
-        const credential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        firebaseUser = credential.user;
-        await updateProfile(firebaseUser, { displayName: formData.ownerName });
       }
-
-      const token = await firebaseUser.getIdToken();
-      const response = await fetch('/api/billing/create-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          planId: selectedPlan,
-          billingCycle: cycle,
-          ownerName: formData.ownerName,
-          salonName: formData.salonName,
-          phone: formData.phone,
-          email: formData.email,
-          city: formData.city,
-          state: formData.state,
-          businessSegment: formData.businessSegment,
-          estimatedProfessionals: formData.estimatedProfessionals,
-          professionalLimit: selectedPlanData?.limit,
-        }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Não foi possível iniciar o checkout.');
-
-      if (result.requiresBillingData) {
-        navigate('/dashboard/dados-faturamento');
-        return;
-      }
-
-      if (result.checkoutUrl) {
-        window.location.href = result.checkoutUrl;
-        return;
-      }
-
-      navigate('/aguardando-pagamento');
+      setExistingAccountPrompt(false);
+      toast.success(`Autenticado com sucesso como ${result.user.email}`);
     } catch (error: any) {
-      console.error('[Register] checkout error', error);
-      toast.error(translateAuthError(error) || error.message || 'Não foi possível concluir o cadastro.');
+      if (error?.code !== 'auth/popup-closed-by-user' && error?.code !== 'auth/cancelled-popup-request') toast.error(translateAuthError(error?.code, error?.message));
     } finally {
       setLoading(false);
     }
   };
 
-  const pageTitle = planWasChosenOnLanding && selectedPlanData
-    ? `Comece com o plano ${selectedPlanData.name}`
-    : 'Escolha como deseja usar o LumiereOS';
+  const goForwardFromBusiness = () => {
+    if (!formData.ownerName || !formData.salonName || !formData.email || !formData.phone || !formData.businessSegment || !formData.estimatedProfessionals) return;
+    setStep(selectedPlan ? 3 : 2);
+  };
+
+  const submit = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+    if (!selectedPlan) return toast.error('Selecione um plano para continuar.');
+    if (!formData.acceptedTerms) return toast.error('Aceite os Termos de Uso e a Política de Privacidade para continuar.');
+    if (!formData.ownerName.trim() || !formData.salonName.trim() || !formData.email.trim() || !formData.phone.trim()) return toast.error('Preencha os dados obrigatórios.');
+    if (!isAlreadyAuthWithSameEmail) {
+      if (formData.password.length < 8) return toast.error('A senha deve ter pelo menos 8 caracteres.');
+      if (formData.password !== formData.confirmPassword) return toast.error('As senhas não coincidem.');
+    }
+
+    setLoading(true);
+    try {
+      const email = formData.email.trim().toLowerCase();
+      let firebaseUser = auth.currentUser;
+
+      if (!firebaseUser || firebaseUser.email?.toLowerCase() !== email) {
+        try {
+          firebaseUser = (await createUserWithEmailAndPassword(auth, email, formData.password)).user;
+        } catch (authError: any) {
+          if (authError?.code !== 'auth/email-already-in-use') throw authError;
+          try {
+            firebaseUser = (await signInWithEmailAndPassword(auth, email, formData.password)).user;
+          } catch {
+            setExistingAccountPrompt(true);
+            const error = new Error('Este e-mail já possui cadastro no LumièreOS. Faça login com a senha atual ou utilize o Google para continuar.');
+            (error as any).code = 'auth/email-already-in-use';
+            throw error;
+          }
+        }
+      }
+
+      await updateProfile(firebaseUser, { displayName: formData.ownerName.trim() });
+      const now = Date.now();
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const existing = await getDoc(userRef);
+      if (existing.exists()) {
+        const current = existing.data();
+        if (current?.salonId && current?.role !== 'pending') {
+          setExistingSalonInfo({ salonId: current.salonId, role: current.role });
+          throw new Error('Esta conta já está vinculada a uma empresa no LumièreOS. Acesse o sistema para gerenciar sua assinatura.');
+        }
+      }
+
+      await setDoc(userRef, {
+        id: firebaseUser.uid,
+        email,
+        fullName: formData.ownerName.trim(),
+        name: formData.ownerName.trim(),
+        phone: formData.phone.trim(),
+        role: 'pending',
+        salonId: null,
+        onboardingStatus: 'pending_payment',
+        updatedAt: now,
+        ...(existing.exists() ? {} : { createdAt: now })
+      }, { merge: true });
+
+      const token = await firebaseUser.getIdToken(true);
+      const response = await fetch('/api/billing/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          salonId: `salon_${firebaseUser.uid}`,
+          planId: selectedPlan,
+          billingCycle: cycle,
+          ownerName: formData.ownerName.trim(),
+          salonName: formData.salonName.trim(),
+          phone: formData.phone.trim(),
+          email,
+          city: formData.city.trim(),
+          state: formData.state.trim().toUpperCase(),
+          businessSegment: formData.businessSegment,
+          estimatedProfessionals: formData.estimatedProfessionals,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Não foi possível iniciar a contratação.');
+      if (!result.checkoutUrl) throw new Error('O servidor não retornou uma etapa de pagamento válida.');
+
+      if (result.requiresBillingData) {
+        toast.success('Cadastro iniciado. Agora vamos completar os dados de faturamento.');
+      } else {
+        toast.success('Cadastro concluído. Abrindo checkout seguro...');
+      }
+
+      if (result.checkoutUrl.startsWith('/')) navigate(result.checkoutUrl, { replace: true });
+      else window.location.assign(result.checkoutUrl);
+    } catch (error: any) {
+      console.error('[RegisterPage] Falha no cadastro:', error);
+      toast.error(translateAuthError(error?.code, error?.message));
+      if (error?.code === 'auth/email-already-in-use' || error?.message?.includes('já possui cadastro') || error?.message?.includes('já está vinculada')) setExistingAccountPrompt(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const plan = selectedPlan ? PUBLIC_PLANS[selectedPlan] : null;
+  const diagnosisPlan = PUBLIC_PLANS[recommendedPlan];
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white px-4 py-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8 flex items-center justify-between">
-          <Link to="/" className="text-xl font-semibold tracking-wide">LumiereOS</Link>
-          <Link to="/login" className="text-sm text-neutral-400 hover:text-white">Já tenho uma conta</Link>
+    <div className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-10 relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-black to-black" />
+      <div className="relative z-10 w-full max-w-3xl">
+        <div className="text-center mb-8">
+          <Link to="/" className="inline-flex items-center gap-2 text-2xl font-semibold"><Sparkles className="w-7 h-7 text-primary" /> Lumière<span className="text-primary">OS</span></Link>
+          <p className="mt-3 text-xs uppercase tracking-[0.25em] text-primary">Comece sua operação em poucos minutos</p>
         </div>
 
-        <div className="mb-8 text-center">
-          <p className="mb-2 text-xs uppercase tracking-[0.25em] text-[#D4AF37]">Cadastro</p>
-          <h1 className="text-3xl font-semibold">{pageTitle}</h1>
-          <p className="mt-2 text-sm text-neutral-400">
-            {planWasChosenOnLanding ? 'Agora vamos apenas cadastrar os dados necessários para liberar o checkout.' : 'Escolha um plano ou descubra qual combina melhor com a operação.'}
-          </p>
+        <div className="rounded-3xl border border-white/10 bg-zinc-950/90 backdrop-blur-xl shadow-2xl p-6 sm:p-10">
+          {existingSalonInfo && (
+            <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/10 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div><div className="text-sm font-semibold text-white">Sua conta já possui uma empresa ativa no LumièreOS</div><p className="text-xs text-zinc-300 mt-1">Acesse sua assinatura para gerenciar o plano.</p></div>
+              <div className="flex items-center gap-2"><Link to="/dashboard/assinatura" className="px-4 py-2 rounded-xl bg-primary text-black text-xs font-bold">Minha Assinatura</Link><Link to="/dashboard" className="px-3 py-2 rounded-xl border border-white/10 text-white text-xs">Ir para o Painel</Link></div>
+            </div>
+          )}
+
+          {existingAccountPrompt && !existingSalonInfo && (
+            <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+              <div className="flex items-start gap-3"><AlertCircle className="w-5 h-5 text-amber-400 shrink-0" /><div className="flex-1"><div className="text-sm font-semibold">Este e-mail já possui cadastro</div><p className="text-xs text-zinc-300 mt-1">Faça login com a senha atual ou utilize o Google para continuar.</p><div className="mt-3 flex gap-3"><button type="button" onClick={handleGoogleAuth} disabled={loading} className="px-4 py-2 rounded-xl bg-white text-black text-xs font-bold">Entrar com Google</button><Link to={`/login?email=${encodeURIComponent(formData.email)}`} className="px-4 py-2 rounded-xl bg-primary text-black text-xs font-bold"><LogIn className="inline w-3.5 h-3.5 mr-1" />Fazer Login</Link></div></div></div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-3 mb-8">{[1,2,3].map(n => <div key={n} className={`h-2 flex-1 max-w-24 rounded-full ${step >= n ? 'bg-primary' : 'bg-white/10'}`} />)}</div>
+
+          {step === 1 && (
+            <div className="space-y-7">
+              <div><h1 className="text-3xl font-light">Dados do negócio</h1><p className="text-zinc-400 mt-2">Informe os dados básicos do estabelecimento. O plano escolhido na página anterior será mantido.</p></div>
+              {planWasChosenOnLanding && plan && <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 flex items-center justify-between gap-4"><div><div className="text-[10px] uppercase tracking-widest text-primary font-bold">Plano escolhido</div><div className="text-xl font-semibold mt-1">{plan.name}</div></div><div className="text-right"><div className="text-xl font-bold">R$ {priceFor(selectedPlan!, cycle).toLocaleString('pt-BR')}</div><div className="text-xs text-zinc-500">{cycleLabel[cycle]}</div></div></div>}
+              <div className="grid md:grid-cols-2 gap-4">
+                {[
+                  ['ownerName','Seu nome completo','João da Silva','text'],['salonName','Nome do estabelecimento','Studio Lumière','text'],['email','E-mail','voce@empresa.com','email'],['phone','WhatsApp','(00) 00000-0000','text'],['city','Cidade','Fernandópolis','text'],['state','Estado','SP','text'],
+                ].map(([name,label,placeholder,type]) => <label key={name} className="space-y-2"><span className="text-sm text-zinc-300">{label}</span><input type={type} value={(formData as any)[name]} onChange={e => update(name,e.target.value)} placeholder={placeholder} className="w-full h-12 rounded-xl border border-white/10 bg-black px-4 text-white outline-none focus:border-primary" required /></label>)}
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="space-y-2"><span className="text-sm text-zinc-300">Segmento</span><select value={formData.businessSegment} onChange={e => update('businessSegment',e.target.value)} className="w-full h-12 rounded-xl border border-white/10 bg-black px-4 outline-none focus:border-primary" required><option value="">Selecione</option><option>Salão de Beleza</option><option>Barbearia</option><option>Clínica de Estética</option><option>Estúdio</option><option>Outro</option></select></label>
+                <label className="space-y-2"><span className="text-sm text-zinc-300">Quantidade de profissionais</span><select value={formData.estimatedProfessionals} onChange={e => update('estimatedProfessionals',e.target.value)} className="w-full h-12 rounded-xl border border-white/10 bg-black px-4 outline-none focus:border-primary" required><option value="">Selecione</option><option>Apenas eu</option><option>2 a 5</option><option>6 a 15</option><option>16 a 30</option><option>31 a 60</option><option>Mais de 60</option></select>{capacityWarning && <p className="text-xs text-amber-300 mt-2">{capacityWarning}</p>}</label>
+              </div>
+              <button type="button" onClick={goForwardFromBusiness} disabled={!formData.ownerName || !formData.salonName || !formData.email || !formData.phone || !formData.businessSegment || !formData.estimatedProfessionals} className="w-full h-12 rounded-full bg-primary text-black font-bold disabled:opacity-40">Continuar <ArrowRight className="inline w-4 h-4 ml-1" /></button>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-7">
+              <div className="flex items-center gap-3"><button type="button" onClick={() => setStep(1)} className="p-2 rounded-full hover:bg-white/5"><ArrowLeft className="w-5 h-5" /></button><div><h1 className="text-3xl font-light">Escolha como começar</h1><p className="text-zinc-400 mt-1">Selecione o plano mais adequado para o porte informado.</p></div></div>
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5"><div className="text-xs uppercase tracking-widest text-primary font-bold">Recomendação</div><div className="text-xl font-semibold mt-2">{diagnosisPlan.name}</div><p className="text-sm text-zinc-400 mt-1">Até {diagnosisPlan.limit} profissionais.</p></div>
+              <div className="grid md:grid-cols-2 gap-4">{Object.entries(PUBLIC_PLANS).map(([id,item]) => <button key={id} type="button" onClick={() => { setSelectedPlan(id as PlanId); setStep(3); }} className={`text-left rounded-2xl border p-5 transition ${selectedPlan === id ? 'border-primary bg-primary/10' : 'border-white/10 bg-white/[0.02] hover:border-primary/40'}`}><h3 className="font-semibold text-lg">{item.name}</h3><p className="text-2xl font-bold mt-2">R$ {item.price}<span className="text-xs text-zinc-500 font-normal">/mês</span></p><p className="text-sm text-zinc-400 mt-3">Até {item.limit} profissionais.</p></button>)}</div>
+              <button type="button" onClick={() => { setSelectedPlan(recommendedPlan); setStep(3); }} className="w-full h-12 rounded-full border border-primary/40 text-primary font-semibold">Usar recomendação: {diagnosisPlan.name}</button>
+            </div>
+          )}
+
+          {step === 3 && plan && (
+            <form onSubmit={submit} className="space-y-7">
+              <div className="flex items-center gap-3"><button type="button" onClick={() => setStep(planWasChosenOnLanding ? 1 : 2)} className="p-2 rounded-full hover:bg-white/5"><ArrowLeft className="w-5 h-5" /></button><div><h1 className="text-3xl font-light">Finalize sua contratação</h1><p className="text-zinc-400 mt-1">Plano {plan.name} • R$ {priceFor(selectedPlan!, cycle).toLocaleString('pt-BR')} • {cycleLabel[cycle]}</p></div></div>
+              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 flex items-center justify-between"><div><div className="text-xs uppercase tracking-widest text-primary font-bold">Plano selecionado</div><div className="text-xl font-semibold mt-1">{plan.name}</div></div><div className="text-right"><div className="text-2xl font-bold">R$ {priceFor(selectedPlan!, cycle).toLocaleString('pt-BR')}</div><div className="text-xs text-zinc-500">{cycleLabel[cycle]}{cycle !== 'MONTHLY' ? ` • ${cycle === 'SEMIANNUALLY' ? '10%' : '15%'} OFF` : ''}</div></div></div>
+              <div className="grid grid-cols-3 gap-2 rounded-full border border-white/10 bg-black p-1">{CYCLES.map(item => <button type="button" key={item} onClick={() => setCycle(item)} className={`rounded-full py-2 text-xs font-semibold ${cycle === item ? 'bg-primary text-black' : 'text-zinc-400'}`}>{cycleLabel[item]}</button>)}</div>
+              {isAlreadyAuthWithSameEmail ? <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex items-center gap-3"><Check className="w-5 h-5 text-emerald-400" /><div><div className="text-xs uppercase tracking-wider text-emerald-400 font-bold">Autenticado com sucesso</div><div className="text-sm text-white">{currentUser?.email}</div></div></div> : <div className="space-y-4"><div className="flex items-center justify-between"><span className="text-sm text-zinc-300 font-medium">Defina sua senha de acesso</span><button type="button" onClick={handleGoogleAuth} disabled={loading} className="text-xs text-primary hover:underline">Autenticar com Google</button></div><div className="grid md:grid-cols-2 gap-4"><label className="space-y-2"><span className="text-xs text-zinc-400">Senha</span><div className="relative"><input required minLength={8} type="password" value={formData.password} onChange={e => update('password',e.target.value)} placeholder="Mínimo 8 caracteres" className="w-full h-12 rounded-xl border border-white/10 bg-black px-4 pr-10 outline-none focus:border-primary" /><Lock className="absolute right-4 top-3.5 w-5 h-5 text-zinc-600" /></div></label><label className="space-y-2"><span className="text-xs text-zinc-400">Confirme a senha</span><input required minLength={8} type="password" value={formData.confirmPassword} onChange={e => update('confirmPassword',e.target.value)} placeholder="Repita sua senha" className="w-full h-12 rounded-xl border border-white/10 bg-black px-4 outline-none focus:border-primary" /></label></div></div>}
+              <label className="flex gap-3 items-start text-xs text-zinc-400"><input type="checkbox" checked={formData.acceptedTerms} onChange={e => update('acceptedTerms',e.target.checked)} className="mt-0.5 accent-[#D4AF37]" required /><span>Li e aceito os Termos de Uso e a Política de Privacidade do LumièreOS.</span></label>
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex gap-3"><ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" /><p className="text-xs text-zinc-400 leading-relaxed">Os dados do cartão não são armazenados pelo LumièreOS. O pagamento acontece diretamente no ambiente seguro do Asaas.</p></div>
+              <button disabled={loading} type="submit" className="w-full h-13 rounded-full bg-primary text-black font-bold disabled:opacity-40 hover:bg-primary/90 transition flex items-center justify-center gap-2">{loading ? 'Preparando sua conta...' : 'Continuar para pagamento'} <ArrowRight className="inline w-4 h-4 ml-1" /></button>
+              <p className="text-center text-xs text-zinc-500">Já possui conta? <Link to="/login" className="text-primary hover:underline">Acessar sistema</Link></p>
+            </form>
+          )}
         </div>
-
-        {!planWasChosenOnLanding && step === 1 && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {Object.entries(PUBLIC_PLANS).map(([id, plan]) => (
-              <button key={id} onClick={() => selectPlan(id as PlanId)} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-left transition hover:border-[#D4AF37]/50">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold">{plan.name}</h2>
-                  <span className="text-lg font-semibold text-[#D4AF37]">R$ {plan.price}/mês</span>
-                </div>
-                <p className="mt-3 text-sm text-neutral-400">Plano com ferramentas progressivamente mais completas para operação, gestão, inteligência e múltiplas unidades.</p>
-                <span className="mt-5 inline-flex items-center text-sm text-[#D4AF37]">Continuar <ArrowRight className="ml-2 h-4 w-4" /></span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {step >= 2 && selectedPlanData && (
-          <div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-8">
-            <div className="mb-6 flex items-center justify-between border-b border-white/10 pb-5">
-              <div>
-                <p className="text-xs uppercase tracking-widest text-neutral-500">Plano escolhido</p>
-                <h2 className="mt-1 text-2xl font-semibold">{selectedPlanData.name}</h2>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-semibold text-[#D4AF37]">R$ {currentPrice}</p>
-                <p className="text-xs text-neutral-500">{cycleLabel[cycle]}</p>
-              </div>
-            </div>
-
-            <div className="mb-6 grid grid-cols-3 gap-2">
-              {CYCLES.map(c => (
-                <button key={c} type="button" onClick={() => setCycle(c)} className={`rounded-xl border px-3 py-2 text-sm ${cycle === c ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#D4AF37]' : 'border-white/10 text-neutral-400'}`}>
-                  {cycleLabel[c]}
-                </button>
-              ))}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {[
-                ['ownerName', 'Nome do responsável', 'text'],
-                ['salonName', 'Nome do negócio', 'text'],
-                ['phone', 'WhatsApp / telefone', 'tel'],
-                ['email', 'E-mail', 'email'],
-                ['city', 'Cidade', 'text'],
-                ['state', 'Estado', 'text'],
-                ['businessSegment', 'Segmento', 'text'],
-                ['estimatedProfessionals', 'Tamanho aproximado da equipe', 'text'],
-              ].map(([key, label, type]) => (
-                <label key={key} className="block text-sm text-neutral-300">
-                  {label}
-                  <input type={type} value={(formData as any)[key]} onChange={e => setFormData(prev => ({ ...prev, [key]: e.target.value }))} className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-[#D4AF37]" />
-                </label>
-              ))}
-            </div>
-
-            {!currentUser && (
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="text-sm text-neutral-300">Senha<input type="password" value={formData.password} onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))} className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3" /></label>
-                <label className="text-sm text-neutral-300">Confirmar senha<input type="password" value={formData.confirmPassword} onChange={e => setFormData(prev => ({ ...prev, confirmPassword: e.target.value }))} className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3" /></label>
-              </div>
-            )}
-
-            <label className="mt-5 flex items-start gap-3 text-sm text-neutral-400">
-              <input type="checkbox" checked={formData.acceptedTerms} onChange={e => setFormData(prev => ({ ...prev, acceptedTerms: e.target.checked }))} className="mt-1" />
-              <span>Concordo com os termos de uso e política de privacidade.</span>
-            </label>
-
-            <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-              {!planWasChosenOnLanding && <button type="button" onClick={() => setStep(1)} className="inline-flex items-center justify-center rounded-full border border-white/10 px-6 py-3 text-sm text-neutral-300"><ArrowLeft className="mr-2 h-4 w-4" /> Trocar plano</button>}
-              <button type="button" disabled={loading} onClick={goToCheckout} className="inline-flex flex-1 items-center justify-center rounded-full bg-[#D4AF37] px-6 py-3 font-semibold text-black disabled:opacity-50">
-                {loading ? 'Preparando checkout...' : <>Continuar para pagamento <ArrowRight className="ml-2 h-4 w-4" /></>}
-              </button>
-            </div>
-
-            <div className="mt-6 flex items-center justify-center gap-2 text-xs text-neutral-500"><ShieldCheck className="h-4 w-4" /> Os dados de pagamento são tratados no checkout seguro.</div>
-          </div>
-        )}
-
-        {step === 1 && !planWasChosenOnLanding && (
-          <div className="mt-6 text-center">
-            <button onClick={() => navigate('/diagnostico')} className="text-sm text-[#D4AF37] hover:underline">Não sabe qual plano escolher? Faça o diagnóstico gratuito.</button>
-          </div>
-        )}
       </div>
     </div>
   );
