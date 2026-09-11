@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Check, Sparkles, ArrowRight, ShieldCheck, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getPlanPrice, getEquivalentMonthly, planCatalog, PublicBillingCycle, PublicPlanId } from '@/config/planPricing';
 
@@ -22,25 +22,26 @@ export default function PricingPage() {
   const plans = useMemo(() => planCatalog.plans as Array<any>, []);
 
   const choose = (planId: PublicPlanId | string) => {
-    if (planId === 'enterprise') {
-      window.location.href = 'mailto:comercial@lumiere-os.com?subject=Enterprise%20LumièreOS';
+    if (planId === 'enterprise_custom') {
+      window.location.href = 'mailto:comercial@lumiere-os.com?subject=Enterprise%20Lumi%C3%A8reOS';
       return;
     }
+    // Escolha de plano leva diretamente ao cadastro. O diagnóstico é opcional.
     navigate(`/cadastro?plan=${encodeURIComponent(planId)}&cycle=${cycle}`);
   };
 
   return (
     <div className="min-h-screen bg-black text-white px-6 py-16">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center max-w-3xl mx-auto mb-12">
+        <div className="text-center max-w-4xl mx-auto mb-12">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-primary">
             <Sparkles className="w-4 h-4" /> Planos LumièreOS
           </div>
-          <h1 className="mt-6 text-4xl md:text-6xl font-light tracking-tight">Escolha o nível de gestão que sua empresa precisa.</h1>
-          <p className="mt-5 text-zinc-400 text-lg">Comece pequeno, cresça sem trocar de sistema e pague menos ao escolher ciclos mais longos.</p>
+          <h1 className="mt-6 text-4xl md:text-6xl font-light tracking-tight">Escolha as ferramentas que sua operação precisa.</h1>
+          <p className="mt-5 text-zinc-400 text-lg">Cada plano libera um nível diferente de gestão. Comece pelo que resolve sua necessidade hoje e evolua quando precisar.</p>
         </div>
 
-        <div className="flex justify-center mb-10">
+        <div className="flex justify-center mb-8">
           <div className="inline-flex rounded-full border border-white/10 bg-zinc-900/80 p-1">
             {(Object.keys(cycleLabels) as PublicBillingCycle[]).map(item => (
               <button key={item} onClick={() => setCycle(item)} className={`rounded-full px-5 py-2.5 text-sm transition ${cycle === item ? 'bg-primary text-black font-semibold' : 'text-zinc-400 hover:text-white'}`}>
@@ -48,6 +49,13 @@ export default function PricingPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="mb-10 flex flex-col sm:flex-row items-center justify-center gap-3 text-center">
+          <span className="inline-flex items-center gap-2 text-sm text-zinc-400"><HelpCircle className="w-4 h-4 text-primary" /> Não sabe qual plano atende melhor?</span>
+          <Button variant="outline" onClick={() => navigate('/diagnostico')} className="rounded-full border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary">
+            Fazer diagnóstico <ArrowRight className="ml-2 w-4 h-4" />
+          </Button>
         </div>
 
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5 items-stretch">
@@ -63,12 +71,14 @@ export default function PricingPage() {
                 <div className="mt-6">
                   {price == null ? <div className="text-2xl font-semibold">Sob consulta</div> : <><div className="text-4xl font-bold">R$ {price.toLocaleString('pt-BR')}</div><div className="mt-1 text-xs text-zinc-500">{cycle === 'MONTHLY' ? 'por mês' : `≈ R$ ${equivalent!.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mês`}</div></>}
                 </div>
-                {plan.maxProfessionals && <div className="mt-5 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-sm font-medium">Até {plan.maxProfessionals} profissionais{plan.id === 'multiunit' ? ' por unidade' : ''}</div>}
+                <div className="mt-5 rounded-xl border border-primary/10 bg-primary/[0.03] px-3 py-2 text-xs text-zinc-400">
+                  O limite de profissionais é operacional e varia conforme o plano. A diferença principal está nas ferramentas liberadas.
+                </div>
                 <div className="mt-6 space-y-3 flex-1">
                   {plan.features.map((feature: string) => <div key={feature} className="flex gap-2 text-sm text-zinc-300"><Check className="w-4 h-4 shrink-0 text-primary mt-0.5" />{feature}</div>)}
                 </div>
                 <Button onClick={() => choose(plan.id)} className={`mt-8 w-full rounded-full ${highlighted ? 'bg-primary text-black hover:bg-yellow-300' : 'bg-white/10 text-white hover:bg-white/15'}`}>
-                  {plan.id === 'enterprise' ? 'Falar com especialista' : 'Escolher plano'} <ArrowRight className="ml-2 w-4 h-4" />
+                  {plan.id === 'enterprise_custom' ? 'Falar com especialista' : 'Escolher plano'} <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </div>
             );
