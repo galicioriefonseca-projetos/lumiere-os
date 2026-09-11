@@ -14,7 +14,7 @@ const MONTHLY_PRICES: Record<string, number | null> = {
 
 const NAMES: Record<string, string> = {
   essential: 'Essencial',
-  professional: 'Profissional',
+  professional: 'Gestão',
   performance_plus: 'Performance',
   multiunit: 'Multiunidade',
   enterprise_custom: 'Enterprise',
