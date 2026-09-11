@@ -25,8 +25,16 @@ export default function PlanProtectedRoute({ feature, children }: Props) {
 
   if (loading) return null;
 
+  // A Lumiere Beauty é uma conta de demonstração controlada.
+  // Contas reais continuam sujeitas ao catálogo comercial; a demo pode
+  // navegar por todas as ferramentas para apresentar o produto completo.
+  const isDemoSalon = Boolean(
+    salonData?.isDemo === true ||
+    (salonData?.name && /lumiere\s*beauty/i.test(String(salonData.name)))
+  );
+
   const plan = normalizePlan(salonData?.plan);
-  const allowed = hasPlanFeature(plan, feature);
+  const allowed = isDemoSalon || hasPlanFeature(plan, feature);
 
   return <PlanFeatureGate feature={feature} allowed={allowed}>{children}</PlanFeatureGate>;
 }
