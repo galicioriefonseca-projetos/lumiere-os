@@ -218,9 +218,12 @@ export default function RegisterPage() {
       if (result.checkoutUrl.startsWith('/')) navigate(result.checkoutUrl, { replace: true });
       else window.location.assign(result.checkoutUrl);
     } catch (error: any) {
-      console.error('[RegisterPage] Falha no cadastro:', error);
-      toast.error(translateAuthError(error?.code, error?.message));
-      if (error?.code === 'auth/email-already-in-use' || error?.message?.includes('já possui cadastro') || error?.message?.includes('já está vinculada')) setExistingAccountPrompt(true);
+      if (error?.code === 'auth/email-already-in-use' || error?.message?.includes('já possui cadastro') || error?.message?.includes('já está vinculada')) {
+        setExistingAccountPrompt(true);
+      } else {
+        console.error('[RegisterPage] Falha no cadastro:', error);
+        toast.error(translateAuthError(error?.code, error?.message));
+      }
     } finally {
       setLoading(false);
     }

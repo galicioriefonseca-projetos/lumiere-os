@@ -313,8 +313,11 @@ export default function LoginPage() {
       navigate(`/preparando-ambiente?to=${encodeURIComponent(targetPath)}`, { replace: true });
 
     } catch (err: any) {
-      console.error('[LumièreAuth] Google login error:', err);
       setLoading(false);
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      console.error('[LumièreAuth] Google login error:', err);
       setError(translateAuthError(err.code || 'error', err.message));
     }
   };
