@@ -10,6 +10,7 @@ import asaasChangeCycleHandler from "./routes/billing/change-cycle.js";
 import asaasUpdatePaymentMethodHandler from "./routes/billing/update-payment-method.js";
 import asaasRealSubscriptionHandler from "./routes/billing/real-subscription.js";
 import asaasSubscriptionStatusHandler from "./routes/billing/subscription-status.js";
+import { validateSetupTokenHandler, completeCompanySetupHandler } from "./routes/billing/setup-company.js";
 import seedDemoSalonHandler from "./routes/admin/seed-demo-salon.js";
 
 import express from "express";
@@ -136,6 +137,8 @@ app.post("/api/billing/change-cycle", billingLimiter, (req, res) => asaasChangeC
 app.post("/api/billing/update-payment-method", billingLimiter, (req, res) => asaasUpdatePaymentMethodHandler(req as any, res as any));
 app.get("/api/billing/real-subscription", billingLimiter, (req, res) => asaasRealSubscriptionHandler(req as any, res as any));
 app.get("/api/billing/subscription-status", billingLimiter, (req, res) => asaasSubscriptionStatusHandler(req as any, res as any));
+app.get("/api/billing/setup-token", billingLimiter, (req, res) => validateSetupTokenHandler(req as any, res as any));
+app.post("/api/billing/complete-setup", billingLimiter, (req, res) => completeCompanySetupHandler(req as any, res as any));
 
 // Administração de dados fictícios da conta Lumiere Beauty
 app.post("/api/admin/seed-demo-salon", adminLimiter, (req, res) => seedDemoSalonHandler(req as any, res as any));

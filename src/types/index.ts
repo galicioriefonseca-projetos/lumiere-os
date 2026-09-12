@@ -18,6 +18,7 @@ export interface User {
   professionalCategory?: string;
   status?: string;
   isActive?: boolean;
+  onboardingStatus?: 'pending_payment' | 'pending_setup' | 'completed';
   createdAt: number;
   updatedAt: number;
 }

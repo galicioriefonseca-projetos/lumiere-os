@@ -51,7 +51,13 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
     );
   }
 
-  if (!currentUser) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!currentUser) {
+    const searchParams = new URLSearchParams(location.search);
+    if (location.pathname === '/dashboard/configurar-empresa' && searchParams.get('token')) {
+      return <>{children}</>;
+    }
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
   const role = userData?.role;
 
@@ -61,7 +67,13 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
   // antes de o webhook da Asaas promover a conta de pending para owner.
   if ((role as string) === 'pending') {
     if (location.pathname === '/dashboard/dados-faturamento') return <>{children}</>;
+    if (location.pathname === '/dashboard/configurar-empresa') return <>{children}</>;
     if (location.pathname !== '/aguardando-pagamento') return <Navigate to="/aguardando-pagamento" replace />;
+    return <>{children}</>;
+  }
+
+  if (role === 'owner' && userData.onboardingStatus === 'pending_setup') {
+    if (location.pathname !== '/dashboard/configurar-empresa') return <Navigate to="/dashboard/configurar-empresa" replace />;
     return <>{children}</>;
   }
 

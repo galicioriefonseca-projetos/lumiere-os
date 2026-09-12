@@ -1,4 +1,5 @@
-
+const fs = require('fs');
+fs.writeFileSync('src/pages/auth/RegisterPage.tsx', `
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Lock, ShieldCheck, Loader2 } from 'lucide-react';
@@ -7,7 +8,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfi
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { translateAuthError } from '@/lib/auth-helpers';
-import { formatDocument, formatPhone } from '@/lib/utils';
+import { formatDocument, formatPhone } from '@/lib/formatters';
 
 const PUBLIC_PLANS = {
   essential: { name: 'Essencial', price: 197, limit: 5 },
@@ -118,11 +119,11 @@ export default function RegisterPage() {
       if (!user) throw new Error('Falha ao autenticar.');
 
       const token = await user.getIdToken();
-      const salonId = `salon_${user.uid}`;
+      const salonId = \`salon_\${user.uid}\`;
 
       const checkoutResponse = await fetch('/api/billing/create-checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${token}\` },
         body: JSON.stringify({
           salonId,
           planId: selectedPlan,
@@ -182,7 +183,7 @@ export default function RegisterPage() {
                   key={id}
                   type="button"
                   onClick={() => { setSelectedPlan(id as PlanId); setStep(2); }}
-                  className={`text-left rounded-2xl border p-5 transition ${selectedPlan === id ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-white/10 bg-white/[0.02] hover:border-[#D4AF37]/40'}`}
+                  className={\`text-left rounded-2xl border p-5 transition \${selectedPlan === id ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-white/10 bg-white/[0.02] hover:border-[#D4AF37]/40'}\`}
                 >
                   <h3 className="font-semibold text-lg">{item.name}</h3>
                   <p className="text-2xl font-bold mt-2">R$ {item.price}<span className="text-xs text-zinc-500 font-normal">/mês</span></p>
@@ -213,7 +214,7 @@ export default function RegisterPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold">R$ {priceFor(selectedPlan, cycle).toLocaleString('pt-BR')}</div>
-                  <div className="text-xs text-zinc-500">{cycleLabel[cycle]}{cycle !== 'MONTHLY' ? ` • ${cycle === 'SEMIANNUALLY' ? '10%' : '15%'} OFF` : ''}</div>
+                  <div className="text-xs text-zinc-500">{cycleLabel[cycle]}{cycle !== 'MONTHLY' ? \` • \${cycle === 'SEMIANNUALLY' ? '10%' : '15%'} OFF\` : ''}</div>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 rounded-full border border-white/10 bg-black p-1">
@@ -222,7 +223,7 @@ export default function RegisterPage() {
                     type="button"
                     key={item}
                     onClick={() => setCycle(item)}
-                    className={`rounded-full py-1.5 text-xs font-semibold ${cycle === item ? 'bg-[#D4AF37] text-black' : 'text-zinc-400'}`}
+                    className={\`rounded-full py-1.5 text-xs font-semibold \${cycle === item ? 'bg-[#D4AF37] text-black' : 'text-zinc-400'}\`}
                   >
                     {cycleLabel[item]}
                   </button>
@@ -308,3 +309,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+`);

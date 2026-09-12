@@ -31,7 +31,7 @@ describe('Webhook Security', () => {
     await asaasWebhookHandler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Token inválido' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'Não autorizado' });
   });
 
   it('should process request with valid token', async () => {

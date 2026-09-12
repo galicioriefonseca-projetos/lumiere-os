@@ -461,9 +461,26 @@ export class BillingService {
           transaction.set(salonRef, { plan: confirmedPlanId }, { merge: true });
         }
 
-        transaction.set(salonRef, { billing: billingUpdate }, { merge: true });
+        const salonDataUpdate: any = { billing: billingUpdate };
+        if (tenantStatus === 'active' || isPaymentConfirmed) {
+          salonDataUpdate.status = 'active';
+          salonDataUpdate.subscriptionStatus = 'active';
+          salonDataUpdate.activationStatus = 'active';
+          salonDataUpdate.isActive = true;
+          salonDataUpdate.paymentStatus = 'confirmed';
+          if (salonData?.onboardingCompleted !== true) {
+            salonDataUpdate.onboardingStatus = 'pending_setup';
+          }
+        }
+        transaction.set(salonRef, salonDataUpdate, { merge: true });
         if (tenantStatus) transaction.set(tenantRef, { id: salonId, status: tenantStatus, subscriptionStatus: tenantStatus, active: tenantStatus === 'active', updatedAt: now.toISOString() }, { merge: true });
         transaction.set(subRef, { tenantId: salonId, provider: 'asaas', subscriptionId: asaasSubscriptionId, status: billingStatus || currentBilling.status || 'PENDING_PAYMENT', planId: isPaymentConfirmed && currentBilling.pendingPlanId ? currentBilling.pendingPlanId : activePlanId, customerId, billingCycle: subscription?.cycle || currentBilling.billingCycle || 'MONTHLY', value: subscription?.value != null ? Number(subscription.value) : currentBilling.value || null, lastPaymentDate: lastPayment ? lastPayment.toISOString() : currentBilling.lastPaymentDate || null, nextDueDate: resolvedNextDueDate ? resolvedNextDueDate.toISOString().split('T')[0] : currentBilling.nextDueDate || null, updatedAt: now.toISOString() }, { merge: true });
+
+        // Promote pending owner to full owner upon payment confirmation
+        if (tenantStatus === 'active' && salonData?.ownerId) {
+          const userRef = adminDb.collection('users').doc(salonData.ownerId);
+          transaction.set(userRef, { role: 'owner', onboardingStatus: salonData?.onboardingCompleted ? 'completed' : 'pending_setup' }, { merge: true });
+        }
       });
       if (eventId) await adminDb.collection('billing_events').doc(eventId).update({ status: 'PROCESSED', processed: true, processedAt: new Date().toISOString() });
     } catch (err: any) {

@@ -15,6 +15,7 @@ import RegisterPage from './pages/auth/RegisterPage';
 import InviteRegisterPage from './pages/auth/InviteRegisterPage';
 import ActivationPage from './pages/auth/ActivationPage';
 import WaitingPaymentPage from './pages/auth/WaitingPaymentPage';
+import CompanySetupPage from './pages/dashboard/CompanySetupPage';
 import PreparingEnvironmentPage from './pages/auth/PreparingEnvironmentPage';
 import DashboardLayout from './components/layouts/DashboardLayout';
 import OnboardingLayout from './components/layouts/OnboardingLayout';
@@ -70,6 +71,7 @@ function App() {
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
             <Route path="/ativar-conta" element={<ActivationPage />} />
             <Route path="/aguardando-pagamento" element={<ProtectedRoute><WaitingPaymentPage /></ProtectedRoute>} />
+            <Route path="/dashboard/configurar-empresa" element={<ProtectedRoute><CompanySetupPage /></ProtectedRoute>} />
             <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>

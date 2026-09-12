@@ -1,19 +1,30 @@
 import { env } from "../config/env.js";
+import { Resend } from "resend";
+
 /**
- * Serviço mínimo de e-mail transacional.
- *
- * Usa a API HTTP da Resend (https://resend.com) via fetch nativo do Node —
- * não é necessário instalar nenhum pacote novo.
+ * Serviço de e-mail transacional do LumièreOS utilizando o SDK oficial da Resend.
  *
  * Variáveis de ambiente necessárias (ver .env.example):
  *   RESEND_API_KEY  -> chave de API gerada no painel da Resend
  *   EMAIL_FROM      -> remetente verificado, ex: "LumièreOS <contato@seudominio.com.br>"
- *   APP_URL         -> URL pública do app (já usada em outras partes do projeto)
+ *   APP_URL         -> URL pública do app
  *
+ * Inicialização preguiçosa (lazy):
  * Se RESEND_API_KEY não estiver configurada, a função apenas loga um aviso
- * e retorna sem lançar erro — assim o webhook da Asaas nunca falha por
- * causa do envio de e-mail (o pagamento já foi processado e é o mais importante).
+ * e retorna sem lançar erro, evitando indisponibilidade em webhooks ou inicializações.
  */
+
+let resendClient: Resend | null = null;
+
+export function getResendClient(): Resend | null {
+  if (!resendClient) {
+    const apiKey = env.resend?.apiKey || process.env.RESEND_API_KEY;
+    if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0) {
+      resendClient = new Resend(apiKey.trim());
+    }
+  }
+  return resendClient;
+}
 
 interface SendEmailParams {
   to: string;
@@ -21,11 +32,11 @@ interface SendEmailParams {
   html: string;
 }
 
-export async function sendEmail({ to, subject, html }: SendEmailParams): Promise<{ sent: boolean; reason?: string }> {
-  const apiKey = env.resend.apiKey;
-  const from = env.app.emailFrom || 'LumièreOS <onboarding@resend.dev>';
+export async function sendEmail({ to, subject, html }: SendEmailParams): Promise<{ sent: boolean; messageId?: string; reason?: string }> {
+  const from = env.app.emailFrom || process.env.EMAIL_FROM || 'LumièreOS <onboarding@resend.dev>';
+  const resend = getResendClient();
 
-  if (!apiKey) {
+  if (!resend) {
     console.warn('[email] RESEND_API_KEY não configurada — e-mail NÃO enviado. Destinatário:', to, 'Assunto:', subject);
     return { sent: false, reason: 'missing_api_key' };
   }
@@ -36,26 +47,122 @@ export async function sendEmail({ to, subject, html }: SendEmailParams): Promise
   }
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ from, to: [to], subject, html })
+    const { data, error } = await resend.emails.send({
+      from,
+      to: [to.trim()],
+      subject,
+      html
     });
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.error('[email] Falha ao enviar via Resend:', response.status, errText);
-      return { sent: false, reason: `resend_error_${response.status}` };
+    if (error) {
+      console.error('[email] Falha ao enviar via Resend SDK:', error.message);
+      return { sent: false, reason: error.message };
     }
 
-    return { sent: true };
+    console.log(`[email] E-mail enviado com sucesso via Resend para ${to}. ID: ${data?.id}`);
+    return { sent: true, messageId: data?.id };
   } catch (err: any) {
-    console.error('[email] Erro inesperado ao enviar e-mail:', err?.message || err);
+    console.error('[email] Erro inesperado ao enviar e-mail via Resend SDK:', err?.message || err);
     return { sent: false, reason: 'exception' };
   }
+}
+
+/**
+ * E-mail transacional automático enviado após a confirmação de pagamento (PAYMENT_RECEIVED ou PAYMENT_CONFIRMED),
+ * contendo link exclusivo de sessão única para a rota /dashboard/configurar-empresa.
+ */
+export async function sendCompanySetupEmail(params: {
+  to: string;
+  ownerName?: string;
+  setupUrl: string;
+  salonName?: string;
+  planName?: string;
+}): Promise<{ sent: boolean; messageId?: string; reason?: string }> {
+  const greetingName = params.ownerName ? params.ownerName.trim().split(' ')[0] : 'Empreendedor(a)';
+  const planInfo = params.planName ? ` no plano <strong style="color: #D4AF37;">${params.planName}</strong>` : '';
+  const salonInfo = params.salonName ? ` para <strong>${params.salonName}</strong>` : '';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configure sua empresa no LumièreOS</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #060608; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f4f4f5;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #060608; padding: 40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 520px; background-color: #0d0d12; border: 1px solid #27272a; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);">
+          <!-- Header Bar -->
+          <tr>
+            <td style="padding: 32px 32px 20px 32px; border-bottom: 1px solid #1f1f23; text-align: left;">
+              <span style="font-size: 13px; font-weight: 700; letter-spacing: 2px; color: #D4AF37; text-transform: uppercase;">LUMIÈREOS</span>
+            </td>
+          </tr>
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 32px; text-align: left;">
+              <h1 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 600; color: #ffffff; letter-spacing: -0.5px;">
+                Pagamento confirmado! 🎉
+              </h1>
+              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #d4d4d8;">
+                Olá, <strong>${greetingName}</strong>!
+              </p>
+              <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #a1a1aa;">
+                Recebemos a confirmação do seu pagamento${planInfo}${salonInfo}. Sua assinatura já está <strong>ativa</strong>!
+              </p>
+              <p style="margin: 0 0 28px 0; font-size: 15px; line-height: 1.6; color: #a1a1aa;">
+                Para liberar o seu painel de gestão completo, basta concluir a configuração do seu estabelecimento clicando no botão exclusivo abaixo:
+              </p>
+
+              <!-- CTA Button -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 28px;">
+                <tr>
+                  <td align="center">
+                    <a href="${params.setupUrl}" target="_blank" rel="noopener noreferrer" style="display: block; width: 100%; box-sizing: border-box; background: #D4AF37; color: #000000; font-weight: 700; font-size: 14px; text-align: center; text-decoration: none; padding: 14px 28px; border-radius: 12px; letter-spacing: 0.2px;">
+                      Configurar Minha Empresa &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Security Notice -->
+              <div style="background-color: #14141b; border: 1px solid #27272a; border-radius: 12px; padding: 14px 16px; margin-bottom: 24px;">
+                <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #a1a1aa;">
+                  🔒 <strong>Link exclusivo e seguro:</strong> Este link é de uso único e expira em 72 horas para a proteção da sua conta.
+                </p>
+              </div>
+
+              <p style="margin: 0 0 8px 0; font-size: 12px; color: #71717a; line-height: 1.5;">
+                Se o botão não abrir, copie e cole o endereço abaixo no seu navegador:
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #D4AF37; word-break: break-all; line-height: 1.4;">
+                <a href="${params.setupUrl}" style="color: #D4AF37; text-decoration: underline;">${params.setupUrl}</a>
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 32px; background-color: #09090c; border-top: 1px solid #1f1f23; text-align: center;">
+              <p style="margin: 0; font-size: 12px; color: #71717a;">
+                LumièreOS &bull; Plataforma de gestão para o setor da beleza
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return sendEmail({
+    to: params.to,
+    subject: 'Pagamento confirmado! Configure sua empresa no LumièreOS',
+    html
+  });
 }
 
 /**
@@ -130,3 +237,4 @@ export async function sendCheckoutEmail(params: { to: string; ownerName?: string
     html
   });
 }
+

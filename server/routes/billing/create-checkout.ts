@@ -63,8 +63,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
 
     const reqMethod = String(rawPaymentMethod || '').trim().toUpperCase();
-    if (reqMethod === 'BOLETO') return res.status(400).json({ success: false, error: 'A forma de pagamento Boleto não está disponível. Escolha Cartão de Crédito ou Pix.' });
-    const chosenMethod: 'CREDIT_CARD' | 'PIX' = reqMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD';
+    const chosenMethod: 'CREDIT_CARD' | 'PIX' | 'BOLETO' = ['PIX', 'BOLETO'].includes(reqMethod) ? (reqMethod as 'PIX' | 'BOLETO') : 'CREDIT_CARD';
 
     let user;
     try { user = await verifyIdToken(req); }
@@ -84,12 +83,12 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       const body = req.body || {};
       const now = Date.now();
       const ownerName = String(body.ownerName || body.customerData?.legalName || user.name || '').trim();
-      const salonName = String(body.salonName || '').trim();
+      const salonName = String(body.salonName || '').trim() || `Estabelecimento de ${ownerName || 'Novo Usuário'}`;
       const phone = String(body.phone || body.customerData?.mobilePhone || '').trim();
       const email = String(user.email || body.email || '').trim().toLowerCase();
       const city = String(body.city || '').trim();
       const state = String(body.state || '').trim().toUpperCase();
-      if (ownerName.length < 2 || salonName.length < 2 || !email) return res.status(422).json({ success: false, code: 'REGISTRATION_DATA_INVALID', error: 'Dados básicos do estabelecimento estão incompletos.' });
+      if (ownerName.length < 2 || !email) return res.status(422).json({ success: false, code: 'REGISTRATION_DATA_INVALID', error: 'Dados básicos incompletos (nome e email são obrigatórios).' });
       salonData = {
         id: salonId, name: salonName, ownerName, ownerId: user.uid, ownerEmail: email, phone,
         businessType: mapBusinessType(String(body.businessSegment || '')), city, state, plan: planId,
@@ -101,7 +100,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         createdAt: now, updatedAt: now
       };
       await salonRef.create(salonData);
-      await adminDb.collection('users').doc(user.uid).set({ id: user.uid, email, fullName: ownerName, name: ownerName, phone, role: 'owner', salonId, onboardingStatus: 'pending_payment', updatedAt: now }, { merge: true });
+      await adminDb.collection('users').doc(user.uid).set({ id: user.uid, email, fullName: ownerName, name: ownerName, phone, role: 'pending', salonId, onboardingStatus: 'pending_payment', updatedAt: now }, { merge: true });
     } else salonData = salonDoc.data() || {};
 
     const authResult = await canManageBilling(user, salonId, salonData);
