@@ -7,6 +7,7 @@ import { normalizeBillingCustomerData, saveBillingCustomerData } from '../../bil
 import { env } from '../../config/env.js';
 
 const ALLOWED_CYCLES = new Set(['MONTHLY', 'SEMIANNUALLY', 'YEARLY']);
+const ALLOWED_CHECKOUT_METHODS = new Set(['CREDIT_CARD', 'PIX']);
 
 function mapBusinessType(segment: string): string {
   switch (segment) {
@@ -24,30 +25,11 @@ function planCyclePrice(plan: any, cycle: string): number {
   return Number(plan.annualPrice || 0);
 }
 
-async function resolveAsaasInvoiceUrl(subscriptionId: string, adminDb: any): Promise<string | null> {
-  const settingsDoc = await adminDb.collection('settings').doc('asaas').get();
-  const settingsData = settingsDoc.exists ? settingsDoc.data() || {} : {};
-  const apiKey = String(settingsData.apiKey || env.asaas.apiKey || '').trim();
-  const mode = settingsData.mode === 'production' ? 'production' : 'sandbox';
-
-  if (!apiKey) {
-    throw new Error('O serviço de pagamento ainda não está configurado. Configure a chave do Asaas para continuar.');
-  }
-
-  for (let attempt = 0; attempt < 8; attempt++) {
-    try {
-      const payments = await asaasProvider.getPaymentsBySubscription(mode, apiKey, subscriptionId);
-      const payment = payments.find((item: any) => item?.invoiceUrl && ['PENDING', 'OVERDUE'].includes(String(item.status || '').toUpperCase()))
-        || payments.find((item: any) => item?.invoiceUrl);
-      if (payment?.invoiceUrl) {
-        return `${payment.invoiceUrl}${payment.invoiceUrl.includes('?') ? '&' : '?'}autoRedirect=true`;
-      }
-    } catch (error: any) {
-      console.warn(`[Asaas] Falha ao consultar a cobrança da assinatura (tentativa ${attempt + 1}/8):`, error?.message || error);
-    }
-    if (attempt < 7) await new Promise(resolve => setTimeout(resolve, 1500));
-  }
-  return null;
+function asaasCheckoutUrl(linkOrId: string, mode: 'sandbox' | 'production') {
+  if (!linkOrId) return '';
+  if (linkOrId.startsWith('http://') || linkOrId.startsWith('https://')) return linkOrId;
+  const host = mode === 'sandbox' ? 'https://sandbox.asaas.com' : 'https://asaas.com';
+  return `${host}/checkoutSession/show?id=${encodeURIComponent(linkOrId)}`;
 }
 
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
@@ -62,8 +44,15 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     if (!salonId || !planId) return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
 
-    const reqMethod = String(rawPaymentMethod || '').trim().toUpperCase();
-    const chosenMethod: 'CREDIT_CARD' | 'PIX' | 'BOLETO' = ['PIX', 'BOLETO'].includes(reqMethod) ? (reqMethod as 'PIX' | 'BOLETO') : 'CREDIT_CARD';
+    const reqMethod = String(rawPaymentMethod || 'CREDIT_CARD').trim().toUpperCase();
+    if (!ALLOWED_CHECKOUT_METHODS.has(reqMethod)) {
+      return res.status(400).json({
+        success: false,
+        code: 'PAYMENT_METHOD_UNAVAILABLE',
+        error: 'No Checkout online do LumièreOS, estão disponíveis Cartão de Crédito e PIX.'
+      });
+    }
+    const chosenMethod = reqMethod as 'CREDIT_CARD' | 'PIX';
 
     let user;
     try { user = await verifyIdToken(req); }
@@ -96,7 +85,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000, isActive: false,
         professionalsLimit: Number(plan.maxProfessionals || 0), professionalLimit: Number(plan.maxProfessionals || 0), maxProfessionals: Number(plan.maxProfessionals || 0),
         billingEmail: email, onboardingCompleted: false,
-        billing: { provider: 'asaas', status: 'PENDING_PAYMENT', planId, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), updatedAt: new Date(now).toISOString() },
+        billing: { provider: 'asaas', status: 'PENDING_CHECKOUT', planId, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), updatedAt: new Date(now).toISOString() },
         createdAt: now, updatedAt: now
       };
       await salonRef.create(salonData);
@@ -124,25 +113,97 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       return res.status(422).json({ success: false, code: 'BILLING_DATA_INVALID', error: validationError.message, missingFields: ['document', 'legalName', 'email', 'mobilePhone'] });
     }
 
-    const appUrl = env.app.url.replace(/\/$/, '');
-    const paymentCallback = {
-      successUrl: `${appUrl}/aguardando-pagamento?payment=success`, cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`, expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`, autoRedirect: true
-    };
+    const settingsDoc = await adminDb.collection('settings').doc('asaas').get();
+    const settingsData = settingsDoc.exists ? settingsDoc.data() || {} : {};
+    const apiKey = String(settingsData.apiKey || env.asaas.apiKey || '').trim();
+    const mode = settingsData.mode === 'production' ? 'production' : 'sandbox';
+    if (!apiKey) return res.status(503).json({ success: false, code: 'PAYMENT_NOT_CONFIGURED', error: 'O serviço de pagamento ainda não está configurado. Configure a chave do Asaas para continuar.' });
 
-    const subscription = await billingService.createSubscription(salonId, planId, chosenMethod, { ...salonData, billing: billingData, callback: paymentCallback }, undefined, undefined, selectedCycle as 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY');
-
-    const invoiceUrl = await resolveAsaasInvoiceUrl(subscription.id, adminDb);
-    if (!invoiceUrl) {
-      return res.status(502).json({ success: false, code: 'PAYMENT_PAGE_NOT_READY', error: 'A assinatura foi criada, mas o Asaas ainda está preparando a página de pagamento. Aguarde alguns segundos e tente novamente.', providerSubscriptionId: subscription.id });
+    // Se já existe um Checkout ativo para a mesma contratação, reaproveitamos o link
+    // para impedir cobranças/Checkouts duplicados em cliques repetidos.
+    const existingCheckoutId = String(billingData.checkoutId || '');
+    if (existingCheckoutId && billingData.checkoutPlanId === planId && (billingData.checkoutBillingCycle || 'MONTHLY') === selectedCycle) {
+      try {
+        const existingCheckout = await asaasProvider.getCheckout(mode, apiKey, existingCheckoutId);
+        if (String(existingCheckout?.status || '').toUpperCase() === 'ACTIVE' && existingCheckout?.link) {
+          return res.status(200).json({ success: true, checkoutUrl: existingCheckout.link, invoiceUrl: existingCheckout.link, providerCheckoutId: existingCheckoutId, billingCycle: selectedCycle, reused: true });
+        }
+      } catch (lookupError: any) {
+        console.warn('[Asaas] Não foi possível consultar Checkout anterior; um novo poderá ser criado:', lookupError?.message || lookupError);
+      }
     }
 
-    return res.status(200).json({ success: true, checkoutUrl: invoiceUrl, invoiceUrl, bankSlipUrl: invoiceUrl, providerSubscriptionId: subscription.id, returnUrl: paymentCallback.successUrl, billingCycle: selectedCycle });
+    const appUrl = env.app.url.replace(/\/$/, '');
+    const paymentCallback = {
+      successUrl: `${appUrl}/aguardando-pagamento?payment=success`,
+      cancelUrl: `${appUrl}/aguardando-pagamento?payment=cancelled`,
+      expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`
+    };
+
+    const customerId = String(billingData.customerId || salonData.asaasCustomerId || '').trim();
+    if (!customerId) return res.status(502).json({ success: false, code: 'ASAAS_CUSTOMER_NOT_READY', error: 'Não foi possível preparar o cliente no Asaas. Tente novamente em alguns segundos.' });
+
+    const value = planCyclePrice(plan, selectedCycle);
+    const checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, {
+      customer: customerId,
+      billingTypes: [chosenMethod],
+      minutesToExpire: 60,
+      externalReference: salonId,
+      callback: paymentCallback,
+      items: [{
+        externalReference: planId,
+        name: `LumièreOS — ${plan.name}`,
+        description: `Assinatura ${plan.name} (${selectedCycle === 'MONTHLY' ? 'mensal' : selectedCycle === 'SEMIANNUALLY' ? 'semestral' : 'anual'})`,
+        quantity: 1,
+        value
+      }],
+      subscription: {
+        cycle: selectedCycle,
+        nextDueDate: new Date(Date.now() + Math.max(Number(plan.trialDays || 0), 0) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      }
+    });
+
+    const checkoutUrl = asaasCheckoutUrl(checkout?.link || checkout?.id, mode);
+    if (!checkoutUrl) return res.status(502).json({ success: false, code: 'CHECKOUT_LINK_NOT_RETURNED', error: 'O Asaas criou o Checkout, mas não retornou o link de pagamento.' });
+
+    await salonRef.set({
+      billing: {
+        ...(billingData || {}),
+        provider: 'asaas',
+        checkoutId: checkout.id || null,
+        checkoutUrl,
+        checkoutStatus: checkout.status || 'ACTIVE',
+        checkoutPlanId: planId,
+        checkoutBillingCycle: selectedCycle,
+        checkoutPaymentMethod: chosenMethod,
+        status: 'PENDING_CHECKOUT',
+        planId,
+        billingCycle: selectedCycle,
+        value,
+        updatedAt: new Date().toISOString()
+      },
+      paymentStatus: 'pending',
+      subscriptionStatus: 'pending_payment',
+      activationStatus: 'pending',
+      isActive: false,
+      updatedAt: Date.now()
+    }, { merge: true });
+
+    return res.status(200).json({
+      success: true,
+      checkoutUrl,
+      invoiceUrl: checkoutUrl,
+      providerCheckoutId: checkout.id,
+      returnUrl: paymentCallback.successUrl,
+      billingCycle: selectedCycle,
+      checkoutStatus: checkout.status || 'ACTIVE'
+    });
   } catch (error: any) {
     console.error('[Asaas] Create Checkout Error:', error);
     const statusCode = Number(error?.statusCode);
     if (statusCode === 409) return res.status(409).json({ success: false, code: 'CHECKOUT_IN_PROGRESS', error: error.message || 'Já existe uma tentativa de checkout em andamento.' });
     const rawMessage = String(error?.message || '').trim();
-    const safeMessage = rawMessage.startsWith('Asaas API Error:') ? 'O Asaas recusou a criação do pagamento. Verifique a configuração da conta de pagamentos e tente novamente.' : (rawMessage || 'Erro interno ao criar pagamento.');
+    const safeMessage = rawMessage.startsWith('Asaas API Error:') ? 'O Asaas recusou a criação do Checkout. Verifique a configuração da conta de pagamentos e tente novamente.' : (rawMessage || 'Erro interno ao criar pagamento.');
     return res.status(500).json({ success: false, error: safeMessage });
   }
 }
