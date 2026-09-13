@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Lock, ShieldCheck, Loader2 } from 'lucide-react';
@@ -149,12 +148,9 @@ export default function RegisterPage() {
       
       const targetUrl = checkoutResult.checkoutUrl;
       try {
-        const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer');
-        if (!opened || opened.closed || typeof opened.closed === 'undefined') {
-          window.location.assign(targetUrl);
-        }
-      } catch {
         window.location.assign(targetUrl);
+      } catch {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
       }
 
     } catch (error: any) {
@@ -257,7 +253,6 @@ export default function RegisterPage() {
                   <select required value={formData.paymentMethod} onChange={e => update('paymentMethod', e.target.value)} className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm outline-none focus:border-[#D4AF37]">
                     <option value="CREDIT_CARD">Cartão de Crédito</option>
                     <option value="PIX">PIX</option>
-                    <option value="BOLETO">Boleto</option>
                   </select>
                 </label>
               </div>
