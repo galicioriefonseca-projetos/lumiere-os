@@ -14,12 +14,8 @@ export class AsaasProvider implements BillingProvider {
   private resolveEnvironment(mode: 'sandbox' | 'production', apiKey?: string): 'sandbox' | 'production' {
     if (!apiKey) return mode;
     const cleanKey = this.cleanApiKey(apiKey);
-    if (cleanKey.startsWith('$aact_hmlg_')) {
-      return 'sandbox';
-    }
-    if (cleanKey.startsWith('$aact_prod_')) {
-      return 'production';
-    }
+    if (cleanKey.startsWith('$aact_hmlg_')) return 'sandbox';
+    if (cleanKey.startsWith('$aact_prod_')) return 'production';
     return mode;
   }
 
@@ -73,17 +69,25 @@ export class AsaasProvider implements BillingProvider {
   }
 
   async createRecurringCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
-    const payload = {
+    const payload: any = {
       billingTypes: data.billingTypes || ['CREDIT_CARD'],
       chargeTypes: ['RECURRENT'],
       minutesToExpire: data.minutesToExpire || 60,
       callback: data.callback,
       items: data.items,
-      customerData: data.customerData,
       externalReference: data.externalReference,
       subscription: data.subscription
     };
+
+    // Asaas exige customer OU customerData, nunca os dois.
+    if (data.customer) payload.customer = data.customer;
+    else if (data.customerData) payload.customerData = data.customerData;
+
     return this.request(mode, apiKey, '/checkouts', 'POST', payload);
+  }
+
+  async getCheckout(mode: 'sandbox' | 'production', apiKey: string, id: string): Promise<any> {
+    return this.request(mode, apiKey, `/checkouts/${encodeURIComponent(id)}`);
   }
 
   async updateSubscriptionCreditCard(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<any> {
