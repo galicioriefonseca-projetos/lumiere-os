@@ -24,8 +24,7 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
       ? receivedHeader[0]?.trim() || ''
       : String(receivedHeader || '').trim();
 
-    // Segurança: webhook deve falhar fechado. Sem segredo configurado, sem
-    // cabeçalho ou com segredo divergente, nenhum evento pode ser processado.
+    // Segurança: webhook deve falhar fechado.
     if (!configuredToken || !receivedToken || receivedToken !== configuredToken) {
       console.warn('[Asaas Webhook] Requisição rejeitada: autenticação do webhook inválida ou não configurada.');
       return res.status(401).json({ error: 'Não autorizado' });
@@ -38,13 +37,16 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     }
 
     const { event } = body;
-    const customerId = body.payment?.customer || body.subscription?.customer || body.customer;
-    const externalReference = String(body.subscription?.externalReference || body.payment?.externalReference || '');
+    const customerId = body.checkout?.customer || body.payment?.customer || body.subscription?.customer || body.customer;
+    const externalReference = String(
+      body.checkout?.externalReference ||
+      body.subscription?.externalReference ||
+      body.payment?.externalReference ||
+      ''
+    );
+    const checkoutId = String(body.checkout?.id || '');
 
     // Checkout de migração usa externalReference=manual-migration:{salonId}.
-    // O Checkout pode criar/vincular o cliente no Asaas sem o externalReference do
-    // salão no documento local. Reconciliamos essa relação antes do processamento
-    // normal para que os eventos seguintes (inclusive PAYMENT_RECEIVED) não caiam na DLQ.
     if (customerId && externalReference.startsWith('manual-migration:')) {
       const salonId = externalReference.slice('manual-migration:'.length);
       if (salonId) {
@@ -55,7 +57,7 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
             billing: {
               customerId,
               provider: 'asaas',
-              pendingMigration: event !== 'PAYMENT_RECEIVED' && event !== 'PAYMENT_CONFIRMED'
+              pendingMigration: event !== 'PAYMENT_RECEIVED' && event !== 'PAYMENT_CONFIRMED' && event !== 'CHECKOUT_PAID'
             },
             asaasCustomerId: customerId
           }, { merge: true });
@@ -65,21 +67,32 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
 
     console.log(`[Asaas Webhook] Nova notificação recebida. Evento: ${event}`);
 
-    // Processamento específico para confirmação de pagamento:
-    // Atualiza o status do salon no Firestore para 'active' e dispara o envio de e-mail
-    // com link exclusivo para /dashboard/configurar-empresa contendo token de sessão única.
-    if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+    // O Checkout hospedado pelo Asaas confirma a jornada através de CHECKOUT_PAID.
+    // PAYMENT_RECEIVED/PAYMENT_CONFIRMED continuam sendo processados para cobranças
+    // recorrentes posteriores.
+    if (event === 'CHECKOUT_PAID' || event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
       try {
         let targetSalonId = '';
         let targetSalonData: any = null;
 
         if (externalReference.startsWith('manual-migration:')) {
           targetSalonId = externalReference.slice('manual-migration:'.length);
+        } else if (externalReference) {
+          const directRef = await adminDb.collection('salons').doc(externalReference).get();
+          if (directRef.exists) {
+            targetSalonId = directRef.id;
+            targetSalonData = directRef.data();
+          }
         }
 
-        if (targetSalonId) {
-          const sDoc = await adminDb.collection('salons').doc(targetSalonId).get();
-          if (sDoc.exists) {
+        if (!targetSalonId && checkoutId) {
+          const checkoutSnapshot = await adminDb.collection('salons')
+            .where('billing.checkoutId', '==', checkoutId)
+            .limit(1)
+            .get();
+          const sDoc = checkoutSnapshot.docs?.[0];
+          if (sDoc && sDoc.exists) {
+            targetSalonId = sDoc.id;
             targetSalonData = sDoc.data();
           }
         }
@@ -103,11 +116,16 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
           }
         }
 
+        if (targetSalonId && !targetSalonData) {
+          const sDoc = await adminDb.collection('salons').doc(targetSalonId).get();
+          if (sDoc.exists) targetSalonData = sDoc.data();
+        }
+
         if (targetSalonId && targetSalonData) {
           const salonRef = adminDb.collection('salons').doc(targetSalonId);
           const isAlreadyConfigured = targetSalonData.onboardingCompleted === true;
+          const isCheckoutPaid = event === 'CHECKOUT_PAID';
 
-          // 1. Atualiza status do salon no Firestore para 'active'
           await salonRef.set({
             status: 'active',
             subscriptionStatus: 'active',
@@ -115,10 +133,18 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
             isActive: true,
             paymentStatus: 'confirmed',
             onboardingStatus: isAlreadyConfigured ? 'completed' : 'pending_setup',
+            billing: {
+              ...(targetSalonData.billing || {}),
+              provider: 'asaas',
+              ...(customerId ? { customerId } : {}),
+              ...(checkoutId ? { checkoutId, checkoutStatus: isCheckoutPaid ? 'PAID' : (targetSalonData.billing?.checkoutStatus || 'PAID') } : {}),
+              lastPaymentEvent: event,
+              lastPaymentEventAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            },
             updatedAt: Date.now()
           }, { merge: true });
 
-          // 2. Atualiza status do usuário proprietário
           if (targetSalonData.ownerId) {
             const userRef = adminDb.collection('users').doc(targetSalonData.ownerId);
             await userRef.set({
@@ -128,39 +154,43 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
             }, { merge: true });
           }
 
-          // 3. Gera token de segurança de sessão única para a rota /dashboard/configurar-empresa
-          const setupToken = `${crypto.randomUUID()}-${crypto.randomBytes(16).toString('hex')}`;
-          const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(); // 72h
-
-          await adminDb.collection('setup_tokens').doc(setupToken).set({
-            token: setupToken,
-            salonId: targetSalonId,
-            ownerId: targetSalonData.ownerId || '',
-            email: targetSalonData.ownerEmail || targetSalonData.billingEmail || '',
-            used: false,
-            createdAt: new Date().toISOString(),
-            expiresAt
-          });
-
-          await salonRef.set({
-            setupToken: {
+          // Não crie tokens infinitamente quando o Asaas reenviar o mesmo evento.
+          let setupToken = '';
+          const existingToken = targetSalonData.setupToken;
+          if (existingToken?.token && existingToken.used === false && new Date(existingToken.expiresAt || 0).getTime() > Date.now()) {
+            setupToken = existingToken.token;
+          } else {
+            setupToken = `${crypto.randomUUID()}-${crypto.randomBytes(16).toString('hex')}`;
+            const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+            await adminDb.collection('setup_tokens').doc(setupToken).set({
               token: setupToken,
+              salonId: targetSalonId,
+              ownerId: targetSalonData.ownerId || '',
+              email: targetSalonData.ownerEmail || targetSalonData.billingEmail || '',
               used: false,
               createdAt: new Date().toISOString(),
               expiresAt
-            }
-          }, { merge: true });
+            });
+            await salonRef.set({
+              setupToken: {
+                token: setupToken,
+                used: false,
+                createdAt: new Date().toISOString(),
+                expiresAt
+              }
+            }, { merge: true });
+          }
 
-          // 4. Dispara envio de e-mail transacional via SDK do Resend
           const recipientEmail = targetSalonData.ownerEmail ||
             targetSalonData.billingEmail ||
+            body.checkout?.customerData?.email ||
             body.payment?.customerEmail ||
             body.customer?.email;
 
-          if (recipientEmail) {
+          if (recipientEmail && setupToken && (!existingToken?.token || existingToken.token !== setupToken || event === 'CHECKOUT_PAID')) {
             const appUrl = (env.app.url || 'https://lumiere-os.vercel.app').replace(/\/+$/, '');
             const setupUrl = `${appUrl}/dashboard/configurar-empresa?token=${encodeURIComponent(setupToken)}`;
-            const ownerName = targetSalonData.ownerName || targetSalonData.name || body.payment?.customerName;
+            const ownerName = targetSalonData.ownerName || targetSalonData.name || body.checkout?.customerData?.name || body.payment?.customerName;
 
             sendCompanySetupEmail({
               to: recipientEmail,
@@ -185,4 +215,3 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     return res.status(500).json({ error: 'Erro interno temporário no processamento do faturamento.' });
   }
 }
-
