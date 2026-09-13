@@ -1,5 +1,6 @@
 import { getAdminDb } from '../shared/firebaseAdmin.js';
 import { asaasProvider } from './AsaasProvider.js';
+import { env } from '../config/env.js';
 
 export interface BillingCustomerData {
   document: string;
@@ -68,8 +69,8 @@ export async function saveBillingCustomerData(salonId: string, input: any) {
   const salon = salonSnap.data() || {};
   const settingsSnap = await db.collection('settings').doc('asaas').get();
   const settings = settingsSnap.data() || {};
-  const mode = settings.mode || 'production';
-  const apiKey = settings.apiKey;
+  const mode = settings.mode === 'production' ? 'production' : 'sandbox';
+  const apiKey = String(settings.apiKey || env.asaas.apiKey || '').trim();
   if (!apiKey) throw new Error('Integração Asaas não configurada.');
 
   const customerId = salon.billing?.customerId || salon.asaasCustomerId;
