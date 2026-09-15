@@ -9,6 +9,7 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "migrate:webhook": "tsx server/scripts/register-asaas-webhook.ts",
     "lint": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run firestore.rules.test.ts\"",
     "test:webhook": "vitest run tests/webhook/webhook-security.test.ts",

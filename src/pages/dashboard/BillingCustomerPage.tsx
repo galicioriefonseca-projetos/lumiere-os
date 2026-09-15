@@ -22,6 +22,11 @@ function formatPhone(value: string) {
   return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
 }
 
+function formatCep(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  return digits.replace(/^(\d{5})(\d)/, '$1-$2');
+}
+
 export default function BillingCustomerPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -32,8 +37,48 @@ export default function BillingCustomerPage() {
   const migrationPaymentMethod = (params.get('paymentMethod') || 'CREDIT_CARD').toUpperCase();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [searchingCep, setSearchingCep] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [data, setData] = useState({ document: '', legalName: '', email: '', mobilePhone: '' });
+  const [data, setData] = useState({
+    document: '',
+    legalName: '',
+    email: '',
+    mobilePhone: '',
+    postalCode: '',
+    address: '',
+    addressNumber: '',
+    complement: '',
+    province: '',
+    city: '',
+    state: ''
+  });
+
+  const handleCepChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    const clean = rawVal.replace(/\D/g, '').slice(0, 8);
+    setData(prev => ({ ...prev, postalCode: clean }));
+
+    if (clean.length === 8) {
+      setSearchingCep(true);
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+        const json = await res.json();
+        if (!json.erro) {
+          setData(prev => ({
+            ...prev,
+            address: json.logradouro || prev.address,
+            province: json.bairro || prev.province,
+            city: json.localidade || prev.city,
+            state: json.uf || prev.state
+          }));
+        }
+      } catch (err) {
+        console.warn('Erro ao consultar CEP:', err);
+      } finally {
+        setSearchingCep(false);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!salonId || !planId || !['MONTHLY', 'SEMIANNUALLY', 'YEARLY'].includes(billingCycle)) {
@@ -47,7 +92,19 @@ export default function BillingCustomerPage() {
         const response = await fetch(`/api/billing/customer-data?salonId=${encodeURIComponent(salonId)}`, { headers: { Authorization: `Bearer ${token}` } });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || 'Não foi possível carregar os dados de faturamento.');
-        setData({ document: result.data?.document || '', legalName: result.data?.legalName || '', email: result.data?.email || '', mobilePhone: result.data?.mobilePhone || '' });
+        setData({
+          document: result.data?.document || '',
+          legalName: result.data?.legalName || '',
+          email: result.data?.email || '',
+          mobilePhone: result.data?.mobilePhone || '',
+          postalCode: result.data?.postalCode || '',
+          address: result.data?.address || '',
+          addressNumber: result.data?.addressNumber || '',
+          complement: result.data?.complement || '',
+          province: result.data?.province || '',
+          city: result.data?.city || '',
+          state: result.data?.state || ''
+        });
       } catch (error: any) {
         toast.error(error.message || 'Erro ao carregar os dados.');
       } finally {
@@ -121,6 +178,89 @@ export default function BillingCustomerPage() {
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">Nome completo ou razão social *</label><input required value={data.legalName} onChange={e => setData({ ...data, legalName: e.target.value })} placeholder="Nome / Razão social" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">E-mail de cobrança *</label><input required type="email" value={data.email} onChange={e => setData({ ...data, email: e.target.value })} placeholder="financeiro@empresa.com" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
           <div><label className="block text-xs font-medium text-zinc-400 mb-1.5">Telefone / WhatsApp *</label><input required value={formatPhone(data.mobilePhone)} onChange={e => setData({ ...data, mobilePhone: e.target.value })} placeholder="(00) 00000-0000" className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]" /></div>
+          
+          <div className="pt-2 border-t border-zinc-800/60">
+            <h2 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center justify-between">
+              <span>Endereço de Faturamento</span>
+              {searchingCep && <span className="text-xs text-[#D4AF37] flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Buscando CEP...</span>}
+            </h2>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">CEP</label>
+                  <input
+                    value={formatCep(data.postalCode)}
+                    onChange={handleCepChange}
+                    placeholder="00000-000"
+                    maxLength={9}
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Endereço / Logradouro</label>
+                  <input
+                    value={data.address}
+                    onChange={e => setData({ ...data, address: e.target.value })}
+                    placeholder="Rua, Avenida, Alameda..."
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Número</label>
+                  <input
+                    value={data.addressNumber}
+                    onChange={e => setData({ ...data, addressNumber: e.target.value })}
+                    placeholder="123 ou S/N"
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Complemento</label>
+                  <input
+                    value={data.complement}
+                    onChange={e => setData({ ...data, complement: e.target.value })}
+                    placeholder="Apto, Sala..."
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Bairro</label>
+                  <input
+                    value={data.province}
+                    onChange={e => setData({ ...data, province: e.target.value })}
+                    placeholder="Bairro"
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Cidade</label>
+                  <input
+                    value={data.city}
+                    onChange={e => setData({ ...data, city: e.target.value })}
+                    placeholder="Cidade"
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Estado (UF)</label>
+                  <input
+                    value={data.state}
+                    onChange={e => setData({ ...data, state: e.target.value.toUpperCase().slice(0, 2) })}
+                    placeholder="SP"
+                    maxLength={2}
+                    className="w-full h-11 rounded-xl bg-black border border-zinc-800 px-3 text-sm outline-none focus:border-[#D4AF37]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex gap-3"><ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" /><p className="text-xs text-zinc-400 leading-relaxed">O LumièreOS não armazena dados do cartão. A escolha do meio de pagamento e a inserção dos dados de cartão acontecem diretamente no ambiente seguro da Asaas.</p></div>
           <button disabled={saving} type="submit" className="w-full h-12 rounded-xl bg-[#D4AF37] hover:bg-[#Bca032] disabled:opacity-50 text-black font-bold flex items-center justify-center gap-2">{saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}{saving ? 'Salvando e preparando pagamento...' : migration ? 'Salvar dados e configurar pagamento' : 'Salvar e ir para pagamento'}</button>
         </form>

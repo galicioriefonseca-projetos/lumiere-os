@@ -8,6 +8,13 @@ export interface BillingCustomerData {
   legalName: string;
   email: string;
   mobilePhone: string;
+  postalCode?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  city?: string;
+  state?: string;
 }
 
 function onlyDigits(value: string): string {
@@ -56,7 +63,28 @@ export function normalizeBillingCustomerData(input: any): BillingCustomerData {
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Informe um e-mail de cobrança válido.');
   if (mobilePhone.length < 10) throw new Error('Informe um telefone de cobrança válido.');
 
-  return { document, documentType, legalName, email, mobilePhone };
+  const postalCode = onlyDigits(input?.postalCode || input?.cep);
+  const address = String(input?.address || input?.street || '').trim();
+  const addressNumber = String(input?.addressNumber || input?.number || '').trim();
+  const complement = String(input?.complement || '').trim();
+  const province = String(input?.province || input?.neighborhood || input?.bairro || '').trim();
+  const city = String(input?.city || input?.cidade || '').trim();
+  const state = String(input?.state || input?.uf || '').trim().toUpperCase().slice(0, 2);
+
+  return {
+    document,
+    documentType,
+    legalName,
+    email,
+    mobilePhone,
+    ...(postalCode ? { postalCode } : {}),
+    ...(address ? { address } : {}),
+    ...(addressNumber ? { addressNumber } : {}),
+    ...(complement ? { complement } : {}),
+    ...(province ? { province } : {}),
+    ...(city ? { city } : {}),
+    ...(state ? { state } : {})
+  };
 }
 
 export async function saveBillingCustomerData(salonId: string, input: any) {
@@ -76,13 +104,18 @@ export async function saveBillingCustomerData(salonId: string, input: any) {
   const customerId = salon.billing?.customerId || salon.asaasCustomerId;
   let asaasCustomerId = customerId;
 
-  const customerPayload = {
+  const customerPayload: any = {
     name: data.legalName,
     email: data.email,
     cpfCnpj: data.document,
     mobilePhone: data.mobilePhone,
     externalReference: salonId
   };
+  if (data.postalCode) customerPayload.postalCode = data.postalCode;
+  if (data.address) customerPayload.address = data.address;
+  if (data.addressNumber) customerPayload.addressNumber = data.addressNumber;
+  if (data.complement) customerPayload.complement = data.complement;
+  if (data.province) customerPayload.province = data.province;
 
   if (customerId) {
     try {
@@ -112,6 +145,13 @@ export async function saveBillingCustomerData(salonId: string, input: any) {
       legalName: data.legalName,
       email: data.email,
       mobilePhone: data.mobilePhone,
+      postalCode: data.postalCode || salon.billing?.postalCode || '',
+      address: data.address || salon.billing?.address || '',
+      addressNumber: data.addressNumber || salon.billing?.addressNumber || '',
+      complement: data.complement || salon.billing?.complement || '',
+      province: data.province || salon.billing?.province || '',
+      city: data.city || salon.billing?.city || salon.city || '',
+      state: data.state || salon.billing?.state || salon.state || '',
       updatedAt: new Date().toISOString()
     },
     asaasCustomerId: asaasCustomerId,
@@ -134,6 +174,13 @@ export async function getBillingCustomerData(salonId: string) {
     legalName: billing.legalName || data.name || '',
     email: billing.email || data.billingEmail || data.ownerEmail || '',
     mobilePhone: billing.mobilePhone || data.phone || data.whatsapp || '',
+    postalCode: billing.postalCode || data.postalCode || data.cep || '',
+    address: billing.address || data.address || data.street || '',
+    addressNumber: billing.addressNumber || data.addressNumber || data.number || '',
+    complement: billing.complement || data.complement || '',
+    province: billing.province || data.province || data.neighborhood || data.bairro || '',
+    city: billing.city || data.city || data.cidade || '',
+    state: billing.state || data.state || data.uf || '',
     customerId: billing.customerId || data.asaasCustomerId || null,
     complete: Boolean(billing.document || data.document || data.cnpj)
   };

@@ -32,6 +32,13 @@ export interface Customer {
   cpfCnpj?: string;
   phone?: string;
   mobilePhone?: string;
+  postalCode?: string;
+  address?: string;
+  addressNumber?: string;
+  complement?: string;
+  province?: string;
+  cityName?: string;
+  state?: string;
 }
 
 export interface Subscription {

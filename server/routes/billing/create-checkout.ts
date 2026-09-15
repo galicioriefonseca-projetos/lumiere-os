@@ -140,13 +140,38 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       expiredUrl: `${appUrl}/aguardando-pagamento?payment=expired`
     };
 
-    const customerId = String(billingData.customerId || salonData.asaasCustomerId || '').trim();
-    if (!customerId) return res.status(502).json({ success: false, code: 'ASAAS_CUSTOMER_NOT_READY', error: 'Não foi possível preparar o cliente no Asaas. Tente novamente em alguns segundos.' });
+    let customerId = String(billingData.customerId || salonData.asaasCustomerId || '').trim();
+    if (!customerId) {
+      try {
+        customerId = await billingService.ensureCustomer(salonId, salonData);
+      } catch (ensureErr: any) {
+        console.warn('[Asaas] Tentativa de assegurar customer:', ensureErr?.message || ensureErr);
+      }
+    }
+
+    const postalCode = String(billingData.postalCode || salonData.postalCode || customerData?.postalCode || '').replace(/\D/g, '');
+    const address = String(billingData.address || salonData.address || customerData?.address || '').trim();
+    const addressNumber = String(billingData.addressNumber || salonData.addressNumber || customerData?.addressNumber || '').trim();
+    const province = String(billingData.province || salonData.province || customerData?.province || '').trim();
+
+    // Se temos dados de endereço completos e o cliente existe, podemos sincronizar previamente
+    if (customerId && postalCode && address && addressNumber && province) {
+      try {
+        await asaasProvider.updateCustomer(mode, apiKey, customerId, {
+          postalCode,
+          address,
+          addressNumber,
+          province
+        });
+      } catch (syncAddrErr: any) {
+        console.warn('[Asaas] Aviso ao pré-atualizar endereço do cliente:', syncAddrErr?.message || syncAddrErr);
+      }
+    }
 
     const value = planCyclePrice(plan, selectedCycle);
-    const checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, {
-      customer: customerId,
-      billingTypes: [chosenMethod],
+    const checkoutPayload: any = {
+      // Para planos recorrentes (subscription), o Asaas Checkout requer exclusivamente CREDIT_CARD
+      billingTypes: ['CREDIT_CARD'],
       minutesToExpire: 60,
       externalReference: salonId,
       callback: paymentCallback,
@@ -161,7 +186,38 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         cycle: selectedCycle,
         nextDueDate: new Date(Date.now() + Math.max(Number(plan.trialDays || 0), 0) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       }
-    });
+    };
+
+    if (customerId) {
+      checkoutPayload.customer = customerId;
+    }
+
+    let checkout: any;
+    try {
+      checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
+    } catch (checkoutError: any) {
+      const errMsg = String(checkoutError?.message || '');
+      const isMissingAddress = errMsg.includes('address deve existir') || errMsg.includes('addressNumber') || errMsg.includes('postalCode') || errMsg.includes('province') || errMsg.includes('city');
+
+      if (isMissingAddress && customerId) {
+        console.warn(`[Asaas] Cliente ${customerId} sem endereço cadastrado no Asaas. Sincronizando endereço comercial e reprocessando...`);
+        try {
+          await asaasProvider.updateCustomer(mode, apiKey, customerId, {
+            address: address || salonData.name || 'Endereço Comercial',
+            addressNumber: addressNumber || 'S/N',
+            postalCode: postalCode.length === 8 ? postalCode : '01001000',
+            province: province || 'Centro'
+          });
+          checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
+        } catch (retryWithAddrErr: any) {
+          console.warn('[Asaas] Recorrendo à criação do Checkout sem vincular customer prévio para permitir pagamento sem bloqueio:', retryWithAddrErr?.message || retryWithAddrErr);
+          delete checkoutPayload.customer;
+          checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
+        }
+      } else {
+        throw checkoutError;
+      }
+    }
 
     const checkoutUrl = asaasCheckoutUrl(checkout?.link || checkout?.id, mode);
     if (!checkoutUrl) return res.status(502).json({ success: false, code: 'CHECKOUT_LINK_NOT_RETURNED', error: 'O Asaas criou o Checkout, mas não retornou o link de pagamento.' });

@@ -67,11 +67,22 @@ export class BillingService {
         throw new Error('Complete nome, e-mail e CPF/CNPJ em Dados de faturamento antes de configurar a forma de pagamento.');
       }
 
+      const postalCode = String(billing?.postalCode || customerData?.postalCode || salonData?.postalCode || '').replace(/\D/g, '');
+      const address = String(billing?.address || customerData?.address || salonData?.address || '').trim();
+      const addressNumber = String(billing?.addressNumber || customerData?.addressNumber || salonData?.addressNumber || '').trim();
+      const complement = String(billing?.complement || customerData?.complement || '').trim();
+      const province = String(billing?.province || customerData?.province || salonData?.province || '').trim();
+
       const customer = await asaasProvider.createCustomer(settings.mode, settings.apiKey, {
         name,
         email,
         cpfCnpj,
         ...(mobilePhone ? { mobilePhone } : {}),
+        ...(postalCode ? { postalCode } : {}),
+        ...(address ? { address } : {}),
+        ...(addressNumber ? { addressNumber } : {}),
+        ...(complement ? { complement } : {}),
+        ...(province ? { province } : {}),
         externalReference: salonId
       });
       customerId = customer.id;

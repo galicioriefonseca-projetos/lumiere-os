@@ -37,8 +37,17 @@ export class AsaasProvider implements BillingProvider {
     const response = await fetch(url, options);
     const json = await response.json().catch(() => null);
     if (!response.ok) {
-      console.error(`Asaas API Error [${method} ${endpoint}]:`, json || response.statusText);
-      throw new Error(`Asaas API Error: ${response.status} - ${JSON.stringify(json || response.statusText)}`);
+      const isExpected404 = response.status === 404 && (method === 'GET' || method === 'PUT');
+      if (!isExpected404) {
+        console.error(`Asaas API Error [${method} ${endpoint}]:`, json || response.statusText);
+      } else {
+        console.warn(`[AsaasProvider] Recurso não encontrado (${response.status}) em [${method} ${endpoint}].`);
+      }
+      const err: any = new Error(`Asaas API Error: ${response.status} - ${JSON.stringify(json || response.statusText)}`);
+      err.status = response.status;
+      err.statusCode = response.status;
+      err.responseBody = json;
+      throw err;
     }
     return json;
   }
@@ -70,7 +79,8 @@ export class AsaasProvider implements BillingProvider {
 
   async createRecurringCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
     const payload: any = {
-      billingTypes: data.billingTypes || ['CREDIT_CARD'],
+      // Asaas exige obrigatoriamente CREDIT_CARD para operações RECURRENT
+      billingTypes: ['CREDIT_CARD'],
       chargeTypes: ['RECURRENT'],
       minutesToExpire: data.minutesToExpire || 60,
       callback: data.callback,
@@ -138,7 +148,21 @@ export class AsaasProvider implements BillingProvider {
   }
 
   private mapCustomer(data: any): Customer {
-    return { id: data.id, name: data.name, email: data.email, cpfCnpj: data.cpfCnpj, phone: data.phone, mobilePhone: data.mobilePhone };
+    return {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      cpfCnpj: data.cpfCnpj,
+      phone: data.phone,
+      mobilePhone: data.mobilePhone,
+      postalCode: data.postalCode,
+      address: data.address,
+      addressNumber: data.addressNumber,
+      complement: data.complement,
+      province: data.province,
+      cityName: data.cityName,
+      state: data.state
+    };
   }
 
   private mapSubscription(data: any): Subscription {
