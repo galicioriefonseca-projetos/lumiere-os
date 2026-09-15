@@ -297,16 +297,17 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
 
     try {
       const appUrl = env.app.url.replace(/\/$/, '');
-      const callback = {
+      const isDevelopmentOrPreview = appUrl.includes('localhost') || appUrl.includes('127.0.0.1') || appUrl.includes('run.app');
+      const callback = !isDevelopmentOrPreview ? {
         successUrl: `${appUrl}/dashboard/assinatura?payment=success&migration=1`,
-        cancelUrl: `${appUrl}/dashboard/assinatura?payment=cancelled&migration=1`,
-        expiredUrl: `${appUrl}/dashboard/assinatura?payment=expired&migration=1`,
+        cancelUrl: `${appUrl}/dashboard/assinatura?payment=cancelled`,
+        expiredUrl: `${appUrl}/dashboard/assinatura?payment=expired`,
         autoRedirect: true,
-      };
+      } : undefined;
       const checkout = await asaasProvider.createRecurringCheckout(settings.mode, settings.apiKey, {
         billingTypes: [paymentMethod],
         minutesToExpire: 60,
-        callback,
+        ...(callback ? { callback } : {}),
         externalReference: `manual-migration:${salonId}`,
         items: [{ name: `LumièreOS - ${plan.name}`, description: `Assinatura ${cycle.toLowerCase()} - migração de pagamento`, quantity: 1, value }],
         customerData,

@@ -23,7 +23,7 @@ export interface Plan {
 }
 
 // Allowed payment methods in LumièreOS: PIX or CREDIT_CARD
-export type PaymentMethod = 'UNDEFINED' | 'PIX' | 'CREDIT_CARD';
+export type PaymentMethod = 'UNDEFINED' | 'PIX' | 'CREDIT_CARD' | 'BOLETO';
 
 export interface Customer {
   id: string;

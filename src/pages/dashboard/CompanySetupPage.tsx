@@ -15,7 +15,7 @@ function mapBusinessType(segment: string): string {
 }
 
 export default function CompanySetupPage() {
-  const { currentUser, userData } = useAuth();
+  const { currentUser, userData, salonData, refreshUserData } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
@@ -25,21 +25,35 @@ export default function CompanySetupPage() {
   const [tokenError, setTokenError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    salonName: '',
+    salonName: salonData?.name || '',
     businessSegment: '',
-    city: '',
-    state: '',
+    city: salonData?.city || '',
+    state: salonData?.state || '',
     estimatedProfessionals: ''
   });
 
-  // Validação do token exclusivo de sessão única recebido no e-mail
+  // Atualiza com salonData caso carregue de forma assíncrona
   useEffect(() => {
-    if (!token) {
-      if (userData && userData.onboardingStatus === 'completed') {
-        navigate('/dashboard');
-      }
-      return;
+    if (salonData?.name && !formData.salonName) {
+      setFormData(prev => ({
+        ...prev,
+        salonName: prev.salonName || salonData.name || '',
+        city: prev.city || salonData.city || '',
+        state: prev.state || salonData.state || ''
+      }));
     }
+  }, [salonData]);
+
+  // Se o onboarding já foi concluído, leva direto ao dashboard
+  useEffect(() => {
+    if (userData && userData.onboardingStatus === 'completed') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [userData, navigate]);
+
+  // Validação opcional de token exclusivo caso o usuário venha por link
+  useEffect(() => {
+    if (!token) return;
 
     let isMounted = true;
     const validateToken = async () => {
@@ -66,7 +80,7 @@ export default function CompanySetupPage() {
 
     validateToken();
     return () => { isMounted = false; };
-  }, [token, userData, navigate]);
+  }, [token]);
 
   const update = (name: string, value: string) => setFormData(prev => ({ ...prev, [name]: value }));
 
@@ -103,6 +117,7 @@ export default function CompanySetupPage() {
       }
 
       toast.success('Empresa configurada com sucesso! Liberando acesso...');
+      await refreshUserData().catch(() => {});
       window.location.href = '/dashboard';
     } catch (error: any) {
       toast.error(error.message || 'Erro ao salvar dados da empresa.');
@@ -155,6 +170,23 @@ export default function CompanySetupPage() {
   return (
     <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
       <div className="w-full max-w-xl bg-[#0d0d12]/90 border border-white/10 p-6 sm:p-8 rounded-3xl shadow-2xl backdrop-blur-xl">
+        {/* Stepper de Onboarding */}
+        <div className="flex items-center justify-between pb-5 mb-6 border-b border-white/5 text-xs">
+          <div className="flex items-center gap-1.5 text-emerald-400">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="font-medium">1. Pagamento Confirmado</span>
+          </div>
+          <div className="h-px w-6 sm:w-10 bg-white/10" />
+          <div className="flex items-center gap-1.5 text-[#D4AF37]">
+            <Building2 className="w-4 h-4" />
+            <span className="font-semibold">2. Dados da Empresa</span>
+          </div>
+          <div className="h-px w-6 sm:w-10 bg-white/10 hidden sm:block" />
+          <div className="hidden sm:flex items-center gap-1.5 text-zinc-500">
+            <span className="font-medium">3. Painel Executivo</span>
+          </div>
+        </div>
+
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-2xl bg-[#D4AF37]/10 text-[#D4AF37]">
             <Building2 className="w-6 h-6" />
@@ -162,9 +194,13 @@ export default function CompanySetupPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-light text-white">Configurar Empresa</h1>
-              {token && (
+              {token ? (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-0.5 rounded-full border border-[#D4AF37]/20">
                   <ShieldCheck className="w-3 h-3" /> Token Ativo
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <ShieldCheck className="w-3 h-3" /> Acesso Liberado
                 </span>
               )}
             </div>

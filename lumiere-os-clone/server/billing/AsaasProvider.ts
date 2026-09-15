@@ -33,7 +33,7 @@ export class AsaasProvider implements BillingProvider {
     return { 'Content-Type': 'application/json', 'access_token': cleanKey, 'User-Agent': 'LumiereOS' };
   }
 
-  private async request(mode: 'sandbox' | 'production', apiKey: string, endpoint: string, method: string = 'GET', body?: any) {
+  private async request(mode: 'sandbox' | 'production', apiKey: string, endpoint: string, method: string = 'GET', body?: any, suppressErrorLog: boolean = false) {
     const cleanKey = this.cleanApiKey(apiKey);
     const resolvedMode = this.resolveEnvironment(mode, cleanKey);
     const url = `${this.getBaseUrl(resolvedMode, cleanKey)}${endpoint}`;
@@ -41,8 +41,13 @@ export class AsaasProvider implements BillingProvider {
     const response = await fetch(url, options);
     const json = await response.json().catch(() => null);
     if (!response.ok) {
-      console.error(`Asaas API Error [${method} ${endpoint}]:`, json || response.statusText);
-      throw new Error(`Asaas API Error: ${response.status} - ${JSON.stringify(json || response.statusText)}`);
+      if (!suppressErrorLog) {
+        console.error(`Asaas API Error [${method} ${endpoint}]:`, json || response.statusText);
+      }
+      const error: any = new Error(`Asaas API Error: ${response.status} - ${JSON.stringify(json || response.statusText)}`);
+      error.statusCode = response.status;
+      error.data = json;
+      throw error;
     }
     return json;
   }
@@ -64,12 +69,40 @@ export class AsaasProvider implements BillingProvider {
     return this.mapCustomer(await this.request(mode, apiKey, `/customers/${id}`));
   }
 
+  private isDomainOrCallbackError(error: any): boolean {
+    const errorStr = (String(error?.message || '') + ' ' + JSON.stringify(error?.data || '')).toLowerCase();
+    return (
+      errorStr.includes('domínio configurado') ||
+      errorStr.includes('cadastre um site') ||
+      errorStr.includes('mesmo domínio') ||
+      errorStr.includes('nenhum domínio') ||
+      (errorStr.includes('callback') && errorStr.includes('invalid_object'))
+    );
+  }
+
   async createSubscription(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<Subscription> {
     const payload = { ...data };
     if (data.callback?.successUrl) {
       payload.callback = { successUrl: data.callback.successUrl, cancelUrl: data.callback.cancelUrl, expiredUrl: data.callback.expiredUrl, autoRedirect: data.callback.autoRedirect ?? true };
     }
-    return this.mapSubscription(await this.request(mode, apiKey, '/subscriptions', 'POST', payload));
+
+    if (!payload.callback) {
+      return this.mapSubscription(await this.request(mode, apiKey, '/subscriptions', 'POST', payload));
+    }
+
+    try {
+      const res = await this.request(mode, apiKey, '/subscriptions', 'POST', payload, true);
+      return this.mapSubscription(res);
+    } catch (error: any) {
+      if (this.isDomainOrCallbackError(error)) {
+        console.warn('[AsaasProvider] Conta do Asaas não possui domínio cadastrado em "Minha Conta > Informações". Criando assinatura sem callback...');
+        const { callback, ...payloadWithoutCallback } = payload;
+        const res = await this.request(mode, apiKey, '/subscriptions', 'POST', payloadWithoutCallback, false);
+        return this.mapSubscription(res);
+      }
+      console.error('Asaas API Error [POST /subscriptions]:', error?.data || error?.message);
+      throw error;
+    }
   }
 
   async createRecurringCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
@@ -83,7 +116,22 @@ export class AsaasProvider implements BillingProvider {
       externalReference: data.externalReference,
       subscription: data.subscription
     };
-    return this.request(mode, apiKey, '/checkouts', 'POST', payload);
+
+    if (!payload.callback) {
+      return this.request(mode, apiKey, '/checkouts', 'POST', payload);
+    }
+
+    try {
+      return await this.request(mode, apiKey, '/checkouts', 'POST', payload, true);
+    } catch (error: any) {
+      if (this.isDomainOrCallbackError(error)) {
+        console.warn('[AsaasProvider] Conta do Asaas não possui domínio cadastrado em "Minha Conta > Informações". Criando checkout sem callback...');
+        const { callback, ...payloadWithoutCallback } = payload;
+        return await this.request(mode, apiKey, '/checkouts', 'POST', payloadWithoutCallback, false);
+      }
+      console.error('Asaas API Error [POST /checkouts]:', error?.data || error?.message);
+      throw error;
+    }
   }
 
   async updateSubscriptionCreditCard(mode: 'sandbox' | 'production', apiKey: string, id: string, data: any): Promise<any> {
