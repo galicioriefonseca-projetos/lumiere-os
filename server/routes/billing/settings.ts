@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { verifyIdToken, resolvePlatformAdmin } from '../../shared/auth.js';
+import { env } from '../../config/env.js';
 
 // Catálogo administrativo espelhado no catálogo comercial do frontend.
 // Limite de profissionais continua sendo uma regra operacional, não o argumento principal de venda.
@@ -53,6 +54,8 @@ export default async function asaasSettingsHandler(req: VercelRequest, res: Verc
       const data = doc.data() || {};
       return res.status(200).json({
         mode: data.mode || 'sandbox',
+        hasApiKey: !!data.apiKey,
+        hasWebhookToken: !!(data.webhookToken || env.asaas.webhookToken),
         productId: data.productId || '',
         startOfferId: data.startOfferId || '',
         founderOfferId: data.founderOfferId || '',
@@ -66,7 +69,7 @@ export default async function asaasSettingsHandler(req: VercelRequest, res: Verc
     if (mode && mode !== 'sandbox' && mode !== 'production') return res.status(400).json({ error: 'Modo Asaas inválido.' });
 
     const updateData: any = { updatedAt: Date.now() };
-    if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
+    if (typeof body.apiKey === 'string' && body.apiKey.trim() && !body.apiKey.includes('*')) {
       let cleanKey = body.apiKey.trim();
       const secondIndex = cleanKey.indexOf('$aact_', 1);
       if (secondIndex > 0) cleanKey = cleanKey.slice(0, secondIndex).trim();
@@ -75,7 +78,9 @@ export default async function asaasSettingsHandler(req: VercelRequest, res: Verc
       else if (cleanKey.startsWith('$aact_prod_')) mode = 'production';
     }
     if (mode) updateData.mode = mode;
-    if (typeof body.webhookToken === 'string' && body.webhookToken.trim()) updateData.webhookToken = body.webhookToken.trim();
+    if (typeof body.webhookToken === 'string' && body.webhookToken.trim() && !body.webhookToken.includes('*')) {
+      updateData.webhookToken = body.webhookToken.trim();
+    }
 
     for (const key of ['productId', 'startOfferId', 'founderOfferId', 'performanceOfferId', 'networkOfferId', 'enterpriseOfferId']) {
       if (body[key] !== undefined) updateData[key] = String(body[key] || '').trim();

@@ -51,4 +51,19 @@ describe('Webhook Security', () => {
     await asaasWebhookHandler(req, res);
     expect(res.status).not.toHaveBeenCalledWith(401);
   });
+
+  it('should accept valid token via alternative headers and bearer prefix', async () => {
+    const req = {
+      headers: { 'x-asaas-access-token': 'Bearer secure-token-123' },
+      body: { event: 'PAYMENT_CONFIRMED' }
+    } as any;
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn()
+    } as any;
+
+    await asaasWebhookHandler(req, res);
+    expect(res.status).not.toHaveBeenCalledWith(401);
+  });
 });

@@ -16,13 +16,34 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     const billingSettingsDoc = await adminDb.collection('settings').doc('asaas').get();
     const billingSettings = billingSettingsDoc.data();
 
-    const configuredToken = typeof billingSettings?.webhookToken === 'string'
-      ? billingSettings.webhookToken.trim()
-      : '';
-    const receivedHeader = req.headers['asaas-access-token'];
-    const receivedToken = Array.isArray(receivedHeader)
-      ? receivedHeader[0]?.trim() || ''
-      : String(receivedHeader || '').trim();
+    // Extrai o token enviado pelo Asaas dos possíveis cabeçalhos
+    const rawHeader =
+      req.headers['asaas-access-token'] ||
+      req.headers['x-asaas-access-token'] ||
+      req.headers['x-asaas-webhook-token'] ||
+      req.headers['asaas_access_token'] ||
+      req.headers['authorization'];
+
+    let receivedToken = Array.isArray(rawHeader)
+      ? rawHeader[0]?.trim() || ''
+      : String(rawHeader || '').trim();
+
+    if (receivedToken.toLowerCase().startsWith('bearer ')) {
+      receivedToken = receivedToken.slice(7).trim();
+    }
+
+    // Coleta tokens válidos configurados (Firestore e variáveis de ambiente), ignorando máscaras com asteriscos
+    const configuredCandidates = [
+      typeof billingSettings?.webhookToken === 'string' && !billingSettings.webhookToken.includes('*') ? billingSettings.webhookToken.trim() : '',
+      typeof billingSettings?.webhookSecret === 'string' && !billingSettings.webhookSecret.includes('*') ? billingSettings.webhookSecret.trim() : '',
+      String(env.asaas.webhookToken || process.env.ASAAS_WEBHOOK_TOKEN || '').trim(),
+      String(env.asaas.webhookSecret || process.env.ASAAS_WEBHOOK_SECRET || '').trim()
+    ].filter(t => t && !t.includes('*'));
+
+    let configuredToken = configuredCandidates[0] || '';
+    if (receivedToken && configuredCandidates.includes(receivedToken)) {
+      configuredToken = receivedToken;
+    }
 
     // Segurança: webhook deve falhar fechado.
     if (!configuredToken || !receivedToken || receivedToken !== configuredToken) {

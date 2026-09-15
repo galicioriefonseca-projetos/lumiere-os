@@ -53,12 +53,15 @@ export default async function asaasTestConnectionHandler(req: VercelRequest, res
     const isConnected = await billingService.testConnection({ mode, apiKey: cleanKey, webhookToken });
     
     if (isConnected) {
-      await adminDb.collection('settings').doc('asaas').set({
+      const updatePayload: Record<string, any> = {
         mode,
         apiKey: cleanKey,
-        webhookToken: webhookToken || '',
         updatedAt: Date.now()
-      }, { merge: true });
+      };
+      if (webhookToken && !webhookToken.includes('*')) {
+        updatePayload.webhookToken = webhookToken;
+      }
+      await adminDb.collection('settings').doc('asaas').set(updatePayload, { merge: true });
       return res.status(200).json({ message: 'Conectado com sucesso' });
     } else {
       return res.status(400).json({ error: 'Credenciais inválidas' });
