@@ -29,7 +29,7 @@ export class AsaasProvider implements BillingProvider {
     return { 'Content-Type': 'application/json', 'access_token': cleanKey, 'User-Agent': 'LumiereOS' };
   }
 
-  private async request(mode: 'sandbox' | 'production', apiKey: string, endpoint: string, method: string = 'GET', body?: any) {
+  private async request(mode: 'sandbox' | 'production', apiKey: string, endpoint: string, method: string = 'GET', body?: any, silentOnError: boolean = false) {
     const cleanKey = this.cleanApiKey(apiKey);
     const resolvedMode = this.resolveEnvironment(mode, cleanKey);
     const url = `${this.getBaseUrl(resolvedMode, cleanKey)}${endpoint}`;
@@ -38,10 +38,12 @@ export class AsaasProvider implements BillingProvider {
     const json = await response.json().catch(() => null);
     if (!response.ok) {
       const isExpected404 = response.status === 404 && (method === 'GET' || method === 'PUT');
-      if (!isExpected404) {
+      if (!isExpected404 && !silentOnError) {
         console.error(`Asaas API Error [${method} ${endpoint}]:`, json || response.statusText);
-      } else {
+      } else if (isExpected404) {
         console.warn(`[AsaasProvider] Recurso não encontrado (${response.status}) em [${method} ${endpoint}].`);
+      } else {
+        console.warn(`[AsaasProvider] Requisição retornou status ${response.status} em [${method} ${endpoint}]:`, json?.errors?.[0]?.description || response.statusText);
       }
       const err: any = new Error(`Asaas API Error: ${response.status} - ${JSON.stringify(json || response.statusText)}`);
       err.status = response.status;
@@ -77,7 +79,7 @@ export class AsaasProvider implements BillingProvider {
     return this.mapSubscription(await this.request(mode, apiKey, '/subscriptions', 'POST', payload));
   }
 
-  async createRecurringCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any): Promise<any> {
+  async createRecurringCheckout(mode: 'sandbox' | 'production', apiKey: string, data: any, silentOnError: boolean = false): Promise<any> {
     const payload: any = {
       // Asaas exige obrigatoriamente CREDIT_CARD para operações RECURRENT
       billingTypes: ['CREDIT_CARD'],
@@ -93,7 +95,7 @@ export class AsaasProvider implements BillingProvider {
     if (data.customer) payload.customer = data.customer;
     else if (data.customerData) payload.customerData = data.customerData;
 
-    return this.request(mode, apiKey, '/checkouts', 'POST', payload);
+    return this.request(mode, apiKey, '/checkouts', 'POST', payload, silentOnError);
   }
 
   async getCheckout(mode: 'sandbox' | 'production', apiKey: string, id: string): Promise<any> {

@@ -44,7 +44,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     if (!salonId || !planId) return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
 
-    const reqMethod = String(rawPaymentMethod || 'CREDIT_CARD').trim().toUpperCase();
+    const reqMethod = String(rawPaymentMethod || (req.body as any)?.billingType || 'CREDIT_CARD').trim().toUpperCase();
     if (!ALLOWED_CHECKOUT_METHODS.has(reqMethod)) {
       return res.status(400).json({
         success: false,
@@ -153,18 +153,35 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     const address = String(billingData.address || salonData.address || customerData?.address || '').trim();
     const addressNumber = String(billingData.addressNumber || salonData.addressNumber || customerData?.addressNumber || '').trim();
     const province = String(billingData.province || salonData.province || customerData?.province || '').trim();
+    const city = String(billingData.city || salonData.city || customerData?.city || '').trim();
+    const state = String(billingData.state || salonData.state || customerData?.state || '').trim().toUpperCase().slice(0, 2);
 
-    // Se temos dados de endereço completos e o cliente existe, podemos sincronizar previamente
-    if (customerId && postalCode && address && addressNumber && province) {
+    // O Asaas Checkout recorrente rejeita customer caso não possua endereço completo (postalCode, address, addressNumber, province, city).
+    // Se o cliente possui endereço completo, sincronizamos com o Asaas antes de vincular ao checkout.
+    const hasCompleteAddress = Boolean(
+      customerId &&
+      postalCode.length === 8 &&
+      address &&
+      addressNumber &&
+      province &&
+      city
+    );
+
+    let canAttachCustomer = false;
+    if (hasCompleteAddress && customerId) {
       try {
         await asaasProvider.updateCustomer(mode, apiKey, customerId, {
           postalCode,
           address,
           addressNumber,
-          province
+          province,
+          cityName: city,
+          state: state || 'SP'
         });
+        canAttachCustomer = true;
       } catch (syncAddrErr: any) {
-        console.warn('[Asaas] Aviso ao pré-atualizar endereço do cliente:', syncAddrErr?.message || syncAddrErr);
+        console.warn('[Asaas] Aviso ao sincronizar endereço do cliente no Asaas:', syncAddrErr?.message || syncAddrErr);
+        canAttachCustomer = false;
       }
     }
 
@@ -188,32 +205,19 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       }
     };
 
-    if (customerId) {
+    if (canAttachCustomer && customerId) {
       checkoutPayload.customer = customerId;
     }
 
     let checkout: any;
     try {
-      checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
+      // Se customer vinculado falhar por validação interna no Asaas, tentamos com silentOnError para permitir fallback
+      checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload, Boolean(checkoutPayload.customer));
     } catch (checkoutError: any) {
-      const errMsg = String(checkoutError?.message || '');
-      const isMissingAddress = errMsg.includes('address deve existir') || errMsg.includes('addressNumber') || errMsg.includes('postalCode') || errMsg.includes('province') || errMsg.includes('city');
-
-      if (isMissingAddress && customerId) {
-        console.warn(`[Asaas] Cliente ${customerId} sem endereço cadastrado no Asaas. Sincronizando endereço comercial e reprocessando...`);
-        try {
-          await asaasProvider.updateCustomer(mode, apiKey, customerId, {
-            address: address || salonData.name || 'Endereço Comercial',
-            addressNumber: addressNumber || 'S/N',
-            postalCode: postalCode.length === 8 ? postalCode : '01001000',
-            province: province || 'Centro'
-          });
-          checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
-        } catch (retryWithAddrErr: any) {
-          console.warn('[Asaas] Recorrendo à criação do Checkout sem vincular customer prévio para permitir pagamento sem bloqueio:', retryWithAddrErr?.message || retryWithAddrErr);
-          delete checkoutPayload.customer;
-          checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
-        }
+      if (checkoutPayload.customer) {
+        console.warn('[Asaas] Tentativa de Checkout com customer vinculado falhou (' + (checkoutError?.message || '') + '). Recorrendo à criação direta sem vínculo prévio para evitar bloqueio.');
+        delete checkoutPayload.customer;
+        checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
       } else {
         throw checkoutError;
       }
@@ -249,6 +253,8 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       success: true,
       checkoutUrl,
       invoiceUrl: checkoutUrl,
+      bankSlipUrl: checkoutUrl,
+      paymentUrl: checkoutUrl,
       providerCheckoutId: checkout.id,
       returnUrl: paymentCallback.successUrl,
       billingCycle: selectedCycle,
