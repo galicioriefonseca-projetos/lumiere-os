@@ -42,10 +42,6 @@ function formatDateOnly(date: Date): string {
 
 function resolveInitialDueDate(salonData: any, cycle: string): string {
   const today = new Date();
-
-  // O Essenza já possui um acordo comercial com vencimento fixo todo dia 3.
-  // Se a configuração ocorrer no próprio dia 3, a cobrança começa hoje;
-  // caso contrário, começa no próximo dia 3.
   if (isEssenzaSalon(salonData)) {
     const candidate = new Date(today);
     candidate.setHours(0, 0, 0, 0);
@@ -53,8 +49,6 @@ function resolveInitialDueDate(salonData: any, cycle: string): string {
     if (today.getDate() > 3) candidate.setMonth(candidate.getMonth() + 1);
     return formatDateOnly(candidate);
   }
-
-  // Para novas contratações comuns não existe trial: a primeira cobrança é hoje.
   return formatDateOnly(today);
 }
 
@@ -71,13 +65,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
 
     const reqMethod = String(rawPaymentMethod || (req.body as any)?.billingType || 'CREDIT_CARD').trim().toUpperCase();
-    if (!ALLOWED_CHECKOUT_METHODS.has(reqMethod)) {
-      return res.status(400).json({
-        success: false,
-        code: 'PAYMENT_METHOD_UNAVAILABLE',
-        error: 'No Checkout online do LumièreOS, estão disponíveis Cartão de Crédito e PIX.'
-      });
-    }
+    if (!ALLOWED_CHECKOUT_METHODS.has(reqMethod)) return res.status(400).json({ success: false, code: 'PAYMENT_METHOD_UNAVAILABLE', error: 'No Checkout online do LumièreOS, estão disponíveis Cartão de Crédito e PIX.' });
     const chosenMethod = reqMethod as 'CREDIT_CARD' | 'PIX';
 
     let user;
@@ -108,7 +96,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         id: salonId, name: salonName, ownerName, ownerId: user.uid, ownerEmail: email, phone,
         businessType: mapBusinessType(String(body.businessSegment || '')), city, state, plan: planId,
         subscriptionStatus: 'pending_payment', activationStatus: 'pending', paymentStatus: 'pending',
-        previewEndsAt: now, isActive: false,
+        previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000, isActive: false,
         professionalsLimit: Number(plan.maxProfessionals || 0), professionalLimit: Number(plan.maxProfessionals || 0), maxProfessionals: Number(plan.maxProfessionals || 0),
         billingEmail: email, onboardingCompleted: false,
         billing: { provider: 'asaas', status: 'PENDING_CHECKOUT', planId, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), updatedAt: new Date(now).toISOString() },
@@ -149,12 +137,8 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     if (existingCheckoutId && billingData.checkoutPlanId === planId && (billingData.checkoutBillingCycle || 'MONTHLY') === selectedCycle) {
       try {
         const existingCheckout = await asaasProvider.getCheckout(mode, apiKey, existingCheckoutId);
-        if (String(existingCheckout?.status || '').toUpperCase() === 'ACTIVE' && existingCheckout?.link) {
-          return res.status(200).json({ success: true, checkoutUrl: existingCheckout.link, invoiceUrl: existingCheckout.link, providerCheckoutId: existingCheckoutId, billingCycle: selectedCycle, reused: true });
-        }
-      } catch (lookupError: any) {
-        console.warn('[Asaas] Não foi possível consultar Checkout anterior; um novo poderá ser criado:', lookupError?.message || lookupError);
-      }
+        if (String(existingCheckout?.status || '').toUpperCase() === 'ACTIVE' && existingCheckout?.link) return res.status(200).json({ success: true, checkoutUrl: existingCheckout.link, invoiceUrl: existingCheckout.link, providerCheckoutId: existingCheckoutId, billingCycle: selectedCycle, reused: true });
+      } catch (lookupError: any) { console.warn('[Asaas] Não foi possível consultar Checkout anterior; um novo poderá ser criado:', lookupError?.message || lookupError); }
     }
 
     const appUrl = env.app.url.replace(/\/$/, '');
@@ -166,11 +150,8 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
 
     let customerId = String(billingData.customerId || salonData.asaasCustomerId || '').trim();
     if (!customerId) {
-      try {
-        customerId = await billingService.ensureCustomer(salonId, salonData);
-      } catch (ensureErr: any) {
-        console.warn('[Asaas] Tentativa de assegurar customer:', ensureErr?.message || ensureErr);
-      }
+      try { customerId = await billingService.ensureCustomer(salonId, salonData); }
+      catch (ensureErr: any) { console.warn('[Asaas] Tentativa de assegurar customer:', ensureErr?.message || ensureErr); }
     }
 
     const postalCode = String(billingData.postalCode || salonData.postalCode || customerData?.postalCode || '').replace(/\D/g, '');
@@ -179,7 +160,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     const province = String(billingData.province || salonData.province || customerData?.province || '').trim();
     const city = String(billingData.city || salonData.city || customerData?.city || '').trim();
     const state = String(billingData.state || salonData.state || customerData?.state || '').trim().toUpperCase().slice(0, 2);
-
     const hasCompleteAddress = Boolean(customerId && postalCode.length === 8 && address && addressNumber && province && city);
 
     let canAttachCustomer = false;
@@ -189,7 +169,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         canAttachCustomer = true;
       } catch (syncAddrErr: any) {
         console.warn('[Asaas] Aviso ao sincronizar endereço do cliente no Asaas:', syncAddrErr?.message || syncAddrErr);
-        canAttachCustomer = false;
       }
     }
 
@@ -199,17 +178,8 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       minutesToExpire: 60,
       externalReference: salonId,
       callback: paymentCallback,
-      items: [{
-        externalReference: planId,
-        name: `LumièreOS — ${plan.name}`,
-        description: `Assinatura ${plan.name} (${selectedCycle === 'MONTHLY' ? 'mensal' : selectedCycle === 'SEMIANNUALLY' ? 'semestral' : 'anual'})`,
-        quantity: 1,
-        value
-      }],
-      subscription: {
-        cycle: selectedCycle,
-        nextDueDate: resolveInitialDueDate(salonData, selectedCycle)
-      }
+      items: [{ externalReference: planId, name: `LumièreOS — ${plan.name}`, description: `Assinatura ${plan.name} (${selectedCycle === 'MONTHLY' ? 'mensal' : selectedCycle === 'SEMIANNUALLY' ? 'semestral' : 'anual'})`, quantity: 1, value }],
+      subscription: { cycle: selectedCycle, nextDueDate: resolveInitialDueDate(salonData, selectedCycle) }
     };
 
     if (canAttachCustomer && customerId) checkoutPayload.customer = customerId;
@@ -222,35 +192,15 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         console.warn('[Asaas] Tentativa de Checkout com customer vinculado falhou (' + (checkoutError?.message || '') + '). Recorrendo à criação direta sem vínculo prévio para evitar bloqueio.');
         delete checkoutPayload.customer;
         checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload);
-      } else {
-        throw checkoutError;
-      }
+      } else throw checkoutError;
     }
 
     const checkoutUrl = asaasCheckoutUrl(checkout?.link || checkout?.id, mode);
     if (!checkoutUrl) return res.status(502).json({ success: false, code: 'CHECKOUT_LINK_NOT_RETURNED', error: 'O Asaas criou o Checkout, mas não retornou o link de pagamento.' });
 
     await salonRef.set({
-      billing: {
-        ...(billingData || {}),
-        provider: 'asaas',
-        checkoutId: checkout.id || null,
-        checkoutUrl,
-        checkoutStatus: checkout.status || 'ACTIVE',
-        checkoutPlanId: planId,
-        checkoutBillingCycle: selectedCycle,
-        checkoutPaymentMethod: chosenMethod,
-        status: 'PENDING_CHECKOUT',
-        planId,
-        billingCycle: selectedCycle,
-        value,
-        updatedAt: new Date().toISOString()
-      },
-      paymentStatus: 'pending',
-      subscriptionStatus: 'pending_payment',
-      activationStatus: 'pending',
-      isActive: false,
-      updatedAt: Date.now()
+      billing: { ...(billingData || {}), provider: 'asaas', checkoutId: checkout.id || null, checkoutUrl, checkoutStatus: checkout.status || 'ACTIVE', checkoutPlanId: planId, checkoutBillingCycle: selectedCycle, checkoutPaymentMethod: chosenMethod, status: 'PENDING_CHECKOUT', planId, billingCycle: selectedCycle, value, updatedAt: new Date().toISOString() },
+      paymentStatus: 'pending', subscriptionStatus: 'pending_payment', activationStatus: 'pending', isActive: false, updatedAt: Date.now()
     }, { merge: true });
 
     return res.status(200).json({ success: true, checkoutUrl, invoiceUrl: checkoutUrl, bankSlipUrl: checkoutUrl, paymentUrl: checkoutUrl, providerCheckoutId: checkout.id, returnUrl: paymentCallback.successUrl, billingCycle: selectedCycle, checkoutStatus: checkout.status || 'ACTIVE' });
