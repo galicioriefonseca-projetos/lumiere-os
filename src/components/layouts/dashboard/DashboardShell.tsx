@@ -8,33 +8,19 @@ interface DashboardShellProps {
   children: ReactNode;
 }
 
-export function DashboardShell({
-  sidebar,
-  topbar,
-  mobileNav,
-  subscriptionBanner,
-  children
-}: DashboardShellProps) {
+export function DashboardShell({ sidebar, topbar, mobileNav, subscriptionBanner, children }: DashboardShellProps) {
   return (
-    <div className="min-h-screen bg-[#050505] flex text-white font-sans antialiased">
-      {/* Sidebar Desktop Component */}
+    <div className="min-h-screen bg-background flex text-foreground font-sans antialiased">
       {sidebar}
-
-      {/* Main Page Area Container */}
-      <div className="flex-1 flex flex-col min-w-0 bg-[#050505]">
-        {/* Topbar Navigation Header */}
+      <div className="flex-1 flex flex-col min-w-0 bg-background">
         {topbar}
-
-        {/* Subscription / Warranty Banner alerts */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">
           {subscriptionBanner}
           <div className="max-w-7xl mx-auto space-y-6">
             {children}
           </div>
         </main>
       </div>
-
-      {/* Mobile Nav Drawer */}
       {mobileNav}
     </div>
   );
