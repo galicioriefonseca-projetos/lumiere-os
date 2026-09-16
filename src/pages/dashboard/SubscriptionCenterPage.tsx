@@ -221,9 +221,10 @@ export default function SubscriptionCenterPage() {
         return;
       }
 
-      if (data.checkoutUrl) {
+      const targetUrl = data.checkoutUrl || data.paymentUrl || data.bankSlipUrl;
+      if (targetUrl) {
         setShowBillingModal(false);
-        redirectToCheckout(data.checkoutUrl);
+        redirectToCheckout(targetUrl);
       } else {
         toast.success('Assinatura e pagamento atualizados com sucesso.');
         await refreshUserData();

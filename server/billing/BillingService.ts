@@ -393,27 +393,46 @@ export class BillingService {
       }
     }
 
-    const customerId = payload.payment?.customer || payload.subscription?.customer || payload.customer;
-    if (!customerId) {
-      const errorMsg = 'Dados do cliente (customerId) ausentes no payload do webhook.';
-      if (eventId) await this.sendToDeadLetterQueue(eventId, errorMsg, payload);
-      return;
-    }
+    const customerId = payload.payment?.customer || payload.subscription?.customer || payload.checkout?.customer || payload.customer;
 
     let salonId = '';
     try {
-      const salonsSnapshot = await adminDb.collection('salons').where('billing.customerId', '==', customerId).limit(1).get();
-      let salonDoc = salonsSnapshot.docs[0];
-      if (!salonDoc) {
-        const legacySnapshot = await adminDb.collection('salons').where('asaasCustomerId', '==', customerId).limit(1).get();
-        salonDoc = legacySnapshot.docs[0];
+      const externalRef = String(
+        payload.checkout?.externalReference ||
+        payload.subscription?.externalReference ||
+        payload.payment?.externalReference ||
+        ''
+      );
+
+      if (externalRef) {
+        const cleanRef = externalRef.startsWith('manual-migration:') ? externalRef.slice('manual-migration:'.length) : externalRef;
+        const directDoc = await adminDb.collection('salons').doc(cleanRef).get();
+        if (directDoc.exists) salonId = directDoc.id;
       }
-      if (!salonDoc) {
-        const errorMsg = `Nenhum estabelecimento encontrado para o customerId do Asaas: ${customerId}`;
+
+      if (!salonId && payload.checkout?.id) {
+        const checkoutSnapshot = await adminDb.collection('salons')
+          .where('billing.checkoutId', '==', payload.checkout.id)
+          .limit(1)
+          .get();
+        if (checkoutSnapshot.docs?.[0]?.exists) salonId = checkoutSnapshot.docs[0].id;
+      }
+
+      if (!salonId && customerId) {
+        const salonsSnapshot = await adminDb.collection('salons').where('billing.customerId', '==', customerId).limit(1).get();
+        let salonDoc = salonsSnapshot.docs[0];
+        if (!salonDoc) {
+          const legacySnapshot = await adminDb.collection('salons').where('asaasCustomerId', '==', customerId).limit(1).get();
+          salonDoc = legacySnapshot.docs[0];
+        }
+        if (salonDoc) salonId = salonDoc.id;
+      }
+
+      if (!salonId) {
+        const errorMsg = `Nenhum estabelecimento encontrado para o payload do Asaas (customerId: ${customerId || 'N/A'}, ref: ${externalRef || 'N/A'})`;
         if (eventId) await this.sendToDeadLetterQueue(eventId, errorMsg, payload);
         return;
       }
-      salonId = salonDoc.id;
     } catch (err) { throw err; }
 
     try {
@@ -422,8 +441,10 @@ export class BillingService {
       let billingStatus: 'ACTIVE' | 'OVERDUE' | 'CANCELLED' | null = null;
       let tenantStatus: 'active' | 'overdue' | 'cancelled' | null = null;
       switch (event) {
+        case 'CHECKOUT_PAID':
         case 'PAYMENT_RECEIVED':
         case 'PAYMENT_CONFIRMED': billingStatus = 'ACTIVE'; tenantStatus = 'active'; break;
+        case 'SUBSCRIPTION_CREATED': billingStatus = 'ACTIVE'; tenantStatus = 'active'; break;
         case 'PAYMENT_OVERDUE': billingStatus = 'OVERDUE'; tenantStatus = 'overdue'; break;
         case 'SUBSCRIPTION_CANCELLED':
         case 'SUBSCRIPTION_DELETED': billingStatus = 'CANCELLED'; tenantStatus = 'cancelled'; break;
@@ -447,12 +468,12 @@ export class BillingService {
         const salonData = salonDoc.data();
         const currentBilling = salonData?.billing || {};
         const now = new Date();
-        const isPaymentConfirmed = event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED';
+        const isPaymentConfirmed = event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED' || event === 'CHECKOUT_PAID';
         const lastPayment = isPaymentConfirmed ? now : (currentBilling.lastPaymentDate ? new Date(currentBilling.lastPaymentDate) : null);
         const resolvedNextDueDate = (payment?.dueDate || subscription?.nextDueDate) ? new Date(payment?.dueDate || subscription?.nextDueDate) : (currentBilling.nextDueDate ? new Date(currentBilling.nextDueDate) : null);
-        const asaasSubscriptionId = subscription?.id || payment?.subscription || currentBilling.subscriptionId || '';
+        const asaasSubscriptionId = subscription?.id || payment?.subscription || payload.checkout?.subscription?.id || payload.checkout?.subscription || currentBilling.subscriptionId || '';
         const activePlanId = currentBilling.planId || salonData?.plan || 'essential';
-        const billingUpdate: any = { ...currentBilling, updatedAt: now.toISOString(), customerId };
+        const billingUpdate: any = { ...currentBilling, updatedAt: now.toISOString(), ...(customerId ? { customerId } : {}) };
         if (billingStatus) billingUpdate.status = billingStatus;
         if (asaasSubscriptionId) billingUpdate.subscriptionId = asaasSubscriptionId;
         if (payment?.billingType || subscription?.billingType) billingUpdate.paymentMethod = payment?.billingType || subscription?.billingType;

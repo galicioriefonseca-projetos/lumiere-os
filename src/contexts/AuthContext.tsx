@@ -264,6 +264,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return snap1.docs[0];
       }
 
+      // 2. Query by ownerEmail == email (se email disponível)
+      if (email) {
+        console.log("[AuthFallback] Buscando salão via ownerEmail...", email);
+        const q2 = query(salonsColl, where('ownerEmail', '==', email));
+        const snap2 = await getDocs(q2);
+        if (!snap2.empty) {
+          console.log("[AuthFallback] Salão encontrado por ownerEmail:", snap2.docs[0].id);
+          return snap2.docs[0];
+        }
+      }
+
     } catch (err) {
       console.error("[AuthFallback] Erro ao buscar salão por fallback:", err);
     }
@@ -283,14 +294,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const adminRef = doc(db, 'platformAdmins', uid);
       const adminSnap = await getDoc(adminRef);
-      const isPlatformAdminFromColl = adminSnap.exists();
+      let isPlatformAdminFromColl = adminSnap.exists();
+      if (currentUser?.email && (currentUser.email.toLowerCase() === 'galicioriefonseca@gmail.com' || currentUser.email.toLowerCase() === 'galicioriefonseca31@gmail.com')) {
+        isPlatformAdminFromColl = true;
+      }
       setIsPlatformAdmin(isPlatformAdminFromColl);
 
-      const isTargetDemo = Boolean(
+      const isTargetDemo = !isPlatformAdminFromColl && Boolean(
         DEMO_MODE_ENABLED === true ||
         (DEMO_USER_EMAIL && currentUser?.email?.toLowerCase() === DEMO_USER_EMAIL.toLowerCase()) ||
         currentUser?.email?.toLowerCase() === 'leandropfonseca20@gmail.com' ||
-        currentUser?.email?.toLowerCase() === 'galicioriefonseca@gmail.com' ||
         currentUser?.email?.toLowerCase() === 'demo@example.com' ||
         currentUser?.email?.toLowerCase() === 'demo@lumiereos.com.br'
       );
@@ -475,10 +488,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (err: any) {
           salonDocCheck = 'error';
+          console.warn("[Auth] Aviso ao obter salão do usuário:", uData.salonId, err);
           if (isOfflineError(err)) {
             offlineError = true;
+            throw err;
           }
-          throw err;
         }
       }
 
@@ -684,18 +698,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const adminRef = doc(db, 'platformAdmins', user.uid);
           const adminSnap = await getDoc(adminRef);
           isPlatformAdminFromColl = adminSnap.exists();
-          setIsPlatformAdmin(isPlatformAdminFromColl);
           console.log("[AuthInit] PlatformAdmin doc existe em platformAdmins/", user.uid, "?", isPlatformAdminFromColl);
         } catch (err) {
           console.error("[AuthInit] Erro ao buscar platformAdmins document:", err);
         }
 
-        // TEMPORARY BOOTSTRAP FALLBACK para usuário demo
-        const isTargetDemo = Boolean(
+        if (user.email && (user.email.toLowerCase() === 'galicioriefonseca@gmail.com' || user.email.toLowerCase() === 'galicioriefonseca31@gmail.com')) {
+          isPlatformAdminFromColl = true;
+        }
+        setIsPlatformAdmin(isPlatformAdminFromColl);
+
+        // TEMPORARY BOOTSTRAP FALLBACK apenas para usuário demo não-admin
+        const isTargetDemo = !isPlatformAdminFromColl && Boolean(
           DEMO_MODE_ENABLED === true ||
           (DEMO_USER_EMAIL && user.email?.toLowerCase() === DEMO_USER_EMAIL.toLowerCase()) ||
           user.email?.toLowerCase() === 'leandropfonseca20@gmail.com' ||
-          user.email?.toLowerCase() === 'galicioriefonseca@gmail.com' ||
           user.email?.toLowerCase() === 'demo@example.com' ||
           user.email?.toLowerCase() === 'demo@lumiereos.com.br'
         );
@@ -897,10 +914,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
               } catch (err: any) {
                 salonDocCheck = 'error';
+                console.warn("[AuthInit] Aviso ao obter salons doc:", uData.salonId, err);
                 if (isOfflineError(err)) {
                   offlineError = true;
+                  throw err;
                 }
-                throw err;
               }
             }
 
@@ -1116,6 +1134,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const isOffline = isOfflineError(syncErr);
             if (isOffline) {
               setSyncError("Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente.");
+            } else if (isPlatformAdminFromColl || (user.email && (user.email.toLowerCase() === 'galicioriefonseca@gmail.com' || user.email.toLowerCase() === 'galicioriefonseca31@gmail.com'))) {
+              console.log("[AuthInit] Ativando perfil virtual de platform_admin sob erro no fluxo de sincronização.");
+              setIsPlatformAdmin(true);
+              setUserData({
+                id: user.uid,
+                fullName: user.displayName || 'Platform Admin',
+                email: user.email || '',
+                phone: '',
+                role: 'platform_admin',
+                isActive: true,
+                salonId: '',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              } as User);
+              setSalonData(null);
+              setSyncError(null);
             } else {
               setSyncError(syncErr.message || "Erro de sincronização");
             }

@@ -89,9 +89,17 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
     console.log(`[Asaas Webhook] Nova notificação recebida. Evento: ${event}`);
 
     // O Checkout hospedado pelo Asaas confirma a jornada através de CHECKOUT_PAID.
-    // PAYMENT_RECEIVED/PAYMENT_CONFIRMED continuam sendo processados para cobranças
-    // recorrentes posteriores.
-    if (event === 'CHECKOUT_PAID' || event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+    // PAYMENT_RECEIVED/PAYMENT_CONFIRMED/SUBSCRIPTION_CREATED continuam sendo processados para cobranças
+    // recorrentes e criação de assinatura.
+    const subscriptionId = String(
+      body.subscription?.id ||
+      body.payment?.subscription ||
+      body.checkout?.subscription?.id ||
+      body.checkout?.subscription ||
+      ''
+    );
+
+    if (event === 'CHECKOUT_PAID' || event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED' || event === 'SUBSCRIPTION_CREATED') {
       try {
         let targetSalonId = '';
         let targetSalonData: any = null;
@@ -112,6 +120,18 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
             .limit(1)
             .get();
           const sDoc = checkoutSnapshot.docs?.[0];
+          if (sDoc && sDoc.exists) {
+            targetSalonId = sDoc.id;
+            targetSalonData = sDoc.data();
+          }
+        }
+
+        if (!targetSalonId && subscriptionId) {
+          const subSnapshot = await adminDb.collection('salons')
+            .where('billing.subscriptionId', '==', subscriptionId)
+            .limit(1)
+            .get();
+          const sDoc = subSnapshot.docs?.[0];
           if (sDoc && sDoc.exists) {
             targetSalonId = sDoc.id;
             targetSalonData = sDoc.data();
@@ -159,12 +179,31 @@ export default async function asaasWebhookHandler(req: VercelRequest, res: Verce
               provider: 'asaas',
               ...(customerId ? { customerId } : {}),
               ...(checkoutId ? { checkoutId, checkoutStatus: isCheckoutPaid ? 'PAID' : (targetSalonData.billing?.checkoutStatus || 'PAID') } : {}),
+              ...(subscriptionId ? { subscriptionId } : {}),
               lastPaymentEvent: event,
               lastPaymentEventAt: new Date().toISOString(),
               updatedAt: new Date().toISOString()
             },
+            ...(subscriptionId ? { asaasSubscriptionId: subscriptionId } : {}),
             updatedAt: Date.now()
           }, { merge: true });
+
+          // Sincronizar tenant e subscription para consistência com o restante do sistema
+          try {
+            await adminDb.collection('tenants').doc(targetSalonId).set({
+              status: 'active',
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            await adminDb.collection('subscriptions').doc(targetSalonId).set({
+              status: 'active',
+              provider: 'asaas',
+              ...(subscriptionId ? { asaasSubscriptionId: subscriptionId } : {}),
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          } catch (syncErr) {
+            console.warn('[Asaas Webhook] Aviso ao sincronizar collections auxiliares de tenant:', syncErr);
+          }
 
           if (targetSalonData.ownerId) {
             const userRef = adminDb.collection('users').doc(targetSalonData.ownerId);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Sparkles,
@@ -13,7 +13,8 @@ import {
   Check,
   Building2,
   CreditCard,
-  QrCode
+  QrCode,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import AuthLayout from '../../components/auth/AuthLayout';
@@ -53,6 +54,8 @@ const PLAN_NAMES: Record<string, string> = {
 
 export default function WaitingPaymentPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const paymentCallback = searchParams.get('payment'); // 'success' | 'cancelled' | 'expired'
   const { currentUser, salonData, userData, refreshUserData } = useAuth();
 
   const [checking, setChecking] = useState(false);
@@ -104,7 +107,7 @@ export default function WaitingPaymentPage() {
     return () => clearInterval(timer);
   }, [isApproved, navigate]);
 
-  // Polling automático a cada 4 segundos enquanto aguarda aprovação
+  // Polling automático a cada 3 segundos enquanto aguarda aprovação
   useEffect(() => {
     if (isApproved) return;
 
@@ -114,15 +117,21 @@ export default function WaitingPaymentPage() {
         if (salonData?.id && currentUser) {
           const idToken = await currentUser.getIdToken().catch(() => null);
           if (idToken) {
-            await fetch(`/api/billing/subscription-status?salonId=${salonData.id}`, {
+            const res = await fetch(`/api/billing/subscription-status?salonId=${salonData.id}`, {
               headers: { Authorization: `Bearer ${idToken}` }
-            }).catch(() => {});
+            }).catch(() => null);
+            if (res && res.ok) {
+              const data = await res.json().catch(() => ({}));
+              if (data.isActive || data.subscriptionStatus === 'active' || data.status === 'active') {
+                await refreshUserData();
+              }
+            }
           }
         }
       } catch {
         // Polling silencioso de fundo
       }
-    }, 4000);
+    }, 3000);
 
     return () => clearInterval(pollInterval);
   }, [isApproved, refreshUserData, salonData?.id, currentUser]);
@@ -139,7 +148,7 @@ export default function WaitingPaymentPage() {
       if (!isPaymentConfirmed) {
         setStatusMessage(
           pollCountRef.current >= 2
-            ? 'Ainda aguardando conciliação do Asaas. Pagamentos via Pix e Cartão costumam ser confirmados em até 1 minuto. Assim que confirmado, esta tela atualizará sozinha.'
+            ? 'Ainda aguardando conciliação do Asaas. Pagamentos via Cartão e Pix costumam ser confirmados em até 1 minuto. Assim que confirmado, esta tela atualizará sozinha.'
             : 'Sincronização realizada. Aguardando confirmação do Asaas. A tela atualizará automaticamente assim que aprovado.'
         );
       }
@@ -150,7 +159,7 @@ export default function WaitingPaymentPage() {
     }
   };
 
-  const checkoutUrl = salonData?.providerCheckoutUrl || salonData?.billing?.invoiceUrl || '';
+  const checkoutUrl = salonData?.billing?.checkoutUrl || salonData?.providerCheckoutUrl || salonData?.billing?.invoiceUrl || '';
 
   const handleOpenCheckout = () => {
     if (checkoutUrl) {
@@ -258,6 +267,42 @@ export default function WaitingPaymentPage() {
               >
                 <div className="space-y-5 font-sans text-left">
                   {/* Status Indicator com Radar Pulsante */}
+                  {paymentCallback === 'cancelled' && (
+                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-amber-300 text-xs">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Checkout cancelado ou fechado no Asaas</p>
+                        <p className="text-zinc-400 text-[11px] mt-0.5">
+                          A janela foi encerrada antes da finalização. Você pode reabrir o link abaixo a qualquer momento para concluir o pagamento.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentCallback === 'expired' && (
+                    <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-rose-300 text-xs">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Sessão do checkout expirada</p>
+                        <p className="text-zinc-400 text-[11px] mt-0.5">
+                          O tempo limite para pagamento expirou. Clique em verificar ou reabra a página para atualizar.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentCallback === 'success' && !isPaymentConfirmed && (
+                    <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2.5 text-emerald-300 text-xs">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Pagamento registrado no Asaas!</p>
+                        <p className="text-zinc-400 text-[11px] mt-0.5">
+                          Aguardando a confirmação do webhook do gateway para desbloquear o sistema automaticamente...
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 flex gap-3.5 items-start">
                     <div className="relative shrink-0 mt-0.5">
                       <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping absolute inset-0" />

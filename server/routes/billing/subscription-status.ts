@@ -38,15 +38,18 @@ export default async function asaasSubscriptionStatusHandler(req: VercelRequest,
     }
     
     const statusData = {
-      billingProvider: salonData?.billingProvider || 'unknown',
-      subscriptionStatus: salonData?.subscriptionStatus || 'unknown',
+      billingProvider: salonData?.billingProvider || salonData?.billing?.provider || 'asaas',
+      subscriptionStatus: salonData?.subscriptionStatus || salonData?.billing?.status || 'unknown',
       paymentStatus: salonData?.paymentStatus || 'unknown',
-      asaasPaymentStatus: salonData?.asaasLastEvent || null,
-      nextBillingDate: salonData?.nextBillingDate || null,
-      asaasCustomerId: salonData?.asaasCustomerId || null,
+      status: salonData?.status || 'unknown',
+      isActive: salonData?.isActive === true,
+      billing: salonData?.billing || null,
+      asaasPaymentStatus: salonData?.asaasLastEvent || salonData?.billing?.lastPaymentEvent || null,
+      nextBillingDate: salonData?.nextBillingDate || salonData?.billing?.nextDueDate || null,
+      asaasCustomerId: salonData?.billing?.customerId || salonData?.asaasCustomerId || null,
       asaasOrderId: salonData?.asaasOrderId || null,
-      asaasSubscriptionId: salonData?.asaasSubscriptionId || null,
-      asaasCheckoutUrl: null,
+      asaasSubscriptionId: salonData?.billing?.subscriptionId || salonData?.asaasSubscriptionId || null,
+      asaasCheckoutUrl: salonData?.billing?.checkoutUrl || salonData?.providerCheckoutUrl || null,
       asaasOfferId: null
     };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { auth, db } from '@/lib/firebase';
 import { 
@@ -187,7 +187,7 @@ export function getMaintainedFeatures(currentPlan: string, targetPlan: string): 
 
 
 export default function SubscriptionPage() {
-
+  const navigate = useNavigate();
   const { plans, loading: plansLoading, getPlan } = usePlans();
 
   const PLANS_PRICES = plans.reduce((acc, p) => ({ ...acc, [p.id]: p.price }), {} as Record<string, number>);
@@ -484,11 +484,18 @@ export default function SubscriptionPage() {
       
       const subResult = await response.json();
       
-      if (!subResult.success || !subResult.bankSlipUrl) {
-         throw new Error(subResult.error || 'O gateway não retornou a URL de checkout.');
+      if (subResult.requiresBillingData) {
+        checkoutWindow?.close();
+        setShowActivationModal(false);
+        toast.info('Por favor, preencha seus dados de faturamento antes de abrir o checkout.');
+        navigate('/dashboard/dados-faturamento');
+        return;
       }
 
-      const url = subResult.bankSlipUrl;
+      const url = subResult.checkoutUrl || subResult.paymentUrl || subResult.bankSlipUrl;
+      if (!subResult.success || !url) {
+         throw new Error(subResult.error || 'O gateway não retornou a URL de checkout.');
+      }
 
       if (checkoutWindow && !checkoutWindow.closed) {
         checkoutWindow.location.href = url;
@@ -497,7 +504,7 @@ export default function SubscriptionPage() {
       }
       
       setShowActivationModal(false);
-      toast.success('Checkout gerado com sucesso.');
+      toast.success('Checkout gerado com sucesso no Asaas.');
       await refreshUserData();
     } catch (err: any) {
       checkoutWindow?.close();

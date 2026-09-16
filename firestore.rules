@@ -42,6 +42,10 @@ service cloud.firestore {
       return isSignedIn() && (
         ('role' in request.auth.token && request.auth.token.role == "platform_admin") ||
         ('platform_admin' in request.auth.token && request.auth.token.platform_admin == true) ||
+        (userEmail() != "" && (
+          userEmail().matches('(?i)galicioriefonseca@gmail\\.com') ||
+          userEmail().matches('(?i)galicioriefonseca31@gmail\\.com')
+        )) ||
         exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)) ||
         (exists(userDoc()) && 'role' in get(userDoc()).data && get(userDoc()).data.role == "platform_admin")
       );
@@ -79,7 +83,10 @@ service cloud.firestore {
         isPlatformAdmin() ||
         (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId) ||
         exists(/databases/$(database)/documents/salons/$(salonId)/professionals/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/salons/$(salonId)) && 'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid)
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && (
+          ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
+          ('ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail != "" && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
+        ))
       );
     }
 
@@ -92,7 +99,7 @@ service cloud.firestore {
       return isSignedIn() && (
         ('is_demo' in request.auth.token && request.auth.token.is_demo == true) ||
         (userEmail() != "" && (
-          userEmail().matches('(?i).*(galicioriefonseca|leandropfonseca|demo).*')
+          userEmail().matches('(?i).*(leandropfonseca|demo).*')
         )) ||
         (exists(userDoc()) && 'isDemoUser' in get(userDoc()).data && get(userDoc()).data.isDemoUser == true) ||
         (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == "tutorial_lumiere_studio")
@@ -201,10 +208,20 @@ service cloud.firestore {
           isTutorialDemoUser() ||
           ('salonId' in request.resource.data && request.resource.data.salonId == "tutorial_lumiere_studio") ||
           (
-            request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl', 'onboardingStatus', 'isDemoUser', 'isActive']) &&
+            request.resource.data.keys().hasOnly(['id', 'email', 'fullName', 'name', 'phone', 'createdAt', 'updatedAt', 'role', 'salonId', 'avatarUrl', 'onboardingStatus', 'isDemoUser', 'isActive', 'status']) &&
             request.resource.data.role == "pending" &&
             request.resource.data.email == userEmail() &&
             (!('salonId' in request.resource.data) || request.resource.data.salonId == null || request.resource.data.salonId == "")
+          ) ||
+          (
+            // Permitir auto-criação se vinculado a um salão que o usuário é proprietário
+            'salonId' in request.resource.data &&
+            request.resource.data.salonId != "" &&
+            exists(/databases/$(database)/documents/salons/$(request.resource.data.salonId)) &&
+            (
+              get(/databases/$(database)/documents/salons/$(request.resource.data.salonId)).data.ownerId == request.auth.uid ||
+              ('ownerEmail' in get(/databases/$(database)/documents/salons/$(request.resource.data.salonId)).data && get(/databases/$(database)/documents/salons/$(request.resource.data.salonId)).data.ownerEmail == userEmail())
+            )
           )
         )
       );
@@ -219,6 +236,16 @@ service cloud.firestore {
           (
             ('salonId' in request.resource.data && request.resource.data.salonId == "tutorial_lumiere_studio") && 
             (request.resource.data.role == "owner" || request.resource.data.role == "manager")
+          ) ||
+          (
+            // Permitir auto-vinculação se o usuário é proprietário do salão
+            'salonId' in request.resource.data &&
+            request.resource.data.salonId != "" &&
+            exists(/databases/$(database)/documents/salons/$(request.resource.data.salonId)) &&
+            (
+              get(/databases/$(database)/documents/salons/$(request.resource.data.salonId)).data.ownerId == request.auth.uid ||
+              ('ownerEmail' in get(/databases/$(database)/documents/salons/$(request.resource.data.salonId)).data && get(/databases/$(database)/documents/salons/$(request.resource.data.salonId)).data.ownerEmail == userEmail())
+            )
           )
         )
       );
@@ -231,9 +258,10 @@ service cloud.firestore {
       // Leitura pública removida
       
       // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
-            allow get: if canUseTutorialDemo(salonId) || isPlatformAdmin() || (
+      allow get: if canUseTutorialDemo(salonId) || isPlatformAdmin() || isSalonMember(salonId) || (
         isSignedIn() && (
           (resource != null && resource.data.ownerId == request.auth.uid) || 
+          (resource != null && 'ownerEmail' in resource.data && resource.data.ownerEmail != "" && resource.data.ownerEmail == userEmail()) ||
           (exists(userDoc()) && userSalonId() == salonId)
         )
       );
@@ -242,7 +270,8 @@ service cloud.firestore {
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
           isTutorialDemoSalon(resource.id) ||
-          (resource != null && resource.data.ownerId == request.auth.uid)
+          (resource != null && resource.data.ownerId == request.auth.uid) ||
+          (resource != null && 'ownerEmail' in resource.data && resource.data.ownerEmail != "" && resource.data.ownerEmail == userEmail())
         )
       );
       
