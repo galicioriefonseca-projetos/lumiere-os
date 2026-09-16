@@ -32,6 +32,32 @@ function asaasCheckoutUrl(linkOrId: string, mode: 'sandbox' | 'production') {
   return `${host}/checkoutSession/show?id=${encodeURIComponent(linkOrId)}`;
 }
 
+function isEssenzaSalon(salonData: any): boolean {
+  return /essenza/i.test(String(salonData?.name || ''));
+}
+
+function formatDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function resolveInitialDueDate(salonData: any, cycle: string): string {
+  const today = new Date();
+
+  // O Essenza já possui um acordo comercial com vencimento fixo todo dia 3.
+  // Se a configuração ocorrer no próprio dia 3, a cobrança começa hoje;
+  // caso contrário, começa no próximo dia 3.
+  if (isEssenzaSalon(salonData)) {
+    const candidate = new Date(today);
+    candidate.setHours(0, 0, 0, 0);
+    candidate.setDate(3);
+    if (today.getDate() > 3) candidate.setMonth(candidate.getMonth() + 1);
+    return formatDateOnly(candidate);
+  }
+
+  // Para novas contratações comuns não existe trial: a primeira cobrança é hoje.
+  return formatDateOnly(today);
+}
+
 export default async function createCheckoutHandler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -82,7 +108,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         id: salonId, name: salonName, ownerName, ownerId: user.uid, ownerEmail: email, phone,
         businessType: mapBusinessType(String(body.businessSegment || '')), city, state, plan: planId,
         subscriptionStatus: 'pending_payment', activationStatus: 'pending', paymentStatus: 'pending',
-        previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000, isActive: false,
+        previewEndsAt: now, isActive: false,
         professionalsLimit: Number(plan.maxProfessionals || 0), professionalLimit: Number(plan.maxProfessionals || 0), maxProfessionals: Number(plan.maxProfessionals || 0),
         billingEmail: email, onboardingCompleted: false,
         billing: { provider: 'asaas', status: 'PENDING_CHECKOUT', planId, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), updatedAt: new Date(now).toISOString() },
@@ -119,8 +145,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     const mode = settingsData.mode === 'production' ? 'production' : 'sandbox';
     if (!apiKey) return res.status(503).json({ success: false, code: 'PAYMENT_NOT_CONFIGURED', error: 'O serviço de pagamento ainda não está configurado. Configure a chave do Asaas para continuar.' });
 
-    // Se já existe um Checkout ativo para a mesma contratação, reaproveitamos o link
-    // para impedir cobranças/Checkouts duplicados em cliques repetidos.
     const existingCheckoutId = String(billingData.checkoutId || '');
     if (existingCheckoutId && billingData.checkoutPlanId === planId && (billingData.checkoutBillingCycle || 'MONTHLY') === selectedCycle) {
       try {
@@ -156,28 +180,12 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     const city = String(billingData.city || salonData.city || customerData?.city || '').trim();
     const state = String(billingData.state || salonData.state || customerData?.state || '').trim().toUpperCase().slice(0, 2);
 
-    // O Asaas Checkout recorrente rejeita customer caso não possua endereço completo (postalCode, address, addressNumber, province, city).
-    // Se o cliente possui endereço completo, sincronizamos com o Asaas antes de vincular ao checkout.
-    const hasCompleteAddress = Boolean(
-      customerId &&
-      postalCode.length === 8 &&
-      address &&
-      addressNumber &&
-      province &&
-      city
-    );
+    const hasCompleteAddress = Boolean(customerId && postalCode.length === 8 && address && addressNumber && province && city);
 
     let canAttachCustomer = false;
     if (hasCompleteAddress && customerId) {
       try {
-        await asaasProvider.updateCustomer(mode, apiKey, customerId, {
-          postalCode,
-          address,
-          addressNumber,
-          province,
-          cityName: city,
-          state: state || 'SP'
-        });
+        await asaasProvider.updateCustomer(mode, apiKey, customerId, { postalCode, address, addressNumber, province, cityName: city, state: state || 'SP' });
         canAttachCustomer = true;
       } catch (syncAddrErr: any) {
         console.warn('[Asaas] Aviso ao sincronizar endereço do cliente no Asaas:', syncAddrErr?.message || syncAddrErr);
@@ -187,7 +195,6 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
 
     const value = planCyclePrice(plan, selectedCycle);
     const checkoutPayload: any = {
-      // Para planos recorrentes (subscription), o Asaas Checkout requer exclusivamente CREDIT_CARD
       billingTypes: ['CREDIT_CARD'],
       minutesToExpire: 60,
       externalReference: salonId,
@@ -201,17 +208,14 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       }],
       subscription: {
         cycle: selectedCycle,
-        nextDueDate: new Date(Date.now() + Math.max(Number(plan.trialDays || 0), 0) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        nextDueDate: resolveInitialDueDate(salonData, selectedCycle)
       }
     };
 
-    if (canAttachCustomer && customerId) {
-      checkoutPayload.customer = customerId;
-    }
+    if (canAttachCustomer && customerId) checkoutPayload.customer = customerId;
 
     let checkout: any;
     try {
-      // Se customer vinculado falhar por validação interna no Asaas, tentamos com silentOnError para permitir fallback
       checkout = await asaasProvider.createRecurringCheckout(mode, apiKey, checkoutPayload, Boolean(checkoutPayload.customer));
     } catch (checkoutError: any) {
       if (checkoutPayload.customer) {
@@ -249,17 +253,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       updatedAt: Date.now()
     }, { merge: true });
 
-    return res.status(200).json({
-      success: true,
-      checkoutUrl,
-      invoiceUrl: checkoutUrl,
-      bankSlipUrl: checkoutUrl,
-      paymentUrl: checkoutUrl,
-      providerCheckoutId: checkout.id,
-      returnUrl: paymentCallback.successUrl,
-      billingCycle: selectedCycle,
-      checkoutStatus: checkout.status || 'ACTIVE'
-    });
+    return res.status(200).json({ success: true, checkoutUrl, invoiceUrl: checkoutUrl, bankSlipUrl: checkoutUrl, paymentUrl: checkoutUrl, providerCheckoutId: checkout.id, returnUrl: paymentCallback.successUrl, billingCycle: selectedCycle, checkoutStatus: checkout.status || 'ACTIVE' });
   } catch (error: any) {
     console.error('[Asaas] Create Checkout Error:', error);
     const statusCode = Number(error?.statusCode);
