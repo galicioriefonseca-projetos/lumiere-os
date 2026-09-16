@@ -91,8 +91,19 @@ export default function RegisterPage() {
       }
     }
 
+    let paymentWindow: Window | null = null;
+    const isEmbeddedPreview = window.self !== window.top;
+
     try {
       setLoading(true);
+
+      // O Preview do Google AI Studio roda a aplicação em um frame.
+      // Abrimos uma janela de nível superior antes das operações assíncronas
+      // para que o Checkout hospedado do Asaas não seja carregado dentro do frame.
+      if (isEmbeddedPreview) {
+        paymentWindow = window.open('about:blank', '_blank');
+      }
+
       let user = currentUser;
 
       if (!isAlreadyAuthWithSameEmail) {
@@ -135,7 +146,7 @@ export default function RegisterPage() {
             email: formData.email,
             mobilePhone: formData.phone,
           },
-          paymentMethod: formData.paymentMethod
+          paymentMethod: 'CREDIT_CARD'
         })
       });
 
@@ -144,16 +155,19 @@ export default function RegisterPage() {
         throw new Error(checkoutResult.error || 'Não foi possível gerar o pagamento. Tente novamente.');
       }
 
-      toast.success('Pronto! Redirecionando para o ambiente seguro...');
-      
+      toast.success('Pronto! Abrindo o pagamento seguro do Asaas...');
       const targetUrl = checkoutResult.checkoutUrl;
-      try {
+
+      if (paymentWindow && !paymentWindow.closed) {
+        paymentWindow.location.href = targetUrl;
+      } else if (isEmbeddedPreview) {
+        throw new Error('O navegador bloqueou a abertura do pagamento. Abra o LumiereOS em uma nova aba e tente novamente.');
+      } else {
         window.location.assign(targetUrl);
-      } catch {
-        window.open(targetUrl, '_blank', 'noopener,noreferrer');
       }
 
     } catch (error: any) {
+      if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
       const msg = error.message || translateAuthError(error.code);
       toast.error(msg);
       if (error.code === 'auth/popup-closed-by-user') return;
@@ -165,7 +179,6 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
       <div className="w-full max-w-xl bg-[#0d0d12]/90 border border-white/10 p-6 sm:p-8 rounded-3xl shadow-2xl backdrop-blur-xl">
-        
         {step === 1 && (
           <div className="space-y-7">
             <div>
@@ -250,10 +263,7 @@ export default function RegisterPage() {
                 </label>
                 <label className="block space-y-1.5">
                   <span className="text-xs text-zinc-400">Forma de Pagamento</span>
-                  <select required value={formData.paymentMethod} onChange={e => update('paymentMethod', e.target.value)} className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm outline-none focus:border-[#D4AF37]">
-                    <option value="CREDIT_CARD">Cartão de Crédito</option>
-                    <option value="PIX">PIX</option>
-                  </select>
+                  <div className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm flex items-center text-zinc-200">Cartão de Crédito</div>
                 </label>
               </div>
             </div>
