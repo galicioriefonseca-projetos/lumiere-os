@@ -62,11 +62,11 @@
   .dashboard-modern [class~="bg-zinc-950"],
   .dashboard-modern [class~="bg-[#0c0c0f]"],
   .dashboard-modern [class~="bg-[#0c0c0e]"],
-  .dashboard-modern [class~="bg-[#050505"]] { background-color: var(--card) !important; }
+  .dashboard-modern [class~="bg-[#050505]"] { background-color: var(--card) !important; }
 
   .dashboard-modern [class~="bg-zinc-900"],
   .dashboard-modern [class~="bg-[#131318]"],
-  .dashboard-modern [class~="bg-[#0d0d11"]] { background-color: var(--secondary) !important; }
+  .dashboard-modern [class~="bg-[#0d0d11]"] { background-color: var(--secondary) !important; }
 
   .dashboard-modern [class~="bg-white/[0.01]"],
   .dashboard-modern [class~="bg-white/[0.02]"],
@@ -78,8 +78,7 @@
   .dashboard-modern [class~="text-zinc-300"] { color: var(--foreground) !important; }
 
   .dashboard-modern [class~="text-zinc-400"],
-  .dashboard-modern [class~="text-zinc-500"],
-  .dashboard-modern [class~="text-[#a1a1aa"]"] { color: var(--muted-foreground) !important; }
+  .dashboard-modern [class~="text-zinc-500"] { color: var(--muted-foreground) !important; }
 
   .dashboard-modern [class~="border-white/5"],
   .dashboard-modern [class~="border-white/10"],
