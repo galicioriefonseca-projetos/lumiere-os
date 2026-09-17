@@ -57,11 +57,40 @@
   .surface-elevated { box-shadow: 0 1px 2px rgba(23,23,23,.03), 0 8px 30px rgba(23,23,23,.05); }
   .text-balance { text-wrap: balance; }
 
-  /* Compatibility for legacy dark utility classes while the UI is migrated to semantic tokens. */
-  [class~="bg-black"], [class~="bg-zinc-950"], [class~="bg-[#0c0c0f]"], [class~="bg-[#0c0c0e]"], [class~="bg-[#050505]"] { background-color: var(--card) !important; }
-  [class~="bg-zinc-900"], [class~="bg-[#131318]"], [class~="bg-[#0d0d11]"] { background-color: var(--secondary) !important; }
-  [class~="text-white"], [class~="text-slate-200"], [class~="text-zinc-300"] { color: var(--foreground) !important; }
-  [class~="text-zinc-400"], [class~="text-zinc-500"], [class~="text-[#a1a1aa]"] { color: var(--muted-foreground) !important; }
-  [class~="border-white/5"], [class~="border-white/10"], [class~="border-zinc-800"] { border-color: var(--border) !important; }
-  [class~="hover:bg-zinc-900"]:hover, [class~="hover:bg-white/10"]:hover { background-color: var(--secondary) !important; }
+  /* Visual migration layer: legacy dashboard surfaces are normalized here without touching data or behavior. */
+  .dashboard-modern [class~="bg-black"],
+  .dashboard-modern [class~="bg-zinc-950"],
+  .dashboard-modern [class~="bg-[#0c0c0f]"],
+  .dashboard-modern [class~="bg-[#0c0c0e]"],
+  .dashboard-modern [class~="bg-[#050505"]] { background-color: var(--card) !important; }
+
+  .dashboard-modern [class~="bg-zinc-900"],
+  .dashboard-modern [class~="bg-[#131318]"],
+  .dashboard-modern [class~="bg-[#0d0d11"]] { background-color: var(--secondary) !important; }
+
+  .dashboard-modern [class~="bg-white/[0.01]"],
+  .dashboard-modern [class~="bg-white/[0.02]"],
+  .dashboard-modern [class~="bg-white/5"],
+  .dashboard-modern [class~="bg-white/10"] { background-color: var(--secondary) !important; }
+
+  .dashboard-modern [class~="text-white"],
+  .dashboard-modern [class~="text-slate-200"],
+  .dashboard-modern [class~="text-zinc-300"] { color: var(--foreground) !important; }
+
+  .dashboard-modern [class~="text-zinc-400"],
+  .dashboard-modern [class~="text-zinc-500"],
+  .dashboard-modern [class~="text-[#a1a1aa"]"] { color: var(--muted-foreground) !important; }
+
+  .dashboard-modern [class~="border-white/5"],
+  .dashboard-modern [class~="border-white/10"],
+  .dashboard-modern [class~="border-zinc-800"] { border-color: var(--border) !important; }
+
+  .dashboard-modern [class~="from-[#0d0d11]"],
+  .dashboard-modern [class~="to-[#050505]"] { --tw-gradient-from: var(--card) !important; --tw-gradient-to: var(--card) !important; }
+
+  .dashboard-modern [class~="hover:bg-zinc-900"]:hover,
+  .dashboard-modern [class~="hover:bg-white/10"]:hover,
+  .dashboard-modern [class~="hover:bg-white/[0.02]"]:hover { background-color: var(--accent) !important; }
+
+  .dashboard-modern [class*="shadow-[0_4px_30px_rgba(0,0,0,0.4)"] { box-shadow: 0 10px 30px rgba(23,23,23,.07) !important; }
 }
