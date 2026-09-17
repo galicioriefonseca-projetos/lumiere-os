@@ -154,7 +154,6 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
         items: [
           { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
           { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-          { name: 'Lançamentos / Produção', href: '/dashboard/agendamentos', icon: FileText },
         ]
       },
       {
@@ -198,7 +197,6 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
       items: [
         { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
         { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-        { name: 'Lançamentos / Produção', href: '/dashboard/agendamentos', icon: FileText },
       ]
     },
     {
