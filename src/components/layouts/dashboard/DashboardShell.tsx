@@ -10,7 +10,7 @@ interface DashboardShellProps {
 
 export function DashboardShell({ sidebar, topbar, mobileNav, subscriptionBanner, children }: DashboardShellProps) {
   return (
-    <div className="min-h-screen bg-background flex text-foreground font-sans antialiased">
+    <div className="dashboard-modern min-h-screen bg-background flex text-foreground font-sans antialiased">
       {sidebar}
       <div className="flex-1 flex flex-col min-w-0 bg-background">
         {topbar}
