@@ -1,15 +1,18 @@
 import catalog from './planCatalog.json';
+import { getCommercialPlan, type CanonicalPlanId } from '../../shared/commercialPlanCatalog';
 
-export type PublicPlanId = 'essential' | 'professional' | 'performance_plus' | 'multiunit' | 'enterprise_custom';
+export type LegacyPlanId = 'essential' | 'professional' | 'performance_plus' | 'multiunit' | 'enterprise_custom';
+export type PublicPlanId = LegacyPlanId | CanonicalPlanId;
 export type PublicBillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
 
 export function getPlanPrice(planId: PublicPlanId, cycle: PublicBillingCycle): number | null {
-  const plan = catalog.plans.find(item => item.id === planId);
-  if (!plan || plan.monthlyPrice == null) return null;
-  if (cycle === 'MONTHLY') return plan.monthlyPrice;
+  const canonical = getCommercialPlan(planId);
+  const monthlyPrice = canonical?.monthlyPrice ?? catalog.plans.find(item => item.id === planId)?.monthlyPrice ?? null;
+  if (monthlyPrice == null) return null;
+  if (cycle === 'MONTHLY') return monthlyPrice;
   const months = cycle === 'SEMIANNUALLY' ? 6 : 12;
   const discount = cycle === 'SEMIANNUALLY' ? catalog.discounts.semiannual : catalog.discounts.annual;
-  return Math.round(plan.monthlyPrice * months * (1 - discount));
+  return Math.round(monthlyPrice * months * (1 - discount));
 }
 
 export function getEquivalentMonthly(planId: PublicPlanId, cycle: PublicBillingCycle): number | null {
