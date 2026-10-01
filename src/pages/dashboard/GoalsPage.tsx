@@ -519,9 +519,9 @@ export default function GoalsPage() {
   return (
     <div className="space-y-6">
       {/* Banner & Tab Switcher */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 flex-wrap pb-4 border-b border-white/5">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 flex-wrap pb-4 border-b border-border">
         <div>
-          <h2 className="text-2xl font-heading font-light tracking-tight text-white">
+          <h2 className="text-2xl font-heading font-light tracking-tight text-foreground">
             Painel de Metas
           </h2>
           <p className="text-muted-foreground text-xs mt-0.5">
@@ -530,13 +530,13 @@ export default function GoalsPage() {
         </div>
 
         {/* Tab selector switcher */}
-        <div className="flex p-1 bg-white/5 rounded-2xl border border-white/10 w-full sm:w-auto">
+        <div className="flex p-1 bg-secondary rounded-2xl border border-border w-full sm:w-auto">
           <button
             onClick={() => setActiveTab("salon")}
             className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
               activeTab === "salon"
-                ? "bg-primary text-black font-bold shadow-lg"
-                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                ? "bg-[#171717] text-white font-bold shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/80"
             }`}
           >
             Metas Gerais do Salão
@@ -545,8 +545,8 @@ export default function GoalsPage() {
             onClick={() => setActiveTab("professionals")}
             className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
               activeTab === "professionals"
-                ? "bg-primary text-black font-bold shadow-lg"
-                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                ? "bg-[#171717] text-white font-bold shadow-xs"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/80"
             }`}
           >
             Metas de Profissionais
@@ -566,11 +566,11 @@ export default function GoalsPage() {
               }}
             >
               <DialogTrigger asChild>
-                <Button className="bg-primary hover:bg-gold-400 text-black font-semibold rounded-xl text-xs h-9 px-4">
+                <Button className="bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold rounded-xl text-xs h-9 px-4 cursor-pointer">
                   <Plus className="w-4 h-4 mr-1.5" /> Nova Meta do Salão
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px] bg-card border border-white/15 rounded-3xl p-6 shadow-2xl">
+              <DialogContent className="sm:max-w-[425px] bg-card border border-border rounded-3xl p-6 shadow-2xl">
                 <DialogHeader>
                   <DialogTitle className="font-heading text-lg font-semibold text-foreground">
                     {editingGoal ? "Editar Meta do Salão" : "Nova Meta do Salão"}
@@ -584,7 +584,7 @@ export default function GoalsPage() {
                       onChange={(e) =>
                         setFormData((p) => ({ ...p, title: e.target.value }))
                       }
-                      className="bg-background border-white/10"
+                      className="bg-card border-border"
                       placeholder="Ex: Faturamento do Mês"
                     />
                   </div>
@@ -597,7 +597,7 @@ export default function GoalsPage() {
                       onChange={(e) =>
                         setFormData((p) => ({ ...p, month: e.target.value }))
                       }
-                      className="bg-background border-white/10"
+                      className="bg-card border-border"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -610,7 +610,7 @@ export default function GoalsPage() {
                       onChange={(e) =>
                         setFormData((p) => ({ ...p, targetAmount: e.target.value }))
                       }
-                      className="bg-background border-white/10"
+                      className="bg-card border-border"
                     />
                   </div>
                   {editingGoal && (
@@ -626,13 +626,13 @@ export default function GoalsPage() {
                         onChange={(e) =>
                           setFormData((p) => ({ ...p, currentAmount: e.target.value }))
                         }
-                        className="bg-background border-white/10"
+                        className="bg-card border-border"
                       />
                     </div>
                   )}
                   <Button
                     type="submit"
-                    className="w-full bg-primary hover:bg-gold-400 text-black font-semibold h-11 rounded-xl transition-all"
+                    className="w-full bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold h-11 rounded-xl transition-all cursor-pointer"
                   >
                     {editingGoal ? "Salvar Alterações" : "Criar Meta"}
                   </Button>
@@ -642,9 +642,9 @@ export default function GoalsPage() {
           </div>
 
           {goals.length === 0 ? (
-            <Card className="border-white/10 bg-card/40 rounded-2xl shadow-xl">
+            <Card className="border border-border bg-card rounded-2xl shadow-xs">
               <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                <div className="w-14 h-14 rounded-2xl bg-accent border border-primary/20 flex items-center justify-center mb-4">
                   <Target className="w-6 h-6 text-primary" />
                 </div>
                 <h3 className="text-base font-semibold text-foreground">
@@ -665,7 +665,7 @@ export default function GoalsPage() {
                 const remaining = Math.max(g.targetAmount - g.currentAmount, 0);
 
                 return (
-                  <Card key={g.id} className="border-white/10 bg-card/35 rounded-2xl shadow-xl relative overflow-hidden">
+                  <Card key={g.id} className="border border-border bg-card rounded-2xl shadow-xs relative overflow-hidden">
                     <CardHeader className="pb-2">
                       <div className="flex justify-between items-start">
                         <div>
@@ -710,12 +710,12 @@ export default function GoalsPage() {
                               Falta {formatBRL(remaining)}
                             </span>
                           ) : (
-                            <span className="text-green-400 font-semibold flex items-center">
-                              <TrendingUp className="w-3.5 h-3.5 mr-1" /> Meta Batida!
+                            <span className="text-emerald-700 font-semibold flex items-center">
+                              <TrendingUp className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Meta Batida!
                             </span>
                           )}
                         </div>
-                        <Progress value={pct} className="h-2 bg-white/5" />
+                        <Progress value={pct} className="h-2 bg-secondary" />
                       </div>
                     </CardContent>
                   </Card>
@@ -728,10 +728,10 @@ export default function GoalsPage() {
         // INDIVIDUAL REPRESENTATIVES GOALS TAB (PROFESSIONALS)
         <div className="space-y-6">
           {/* Header Filtering, Calulator Mode & Global Target Cumulative Panel */}
-          <Card className="border border-white/10 bg-card/65 rounded-2xl shadow-md p-5">
+          <Card className="border border-border bg-card rounded-2xl shadow-xs p-5">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
-                <p className="text-sm font-semibold text-white">Indicador Mensal & Configurações de Progressão</p>
+                <p className="text-sm font-semibold text-foreground">Indicador Mensal & Configurações de Progressão</p>
                 <p className="text-xs text-muted-foreground">
                   Selecione o mês e o método de cálculo de dias úteis para faturamento da equipe.
                 </p>

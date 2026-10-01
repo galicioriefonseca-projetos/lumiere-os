@@ -264,61 +264,61 @@ export default function FinancialPage() {
 
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider block">Receitas Totais</span>
-              <span className="text-xl font-heading font-bold text-emerald-400">{formatBRL(totals.revenue)}</span>
-              <span className="text-[9px] text-zinc-500 font-light flex items-center gap-1">
-                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-450" /> Entradas registradas
+              <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Receitas Totais</span>
+              <span className="text-xl font-heading font-bold text-emerald-600">{formatBRL(totals.revenue)}</span>
+              <span className="text-[9px] text-muted-foreground font-light flex items-center gap-1">
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" /> Entradas registradas
               </span>
             </div>
-            <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-400">
+            <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-600">
               <TrendingUp className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider block">Despesas Totais</span>
-              <span className="text-xl font-heading font-bold text-rose-450">{formatBRL(totals.expense)}</span>
-              <span className="text-[9px] text-zinc-500 font-light flex items-center gap-1">
-                <ArrowDownRight className="w-3.5 h-3.5 text-rose-405" /> Saídas operacionais
+              <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Despesas Totais</span>
+              <span className="text-xl font-heading font-bold text-rose-600">{formatBRL(totals.expense)}</span>
+              <span className="text-[9px] text-muted-foreground font-light flex items-center gap-1">
+                <ArrowDownRight className="w-3.5 h-3.5 text-rose-600" /> Saídas operacionais
               </span>
             </div>
-            <div className="p-3 bg-rose-550/10 rounded-2xl border border-rose-500/20 text-rose-450">
+            <div className="p-3 bg-rose-50 rounded-2xl border border-rose-200 text-rose-600">
               <TrendingDown className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider block">Saldo Líquido</span>
-              <span className={`text-xl font-heading font-bold ${netProfit >= 0 ? "text-cyan-405" : "text-rose-400"}`}>
+              <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Saldo Líquido</span>
+              <span className={`text-xl font-heading font-bold ${netProfit >= 0 ? "text-cyan-700" : "text-rose-600"}`}>
                 {formatBRL(netProfit)}
               </span>
-              <span className="text-[9px] text-zinc-500 font-light block">Lucro consolidado</span>
+              <span className="text-[9px] text-muted-foreground font-light block">Lucro consolidado</span>
             </div>
-            <div className="p-3 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 text-cyan-400">
+            <div className="p-3 bg-cyan-50 rounded-2xl border border-cyan-200 text-cyan-700">
               <DollarSign className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider block">Margem de Lucro %</span>
-              <span className="text-xl font-heading font-bold text-[#D4AF37]">
+              <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Margem de Lucro %</span>
+              <span className="text-xl font-heading font-bold text-[#9F844A]">
                 {profitMargin.toFixed(1)}%
               </span>
-              <span className="text-[9px] text-zinc-500 font-light block">Eficiência financeira</span>
+              <span className="text-[9px] text-muted-foreground font-light block">Eficiência financeira</span>
             </div>
-            <div className="p-3 bg-[#D4AF37]/10 rounded-2xl border border-[#D4AF37]/20 text-[#D4AF37]">
+            <div className="p-3 bg-accent rounded-2xl border border-primary/20 text-accent-foreground">
               <PieIcon className="w-5 h-5" />
             </div>
           </CardContent>
@@ -327,23 +327,23 @@ export default function FinancialPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Adicionar Movimentação */}
-        <Card className="bg-zinc-950 border-neutral-900 shadow-xl lg:col-span-1">
-          <CardHeader className="border-b border-neutral-900/50 pb-4">
-            <CardTitle className="text-sm font-heading font-semibold text-white uppercase flex items-center gap-2">
-              <Plus className="w-4.5 h-4.5 text-[#D4AF37]" /> Novo Lançamento
+        <Card className="bg-card border-border shadow-xs lg:col-span-1">
+          <CardHeader className="border-b border-border/70 pb-4">
+            <CardTitle className="text-sm font-heading font-semibold text-foreground uppercase flex items-center gap-2">
+              <Plus className="w-4.5 h-4.5 text-primary" /> Novo Lançamento
             </CardTitle>
-            <CardDescription className="text-[11px] text-neutral-500">
+            <CardDescription className="text-[11px] text-muted-foreground">
               Adicione receitas ou faturas de despesas para equilibrar o caixa.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5">
             <form onSubmit={handleAddTransaction} className="space-y-4 text-xs font-sans">
-              <div className="flex gap-2 p-1.5 bg-neutral-900 rounded-xl">
+              <div className="flex gap-2 p-1.5 bg-secondary rounded-xl border border-border/60">
                 <button
                   type="button"
                   onClick={() => setType("revenue")}
                   className={`flex-1 py-1.5 text-center font-semibold rounded-lg transition-all ${
-                    type === "revenue" ? "bg-emerald-500/15 text-emerald-450 border border-emerald-500/20 shadow-xs" : "text-neutral-500"
+                    type === "revenue" ? "bg-white text-emerald-700 border border-emerald-200 shadow-xs" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   Receita (+)
@@ -352,7 +352,7 @@ export default function FinancialPage() {
                   type="button"
                   onClick={() => setType("expense")}
                   className={`flex-1 py-1.5 text-center font-semibold rounded-lg transition-all ${
-                    type === "expense" ? "bg-rose-500/15 text-rose-455 border border-rose-500/20 shadow-xs" : "text-neutral-500"
+                    type === "expense" ? "bg-white text-rose-700 border border-rose-200 shadow-xs" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   Despesa (-)
@@ -360,35 +360,35 @@ export default function FinancialPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-neutral-400 font-medium block">Descrição ou Origem *</label>
+                <label className="text-foreground font-medium block">Descrição ou Origem *</label>
                 <Input
                   placeholder="Ex: Venda Kit Revenda L'Oréal, Pagamento Aluguel"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                  className="bg-background text-xs text-foreground border-border rounded-xl"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Valor (R$) *</label>
+                  <label className="text-foreground font-medium block">Valor (R$) *</label>
                   <Input
                     placeholder="0,00"
                     type="text"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                     required
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Data de Vencimento *</label>
+                  <label className="text-foreground font-medium block">Data de Vencimento *</label>
                   <Input
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                     required
                   />
                 </div>
@@ -396,11 +396,11 @@ export default function FinancialPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Categoria *</label>
+                  <label className="text-foreground font-medium block">Categoria *</label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-neutral-905 text-white border border-neutral-800 rounded-xl p-2.5 text-xs outline-none"
+                    className="w-full bg-background text-foreground border border-border rounded-xl p-2.5 text-xs outline-none"
                   >
                     {categories[type].map((c) => (
                       <option key={c} value={c}>{c}</option>
@@ -408,11 +408,11 @@ export default function FinancialPage() {
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Meio de Transação *</label>
+                  <label className="text-foreground font-medium block">Meio de Transação *</label>
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full bg-neutral-905 text-white border border-border rounded-xl p-2.5 text-xs outline-none"
+                    className="w-full bg-background text-foreground border border-border rounded-xl p-2.5 text-xs outline-none"
                   >
                     <option value="Dinheiro">Dinheiro</option>
                     <option value="Pix">Pix</option>
@@ -422,7 +422,7 @@ export default function FinancialPage() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#c49f27] text-black font-semibold h-10 rounded-xl tracking-wider transition-all pt-1">
+              <Button type="submit" className="w-full bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold h-10 rounded-xl tracking-wider transition-all pt-1">
                 Gravar Movimentação
               </Button>
             </form>
@@ -430,12 +430,12 @@ export default function FinancialPage() {
         </Card>
 
         {/* Gráfico de Desempenho Caixa */}
-        <Card className="bg-zinc-950 border-neutral-900 shadow-xl lg:col-span-2">
-          <CardHeader className="border-b border-neutral-900/50 pb-4">
-            <CardTitle className="text-sm font-heading font-semibold text-white uppercase flex items-center gap-2">
-              <Activity className="w-4.5 h-4.5 text-[#D4AF37]" /> Fluxo Cronológico Real vs Projetado
+        <Card className="bg-card border-border shadow-xs lg:col-span-2">
+          <CardHeader className="border-b border-border/70 pb-4">
+            <CardTitle className="text-sm font-heading font-semibold text-foreground uppercase flex items-center gap-2">
+              <Activity className="w-4.5 h-4.5 text-primary" /> Fluxo Cronológico Real vs Projetado
             </CardTitle>
-            <CardDescription className="text-[11px] text-neutral-500">
+            <CardDescription className="text-[11px] text-muted-foreground">
               Análise comparativa de depósitos e retiradas consolidadas por período de atividade.
             </CardDescription>
           </CardHeader>
@@ -445,24 +445,24 @@ export default function FinancialPage() {
                 <AreaChart data={chartData.length > 0 ? chartData : mockChartDataIfEmpty}>
                   <defs>
                     <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#059669" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#dc2626" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-                  <XAxis dataKey="date" stroke="#737373" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#737373" fontSize={10} tickLine={false} axisLine={false} unit="R$" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E2DC" />
+                  <XAxis dataKey="date" stroke="#6B6B6B" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#6B6B6B" fontSize={10} tickLine={false} axisLine={false} unit="R$" />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: "#09090b", borderColor: "#262626", borderRadius: "12px", color: "#fff", fontSize: "11px" }}
-                    labelStyle={{ fontWeight: "bold", color: "#D4AF37" }}
+                    contentStyle={{ backgroundColor: "#FFFFFF", borderColor: "#E5E2DC", borderRadius: "12px", color: "#171717", fontSize: "11px", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }}
+                    labelStyle={{ fontWeight: "bold", color: "#8A6D36" }}
                   />
                   <Legend wrapperStyle={{ fontSize: "10px", marginTop: "10px" }} />
-                  <Area type="monotone" dataKey="Receitas" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorRevenue)" />
-                  <Area type="monotone" dataKey="Despesas" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExpense)" />
+                  <Area type="monotone" dataKey="Receitas" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorRevenue)" />
+                  <Area type="monotone" dataKey="Despesas" stroke="#dc2626" strokeWidth={2} fillOpacity={1} fill="url(#colorExpense)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -471,27 +471,27 @@ export default function FinancialPage() {
       </div>
 
       {/* Histórico e Filtros */}
-      <Card className="bg-zinc-950 border-neutral-900">
-        <CardHeader className="border-b border-neutral-900/50 pb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <Card className="bg-card border-border shadow-xs">
+        <CardHeader className="border-b border-border/70 pb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <CardTitle className="text-base font-heading font-light text-white flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#D4AF37]" /> Registro de Transações (Livro Razão)
+            <CardTitle className="text-base font-heading font-medium text-foreground flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary" /> Registro de Transações (Livro Razão)
             </CardTitle>
-            <CardDescription className="text-xs text-neutral-500">
+            <CardDescription className="text-xs text-muted-foreground">
               Visualização analítica e rastreabilidade total das receitas e pagamentos inseridos nas contas do salão.
             </CardDescription>
           </div>
           
           {/* Quick Filters */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="flex items-center gap-1 text-neutral-400 bg-neutral-900/40 px-2 py-1 rounded-xl">
+            <div className="flex items-center gap-1 text-muted-foreground bg-secondary px-2 py-1 rounded-xl border border-border/60">
               <Filter className="w-3.5 h-3.5" />
               <span>Filtro Tipo:</span>
             </div>
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value as any)}
-              className="bg-neutral-900/60 text-white border border-neutral-800 rounded-xl p-1.5 px-3 outline-none"
+              className="bg-background text-foreground border border-border rounded-xl p-1.5 px-3 outline-none"
             >
               <option value="all">Todas as transações</option>
               <option value="revenue">Apenas Receitas (+)</option>
@@ -501,7 +501,7 @@ export default function FinancialPage() {
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="bg-neutral-900/60 text-white border border-neutral-805 rounded-xl p-1.5 px-3 outline-none"
+              className="bg-background text-foreground border border-border rounded-xl p-1.5 px-3 outline-none"
             >
               <option value="all">Todas as Categorias</option>
               {Array.from(new Set([...categories.revenue, ...categories.expense])).map((c) => (
@@ -512,18 +512,18 @@ export default function FinancialPage() {
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <div className="text-center py-12 text-xs font-mono text-zinc-500">
+            <div className="text-center py-12 text-xs font-mono text-muted-foreground">
               <Plus className="w-4 h-4 animate-spin inline-block mr-2" /> Sincronizando dados financeiros...
             </div>
           ) : filteredTransactions.length === 0 ? (
-            <div className="text-center py-16 text-xs text-neutral-400 font-light flex flex-col items-center justify-center space-y-3">
-              <DollarSign className="w-8 h-8 text-neutral-600" />
+            <div className="text-center py-16 text-xs text-muted-foreground font-light flex flex-col items-center justify-center space-y-3">
+              <DollarSign className="w-8 h-8 text-muted-foreground/60" />
               <p>Nenhum lançamento foi encontrado com os filtros indicados.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-neutral-300 font-sans">
-                <thead className="bg-[#09090b]/80 border-b border-[#D4AF37]/10 text-neutral-400 font-semibold lowercase tracking-wider">
+              <table className="w-full text-left text-xs text-foreground font-sans">
+                <thead className="bg-[#FAF9F7] border-b border-border text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
                   <tr>
                     <th className="p-4 pl-6">Data</th>
                     <th className="p-4">Descrição</th>
@@ -533,31 +533,31 @@ export default function FinancialPage() {
                     <th className="p-4 pr-6 text-center">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-900">
+                <tbody className="divide-y divide-border">
                   {filteredTransactions.map((t) => (
-                    <tr key={t.id} className="hover:bg-neutral-900/10 transition-colors">
-                      <td className="p-4 pl-6 text-neutral-400 font-mono">
+                    <tr key={t.id} className="hover:bg-accent/40 transition-colors">
+                      <td className="p-4 pl-6 text-muted-foreground font-mono">
                         {new Date(t.date).toLocaleDateString("pt-BR")}
                       </td>
-                      <td className="p-4 font-medium text-white">
+                      <td className="p-4 font-medium text-foreground">
                         <div className="flex items-center gap-2">
                           <span className={`w-1.5 h-1.5 rounded-full ${t.type === "revenue" ? "bg-emerald-500" : "bg-rose-500"}`} />
                           {t.description}
                         </div>
                       </td>
                       <td className="p-4">
-                        <span className="p-1 px-2.5 bg-neutral-900/80 border border-neutral-800 rounded-lg text-[10px] text-zinc-400">
+                        <span className="p-1 px-2.5 bg-secondary border border-border rounded-lg text-[10px] text-muted-foreground">
                           {t.category}
                         </span>
                       </td>
-                      <td className="p-4 text-neutral-400">{t.paymentMethod}</td>
-                      <td className={`p-4 text-right font-heading font-medium text-sm ${t.type === "revenue" ? "text-emerald-400" : "text-rose-400"}`}>
+                      <td className="p-4 text-muted-foreground">{t.paymentMethod}</td>
+                      <td className={`p-4 text-right font-heading font-medium text-sm ${t.type === "revenue" ? "text-emerald-600" : "text-rose-600"}`}>
                         {t.type === "revenue" ? "+" : "-"} {formatBRL(t.amount)}
                       </td>
                       <td className="p-4 text-center">
                         <button
                           onClick={() => handleDelete(t.id, t)}
-                          className="p-1.5 text-neutral-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                          className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

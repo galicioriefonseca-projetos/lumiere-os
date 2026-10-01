@@ -239,55 +239,55 @@ export default function InventoryPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-sans">
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-zinc-550 font-bold uppercase block tracking-wider">Produtos Totais</span>
-              <span className="text-xl font-heading font-bold text-white">{items.length} itens</span>
-              <span className="text-[9px] text-[#D4AF37] font-semibold block">{totalItemsCount} unidades no almoxarifado</span>
+              <span className="text-[10px] text-muted-foreground font-bold uppercase block tracking-wider">Produtos Totais</span>
+              <span className="text-xl font-heading font-bold text-foreground">{items.length} itens</span>
+              <span className="text-[9px] text-[#9F844A] font-semibold block">{totalItemsCount} unidades no almoxarifado</span>
             </div>
-            <div className="p-3 bg-neutral-900 border border-neutral-800 rounded-2xl text-zinc-400">
-              <Package className="w-5 h-5" />
+            <div className="p-3 bg-secondary border border-border rounded-2xl text-muted-foreground">
+              <Package className="w-5 h-5 text-foreground" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-zinc-550 font-bold uppercase block tracking-wider">Estoques Críticos / Baixos</span>
-              <span className={`text-xl font-heading font-bold ${lowStockItems.length > 0 ? "text-amber-450 animate-pulse" : "text-emerald-450"}`}>
+              <span className="text-[10px] text-muted-foreground font-bold uppercase block tracking-wider">Estoques Críticos / Baixos</span>
+              <span className={`text-xl font-heading font-bold ${lowStockItems.length > 0 ? "text-amber-600 animate-pulse" : "text-emerald-600"}`}>
                 {lowStockItems.length} Alertas
               </span>
-              <span className="text-[9px] text-neutral-500 block">Exigem reposição faturamento</span>
+              <span className="text-[9px] text-muted-foreground block">Exigem reposição faturamento</span>
             </div>
-            <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500">
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-600 rounded-2xl">
               <AlertTriangle className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-zinc-550 font-bold uppercase block tracking-wider">Preço de Custo Ativo</span>
-              <span className="text-xl font-heading font-bold text-cyan-405">{formatBRL(totalAssetValueList)}</span>
-              <span className="text-[9px] text-neutral-500 block">Investimento físico em produtos</span>
+              <span className="text-[10px] text-muted-foreground font-bold uppercase block tracking-wider">Preço de Custo Ativo</span>
+              <span className="text-xl font-heading font-bold text-cyan-700">{formatBRL(totalAssetValueList)}</span>
+              <span className="text-[9px] text-muted-foreground block">Investimento físico em produtos</span>
             </div>
-            <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-450">
+            <div className="p-3 bg-cyan-50 border border-cyan-200 text-cyan-700 rounded-2xl">
               <DollarSign className="w-5 h-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#09090b] border-neutral-900/40">
+        <Card className="bg-card border-border shadow-xs">
           <CardContent className="p-5 flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[10px] text-zinc-550 font-bold uppercase block tracking-wider">Receita Potencial Revenda</span>
-              <span className="text-xl font-heading font-bold text-emerald-400">{formatBRL(projectedRevenue)}</span>
-              <span className="text-[9px] text-[#D4AF37] block">Lucro bruto pós-venda garantido</span>
+              <span className="text-[10px] text-muted-foreground font-bold uppercase block tracking-wider">Receita Potencial Revenda</span>
+              <span className="text-xl font-heading font-bold text-emerald-600">{formatBRL(projectedRevenue)}</span>
+              <span className="text-[9px] text-[#9F844A] block">Lucro bruto pós-venda garantido</span>
             </div>
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl">
               <TrendingUp className="w-5 h-5" />
             </div>
           </CardContent>
@@ -296,69 +296,69 @@ export default function InventoryPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Adicionar Produto */}
-        <Card className="bg-zinc-950 border-neutral-900 shadow-xl lg:col-span-1">
-          <CardHeader className="border-b border-neutral-900/50 pb-4">
-            <CardTitle className="text-sm font-heading font-semibold text-white uppercase flex items-center gap-2">
-              <Plus className="w-4.5 h-4.5 text-[#D4AF37]" /> Novo Item no Estoque
+        <Card className="bg-card border-border shadow-xs lg:col-span-1">
+          <CardHeader className="border-b border-border/70 pb-4">
+            <CardTitle className="text-sm font-heading font-semibold text-foreground uppercase flex items-center gap-2">
+              <Plus className="w-4.5 h-4.5 text-primary" /> Novo Item no Estoque
             </CardTitle>
-            <CardDescription className="text-[11px] text-neutral-500">
+            <CardDescription className="text-[11px] text-muted-foreground">
               Registre novos suprimentos para a clínica ou ponto de venda física.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5">
             <form onSubmit={handleCreate} className="space-y-4 text-xs font-sans">
               <div className="space-y-1.5">
-                <label className="text-neutral-400 font-medium block">Nome do Produto *</label>
+                <label className="text-foreground font-medium block">Nome do Produto *</label>
                 <Input
                   placeholder="Ex: Refil Kerastase Chronologiste 500ml"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                  className="bg-background text-xs text-foreground border-border rounded-xl"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Marca</label>
+                  <label className="text-foreground font-medium block">Marca</label>
                   <Input
                     placeholder="Ex: Kérastase, L'Oréal"
                     value={brand}
                     onChange={(e) => setBrand(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Código SKU / Barras</label>
+                  <label className="text-foreground font-medium block">Código SKU / Barras</label>
                   <Input
                     placeholder="Codificar opcional"
                     value={sku}
                     onChange={(e) => setSku(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Qtd em Estoque *</label>
+                  <label className="text-foreground font-medium block">Qtd em Estoque *</label>
                   <Input
                     placeholder="0"
                     type="number"
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                     required
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Estoque Crítico (Min) *</label>
+                  <label className="text-foreground font-medium block">Estoque Crítico (Min) *</label>
                   <Input
                     placeholder="Alerta de reposição"
                     type="number"
                     value={minQuantity}
                     onChange={(e) => setMinQuantity(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                     required
                   />
                 </div>
@@ -366,32 +366,32 @@ export default function InventoryPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Preço de Custo (R$)</label>
+                  <label className="text-foreground font-medium block">Preço de Custo (R$)</label>
                   <Input
                     placeholder="0,00"
                     value={costPrice}
                     onChange={(e) => setCostPrice(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Preço de Revenda (R$)</label>
+                  <label className="text-foreground font-medium block">Preço de Revenda (R$)</label>
                   <Input
                     placeholder="0,00"
                     value={sellingPrice}
                     onChange={(e) => setSellingPrice(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Classificação</label>
+                  <label className="text-foreground font-medium block">Classificação</label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-neutral-905 text-white border border-neutral-800 rounded-xl p-2.5 text-xs outline-none"
+                    className="w-full bg-background text-foreground border border-border rounded-xl p-2.5 text-xs outline-none"
                   >
                     <option value="Uso Técnico Clínico">Uso Técnico Clínico</option>
                     <option value="Home Care / Revenda">Home Care / Revenda</option>
@@ -400,17 +400,17 @@ export default function InventoryPage() {
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-neutral-400 font-medium block">Distribuidor / Fornecedor</label>
+                  <label className="text-foreground font-medium block">Distribuidor / Fornecedor</label>
                   <Input
                     placeholder="Distribuidora Beleza"
                     value={supplier}
                     onChange={(e) => setSupplier(e.target.value)}
-                    className="bg-neutral-900 text-xs text-white border-neutral-800 rounded-xl"
+                    className="bg-background text-xs text-foreground border-border rounded-xl"
                   />
                 </div>
               </div>
 
-              <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#c49f27] text-black font-semibold h-10 rounded-xl tracking-wider transition-all pt-1">
+              <Button type="submit" className="w-full bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold h-10 rounded-xl tracking-wider transition-all pt-1">
                 Adicionar ao Estoque
               </Button>
             </form>
@@ -418,34 +418,34 @@ export default function InventoryPage() {
         </Card>
 
         {/* Listagem de Estoque */}
-        <Card className="bg-zinc-950 border-neutral-900 shadow-xl lg:col-span-2">
-          <CardHeader className="border-b border-neutral-900/50 pb-5">
+        <Card className="bg-card border-border shadow-xs lg:col-span-2">
+          <CardHeader className="border-b border-border/70 pb-5">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <CardTitle className="text-sm font-heading font-semibold text-white uppercase flex items-center gap-2">
-                  <ShieldCheck className="w-4.5 h-4.5 text-[#D4AF37]" /> Itens e Recursos Ativos
+                <CardTitle className="text-sm font-heading font-semibold text-foreground uppercase flex items-center gap-2">
+                  <ShieldCheck className="w-4.5 h-4.5 text-primary" /> Itens e Recursos Ativos
                 </CardTitle>
-                <CardDescription className="text-[11px] text-neutral-500">
+                <CardDescription className="text-[11px] text-muted-foreground">
                   Gerenciamento de reposições e auditorias de produtos físicas.
                 </CardDescription>
               </div>
 
               {/* Search Bar */}
               <div className="relative w-full md:w-64 max-w-xs">
-                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-neutral-500" />
+                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Pesquisar produto, marca, SKU..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-[#09090b] text-neutral-350 text-xs pl-10 h-9 rounded-xl border-neutral-800"
+                  className="bg-background text-foreground text-xs pl-10 h-9 rounded-xl border-border"
                 />
               </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
             {editingItem && (
-              <div className="p-4 bg-amber-500/10 border-b border-amber-500/20 text-xs space-y-3">
-                <p className="font-semibold text-[#D4AF37]">⚙️ Ajuste Rápido de Estoque (Físico): {editingItem.name}</p>
+              <div className="p-4 bg-amber-50 border-b border-amber-200 text-xs space-y-3">
+                <p className="font-semibold text-amber-800">⚙️ Ajuste Rápido de Estoque (Físico): {editingItem.name}</p>
                 <form onSubmit={handleUpdateQuantity} className="flex items-center gap-2">
                   <div className="max-w-[120px]">
                     <Input
@@ -453,28 +453,28 @@ export default function InventoryPage() {
                       placeholder="Qtd atual"
                       value={editQuantity}
                       onChange={(e) => setEditQuantity(e.target.value)}
-                      className="bg-neutral-950 text-white border-neutral-800 text-xs h-9 rounded-xl"
+                      className="bg-background text-foreground border-border text-xs h-9 rounded-xl"
                     />
                   </div>
-                  <Button type="submit" size="sm" className="bg-[#D4AF37] hover:bg-amber-600 text-black font-bold h-9.5 rounded-xl px-4">Sincronizar</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-9 rounded-xl text-neutral-400" onClick={() => setEditingItem(null)}>Cancelar</Button>
+                  <Button type="submit" size="sm" className="bg-[#171717] hover:bg-[#2B2B2B] text-white font-bold h-9 rounded-xl px-4">Sincronizar</Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-9 rounded-xl text-muted-foreground hover:text-foreground" onClick={() => setEditingItem(null)}>Cancelar</Button>
                 </form>
               </div>
             )}
 
             {loading ? (
-              <div className="text-center py-12 text-xs font-mono text-neutral-500">
+              <div className="text-center py-12 text-xs font-mono text-muted-foreground">
                 <Plus className="w-4 h-4 animate-spin inline-block mr-2" /> Carregando prateleiras do estoque...
               </div>
             ) : filteredItems.length === 0 ? (
-              <div className="text-center py-16 text-xs text-neutral-450 font-light flex flex-col items-center justify-center space-y-2">
-                <Package className="w-8 h-8 text-neutral-600" />
+              <div className="text-center py-16 text-xs text-muted-foreground font-light flex flex-col items-center justify-center space-y-2">
+                <Package className="w-8 h-8 text-muted-foreground/50" />
                 <p>Nenhum produto cadastrado no estoque ou encontrado.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-neutral-300 font-sans">
-                  <thead className="bg-[#09090b]/85 border-b border-[#D4AF37]/10 text-neutral-400 font-semibold lowercase tracking-wider">
+                <table className="w-full text-left text-xs text-foreground font-sans">
+                  <thead className="bg-[#FAF9F7] border-b border-border text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
                     <tr>
                       <th className="p-4 pl-6">SKU</th>
                       <th className="p-4">Produto</th>
@@ -484,41 +484,41 @@ export default function InventoryPage() {
                       <th className="p-4 pr-6 text-center">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-900">
+                  <tbody className="divide-y divide-border">
                     {filteredItems.map((item) => {
                       const isLow = item.quantity <= item.minQuantity;
                       return (
-                        <tr key={item.id} className="hover:bg-neutral-900/10 transition-all font-light">
-                          <td className="p-4 pl-6 font-mono text-[10px] text-[#D4AF37]">{item.sku}</td>
-                          <td className="p-4 font-semibold text-white">
+                        <tr key={item.id} className="hover:bg-accent/40 transition-all font-light">
+                          <td className="p-4 pl-6 font-mono text-[10px] text-primary font-bold">{item.sku}</td>
+                          <td className="p-4 font-semibold text-foreground">
                             <div className="flex flex-col">
                               <span>{item.name}</span>
-                              <span className="text-[10px] text-zinc-500 uppercase">{item.brand || "Sem marca"} • Fornecedor: {item.supplier || "Geral"}</span>
+                              <span className="text-[10px] text-muted-foreground uppercase">{item.brand || "Sem marca"} • Fornecedor: {item.supplier || "Geral"}</span>
                             </div>
                           </td>
                           <td className="p-4">
-                            <span className="p-1 px-2 bg-neutral-900/90 border border-neutral-800 rounded-lg text-[9px] text-[#a1a1aa] font-medium block w-max uppercase tracking-wider">
+                            <span className="p-1 px-2 bg-secondary border border-border rounded-lg text-[9px] text-muted-foreground font-medium block w-max uppercase tracking-wider">
                               {item.category}
                             </span>
                           </td>
                           <td className="p-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <span className={`font-mono font-bold px-2 py-0.5 rounded-lg text-xs leading-none ${
-                                isLow ? "bg-rose-500/15 text-rose-455 border border-rose-500/20" : "bg-neutral-900/80 text-white border border-neutral-800"
+                                isLow ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-secondary text-foreground border border-border"
                               }`}>
                                 {item.quantity}
                               </span>
-                              <span className="text-zinc-500">/</span>
-                              <span className="text-zinc-500 font-mono text-[10px]">{item.minQuantity}</span>
+                              <span className="text-muted-foreground">/</span>
+                              <span className="text-muted-foreground font-mono text-[10px]">{item.minQuantity}</span>
                               {isLow && (
-                                <AlertTriangle className="w-3.5 h-3.5 text-rose-450 animate-bounce" />
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
                               )}
                             </div>
                           </td>
                           <td className="p-4 text-right">
                             <div className="flex flex-col font-mono text-[11px]">
-                              <span className="text-neutral-400">Custo: {formatBRL(item.costPrice)}</span>
-                              <span className="text-[#D4AF37] font-semibold">Preço: {formatBRL(item.sellingPrice)}</span>
+                              <span className="text-muted-foreground">Custo: {formatBRL(item.costPrice)}</span>
+                              <span className="text-emerald-700 font-semibold">Preço: {formatBRL(item.sellingPrice)}</span>
                             </div>
                           </td>
                           <td className="p-4 text-center">
@@ -528,14 +528,14 @@ export default function InventoryPage() {
                                   setEditingItem(item);
                                   setEditQuantity(String(item.quantity));
                                 }}
-                                className="p-1.5 text-neutral-500 hover:text-[#D4AF37] hover:bg-[#D4AF37]/15 rounded-lg transition-all"
+                                className="p-1.5 text-muted-foreground hover:text-primary hover:bg-accent rounded-lg transition-all"
                                 title="Editar Qtd de Estoque"
                               >
                                 <Edit className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDelete(item.id, item.name)}
-                                className="p-1.5 text-neutral-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all"
+                                className="p-1.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
                                 title="Remover Produto"
                               >
                                 <Trash2 className="w-4 h-4" />

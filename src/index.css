@@ -112,187 +112,267 @@
   h1,h2,h3,h4,h5,h6 { @apply font-heading tracking-tight; }
 }
 
-@layer utilities {
-  .surface-elevated { box-shadow: 0 1px 3px rgba(23,23,23,.04), 0 10px 30px rgba(184,155,94,.08); }
-  .text-balance { text-wrap: balance; }
+.surface-elevated { box-shadow: 0 1px 3px rgba(23,23,23,.04), 0 10px 30px rgba(184,155,94,.08); }
+.text-balance { text-wrap: balance; }
 
-  /* Normalização Universal de Superfícies - Paleta Oficial da Landing Page */
-  [class*="bg-zinc-950"],
-  [class*="bg-neutral-950"],
-  [class*="bg-slate-950"],
-  [class*="bg-gray-950"],
-  [class*="bg-[#0b0c10]"],
-  [class*="bg-[#0b0c12]"],
-  [class*="bg-[#0c0c0f]"],
-  [class*="bg-[#0c0c0e]"],
-  [class*="bg-[#0d0d11]"],
-  [class*="bg-[#0d0d12]"],
-  [class*="bg-[#061A14]"],
-  [class*="bg-[#0A261E]"],
-  [class*="bg-[#050505]"],
-  [class*="bg-[#060608]"],
-  [class*="bg-[#0b0b0d]"],
-  [class*="bg-[#070709]"],
-  [class*="bg-[#08080a]"],
-  [class*="bg-[#0a0a0c]"],
-  [class*="bg-[#0e0e12]"],
-  [class*="bg-[#09090b]"],
-  [class~="bg-black"]:not(button):not(a):not([data-slot="button"]),
-  [class*="bg-black/"]:not(button):not(a):not([data-slot="button"]) { 
-    background-color: var(--card) !important; 
-    color: var(--foreground) !important;
-  }
+/* ==========================================================================
+   NORMALIZAÇÃO UNIVERSAL DOS SETORES DO SISTEMA - PALETA DA LANDING PAGE
+   Garante harmonia total de cores em todos os módulos e páginas do sistema
+   ========================================================================== */
 
-  [class*="bg-zinc-900"],
-  [class*="bg-neutral-900"],
-  [class*="bg-slate-900"],
-  [class*="bg-[#0F3329]"],
-  [class*="bg-[#131318]"],
-  [class*="bg-[#09090c]"],
-  [class*="bg-[#0e0e11]"],
-  [class*="bg-[#121216]"],
-  [class*="bg-[#16161C]"],
-  [class*="bg-[#12131a]"],
-  [class*="bg-white/[0.0"],
-  [class~="bg-white/5"],
-  [class~="bg-white/10"],
-  [class~="bg-white/[0.05]"] { 
-    background-color: var(--secondary) !important; 
-    color: var(--foreground) !important;
-  }
+/* 1. Superfícies Principais (Cards, Diálogos, Modais, Gavetas e Painéis) */
+[class*="bg-zinc-95"],
+[class*="bg-zinc-90"],
+[class*="bg-zinc-85"],
+[class*="bg-zinc-80"],
+[class*="bg-zinc-70"],
+[class*="bg-neutral-95"],
+[class*="bg-neutral-90"],
+[class*="bg-neutral-85"],
+[class*="bg-neutral-80"],
+[class*="bg-slate-95"],
+[class*="bg-slate-90"],
+[class*="bg-slate-85"],
+[class*="bg-slate-80"],
+[class*="bg-gray-95"],
+[class*="bg-gray-90"],
+[class*="bg-gray-85"],
+[class*="bg-black/"]:not(button):not(a):not([data-slot="button"]):not(.bg-\[\#171717\]),
+[class~="bg-black"]:not(button):not(a):not([data-slot="button"]):not(.bg-\[\#171717\]),
+[class*="bg-[#0"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#10"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#11"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#12"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#13"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#14"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#15"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#16"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#18"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#19"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#1a"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#1b"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#1c"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#1d"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#1e"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#1f"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#20"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#21"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#22"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#23"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-[#24"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-white/5"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-white/10"]:not(button):not(a):not([data-slot="button"]),
+[class*="bg-white/[0.0"]:not(button):not(a):not([data-slot="button"]) {
+  background-color: #FFFFFF !important;
+  color: #171717 !important;
+}
 
-  /* Gradientes escuros convertidos em nuances de pérola, marfim e linho */
-  [class*="from-zinc-950"],
-  [class*="from-zinc-900"],
-  [class*="from-black"],
-  [class*="from-[#0d0d11]"],
-  [class*="from-[#0c0c0f]"],
-  [class*="from-[#050505]"],
-  [class*="from-[#0b0c10]"],
-  [class*="to-zinc-950"],
-  [class*="to-zinc-900"],
-  [class*="to-black"],
-  [class*="to-[#050505]"],
-  [class*="to-[#08080a]"],
-  [class*="to-[#070709]"] { 
-    --tw-gradient-from: var(--card) !important; 
-    --tw-gradient-to: var(--secondary) !important; 
-    --tw-gradient-stops: var(--tw-gradient-from), #FAF9F7, var(--tw-gradient-to) !important;
-  }
+/* 2. Sub-superfícies, Barras de Filtros, Cabeçalhos de Tabela e Caixas de Apoio */
+thead[class*="bg-"],
+thead tr,
+[class*="bg-zinc-900/"],
+[class*="bg-zinc-950/"],
+[class*="bg-neutral-900/"],
+[class*="bg-neutral-950/"],
+[class*="bg-black/20"],
+[class*="bg-black/30"],
+[class*="bg-black/40"],
+[class*="bg-black/50"],
+[class*="bg-black/60"],
+[class*="bg-[#121214]"],
+[class*="bg-[#121215]"],
+[class*="bg-[#121217]"],
+[class*="bg-[#15151b]"],
+[class*="bg-[#0b0b0d]"],
+[class*="bg-[#0c0c0e]"],
+[class*="bg-[#0c0c0f]"],
+[class*="bg-[#0c0d11]"],
+[class*="bg-[#0e0e11]"] {
+  background-color: #FAF9F7 !important;
+}
 
-  /* Bordas sutis da Landing Page */
-  [class*="border-zinc-8"],
-  [class*="border-zinc-9"],
-  [class*="border-neutral-8"],
-  [class*="border-neutral-9"],
-  [class*="border-white/"],
-  [class*="border-[#17473A]"],
-  [class*="border-[#133F32]"] { 
-    border-color: var(--border) !important; 
-  }
+/* 3. Inputs, Textareas e Seletores com temas antigos escuros */
+input[class*="bg-zinc-"],
+input[class*="bg-neutral-"],
+input[class*="bg-black"],
+input[class*="bg-[#0"],
+input[class*="bg-[#1"],
+select[class*="bg-zinc-"],
+select[class*="bg-neutral-"],
+select[class*="bg-black"],
+select[class*="bg-[#0"],
+select[class*="bg-[#1"],
+textarea[class*="bg-zinc-"],
+textarea[class*="bg-neutral-"],
+textarea[class*="bg-black"],
+textarea[class*="bg-[#0"],
+textarea[class*="bg-[#1"],
+[data-slot="select-trigger"][class*="bg-zinc-"],
+[data-slot="select-trigger"][class*="bg-black"],
+[data-slot="select-content"],
+[data-slot="dialog-content"],
+[data-slot="popover-content"] {
+  background-color: #FFFFFF !important;
+  border-color: #E5E2DC !important;
+  color: #171717 !important;
+}
 
-  /* Hover refinado */
-  [class*="hover:bg-zinc-900"]:hover,
-  [class*="hover:bg-zinc-850"]:hover,
-  [class*="hover:bg-white/10"]:hover,
-  [class*="hover:bg-white/[0.02]"]:hover,
-  [class*="hover:bg-white/[0.03]"]:hover,
-  [class*="hover:bg-white/[0.04]"]:hover { 
-    background-color: var(--accent) !important; 
-  }
+input::placeholder,
+textarea::placeholder {
+  color: #8B8881 !important;
+}
 
-  /* Tipografia clara sobre fundo escuro convertida para preto nobre #171717 */
-  [class~="text-white"],
-  [class~="text-slate-100"],
-  [class~="text-slate-200"],
-  [class~="text-zinc-100"],
-  [class~="text-zinc-200"],
-  [class~="text-zinc-300"],
-  [class~="text-[#F5F9F7]"],
-  [class~="text-[#F7F5F0]"] { 
-    color: var(--foreground) !important; 
-  }
+/* 4. Bordas sutis no padrão da Landing Page (#E5E2DC) */
+[class*="border-zinc-"],
+[class*="border-neutral-"],
+[class*="border-slate-"],
+[class*="border-gray-"],
+[class*="border-white/"],
+[class*="border-black/"],
+[class*="border-[#17473A]"],
+[class*="border-[#133F32]"],
+[class*="border-[#12121"] {
+  border-color: #E5E2DC !important;
+}
 
-  /* Tipografia secundária / legendas */
-  [class*="text-zinc-400"],
-  [class*="text-zinc-500"],
-  [class*="text-neutral-400"],
-  [class*="text-neutral-500"],
-  [class*="text-slate-400"],
-  [class*="text-slate-500"],
-  [class*="text-[#8FAEA2]"],
-  [class*="text-[#a1a1aa]"] { 
-    color: var(--muted-foreground) !important; 
-  }
+/* 5. Gradientes Escuros convertidos para a paleta suave de Linho & Pérola */
+[class*="from-zinc-"],
+[class*="from-neutral-"],
+[class*="from-slate-"],
+[class*="from-black"],
+[class*="from-[#0"],
+[class*="from-[#1"],
+[class*="to-zinc-"],
+[class*="to-neutral-"],
+[class*="to-slate-"],
+[class*="to-black"],
+[class*="to-[#0"],
+[class*="to-[#1"] {
+  --tw-gradient-from: #FFFFFF !important;
+  --tw-gradient-to: #FAF9F7 !important;
+  --tw-gradient-stops: #FFFFFF, #FAF9F7, #F6F5F2 !important;
+}
 
-  /* Ouro nobre e champagne da Landing Page (#9F844A, #B89B5E, #8A6D36) */
-  [class*="text-[#D4AF37]"],
-  [class*="text-[#DFC498]"] { 
-    color: #9F844A !important; 
-  }
-  [class*="border-[#D4AF37]"]:not([class*="/"]),
-  [class*="border-[#DFC498]"]:not([class*="/"]) { 
-    border-color: #B89B5E !important; 
-  }
-  [class*="border-[#D4AF37]/"],
-  [class*="border-[#DFC498]/"] { 
-    border-color: rgba(184, 155, 94, 0.35) !important; 
-  }
-  [class*="bg-[#D4AF37]/"],
-  [class*="bg-[#DFC498]/"] { 
-    background-color: #F5F1E9 !important; 
-    color: #8A6D36 !important;
-  }
-  [class*="fill-[#D4AF37]"],
-  [class*="fill-[#DFC498]"] { 
-    fill: #B89B5E !important; 
-  }
-  [class*="stroke-[#D4AF37]"],
-  [class*="stroke-[#DFC498]"] { 
-    stroke: #B89B5E !important; 
-  }
+/* 6. Hovers refinados em tons quentes de marfim */
+[class*="hover:bg-zinc-"]:hover,
+[class*="hover:bg-neutral-"]:hover,
+[class*="hover:bg-black/"]:hover,
+[class*="hover:bg-white/"]:hover {
+  background-color: #F5F1E9 !important;
+}
 
-  /* Botões de Ação Principais no Padrão Landing Page (#171717 com texto branco) */
-  button[class*="bg-[#D4AF37]"],
-  a[class*="bg-[#D4AF37]"],
-  [data-slot="button"][class*="bg-[#D4AF37]"] {
-    background-color: #171717 !important;
-    color: #FFFFFF !important;
-  }
-  button[class*="bg-[#D4AF37]"]:hover,
-  a[class*="bg-[#D4AF37]"]:hover,
-  [data-slot="button"][class*="bg-[#D4AF37]"]:hover {
-    background-color: #2B2B2B !important;
-  }
+/* 7. Tipografia sobre fundos claros: Contraste nobre e legibilidade perfeita */
+[class~="text-white"]:not(button):not(a):not([data-slot="button"]):not([class*="bg-[#171717]"]):not([class*="bg-[#2B2B2B]"]):not([class*="bg-primary"]):not([class*="bg-destructive"]):not([class*="bg-emerald-600"]):not([class*="bg-rose-600"]):not([class*="bg-[#25D366]"]):not([class*="bg-black"]),
+[class~="text-zinc-100"],
+[class~="text-zinc-200"],
+[class~="text-zinc-300"],
+[class~="text-neutral-100"],
+[class~="text-neutral-200"],
+[class~="text-neutral-300"],
+[class~="text-slate-100"],
+[class~="text-slate-200"],
+[class~="text-[#F5F9F7]"],
+[class~="text-[#F7F5F0]"] {
+  color: #171717 !important;
+}
 
-  /* Preservação rigorosa de texto branco em botões e badges pretos oficiais */
-  [class*="bg-[#171717]"],
-  [class*="bg-[#171717]"] *,
-  [class*="bg-[#2B2B2B]"],
-  [class*="bg-[#2B2B2B]"] *,
-  button[class*="bg-[#171717]"],
-  button[class*="bg-[#171717]"] *,
-  a[class*="bg-[#171717]"],
-  a[class*="bg-[#171717]"] *,
-  button[class*="bg-primary"],
-  button[class*="bg-primary"] *,
-  [data-slot="button"][class*="bg-primary"],
-  [data-slot="button"][class*="bg-primary"] *,
-  [data-slot="button"][class*="bg-[#171717]"],
-  [data-slot="button"][class*="bg-[#171717]"] *,
-  button[class*="bg-destructive"],
-  button[class*="bg-destructive"] *,
-  span[class*="bg-[#171717]"],
-  div[class*="bg-[#171717]"] { 
-    color: #FFFFFF !important; 
-  }
+[class*="text-zinc-400"],
+[class*="text-zinc-500"],
+[class*="text-neutral-400"],
+[class*="text-neutral-500"],
+[class*="text-slate-400"],
+[class*="text-slate-500"],
+[class*="text-[#8FAEA2]"],
+[class*="text-[#a1a1aa]"] {
+  color: #6B6B6B !important;
+}
 
-  [class*="bg-[#171717]"] svg[class*="text-[#D8C79F]"],
-  [class*="bg-[#171717]"] [class*="text-[#D8C79F]"],
-  [class*="bg-[#171717]"] svg[class*="text-[#B89B5E]"],
-  [class*="bg-[#171717]"] [class*="text-[#B89B5E]"],
-  [class*="bg-[#171717]"] svg[class*="text-[#9F844A]"],
-  [class*="bg-[#171717]"] [class*="text-[#9F844A]"] {
-    color: #D8C79F !important;
-  }
+/* Cores de status adaptadas para contraste alto em fundo claro */
+[class*="text-emerald-400"],
+[class*="text-emerald-450"] {
+  color: #059669 !important;
+}
+[class*="text-rose-400"],
+[class*="text-rose-450"],
+[class*="text-rose-405"] {
+  color: #DC2626 !important;
+}
+[class*="text-cyan-400"],
+[class*="text-cyan-405"] {
+  color: #0284C7 !important;
+}
+
+/* 8. Ouro e Champagne da Landing Page */
+[class*="text-[#D4AF37]"],
+[class*="text-[#DFC498]"] {
+  color: #9F844A !important;
+}
+[class*="border-[#D4AF37]"]:not([class*="/"]),
+[class*="border-[#DFC498]"]:not([class*="/"]) {
+  border-color: #B89B5E !important;
+}
+[class*="border-[#D4AF37]/"],
+[class*="border-[#DFC498]/"] {
+  border-color: rgba(184, 155, 94, 0.35) !important;
+}
+[class*="bg-[#D4AF37]/"],
+[class*="bg-[#DFC498]/"] {
+  background-color: #F5F1E9 !important;
+  color: #8A6D36 !important;
+}
+[class*="fill-[#D4AF37]"],
+[class*="fill-[#DFC498]"] {
+  fill: #B89B5E !important;
+}
+[class*="stroke-[#D4AF37]"],
+[class*="stroke-[#DFC498]"] {
+  stroke: #B89B5E !important;
+}
+
+/* 9. Botões de Ação Principais no Padrão Landing Page (#171717 com texto branco) */
+button[class*="bg-[#D4AF37]"],
+a[class*="bg-[#D4AF37]"],
+[data-slot="button"][class*="bg-[#D4AF37]"] {
+  background-color: #171717 !important;
+  color: #FFFFFF !important;
+}
+button[class*="bg-[#D4AF37]"]:hover,
+a[class*="bg-[#D4AF37]"]:hover,
+[data-slot="button"][class*="bg-[#D4AF37]"]:hover {
+  background-color: #2B2B2B !important;
+}
+
+/* 10. Preservação Rigorosa de texto branco em botões e elementos de destaque pretos */
+[class*="bg-[#171717]"],
+[class*="bg-[#171717]"] *,
+[class*="bg-[#2B2B2B]"],
+[class*="bg-[#2B2B2B]"] *,
+button[class*="bg-[#171717]"],
+button[class*="bg-[#171717]"] *,
+a[class*="bg-[#171717]"],
+a[class*="bg-[#171717]"] *,
+button[class*="bg-primary"],
+button[class*="bg-primary"] *,
+[data-slot="button"][class*="bg-primary"],
+[data-slot="button"][class*="bg-primary"] *,
+[data-slot="button"][class*="bg-[#171717]"],
+[data-slot="button"][class*="bg-[#171717]"] *,
+button[class*="bg-destructive"],
+button[class*="bg-destructive"] *,
+button[class*="bg-black"],
+button[class*="bg-black"] *,
+[data-slot="button"][class*="bg-black"],
+[data-slot="button"][class*="bg-black"] *,
+span[class*="bg-[#171717]"],
+span[class*="bg-[#171717]"] * {
+  color: #FFFFFF !important;
+}
+
+[class*="bg-[#171717]"] svg[class*="text-[#D8C79F]"],
+[class*="bg-[#171717]"] [class*="text-[#D8C79F]"],
+[class*="bg-[#171717]"] svg[class*="text-[#B89B5E]"],
+[class*="bg-[#171717]"] [class*="text-[#B89B5E]"],
+[class*="bg-[#171717]"] svg[class*="text-[#9F844A]"],
+[class*="bg-[#171717]"] [class*="text-[#9F844A]"] {
+  color: #D8C79F !important;
 }
