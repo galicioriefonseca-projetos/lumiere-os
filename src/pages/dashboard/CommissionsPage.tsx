@@ -527,46 +527,46 @@ export default function CommissionsPage() {
 
       {/* Stats Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[#0cf]/5 border border-zinc-900 rounded-2xl p-5 relative overflow-hidden">
+        <div className="bg-card border border-border shadow-xs rounded-2xl p-5 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10">
-            <TrendingUp className="w-16 h-16 text-cyan-400" />
+            <TrendingUp className="w-16 h-16 text-primary" />
           </div>
-          <span className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Produção Bruta</span>
-          <h3 className="text-2xl font-light text-white mt-1.5 font-mono">{formatBRL(stats.totalRevenue)}</h3>
-          <p className="text-[10px] text-zinc-500 mt-2 flex items-center gap-1">
-            <ArrowUpRight className="w-3 h-3 text-cyan-400" /> {stats.ticketsCount} itens concluídos no mês
+          <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Produção Bruta</span>
+          <h3 className="text-2xl font-light text-foreground mt-1.5 font-mono">{formatBRL(stats.totalRevenue)}</h3>
+          <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
+            <ArrowUpRight className="w-3 h-3 text-emerald-600" /> {stats.ticketsCount} itens concluídos no mês
           </p>
         </div>
 
-        <div className="bg-[#e24]/5 border border-zinc-900 rounded-2xl p-5 relative overflow-hidden">
+        <div className="bg-card border border-border shadow-xs rounded-2xl p-5 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10">
             <Percent className="w-16 h-16 text-rose-500" />
           </div>
-          <span className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Comissão Total Parceiros</span>
-          <h3 className="text-2xl font-light text-rose-400 mt-1.5 font-mono">{formatBRL(stats.totalCommissionToPay)}</h3>
-          <p className="text-[10px] text-zinc-500 mt-2 flex items-center gap-1">
-            <Info className="w-3 h-3 text-rose-400" /> Repasse consolidado para profissionais
+          <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Comissão Total Parceiros</span>
+          <h3 className="text-2xl font-light text-rose-600 mt-1.5 font-mono">{formatBRL(stats.totalCommissionToPay)}</h3>
+          <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
+            <Info className="w-3 h-3 text-rose-600" /> Repasse consolidado para profissionais
           </p>
         </div>
 
-        <div className="bg-[#d4af37]/5 border border-zinc-900 rounded-2xl p-5 relative overflow-hidden">
+        <div className="bg-card border border-border shadow-xs rounded-2xl p-5 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10">
-            <PiggyBank className="w-16 h-16 text-[#D4AF37]" />
+            <PiggyBank className="w-16 h-16 text-[#B89B5E]" />
           </div>
-          <span className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Saldo Líquido Estabelecimento</span>
-          <h3 className="text-2xl font-light text-[#D4AF37] mt-1.5 font-mono">{formatBRL(stats.totalNetEstablishment)}</h3>
-          <p className="text-[10px] text-zinc-500 mt-2 flex items-center gap-1">
-            <CheckCircle className="w-3 h-3 text-[#D4AF37]" /> Parcela retida no caixa do salão
+          <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Saldo Líquido Estabelecimento</span>
+          <h3 className="text-2xl font-light text-[#B89B5E] mt-1.5 font-mono">{formatBRL(stats.totalNetEstablishment)}</h3>
+          <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
+            <CheckCircle className="w-3 h-3 text-[#B89B5E]" /> Parcela retida no caixa do salão
           </p>
         </div>
 
-        <div className="bg-[#b5f]/5 border border-zinc-900 rounded-2xl p-5 relative overflow-hidden">
+        <div className="bg-card border border-border shadow-xs rounded-2xl p-5 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10">
-            <DollarSign className="w-16 h-16 text-purple-400" />
+            <DollarSign className="w-16 h-16 text-indigo-500" />
           </div>
-          <span className="text-xs font-bold uppercase text-zinc-400 tracking-wider">Ticket Médio</span>
-          <h3 className="text-2xl font-light text-purple-400 mt-1.5 font-mono">{formatBRL(stats.avgTicket)}</h3>
-          <p className="text-[10px] text-zinc-500 mt-2 flex items-center gap-1">
+          <span className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Ticket Médio</span>
+          <h3 className="text-2xl font-light text-foreground mt-1.5 font-mono">{formatBRL(stats.avgTicket)}</h3>
+          <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
             Faturamento médio por lançamento
           </p>
         </div>
@@ -576,79 +576,79 @@ export default function CommissionsPage() {
 
       {/* Quick Production Launch Modal */}
       <Dialog open={isLaunchModalOpen} onOpenChange={(open) => !open && setIsLaunchModalOpen(false)}>
-        <DialogContent className="bg-zinc-950 border-zinc-900 text-white sm:max-w-md">
+        <DialogContent className="bg-card border-border text-foreground sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-heading font-light text-white text-lg flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#D4AF37]" />
+            <DialogTitle className="font-heading font-light text-foreground text-lg flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" />
               Lançar Produção Manual
             </DialogTitle>
-            <DialogDescription className="text-zinc-500 text-xs">
+            <DialogDescription className="text-muted-foreground text-xs">
               Registre faturamento ou produção manual diretamente para a meta faturamento de {launchProfessional?.name}.
             </DialogDescription>
           </DialogHeader>
 
           {launchProfessional && (
             <div className="py-4 space-y-4 font-sans">
-              <div className="flex justify-between items-center bg-zinc-900/45 p-3 rounded-xl border border-zinc-900">
+              <div className="flex justify-between items-center bg-secondary/50 p-3 rounded-xl border border-border">
                 <div>
-                  <h4 className="text-xs font-semibold text-zinc-200">{launchProfessional.name}</h4>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">{launchProfessional.role || 'Profissional'}</p>
+                  <h4 className="text-xs font-semibold text-foreground">{launchProfessional.name}</h4>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{launchProfessional.role || 'Profissional'}</p>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-mono font-medium text-zinc-400">Referência:</span>
-                  <p className="text-[10px] font-bold text-[#D4AF37]">{availableMonths.find(m => m.value === launchMonth)?.label || launchMonth}</p>
+                  <span className="text-xs font-mono font-medium text-muted-foreground">Referência:</span>
+                  <p className="text-[10px] font-bold text-primary">{availableMonths.find(m => m.value === launchMonth)?.label || launchMonth}</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="launch_val" className="text-xs text-zinc-400 font-medium">Valor de Produção (R$)</Label>
+                  <Label htmlFor="launch_val" className="text-xs text-muted-foreground font-medium">Valor de Produção (R$)</Label>
                   <Input 
                     id="launch_val"
                     placeholder="0,00"
                     value={launchValue}
                     onChange={(e) => setLaunchValue(e.target.value)}
-                    className="bg-zinc-900/60 border-zinc-800 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 text-sm h-10 rounded-xl"
+                    className="bg-card border-border text-foreground focus:border-primary focus:ring-1 focus:ring-primary/20 text-sm h-10 rounded-xl"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-zinc-400 font-medium block">Tipo de Registro</Label>
+                  <Label className="text-xs text-muted-foreground font-medium block">Tipo de Registro</Label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setLaunchMode("set")}
                       className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all flex flex-col items-center justify-center gap-1 ${
                         launchMode === "set"
-                          ? "bg-[#D4AF37]/5 border-[#D4AF37] text-white"
-                          : "bg-zinc-900/40 border-zinc-900 text-zinc-400 hover:bg-zinc-900"
+                          ? "bg-primary/10 border-primary text-foreground font-bold"
+                          : "bg-secondary/40 border-border text-muted-foreground hover:bg-secondary"
                       }`}
                     >
                       <span className="font-bold">Substituir total</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">Define como o valor total</span>
+                      <span className="text-[9px] text-muted-foreground font-normal">Define como o valor total</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setLaunchMode("add")}
                       className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all flex flex-col items-center justify-center gap-1 ${
                         launchMode === "add"
-                          ? "bg-[#D4AF37]/5 border-[#D4AF37] text-white"
-                          : "bg-zinc-900/40 border-zinc-900 text-zinc-400 hover:bg-zinc-900"
+                          ? "bg-primary/10 border-primary text-foreground font-bold"
+                          : "bg-secondary/40 border-border text-muted-foreground hover:bg-secondary"
                       }`}
                     >
                       <span className="font-bold">Somar ao atual</span>
-                      <span className="text-[9px] text-zinc-500 font-normal">Acrescenta ao valor existente</span>
+                      <span className="text-[9px] text-muted-foreground font-normal">Acrescenta ao valor existente</span>
                     </button>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="launch_month" className="text-xs text-zinc-400 font-medium">Mês de Referência</Label>
+                  <Label htmlFor="launch_month" className="text-xs text-muted-foreground font-medium">Mês de Referência</Label>
                   <Select value={launchMonth} onValueChange={setLaunchMonth}>
-                    <SelectTrigger className="bg-zinc-900/60 border-zinc-800 h-10 text-white text-xs rounded-xl focus:ring-0 focus:border-cyan-500">
+                    <SelectTrigger className="bg-card border-border h-10 text-foreground text-xs rounded-xl focus:ring-0 focus:border-primary">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-zinc-950 border-zinc-850 text-white text-xs">
+                    <SelectContent className="bg-card border-border text-foreground text-xs">
                       {availableMonths.map(m => (
                         <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                       ))}
@@ -661,13 +661,13 @@ export default function CommissionsPage() {
                 <Button 
                   variant="ghost" 
                   onClick={() => setIsLaunchModalOpen(false)} 
-                  className="w-full text-zinc-400 hover:text-white border border-zinc-900 hover:bg-zinc-900 rounded-xl text-xs h-10"
+                  className="w-full text-muted-foreground hover:text-foreground border border-border hover:bg-secondary rounded-xl text-xs h-10"
                 >
                   Cancelar
                 </Button>
                 <Button 
                   onClick={handleConfirmLaunchProduction} 
-                  className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black rounded-xl font-bold text-xs h-10"
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold text-xs h-10"
                 >
                   Confirmar Registro
                 </Button>
@@ -679,32 +679,32 @@ export default function CommissionsPage() {
 
       {/* Adjust Commission Modal */}
       <Dialog open={!!adjustingProf} onOpenChange={(open) => !open && setAdjustingProf(null)}>
-        <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-md">
+        <DialogContent className="bg-card border-border text-foreground sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-heading font-light text-white text-lg flex items-center gap-2">
-              <Percent className="w-5 h-5 text-[#D4AF37]" />
+            <DialogTitle className="font-heading font-light text-foreground text-lg flex items-center gap-2">
+              <Percent className="w-5 h-5 text-primary" />
               Configurar Comissão de Parceiro
             </DialogTitle>
-            <DialogDescription className="text-zinc-500 text-xs">
+            <DialogDescription className="text-muted-foreground text-xs">
               Altere a porcentagem fixa faturada por {adjustingProf?.name} em todos os seus serviços ou produtos.
             </DialogDescription>
           </DialogHeader>
 
           {adjustingProf && (
             <div className="py-6 space-y-6">
-              <div className="flex justify-between items-center bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+              <div className="flex justify-between items-center bg-secondary/50 p-4 rounded-xl border border-border">
                 <div>
-                  <h4 className="text-sm font-semibold">{adjustingProf.name}</h4>
-                  <p className="text-xs text-zinc-500 mt-0.5">{adjustingProf.role || 'Profissional'}</p>
+                  <h4 className="text-sm font-semibold text-foreground">{adjustingProf.name}</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">{adjustingProf.role || 'Profissional'}</p>
                 </div>
                 <div className="text-right">
-                  <span className="text-2xl font-mono font-medium text-[#D4AF37]">{newCommissionRate}%</span>
-                  <p className="text-[10px] text-zinc-500">taxa ativa</p>
+                  <span className="text-2xl font-mono font-medium text-primary">{newCommissionRate}%</span>
+                  <p className="text-[10px] text-muted-foreground">taxa ativa</p>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <div className="flex justify-between text-xs text-zinc-400">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Margem Profissional</span>
                   <span>Margem Casa (Salão)</span>
                 </div>
@@ -715,19 +715,19 @@ export default function CommissionsPage() {
                   max={100} 
                   step={5} 
                   onChange={(e) => setNewCommissionRate(Number(e.target.value))} 
-                  className="w-full bg-zinc-800 accent-[#D4AF37] h-1.5 rounded-lg appearance-none cursor-pointer"
+                  className="w-full bg-secondary accent-[#B89B5E] h-1.5 rounded-lg appearance-none cursor-pointer"
                 />
-                <div className="flex justify-between text-xs font-mono text-zinc-500">
+                <div className="flex justify-between text-xs font-mono text-muted-foreground">
                   <span>{newCommissionRate}% repasse</span>
                   <span>{100 - newCommissionRate}% retido</span>
                 </div>
               </div>
 
               <div className="flex gap-3 pt-2">
-                <Button variant="ghost" onClick={() => setAdjustingProf(null)} className="w-full text-zinc-400 hover:text-white border border-zinc-800 hover:bg-zinc-900 rounded-xl">
+                <Button variant="ghost" onClick={() => setAdjustingProf(null)} className="w-full text-muted-foreground hover:text-foreground border border-border hover:bg-secondary rounded-xl">
                   Cancelar
                 </Button>
-                <Button onClick={handleSaveCommissionRate} className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black rounded-xl font-bold">
+                <Button onClick={handleSaveCommissionRate} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold">
                   Salvar Porcentagem
                 </Button>
               </div>
@@ -738,13 +738,13 @@ export default function CommissionsPage() {
 
       {/* Extrato Detail Modal */}
       <Dialog open={!!selectedExtratoProf} onOpenChange={(open) => !open && setSelectedExtratoProf(null)}>
-        <DialogContent className="bg-zinc-950 border-zinc-800 text-white sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="bg-card border-border text-foreground sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-heading font-light text-white text-lg flex items-center gap-2">
-              <FileText className="w-5 h-5 text-cyan-400" />
+            <DialogTitle className="font-heading font-light text-foreground text-lg flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
               Extrato Detalhado de Vendas
             </DialogTitle>
-            <DialogDescription className="text-zinc-500 text-xs">
+            <DialogDescription className="text-muted-foreground text-xs">
               Histórico detalhado de produções concluídas por {selectedExtratoProf?.name} em {availableMonths.find(m => m.value === selectedMonth)?.label}.
             </DialogDescription>
           </DialogHeader>
@@ -752,29 +752,29 @@ export default function CommissionsPage() {
           {selectedExtratoProf && (
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                  <span className="text-[10px] text-zinc-500 block uppercase font-bold">Produção Bruta</span>
-                  <span className="text-base font-mono font-medium text-white block mt-0.5">
+                <div className="bg-secondary/40 p-3 rounded-xl border border-border">
+                  <span className="text-[10px] text-muted-foreground block uppercase font-bold">Produção Bruta</span>
+                  <span className="text-base font-mono font-medium text-foreground block mt-0.5">
                     {formatBRL(professionalsReport.find(p => p.id === selectedExtratoProf.id)?.totalRevenue || 0)}
                   </span>
                 </div>
-                <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                  <span className="text-[10px] text-zinc-500 block uppercase font-bold">Percentual Taxa</span>
-                  <span className="text-base font-mono font-medium text-[#D4AF37] block mt-0.5">
+                <div className="bg-secondary/40 p-3 rounded-xl border border-border">
+                  <span className="text-[10px] text-muted-foreground block uppercase font-bold">Percentual Taxa</span>
+                  <span className="text-base font-mono font-medium text-primary block mt-0.5">
                     {getPropCommissionRate(selectedExtratoProf)}%
                   </span>
                 </div>
-                <div className="bg-zinc-900 p-3 rounded-xl border border-zinc-800">
-                  <span className="text-[10px] text-zinc-500 block uppercase font-bold">Repasse Líquido</span>
-                  <span className="text-base font-mono font-medium text-rose-400 block mt-0.5">
+                <div className="bg-secondary/40 p-3 rounded-xl border border-border">
+                  <span className="text-[10px] text-muted-foreground block uppercase font-bold">Repasse Líquido</span>
+                  <span className="text-base font-mono font-medium text-rose-600 block mt-0.5">
                     {formatBRL(professionalsReport.find(p => p.id === selectedExtratoProf.id)?.totalCommission || 0)}
                   </span>
                 </div>
               </div>
 
-              <div className="border border-zinc-900 rounded-xl overflow-x-auto">
+              <div className="border border-border rounded-xl overflow-x-auto">
                 <table className="w-full text-left text-xs min-w-[500px]">
-                  <thead className="bg-zinc-900 text-zinc-400 border-b border-zinc-800 font-bold">
+                  <thead className="bg-secondary/60 text-muted-foreground border-b border-border font-bold">
                     <tr>
                       <th className="p-3">Data</th>
                       <th className="p-3">Cliente</th>
@@ -783,10 +783,10 @@ export default function CommissionsPage() {
                       <th className="p-3 text-right">Sua Comissão</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-900 text-zinc-300">
+                  <tbody className="divide-y divide-border text-foreground">
                     {extratoItems.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="p-8 text-center text-zinc-500 text-xs">
+                        <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs">
                           Nenhuma venda concluída para esse colaborador no período.
                         </td>
                       </tr>
@@ -797,25 +797,25 @@ export default function CommissionsPage() {
                         const itemComm = price * (rate / 100);
 
                         return (
-                          <tr key={item.id} className="hover:bg-zinc-900/40 transition-colors">
-                            <td className="p-3 whitespace-nowrap text-zinc-500 font-mono">
+                          <tr key={item.id} className="hover:bg-secondary/30 transition-colors">
+                            <td className="p-3 whitespace-nowrap text-muted-foreground font-mono">
                               {new Date(item.date + 'T00:00:00').toLocaleDateString('pt-BR')}
                             </td>
-                            <td className="p-3 font-semibold text-white">
+                            <td className="p-3 font-semibold text-foreground">
                               {item.clientId === 'manual' ? (
-                                <span className="text-[10px] bg-amber-500/10 text-amber-500 border border-amber-500/10 px-2 py-0.5 rounded-full font-sans font-medium uppercase">Manual Avulso</span>
+                                <span className="text-[10px] bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full font-sans font-medium uppercase">Manual Avulso</span>
                               ) : (
                                 item.clientName
                               )}
                             </td>
                             <td className="p-3">
-                              <span className="block font-medium text-zinc-200">{item.serviceName}</span>
-                              {item.isManualLaunch && <span className="text-[9px] uppercase font-bold text-zinc-500">Lançamento direto</span>}
+                              <span className="block font-medium text-foreground">{item.serviceName}</span>
+                              {item.isManualLaunch && <span className="text-[9px] uppercase font-bold text-muted-foreground">Lançamento direto</span>}
                             </td>
-                            <td className="p-3 text-right font-mono font-medium text-white">
+                            <td className="p-3 text-right font-mono font-medium text-foreground">
                               {formatBRL(price)}
                             </td>
-                            <td className="p-3 text-right font-mono font-bold text-[#D4AF37]">
+                            <td className="p-3 text-right font-mono font-bold text-primary">
                               {formatBRL(itemComm)}
                             </td>
                           </tr>
@@ -837,13 +837,13 @@ export default function CommissionsPage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Left Side: Professionals Table List */}
         <div className="xl:col-span-2 space-y-4">
-          <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-5">
-            <h3 className="text-base font-semibold text-white mb-2 font-heading">Repartição de Faturamento por Profissional</h3>
-            <p className="text-xs text-zinc-500 mb-4">Gerencie as comissões e configure as participações percentuais individualmente.</p>
+          <div className="bg-card border border-border shadow-xs rounded-2xl p-5">
+            <h3 className="text-base font-semibold text-foreground mb-2 font-heading">Repartição de Faturamento por Profissional</h3>
+            <p className="text-xs text-muted-foreground mb-4">Gerencie as comissões e configure as participações percentuais individualmente.</p>
 
-            <div className="border border-zinc-900 rounded-xl overflow-x-auto">
+            <div className="border border-border rounded-xl overflow-x-auto">
               <table className="w-full text-left text-xs min-w-[750px]">
-                <thead className="bg-zinc-900 text-zinc-500 border-b border-zinc-800 font-bold uppercase tracking-wider text-[10px]">
+                <thead className="bg-secondary/60 text-muted-foreground border-b border-border font-bold uppercase tracking-wider text-[10px]">
                   <tr>
                     <th className="p-3.5">Colaborador</th>
                     <th className="p-3.5 text-center">Contratos</th>
@@ -854,56 +854,56 @@ export default function CommissionsPage() {
                     <th className="p-3.5 text-center">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-900 text-zinc-300">
+                <tbody className="divide-y divide-border text-foreground">
                   {professionalsReport.map((p) => {
                     const rate = getPropCommissionRate(p);
                     return (
-                      <tr key={p.id} className="hover:bg-zinc-900/40 transition-colors">
+                      <tr key={p.id} className="hover:bg-secondary/30 transition-colors">
                         <td className="p-3.5">
-                          <div className="font-semibold text-white text-xs">{p.name}</div>
-                          <div className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-wider font-mono">{p.role || 'Especialista'}</div>
+                          <div className="font-semibold text-foreground text-xs">{p.name}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wider font-mono">{p.role || 'Especialista'}</div>
                           {p.componentSummary && p.componentSummary.targetAmount > 0 && (
                             <div className="mt-2 space-y-1 max-w-[200px]">
-                              <div className="text-[9px] text-zinc-400">
-                                Produção: <span className="font-mono text-zinc-200">{formatBRL(p.totalRevenue || 0)}</span> / Meta: <span className="font-mono text-zinc-300">{formatBRL(p.componentSummary.targetAmount)}</span> ({Math.round(p.componentSummary.goalProgress)}%)
+                              <div className="text-[9px] text-muted-foreground">
+                                Produção: <span className="font-mono text-foreground font-medium">{formatBRL(p.totalRevenue || 0)}</span> / Meta: <span className="font-mono text-muted-foreground">{formatBRL(p.componentSummary.targetAmount)}</span> ({Math.round(p.componentSummary.goalProgress)}%)
                               </div>
-                              <div className="w-full bg-zinc-900 border border-white/5 rounded-full h-1 overflow-hidden">
+                              <div className="w-full bg-secondary border border-border rounded-full h-1.5 overflow-hidden">
                                 <div 
-                                  className="bg-[#D4AF37] h-full" 
+                                  className="bg-primary h-full rounded-full" 
                                   style={{ width: `${Math.min(p.componentSummary.goalProgress, 100)}%` }} 
                                 />
                               </div>
                             </div>
                           )}
                         </td>
-                        <td className="p-3.5 text-center font-mono font-medium text-zinc-400">
+                        <td className="p-3.5 text-center font-mono font-medium text-muted-foreground">
                           {p.salesCount}
                         </td>
                         <td className="p-3.5 text-center">
-                          <span className="font-mono font-bold text-[#D4AF37] text-xs bg-[#D4AF37]/5 px-2 py-0.5 rounded border border-[#D4AF37]/10 inline-block">
+                          <span className="font-mono font-bold text-primary text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/20 inline-block">
                             {rate}%
                           </span>
                         </td>
-                        <td className="p-3.5 text-right font-mono font-medium text-white">
+                        <td className="p-3.5 text-right font-mono font-medium text-foreground">
                           <div>{formatBRL(p.totalRevenue)}</div>
                           {p.componentSummary && (
                             <div className="text-[9px] mt-1 inline-block">
                               {p.componentSummary.productionFromAppointments > 0 && p.componentSummary.productionManual > 0 ? (
-                                <span className="text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/10 font-sans font-medium whitespace-nowrap">🔀 Combinado</span>
+                                <span className="text-purple-600 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 font-sans font-medium whitespace-nowrap">🔀 Combinado</span>
                               ) : p.componentSummary.productionManual > 0 ? (
-                                <span className="text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/10 font-sans font-medium whitespace-nowrap">📋 Manual</span>
+                                <span className="text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-sans font-medium whitespace-nowrap">📋 Manual</span>
                               ) : p.componentSummary.productionFromAppointments > 0 ? (
-                                <span className="text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/10 font-sans font-medium whitespace-nowrap">📅 Agenda</span>
+                                <span className="text-blue-600 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20 font-sans font-medium whitespace-nowrap">📅 Agenda</span>
                               ) : (
-                                <span className="text-zinc-500 bg-zinc-500/10 px-1.5 py-0.5 rounded border border-zinc-500/10 font-sans font-medium whitespace-nowrap">Sem produção</span>
+                                <span className="text-muted-foreground bg-secondary px-1.5 py-0.5 rounded border border-border font-sans font-medium whitespace-nowrap">Sem produção</span>
                               )}
                             </div>
                           )}
                         </td>
-                        <td className="p-3.5 text-right font-mono font-bold text-rose-400">
+                        <td className="p-3.5 text-right font-mono font-bold text-rose-600">
                           {formatBRL(p.totalCommission)}
                         </td>
-                        <td className="p-3.5 text-right font-mono font-medium text-cyan-400">
+                        <td className="p-3.5 text-right font-mono font-medium text-emerald-600">
                           {formatBRL(p.netEstablishment)}
                         </td>
                         <td className="p-3.5 text-center">
@@ -913,7 +913,7 @@ export default function CommissionsPage() {
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => openLaunchModal(p)}
-                                className="text-zinc-400 hover:text-[#D4AF37] px-2 py-1 h-auto text-[10px] border border-zinc-900 hover:border-zinc-800 bg-zinc-900/10"
+                                className="text-muted-foreground hover:text-primary px-2 py-1 h-auto text-[10px] border border-border hover:bg-secondary"
                                 title="Lançar faturamento direto à meta"
                               >
                                 Lançar
@@ -924,7 +924,7 @@ export default function CommissionsPage() {
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => openAdjustModal(p)}
-                                className="text-zinc-400 hover:text-[#D4AF37] px-2 py-1 h-auto text-[10px]"
+                                className="text-muted-foreground hover:text-primary px-2 py-1 h-auto text-[10px]"
                                 title="Configurar margem"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
@@ -934,7 +934,7 @@ export default function CommissionsPage() {
                               variant="ghost" 
                               size="sm" 
                               onClick={() => setSelectedExtratoProf(p)}
-                              className="text-zinc-400 hover:text-white px-2 py-1 h-auto text-[10px] border border-zinc-900 hover:border-zinc-800"
+                              className="text-muted-foreground hover:text-foreground px-2 py-1 h-auto text-[10px] border border-border hover:bg-secondary"
                             >
                               Extrato
                             </Button>
@@ -951,34 +951,34 @@ export default function CommissionsPage() {
 
         {/* Right Side: Analytical Charts of Margins */}
         <div className="space-y-4">
-          <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-5">
-            <h3 className="text-base font-semibold text-white mb-1 font-heading">Gráfico de Repasse</h3>
-            <p className="text-[10px] text-zinc-500 mb-6">Comparação gráfica de produção bruta vs saldo retido para o salão.</p>
+          <div className="bg-card border border-border shadow-xs rounded-2xl p-5">
+            <h3 className="text-base font-semibold text-foreground mb-1 font-heading">Gráfico de Repasse</h3>
+            <p className="text-[10px] text-muted-foreground mb-6">Comparação gráfica de produção bruta vs saldo retido para o salão.</p>
 
             {chartData.length === 0 ? (
-              <div className="flex items-center justify-center h-48 border border-zinc-900 rounded-xl bg-zinc-900/20 text-zinc-500 text-xs">
+              <div className="flex items-center justify-center h-48 border border-border rounded-xl bg-secondary/30 text-muted-foreground text-xs">
                 Nenhum dado financeiro para o mês selecionado.
               </div>
             ) : (
               <div className="h-64 select-none">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                    <CartesianGrid stroke="#111" strokeDasharray="3 3" />
-                    <XAxis dataKey="name" stroke="#555" fontSize={10} />
-                    <YAxis stroke="#555" fontSize={9} />
-                    <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', borderRadius: '12px', fontSize: '11px', color: '#fff' }} />
-                    <Bar dataKey="Produção Bruta (R$)" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                    <CartesianGrid stroke="#e5e2dc" strokeDasharray="3 3" />
+                    <XAxis dataKey="name" stroke="#78716c" fontSize={10} />
+                    <YAxis stroke="#78716c" fontSize={9} />
+                    <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e5e2dc', borderRadius: '12px', fontSize: '11px', color: '#171717', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
+                    <Bar dataKey="Produção Bruta (R$)" fill="#0284c7" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="Comissão Parceiro (R$)" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Líquido Salão (R$)" fill="#D4AF37" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Líquido Salão (R$)" fill="#B89B5E" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
           </div>
 
-          <div className="bg-zinc-950/60 border border-zinc-900 rounded-2xl p-5 space-y-4">
-            <h4 className="text-xs font-bold uppercase text-[#D4AF37] tracking-wider">Metodologia Lumière</h4>
-            <div className="space-y-3 text-xs leading-relaxed text-zinc-400">
+          <div className="bg-card border border-border shadow-xs rounded-2xl p-5 space-y-4">
+            <h4 className="text-xs font-bold uppercase text-primary tracking-wider">Metodologia Lumière</h4>
+            <div className="space-y-3 text-xs leading-relaxed text-muted-foreground">
               <p>
                 As taxas de comissão são <b>soberanas</b> aos lançamentos. Atualizar a taxa de comissão de um profissional irá atualizar instantaneamente todo o extrato deste mês e meses anteriores para refletir os novos repasses acordados.
               </p>
