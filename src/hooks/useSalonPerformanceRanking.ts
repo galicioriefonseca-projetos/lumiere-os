@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
+import { CUSTOMER_COMPLAINT_PENALTY } from '../../shared/qualityEvents';
 
 export interface PerformanceItem {
   id: string;
@@ -256,7 +257,13 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       const totalChecklists = validRuns.length;
       const complaintRuns = runsInMonth.filter(r => r.qualityEvent?.type === "customer_complaint" && r.qualityEvent?.occurred === true && r.qualityEvent?.relatedToProfessional === true);
       const complaintCount = complaintRuns.length;
-      const complaintPenalty = complaintRuns.reduce((sum, r) => sum + Math.max(0, Number(r.qualityEvent?.penalty) || 0), 0);
+      const complaintPenalty = complaintRuns.reduce((sum, r) => {
+        const storedPenalty = Number(r.qualityEvent?.penalty);
+        const penalty = Number.isFinite(storedPenalty) && storedPenalty >= 0
+          ? storedPenalty
+          : CUSTOMER_COMPLAINT_PENALTY;
+        return sum + penalty;
+      }, 0);
       const avgScore = totalChecklists > 0 
         ? validRuns.reduce((sum, r) => {
             const score = r.percentage !== undefined ? r.percentage : (r.completionPercentage ?? 0);
