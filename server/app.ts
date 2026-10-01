@@ -53,12 +53,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rotas principais
+// Rotas principais (suportando tanto chamadas via /api quanto chamadas diretas de Serverless Functions da Vercel)
 app.use("/api/auth", authRoutes);
-app.use("/api", pushRoutes);
-app.use("/api", aiRoutes);
+app.use("/auth", authRoutes);
 
-app.get("/api/health", publicLimiter, (req, res) => {
+app.use("/api", pushRoutes);
+app.use(pushRoutes);
+
+app.use("/api", aiRoutes);
+app.use(aiRoutes);
+
+app.get(["/api/health", "/health"], publicLimiter, (req, res) => {
   res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });
 });
 
