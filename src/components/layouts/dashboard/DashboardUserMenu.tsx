@@ -61,7 +61,7 @@ export function DashboardUserMenu({ onOpenUpdates }: DashboardUserMenuProps) {
             className="fixed inset-0 z-30" 
             onClick={() => setIsUserMenuOpen(false)}
           />
-          <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#09090b] border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8)] p-1.5 z-40 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
+          <div className="absolute right-0 mt-2 w-56 rounded-xl bg-card border border-border shadow-[0_10px_30px_rgba(4,20,15,0.7)] p-1.5 z-40 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
             {(salonData?.isDemo || salonData?.isTutorial) && (
               <div className="px-2.5 py-1.2 mb-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-center">
                 <span className="text-[10px] font-bold text-amber-500 uppercase">Modo Demo/Tutorial</span>

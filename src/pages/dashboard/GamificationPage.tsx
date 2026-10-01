@@ -47,30 +47,54 @@ export default function GamificationPage() {
   const [leaderboardView, setLeaderboardView] = useState<'geral' | 'avaliacoes' | 'metas'>('geral');
 
   const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().substring(0, 7));
+  const [hasManuallySelectedMonth, setHasManuallySelectedMonth] = useState(false);
 
-  // Opções para o seletor de mês (Junho/2026, Julho/2026 e mês atual dinamicamente)
+  const { 
+    professionalsPerformance, 
+    rankingByEvaluation, 
+    rankingByGoals, 
+    availableMonths, 
+    latestActiveMonth, 
+    loading 
+  } = useSalonPerformanceRanking(salonData?.id, selectedMonth);
+
+  // Opções completas e dinâmicas para o seletor de mês
   const monthOptions = useMemo(() => {
+    if (availableMonths && availableMonths.length > 0) {
+      return availableMonths;
+    }
     const current = new Date().toISOString().substring(0, 7);
-    const formatLabel = (ym: string) => {
-      const [year, month] = ym.split('-');
-      const d = new Date(parseInt(year), parseInt(month) - 1, 1);
-      return d.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-    };
+    const months = [];
+    const today = new Date();
+    for (let i = -12; i <= 1; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const ym = `${y}-${m}`;
+      const label = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      const capLabel = label.charAt(0).toUpperCase() + label.slice(1);
+      months.push({
+        value: ym,
+        label: ym === current ? `${capLabel} de ${y} (Mês Atual)` : `${capLabel} de ${y}`,
+        isCurrent: ym === current
+      });
+    }
+    return months.sort((a, b) => b.value.localeCompare(a.value));
+  }, [availableMonths]);
 
-    const options = [
-      { value: current, label: `Mês Atual (${formatLabel(current)})` },
-      { value: '2026-06', label: 'Junho de 2026' },
-      { value: '2026-07', label: 'Julho de 2026' }
-    ];
-
-    // Remover duplicados
-    const seen = new Set();
-    return options.filter(opt => {
-      if (seen.has(opt.value)) return false;
-      seen.add(opt.value);
-      return true;
-    });
-  }, []);
+  // Se o mês atual (ex: Outubro recém iniciado) ainda não possui dados e o mês anterior (ex: Setembro) possui histórico consolidado,
+  // selecionar o mês com dados por padrão para não mostrar ranking em branco.
+  useEffect(() => {
+    if (!hasManuallySelectedMonth && latestActiveMonth && latestActiveMonth !== selectedMonth) {
+      const currentYm = new Date().toISOString().substring(0, 7);
+      if (selectedMonth === currentYm && !loading) {
+        const hasData = professionalsPerformance.some(p => p.performanceScore > 0 || p.totalChecklists > 0 || p.totalGoals > 0);
+        if (!hasData) {
+          setSelectedMonth(latestActiveMonth);
+        }
+      }
+    }
+  }, [latestActiveMonth, hasManuallySelectedMonth, selectedMonth, professionalsPerformance, loading]);
 
   const [newCampaign, setNewCampaign] = useState({
     title: '',
@@ -79,8 +103,6 @@ export default function GamificationPage() {
     type: 'service_focus' as GamificationCampaign['type'],
     targetValue: '5'
   });
-
-  const { professionalsPerformance, rankingByEvaluation, rankingByGoals, loading } = useSalonPerformanceRanking(salonData?.id, selectedMonth);
 
   // Carregar dados estruturados
   useEffect(() => {
@@ -737,7 +759,7 @@ export default function GamificationPage() {
           {/* Seletor de Período */}
           <div className="flex flex-col gap-1 w-full sm:w-48">
             <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-sans font-bold">Filtrar Período</span>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <Select value={selectedMonth} onValueChange={(val) => { setHasManuallySelectedMonth(true); setSelectedMonth(val); }}>
               <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white rounded-xl h-11">
                 <SelectValue placeholder="Selecione o período" />
               </SelectTrigger>

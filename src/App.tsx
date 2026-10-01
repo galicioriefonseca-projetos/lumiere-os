@@ -46,10 +46,10 @@ const OnboardingSetupHub = React.lazy(() => import('./pages/onboarding/Onboardin
 const BookingPage = React.lazy(() => import('./pages/booking/BookingPage'));
 
 const PageLoader = () => (
-  <div className="min-h-screen flex items-center justify-center bg-neutral-950">
+  <div className="min-h-screen flex items-center justify-center bg-background">
     <div className="flex flex-col items-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#D4AF37] mb-4" />
-      <p className="text-neutral-400 text-sm">Carregando...</p>
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4" />
+      <p className="text-muted-foreground text-sm font-sans tracking-wide">Carregando...</p>
     </div>
   </div>
 );

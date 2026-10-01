@@ -177,8 +177,8 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-      <div className="w-full max-w-xl bg-[#0d0d12]/90 border border-white/10 p-6 sm:p-8 rounded-3xl shadow-2xl backdrop-blur-xl">
+    <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex items-center justify-center p-4">
+      <div className="w-full max-w-xl bg-white border border-[#E5E2DC] p-6 sm:p-8 rounded-3xl shadow-xl backdrop-blur-xl">
         {step === 1 && (
           <div className="space-y-7">
             <div>

@@ -64,7 +64,7 @@ export function DashboardNotifications() {
             className="fixed inset-0 z-30" 
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute right-0 mt-2 w-80 rounded-2xl bg-[#09090b] border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.8)] p-3 z-40 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
+          <div className="absolute right-0 mt-2 w-80 rounded-2xl bg-card border border-border shadow-[0_10px_30px_rgba(4,20,15,0.7)] p-3 z-40 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5">
               <span className="text-xs font-bold uppercase tracking-wider text-[#D4AF37] font-sans">Notificações</span>
               {unreadCount > 0 && (

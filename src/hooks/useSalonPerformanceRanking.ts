@@ -37,6 +37,12 @@ export interface PerformanceItem {
   [key: string]: any;
 }
 
+export interface AvailableMonthItem {
+  value: string;
+  label: string;
+  isCurrent: boolean;
+}
+
 export function useSalonPerformanceRanking(salonId: string | undefined, selectedMonth: string) {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [professionals, setProfessionals] = useState<any[]>([]);
@@ -131,6 +137,83 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
     return () => unsubs.forEach(fn => fn());
   }, [salonId]);
 
+  // Lista dinâmica e completa de meses disponíveis a partir dos dados do salão e da janela de tempo
+  const availableMonths = useMemo<AvailableMonthItem[]>(() => {
+    const monthsSet = new Set<string>();
+    const today = new Date();
+    const currentYm = today.toISOString().substring(0, 7);
+
+    // Janela padrão de meses: últimos 12 meses + próximo mês
+    for (let i = -12; i <= 1; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      monthsSet.add(`${y}-${m}`);
+    }
+
+    // Meses com dados reais em checklists
+    checklistRuns.forEach(r => {
+      const m = (r.date || r.evaluationDate || '').substring(0, 7);
+      if (/^\d{4}-\d{2}$/.test(m)) monthsSet.add(m);
+    });
+
+    // Meses com dados reais em metas
+    professionalGoals.forEach(g => {
+      if (g.month && /^\d{4}-\d{2}$/.test(g.month)) monthsSet.add(g.month);
+    });
+    salonGoals.forEach(g => {
+      if (g.month && /^\d{4}-\d{2}$/.test(g.month)) monthsSet.add(g.month);
+    });
+
+    // Meses com dados reais em agendamentos
+    appointments.forEach(ap => {
+      const m = (ap.date || (ap.createdAt && typeof ap.createdAt === 'string' && ap.createdAt) || '').substring(0, 7);
+      if (/^\d{4}-\d{2}$/.test(m)) monthsSet.add(m);
+    });
+
+    return Array.from(monthsSet)
+      .sort((a, b) => b.localeCompare(a))
+      .map(ym => {
+        const [year, month] = ym.split('-');
+        const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+        const monthName = d.toLocaleString('pt-BR', { month: 'long' });
+        const capMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        const isCurrent = ym === currentYm;
+        return {
+          value: ym,
+          label: isCurrent ? `${capMonth} de ${year} (Mês Atual)` : `${capMonth} de ${year}`,
+          isCurrent
+        };
+      });
+  }, [checklistRuns, professionalGoals, salonGoals, appointments]);
+
+  // Identificar o mês mais recente com registros consolidados (ex: Setembro quando Outubro acabou de iniciar)
+  const latestActiveMonth = useMemo<string>(() => {
+    const todayYm = new Date().toISOString().substring(0, 7);
+    const monthsWithData = new Set<string>();
+
+    checklistRuns.forEach(r => {
+      const m = (r.date || r.evaluationDate || '').substring(0, 7);
+      if (/^\d{4}-\d{2}$/.test(m)) monthsWithData.add(m);
+    });
+    professionalGoals.forEach(g => {
+      if (g.month && /^\d{4}-\d{2}$/.test(g.month)) {
+        if (g.currentValue > 0 || g.targetAmount > 0) monthsWithData.add(g.month);
+      }
+    });
+    salonGoals.forEach(g => {
+      if (g.month && /^\d{4}-\d{2}$/.test(g.month)) monthsWithData.add(g.month);
+    });
+    appointments.forEach(ap => {
+      const m = (ap.date || (ap.createdAt && typeof ap.createdAt === 'string' && ap.createdAt) || '').substring(0, 7);
+      if (/^\d{4}-\d{2}$/.test(m)) monthsWithData.add(m);
+    });
+
+    const sorted = Array.from(monthsWithData).sort((a, b) => b.localeCompare(a));
+    if (sorted.includes(todayYm)) return todayYm;
+    return sorted[0] || todayYm;
+  }, [checklistRuns, professionalGoals, salonGoals, appointments]);
+
   // Cálculos dinâmicos de XP, Nível, Faturamento e Badge para cada profissional
   const professionalsPerformance = useMemo<PerformanceItem[]>(() => {
     const mapped = professionals.map(prof => {
@@ -151,8 +234,8 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
         return false;
       });
 
-      // Faturamento total
-      const totalRevenue = completedSrvs.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+      // Faturamento total por agendamentos
+      const apptRevenue = completedSrvs.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
 
       // Quantidade de serviços e produtos vendidos
       const totalServices = completedSrvs.filter(ap => ap.type !== 'product').length;
@@ -189,17 +272,26 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       const goalsHit = assignedGoals.filter(g => {
         const target = g.targetAmount ?? g.targetValue ?? g.amount ?? 0;
         const current = g.currentValue ?? g.currentAmount ?? g.realizedValue ?? 0;
-        return target > 0 && current >= target;
+        const effectiveCurrent = Math.max(Number(current) || 0, apptRevenue);
+        return target > 0 && effectiveCurrent >= target;
       }).length;
 
       const sumGoalProgress = assignedGoals.reduce((sum, g) => {
         const target = g.targetAmount ?? g.targetValue ?? g.amount ?? 0;
         const current = g.currentValue ?? g.currentAmount ?? g.realizedValue ?? 0;
-        const progress = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+        const effectiveCurrent = Math.max(Number(current) || 0, apptRevenue);
+        const progress = target > 0 ? Math.min(100, (effectiveCurrent / target) * 100) : 0;
         return sum + progress;
       }, 0);
 
       const avgGoalProgress = totalGoals > 0 ? sumGoalProgress / totalGoals : 0;
+
+      // Faturamento total (unifica agendamentos e lançamentos de produção das metas)
+      const realizedFromGoals = assignedGoals.reduce((sum, g) => {
+        const val = g.currentValue ?? g.currentAmount ?? g.realizedValue ?? 0;
+        return sum + (typeof val === 'number' ? val : parseFloat(val) || 0);
+      }, 0);
+      const totalRevenue = Math.max(apptRevenue, realizedFromGoals);
 
       // 4. Nova fórmula inteligente (70% Metas, 30% Checklist)
       const hasGoals = totalGoals > 0;
@@ -231,7 +323,7 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       const baseXP = Math.floor(totalRevenue);
       const serviceBonus = totalServices * 50;
       const productBonus = totalProducts * 150;
-      const perfBonus = runsInMonth.filter(r => r.completionPercentage === 100 || r.percentage === 100).length * 200;
+      const perfBonus = runsInMonth.filter(r => (r.completionPercentage === 100 || r.percentage === 100) && r.attendanceStatus === 'present').length * 200;
 
       const totalXP = baseXP + serviceBonus + productBonus + perfBonus + (prof.extraXP || 0);
 
@@ -431,6 +523,8 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
     professionalsPerformance,
     rankingByEvaluation,
     rankingByGoals,
+    availableMonths,
+    latestActiveMonth,
     loading
   };
 }

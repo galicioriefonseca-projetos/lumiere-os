@@ -116,10 +116,10 @@ export default function CompanySetupPage() {
 
   if (validatingToken) {
     return (
-      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
-          <p className="text-zinc-400 text-sm">Validando link de segurança exclusivo...</p>
+          <Loader2 className="w-8 h-8 animate-spin text-[#B89B5E]" />
+          <p className="text-[#6B6B6B] text-sm">Validando link de segurança exclusivo...</p>
         </div>
       </div>
     );
@@ -127,14 +127,14 @@ export default function CompanySetupPage() {
 
   if (tokenError) {
     return (
-      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-[#0d0d12]/90 border border-white/10 p-8 rounded-3xl shadow-2xl backdrop-blur-xl text-center">
-          <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-5 text-amber-400"><AlertCircle className="w-7 h-7" /></div>
-          <h2 className="text-xl font-medium text-white mb-2">Link Expirado ou Já Utilizado</h2>
-          <p className="text-zinc-400 text-sm leading-relaxed mb-6">{tokenError}</p>
+      <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white border border-[#E5E2DC] p-8 rounded-3xl shadow-xl backdrop-blur-xl text-center">
+          <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-5 text-[#8A6D36]"><AlertCircle className="w-7 h-7" /></div>
+          <h2 className="text-xl font-medium text-[#171717] mb-2">Link Expirado ou Já Utilizado</h2>
+          <p className="text-[#6B6B6B] text-sm leading-relaxed mb-6">{tokenError}</p>
           <div className="flex flex-col gap-2.5">
-            <button onClick={() => navigate('/dashboard')} className="w-full h-11 rounded-xl bg-[#D4AF37] hover:bg-[#c49f2c] text-black font-semibold text-sm transition">Acessar Painel</button>
-            <button onClick={() => navigate('/login')} className="w-full h-11 rounded-xl border border-white/10 hover:bg-white/5 text-zinc-300 text-sm transition">Fazer Login</button>
+            <button onClick={() => navigate('/dashboard')} className="w-full h-11 rounded-xl bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-sm transition">Acessar Painel</button>
+            <button onClick={() => navigate('/login')} className="w-full h-11 rounded-xl border border-[#E5E2DC] hover:bg-[#F0EFEC] text-[#171717] text-sm transition">Fazer Login</button>
           </div>
         </div>
       </div>
@@ -142,8 +142,8 @@ export default function CompanySetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-      <div className="w-full max-w-xl bg-[#0d0d12]/90 border border-white/10 p-6 sm:p-8 rounded-3xl shadow-2xl backdrop-blur-xl">
+    <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex items-center justify-center p-4">
+      <div className="w-full max-w-xl bg-white border border-[#E5E2DC] p-6 sm:p-8 rounded-3xl shadow-xl backdrop-blur-xl">
         <div className="flex items-center justify-between pb-5 mb-6 border-b border-white/5 text-xs">
           <div className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="w-4 h-4" /><span className="font-medium">1. Pagamento Confirmado</span></div>
           <div className="h-px w-6 sm:w-10 bg-white/10" />

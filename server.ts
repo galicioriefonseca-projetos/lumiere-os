@@ -1,5 +1,5 @@
-import { env } from "./config/env.js";
-import app from "./app.js";
+import { env } from "./server/config/env.js";
+import app from "./server/app.js";
 import path from "path";
 import express from "express";
 
@@ -11,7 +11,7 @@ async function startLocalServer() {
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
-        hmr: false
+        hmr: false,
       },
       appType: "spa",
     });
@@ -42,7 +42,7 @@ async function startLocalServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[Lumière Server] Servidor executando em http://localhost:${PORT}`);
+    console.log(`[Lumière Server] Servidor executando em http://0.0.0.0:${PORT}`);
   });
 }
 

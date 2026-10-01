@@ -15,8 +15,8 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#050505]">
-        <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+      <div className="min-h-screen flex items-center justify-center bg-[#061A14]">
+        <Loader2 className="w-8 h-8 animate-spin text-[#DFC498]" />
       </div>
     );
   }
@@ -24,13 +24,13 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
   if (syncError) {
     const showDiagnostics = isPlatformAdmin;
     return (
-      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+      <div className="min-h-screen bg-[#061A14] text-[#F5F9F7] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0A261E]/95 border border-[#17473A] p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
           <div className="w-16 h-16 bg-red-650/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><ShieldAlert className="w-8 h-8 text-red-500" /></div>
           <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Problema de Acesso</h2>
-          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">{syncError}</p>
+          <p className="text-[#8FAEA2] text-sm font-light mb-6 leading-relaxed">{syncError}</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button onClick={() => { sessionStorage.clear(); const toRemove: string[] = []; for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key && key.startsWith('lumiere_')) toRemove.push(key); } toRemove.forEach(k => localStorage.removeItem(k)); window.location.reload(); }} className="bg-[#D4AF37] hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2">Recarregar</Button>
+            <Button onClick={() => { sessionStorage.clear(); const toRemove: string[] = []; for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key && key.startsWith('lumiere_')) toRemove.push(key); } toRemove.forEach(k => localStorage.removeItem(k)); window.location.reload(); }} className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2">Recarregar</Button>
             <Button onClick={logout} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
           </div>
           {showDiagnostics && diagnostics && (
@@ -79,14 +79,14 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
 
   if ((role as string) === 'function_link' || (role && !['platform_admin', 'owner', 'manager', 'receptionist', 'attendant', 'professional', 'pending'].includes(role))) {
     return (
-      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+      <div className="min-h-screen bg-[#061A14] text-[#F5F9F7] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0A261E]/95 border border-[#17473A] p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
           <div className="w-16 h-16 bg-yellow-600/10 border border-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><ShieldAlert className="w-8 h-8 text-yellow-500" /></div>
           <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Configuração Inválida</h2>
-          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">Seu perfil está com uma configuração de acesso inválida (<span className="text-yellow-500 font-medium font-mono">{role}</span>).</p>
+          <p className="text-[#8FAEA2] text-sm font-light mb-6 leading-relaxed">Seu perfil está com uma configuração de acesso inválida (<span className="text-yellow-400 font-medium font-mono">{role}</span>).</p>
           <div className="mb-6 p-4 bg-yellow-500/5 border border-yellow-500/10 rounded-xl text-left">
-            <p className="text-[12px] text-[#a1a1aa] leading-relaxed">Entre em contato com o administrador global ou o dono do salão para redefinir o seu nível de acesso.</p>
-            {(userData?.specialty || userData?.professionalFunction) && <p className="text-[12px] text-[#a1a1aa] leading-relaxed mt-2 border-t border-white/5 pt-2">Identificamos que você tem a função <span className="text-white font-medium">{userData.specialty || userData.professionalFunction}</span> cadastrada. O dono do salão deve alterar seu acesso para <b>Profissional</b> nas configurações do painel ou no banco de dados.</p>}
+            <p className="text-[12px] text-[#8FAEA2] leading-relaxed">Entre em contato com o administrador global ou o dono do salão para redefinir o seu nível de acesso.</p>
+            {(userData?.specialty || userData?.professionalFunction) && <p className="text-[12px] text-[#8FAEA2] leading-relaxed mt-2 border-t border-white/5 pt-2">Identificamos que você tem a função <span className="text-white font-medium">{userData.specialty || userData.professionalFunction}</span> cadastrada. O dono do salão deve alterar seu acesso para <b>Profissional</b> nas configurações do painel ou no banco de dados.</p>}
           </div>
           <Button onClick={logout} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
         </div>
@@ -96,12 +96,12 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
 
   if (requireAdmin && !isPlatformAdmin) {
     return (
-      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+      <div className="min-h-screen bg-[#061A14] text-[#F5F9F7] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0A261E]/95 border border-[#17473A] p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
           <div className="w-16 h-16 bg-red-600/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6"><ShieldAlert className="w-8 h-8 text-red-500" /></div>
           <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Painel Master Restrito</h2>
-          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">Esta área é reservada para administradores globais do LumiereOS. O seu perfil não possui acesso administrativo.</p>
-          <Button onClick={() => navigate('/dashboard')} className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><Home className="w-4 h-4" />Painel Principal</Button>
+          <p className="text-[#8FAEA2] text-sm font-light mb-6 leading-relaxed">Esta área é reservada para administradores globais do LumiereOS. O seu perfil não possui acesso administrativo.</p>
+          <Button onClick={() => navigate('/dashboard')} className="bg-primary hover:bg-gold-500 text-[#04140F] font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><Home className="w-4 h-4" />Painel Principal</Button>
         </div>
       </div>
     );
@@ -110,14 +110,14 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
   const isRouteAllowed = !userData ? true : canAccessRoute(role, location.pathname);
   if (!isRouteAllowed) {
     return (
-      <div className="min-h-screen bg-[#060608] flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+      <div className="min-h-screen bg-[#061A14] text-[#F5F9F7] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0A261E]/95 border border-[#17473A] p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
           <div className="w-16 h-16 bg-primary/10 border border-primary/20 rounded-full flex items-center justify-center mx-auto mb-6"><ShieldAlert className="w-8 h-8 text-primary" /></div>
           <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Acesso Restrito</h2>
-          <p className="text-[#a1a1aa] text-sm font-light mb-6 leading-relaxed">Seu perfil como <span className="text-primary font-medium">{role}</span> não possui autorização para visualizar esta página ({location.pathname}).</p>
+          <p className="text-[#8FAEA2] text-sm font-light mb-6 leading-relaxed">Seu perfil como <span className="text-primary font-medium">{role}</span> não possui autorização para visualizar esta página ({location.pathname}).</p>
           <div className="flex flex-col gap-3 justify-center">
             <Button onClick={() => navigate(-1)} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><ArrowLeft className="w-4 h-4" />Voltar</Button>
-            <Button onClick={() => navigate('/dashboard')} className="bg-primary hover:bg-gold-500 text-black font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><Home className="w-4 h-4" />Ver Meu Painel</Button>
+            <Button onClick={() => navigate('/dashboard')} className="bg-primary hover:bg-gold-500 text-[#04140F] font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><Home className="w-4 h-4" />Ver Meu Painel</Button>
           </div>
         </div>
       </div>

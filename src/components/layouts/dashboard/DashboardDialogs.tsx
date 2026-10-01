@@ -106,8 +106,8 @@ export function DashboardDialogs({
     <>
       {/* Guia do Sistema Modal */}
       <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
-        <DialogContent className="max-w-4xl bg-[#09090b]/98 border border-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto w-[94vw] sm:w-[90vw]">
-          <DialogHeader className="border-b border-white/5 pb-4">
+        <DialogContent className="max-w-4xl bg-card border border-border text-foreground rounded-3xl shadow-2xl backdrop-blur-xl max-h-[85vh] overflow-y-auto w-[94vw] sm:w-[90vw]">
+          <DialogHeader className="border-b border-border/60 pb-4">
             <DialogTitle className="text-xl md:text-2xl font-heading font-light tracking-tight text-white flex items-center gap-2">
               <Crown className="w-5 md:w-6 h-5 md:h-6 text-[#D4AF37] animate-pulse" /> Guia do Sistema LumiereOS
             </DialogTitle>
@@ -250,8 +250,8 @@ export function DashboardDialogs({
 
       {/* Detalhes do Plano Founder Dialog */}
       <Dialog open={isFounderDetailOpen} onOpenChange={setIsFounderDetailOpen}>
-        <DialogContent className="max-w-md bg-[#09090b]/98 border border-amber-500/30 text-white rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full">
-          <DialogHeader className="border-b border-white/5 pb-4 text-left">
+        <DialogContent className="max-w-md bg-card border border-primary/30 text-foreground rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full">
+          <DialogHeader className="border-b border-border/60 pb-4 text-left">
             <DialogTitle className="text-lg md:text-xl font-heading font-medium text-white flex items-center gap-2">
               <Crown className="w-5 h-5 text-[#D4AF37] filter drop-shadow-[0_0_4px_rgba(212,175,55,0.4)]" /> Plano Founder • Detalhes
             </DialogTitle>
@@ -321,8 +321,8 @@ export function DashboardDialogs({
 
       {/* Próximas Atualizações / Roadmap Dialog */}
       <Dialog open={isRoadmapOpen} onOpenChange={setIsRoadmapOpen}>
-        <DialogContent className="max-w-xl bg-[#09090b]/98 border border-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full overflow-hidden max-h-[85vh] overflow-y-auto">
-          <DialogHeader className="border-b border-white/5 pb-4 text-left">
+        <DialogContent className="max-w-xl bg-card border border-border text-foreground rounded-3xl shadow-2xl backdrop-blur-xl w-[94vw] sm:w-full overflow-hidden max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="border-b border-border/60 pb-4 text-left">
             <span className="text-[10px] uppercase font-bold text-[#D4AF37] tracking-widest bg-[#D4AF37]/10 px-2.5 py-1 rounded-full w-max flex items-center gap-1.5 font-mono mb-2">
               <Sparkles className="w-3.5 h-3.5" /> Evolução & Visão Futura
             </span>

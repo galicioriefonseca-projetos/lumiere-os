@@ -20,25 +20,24 @@ export default function AuthLayout({
   onBackClick
 }: AuthLayoutProps) {
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-sans select-none">
+    <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-sans select-none">
       
-      {/* Premium Cinematic Ambient Lights */}
-      <div className="absolute top-[-10%] left-[-20%] w-[60vw] h-[60vw] bg-[radial-gradient(circle,_rgba(212,175,55,0.08)_0%,_transparent_70%)] rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse duration-[6000ms]" />
-      <div className="absolute bottom-[-10%] right-[-20%] w-[60vw] h-[60vw] bg-[radial-gradient(circle,_rgba(180,140,40,0.06)_0%,_transparent_70%)] rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse duration-[8000ms]" />
-      <div className="absolute top-[30%] right-[10%] w-[35vw] h-[35vw] bg-[radial-gradient(circle,_rgba(255,255,255,0.02)_0%,_transparent_70%)] rounded-full blur-[80px] pointer-events-none -z-10" />
+      {/* Premium Cinematic Ambient Lights - Paleta Landing Page */}
+      <div className="absolute top-[-10%] left-[-20%] w-[60vw] h-[60vw] bg-[radial-gradient(circle,_rgba(216,199,159,0.25)_0%,_transparent_70%)] rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse duration-[6000ms]" />
+      <div className="absolute bottom-[-10%] right-[-20%] w-[60vw] h-[60vw] bg-[radial-gradient(circle,_rgba(232,226,213,0.7)_0%,_transparent_70%)] rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse duration-[8000ms]" />
+      <div className="absolute top-[30%] right-[10%] w-[35vw] h-[35vw] bg-[radial-gradient(circle,_rgba(184,155,94,0.12)_0%,_transparent_70%)] rounded-full blur-[90px] pointer-events-none -z-10" />
 
       {/* Subtle Grid Accent */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none -z-10" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#00000004_1px,transparent_1px),linear-gradient(to_bottom,#00000004_1px,transparent_1px)] bg-[size:4rem_4rem] pointer-events-none -z-10" />
 
       {/* Top Header - Logo and Navigation */}
       <header className="w-full max-w-7xl mx-auto flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="relative">
-            <div className="absolute inset-[-4px] bg-primary/20 rounded-full blur-sm group-hover:bg-primary/30 transition-all duration-300" />
-            <Sparkles className="w-8 h-8 text-primary relative transition-transform duration-500 group-hover:rotate-12 group-hover:scale-110" />
-          </div>
-          <span className="text-2xl font-heading font-medium tracking-wider bg-gradient-to-r from-neutral-50 via-neutral-100 to-amber-200/90 bg-clip-text text-transparent">
-            Lumière
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#171717] shadow-sm">
+            <Sparkles className="h-4 w-4 text-[#D8C79F]" />
+          </span>
+          <span className="text-xl font-semibold tracking-tight text-[#171717]">
+            Lumière<span className="text-[#B89B5E]">OS</span>
           </span>
         </Link>
 
@@ -47,17 +46,17 @@ export default function AuthLayout({
             <button 
               type="button"
               onClick={onBackClick} 
-              className="flex items-center gap-2 text-xs font-mono tracking-wider text-neutral-400 hover:text-primary transition-colors py-2 px-4 rounded-full bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-sm hover:border-primary/20 cursor-pointer"
+              className="flex items-center gap-2 text-xs font-mono tracking-wider text-[#6B6B6B] hover:text-[#171717] transition-colors py-2 px-4 rounded-full bg-white border border-[#E5E2DC] shadow-sm hover:border-[#B89B5E]/40 cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 text-[#B89B5E]" />
               <span>{backText.toUpperCase()}</span>
             </button>
           ) : (
             <Link 
               to={backTo} 
-              className="flex items-center gap-2 text-xs font-mono tracking-wider text-neutral-400 hover:text-primary transition-colors py-2 px-4 rounded-full bg-neutral-900/40 border border-neutral-800/60 backdrop-blur-sm hover:border-primary/20"
+              className="flex items-center gap-2 text-xs font-mono tracking-wider text-[#6B6B6B] hover:text-[#171717] transition-colors py-2 px-4 rounded-full bg-white border border-[#E5E2DC] shadow-sm hover:border-[#B89B5E]/40"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft className="w-3.5 h-3.5 text-[#B89B5E]" />
               <span>{backText.toUpperCase()}</span>
             </Link>
           )

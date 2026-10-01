@@ -11,6 +11,7 @@ import { Sparkles, Flame, Trophy, Award as AwardIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useSearchParams } from "react-router-dom";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -161,8 +162,28 @@ export default function ProfessionalDashboard() {
 
   const todayStr = new Date().toISOString().substring(0, 10);
   const currentMonthStr = new Date().toISOString().substring(0, 7);
+  const [rankingMonth, setRankingMonth] = useState<string>(currentMonthStr);
+  const [hasManuallySelectedRankingMonth, setHasManuallySelectedRankingMonth] = useState(false);
 
-  const { professionalsPerformance, rankingByEvaluation, rankingByGoals } = useSalonPerformanceRanking(salonData?.id, currentMonthStr);
+  const { 
+    professionalsPerformance, 
+    rankingByEvaluation, 
+    rankingByGoals, 
+    availableMonths, 
+    latestActiveMonth, 
+    loading: rankingLoading 
+  } = useSalonPerformanceRanking(salonData?.id, rankingMonth);
+
+  useEffect(() => {
+    if (!hasManuallySelectedRankingMonth && latestActiveMonth && latestActiveMonth !== rankingMonth) {
+      if (rankingMonth === currentMonthStr && !rankingLoading) {
+        const hasData = professionalsPerformance.some(p => p.performanceScore > 0 || p.totalChecklists > 0 || p.totalGoals > 0);
+        if (!hasData) {
+          setRankingMonth(latestActiveMonth);
+        }
+      }
+    }
+  }, [latestActiveMonth, hasManuallySelectedRankingMonth, rankingMonth, currentMonthStr, professionalsPerformance, rankingLoading]);
 
   useEffect(() => {
     if (!salonData || !userData) return;
@@ -671,9 +692,28 @@ export default function ProfessionalDashboard() {
 
             {/* Seção Minha Posição no Ranking */}
             <div className="space-y-3">
-              <div className="flex items-center gap-1.5 px-0.5">
-                <Trophy className="w-4 h-4 text-[#D4AF37]" />
-                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest font-mono">Minha Posição no Ranking</span>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-0.5">
+                <div className="flex items-center gap-1.5">
+                  <Trophy className="w-4 h-4 text-[#D4AF37]" />
+                  <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest font-mono">Minha Posição no Ranking</span>
+                </div>
+                {availableMonths && availableMonths.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Filtrar Mês:</span>
+                    <Select value={rankingMonth} onValueChange={(val) => { setHasManuallySelectedRankingMonth(true); setRankingMonth(val); }}>
+                      <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white rounded-xl h-8 text-xs min-w-[160px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                        {availableMonths.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
@@ -763,7 +803,7 @@ export default function ProfessionalDashboard() {
                      <Trophy className="w-4 h-4 text-[#D4AF37]" /> Ranking de Performance do Salão
                   </CardTitle>
                   <CardDescription className="text-[10px] text-zinc-500">
-                     Acompanhe a classificação baseada no score composto e metas do mês atual
+                     Acompanhe a classificação baseada no score composto e metas ({availableMonths.find(m => m.value === rankingMonth)?.label || rankingMonth})
                   </CardDescription>
                 </div>
                 <div className="bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/20 rounded-full px-3 py-1 text-[9px] font-mono font-bold tracking-widest flex items-center gap-1">

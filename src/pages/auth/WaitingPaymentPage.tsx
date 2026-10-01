@@ -196,7 +196,7 @@ export default function WaitingPaymentPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.4 }}
-              className="w-full bg-[#0d0d12]/95 border border-[#D4AF37]/30 p-6 sm:p-8 rounded-3xl shadow-2xl backdrop-blur-xl text-center relative overflow-hidden"
+              className="w-full bg-white border border-[#B89B5E]/30 p-6 sm:p-8 rounded-3xl shadow-xl backdrop-blur-xl text-center relative overflow-hidden"
             >
               {/* Efeito de brilho de fundo */}
               <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#D4AF37]/15 rounded-full blur-3xl pointer-events-none" />

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600&family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -7,7 +7,8 @@
 
 @theme inline {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', var(--font-sans);
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring); --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground); --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground); --color-sidebar-primary: var(--sidebar-primary);
@@ -20,76 +21,278 @@
   --color-popover-foreground: var(--popover-foreground); --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground); --color-card: var(--card);
   --color-foreground: var(--foreground); --color-background: var(--background);
-  --color-gold-400: #D8C79F; --color-gold-500: #B89B5E; --color-gold-600: #9F844A;
+  --color-gold-200: #F5F1E9; --color-gold-300: #E8E2D5; --color-gold-400: #D8C79F; --color-gold-500: #B89B5E; --color-gold-600: #9F844A; --color-gold-700: #8A6D36;
   --radius-sm: calc(var(--radius) * .6); --radius-md: calc(var(--radius) * .8); --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.25); --radius-2xl: calc(var(--radius) * 1.5); --radius-3xl: calc(var(--radius) * 1.9); --radius-4xl: calc(var(--radius) * 2.3);
 }
 
 :root {
-  --background: #F6F5F2; --foreground: #171717; --card: #FFFFFF; --card-foreground: #171717;
-  --popover: #FFFFFF; --popover-foreground: #171717; --primary: #B89B5E; --primary-foreground: #FFFFFF;
-  --secondary: #F0EFEC; --secondary-foreground: #252525; --muted: #F0EFEC; --muted-foreground: #6B6B6B;
-  --accent: #EEE9DF; --accent-foreground: #8A6D36; --destructive: #B64A45; --destructive-foreground: #FFFFFF;
-  --border: #E5E2DC; --input: #E2DED6; --ring: rgba(184,155,94,.45); --radius: .875rem;
-  --sidebar: #FFFFFF; --sidebar-foreground: #444444; --sidebar-primary: #B89B5E; --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F5F1E9; --sidebar-accent-foreground: #8A6D36; --sidebar-border: #E8E5DF; --sidebar-ring: rgba(184,155,94,.45);
+  /* LumièreOS - Landing Page Palette Oficial */
+  --background: #F6F5F2;
+  --foreground: #171717;
+  --card: #FFFFFF;
+  --card-foreground: #171717;
+  --popover: #FFFFFF;
+  --popover-foreground: #171717;
+  --primary: #B89B5E;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F0EFEC;
+  --secondary-foreground: #171717;
+  --muted: #F0EFEC;
+  --muted-foreground: #6B6B6B;
+  --accent: #F5F1E9;
+  --accent-foreground: #8A6D36;
+  --destructive: #B97870;
+  --destructive-foreground: #FFFFFF;
+  --border: #E5E2DC;
+  --input: #E5E2DC;
+  --ring: rgba(184, 155, 94, 0.4);
+  --radius: 0.875rem;
+  --sidebar: #F6F5F2;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #B89B5E;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F0EFEC;
+  --sidebar-accent-foreground: #8A6D36;
+  --sidebar-border: #E5E2DC;
+  --sidebar-ring: rgba(184, 155, 94, 0.4);
 }
 
 .dark {
-  --background: #111111; --foreground: #F7F5F0; --card: #191919; --card-foreground: #F7F5F0;
-  --popover: #191919; --popover-foreground: #F7F5F0; --primary: #D0B77A; --primary-foreground: #171717;
-  --secondary: #232323; --secondary-foreground: #F7F5F0; --muted: #232323; --muted-foreground: #A3A3A3;
-  --accent: #2A261F; --accent-foreground: #D8C79F; --destructive: #A83F3A; --destructive-foreground: #FFF5F4;
-  --border: #2B2B2B; --input: #303030; --ring: rgba(208,183,122,.45);
-  --sidebar: #171717; --sidebar-foreground: #D6D6D6; --sidebar-primary: #D0B77A; --sidebar-primary-foreground: #171717;
-  --sidebar-accent: #25231F; --sidebar-accent-foreground: #D8C79F; --sidebar-border: #292929; --sidebar-ring: rgba(208,183,122,.45);
+  /* Harmonia universal com as cores da Landing Page */
+  --background: #F6F5F2;
+  --foreground: #171717;
+  --card: #FFFFFF;
+  --card-foreground: #171717;
+  --popover: #FFFFFF;
+  --popover-foreground: #171717;
+  --primary: #B89B5E;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F0EFEC;
+  --secondary-foreground: #171717;
+  --muted: #F0EFEC;
+  --muted-foreground: #6B6B6B;
+  --accent: #F5F1E9;
+  --accent-foreground: #8A6D36;
+  --destructive: #B97870;
+  --destructive-foreground: #FFFFFF;
+  --border: #E5E2DC;
+  --input: #E5E2DC;
+  --ring: rgba(184, 155, 94, 0.4);
+  --sidebar: #F6F5F2;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #B89B5E;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F0EFEC;
+  --sidebar-accent-foreground: #8A6D36;
+  --sidebar-border: #E5E2DC;
+  --sidebar-ring: rgba(184, 155, 94, 0.4);
 }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { min-height: 100dvh; overflow-x: hidden; }
-  body { @apply bg-background text-foreground; min-height: 100dvh; overflow-x: hidden; font-feature-settings: "cv02", "cv03", "cv04", "cv11"; -webkit-font-smoothing: antialiased; }
+  html { min-height: 100dvh; overflow-x: hidden; background-color: #F6F5F2; }
+  body { 
+    @apply bg-background text-foreground; 
+    min-height: 100dvh; 
+    overflow-x: hidden; 
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11"; 
+    -webkit-font-smoothing: antialiased; 
+    background-color: #F6F5F2;
+    background-image: 
+      radial-gradient(ellipse 90% 60% at 50% -15%, rgba(216, 199, 159, 0.25) 0%, transparent 70%),
+      radial-gradient(circle at 100% 100%, rgba(232, 226, 213, 0.6) 0%, transparent 45%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background-color: rgba(184, 155, 94, 0.2);
+    color: #8A6D36;
+  }
   #root { min-height: 100dvh; display: flex; flex-direction: column; }
   h1,h2,h3,h4,h5,h6 { @apply font-heading tracking-tight; }
 }
 
 @layer utilities {
-  .surface-elevated { box-shadow: 0 1px 2px rgba(23,23,23,.03), 0 8px 30px rgba(23,23,23,.05); }
+  .surface-elevated { box-shadow: 0 1px 3px rgba(23,23,23,.04), 0 10px 30px rgba(184,155,94,.08); }
   .text-balance { text-wrap: balance; }
 
-  /* Visual migration layer: legacy dashboard surfaces are normalized here without touching data or behavior. */
-  .dashboard-modern [class~="bg-black"],
-  .dashboard-modern [class~="bg-zinc-950"],
-  .dashboard-modern [class~="bg-[#0c0c0f]"],
-  .dashboard-modern [class~="bg-[#0c0c0e]"],
-  .dashboard-modern [class~="bg-[#050505]"] { background-color: var(--card) !important; }
+  /* Normalização Universal de Superfícies - Paleta Oficial da Landing Page */
+  [class*="bg-zinc-950"],
+  [class*="bg-neutral-950"],
+  [class*="bg-slate-950"],
+  [class*="bg-gray-950"],
+  [class*="bg-[#0b0c10]"],
+  [class*="bg-[#0b0c12]"],
+  [class*="bg-[#0c0c0f]"],
+  [class*="bg-[#0c0c0e]"],
+  [class*="bg-[#0d0d11]"],
+  [class*="bg-[#0d0d12]"],
+  [class*="bg-[#061A14]"],
+  [class*="bg-[#0A261E]"],
+  [class*="bg-[#050505]"],
+  [class*="bg-[#060608]"],
+  [class*="bg-[#0b0b0d]"],
+  [class*="bg-[#070709]"],
+  [class*="bg-[#08080a]"],
+  [class*="bg-[#0a0a0c]"],
+  [class*="bg-[#0e0e12]"],
+  [class*="bg-[#09090b]"],
+  [class~="bg-black"]:not(button):not(a):not([data-slot="button"]),
+  [class*="bg-black/"]:not(button):not(a):not([data-slot="button"]) { 
+    background-color: var(--card) !important; 
+    color: var(--foreground) !important;
+  }
 
-  .dashboard-modern [class~="bg-zinc-900"],
-  .dashboard-modern [class~="bg-[#131318]"],
-  .dashboard-modern [class~="bg-[#0d0d11]"] { background-color: var(--secondary) !important; }
+  [class*="bg-zinc-900"],
+  [class*="bg-neutral-900"],
+  [class*="bg-slate-900"],
+  [class*="bg-[#0F3329]"],
+  [class*="bg-[#131318]"],
+  [class*="bg-[#09090c]"],
+  [class*="bg-[#0e0e11]"],
+  [class*="bg-[#121216]"],
+  [class*="bg-[#16161C]"],
+  [class*="bg-[#12131a]"],
+  [class*="bg-white/[0.0"],
+  [class~="bg-white/5"],
+  [class~="bg-white/10"],
+  [class~="bg-white/[0.05]"] { 
+    background-color: var(--secondary) !important; 
+    color: var(--foreground) !important;
+  }
 
-  .dashboard-modern [class~="bg-white/[0.01]"],
-  .dashboard-modern [class~="bg-white/[0.02]"],
-  .dashboard-modern [class~="bg-white/5"],
-  .dashboard-modern [class~="bg-white/10"] { background-color: var(--secondary) !important; }
+  /* Gradientes escuros convertidos em nuances de pérola, marfim e linho */
+  [class*="from-zinc-950"],
+  [class*="from-zinc-900"],
+  [class*="from-black"],
+  [class*="from-[#0d0d11]"],
+  [class*="from-[#0c0c0f]"],
+  [class*="from-[#050505]"],
+  [class*="from-[#0b0c10]"],
+  [class*="to-zinc-950"],
+  [class*="to-zinc-900"],
+  [class*="to-black"],
+  [class*="to-[#050505]"],
+  [class*="to-[#08080a]"],
+  [class*="to-[#070709]"] { 
+    --tw-gradient-from: var(--card) !important; 
+    --tw-gradient-to: var(--secondary) !important; 
+    --tw-gradient-stops: var(--tw-gradient-from), #FAF9F7, var(--tw-gradient-to) !important;
+  }
 
-  .dashboard-modern [class~="text-white"],
-  .dashboard-modern [class~="text-slate-200"],
-  .dashboard-modern [class~="text-zinc-300"] { color: var(--foreground) !important; }
+  /* Bordas sutis da Landing Page */
+  [class*="border-zinc-8"],
+  [class*="border-zinc-9"],
+  [class*="border-neutral-8"],
+  [class*="border-neutral-9"],
+  [class*="border-white/"],
+  [class*="border-[#17473A]"],
+  [class*="border-[#133F32]"] { 
+    border-color: var(--border) !important; 
+  }
 
-  .dashboard-modern [class~="text-zinc-400"],
-  .dashboard-modern [class~="text-zinc-500"] { color: var(--muted-foreground) !important; }
+  /* Hover refinado */
+  [class*="hover:bg-zinc-900"]:hover,
+  [class*="hover:bg-zinc-850"]:hover,
+  [class*="hover:bg-white/10"]:hover,
+  [class*="hover:bg-white/[0.02]"]:hover,
+  [class*="hover:bg-white/[0.03]"]:hover,
+  [class*="hover:bg-white/[0.04]"]:hover { 
+    background-color: var(--accent) !important; 
+  }
 
-  .dashboard-modern [class~="border-white/5"],
-  .dashboard-modern [class~="border-white/10"],
-  .dashboard-modern [class~="border-zinc-800"] { border-color: var(--border) !important; }
+  /* Tipografia clara sobre fundo escuro convertida para preto nobre #171717 */
+  [class~="text-white"],
+  [class~="text-slate-100"],
+  [class~="text-slate-200"],
+  [class~="text-zinc-100"],
+  [class~="text-zinc-200"],
+  [class~="text-zinc-300"],
+  [class~="text-[#F5F9F7]"],
+  [class~="text-[#F7F5F0]"] { 
+    color: var(--foreground) !important; 
+  }
 
-  .dashboard-modern [class~="from-[#0d0d11]"],
-  .dashboard-modern [class~="to-[#050505]"] { --tw-gradient-from: var(--card) !important; --tw-gradient-to: var(--card) !important; }
+  /* Tipografia secundária / legendas */
+  [class*="text-zinc-400"],
+  [class*="text-zinc-500"],
+  [class*="text-neutral-400"],
+  [class*="text-neutral-500"],
+  [class*="text-slate-400"],
+  [class*="text-slate-500"],
+  [class*="text-[#8FAEA2]"],
+  [class*="text-[#a1a1aa]"] { 
+    color: var(--muted-foreground) !important; 
+  }
 
-  .dashboard-modern [class~="hover:bg-zinc-900"]:hover,
-  .dashboard-modern [class~="hover:bg-white/10"]:hover,
-  .dashboard-modern [class~="hover:bg-white/[0.02]"]:hover { background-color: var(--accent) !important; }
+  /* Ouro nobre e champagne da Landing Page (#9F844A, #B89B5E, #8A6D36) */
+  [class*="text-[#D4AF37]"],
+  [class*="text-[#DFC498]"] { 
+    color: #9F844A !important; 
+  }
+  [class*="border-[#D4AF37]"]:not([class*="/"]),
+  [class*="border-[#DFC498]"]:not([class*="/"]) { 
+    border-color: #B89B5E !important; 
+  }
+  [class*="border-[#D4AF37]/"],
+  [class*="border-[#DFC498]/"] { 
+    border-color: rgba(184, 155, 94, 0.35) !important; 
+  }
+  [class*="bg-[#D4AF37]/"],
+  [class*="bg-[#DFC498]/"] { 
+    background-color: #F5F1E9 !important; 
+    color: #8A6D36 !important;
+  }
+  [class*="fill-[#D4AF37]"],
+  [class*="fill-[#DFC498]"] { 
+    fill: #B89B5E !important; 
+  }
+  [class*="stroke-[#D4AF37]"],
+  [class*="stroke-[#DFC498]"] { 
+    stroke: #B89B5E !important; 
+  }
 
-  .dashboard-modern [class*="shadow-[0_4px_30px_rgba(0,0,0,0.4)"] { box-shadow: 0 10px 30px rgba(23,23,23,.07) !important; }
+  /* Botões de Ação Principais no Padrão Landing Page (#171717 com texto branco) */
+  button[class*="bg-[#D4AF37]"],
+  a[class*="bg-[#D4AF37]"],
+  [data-slot="button"][class*="bg-[#D4AF37]"] {
+    background-color: #171717 !important;
+    color: #FFFFFF !important;
+  }
+  button[class*="bg-[#D4AF37]"]:hover,
+  a[class*="bg-[#D4AF37]"]:hover,
+  [data-slot="button"][class*="bg-[#D4AF37]"]:hover {
+    background-color: #2B2B2B !important;
+  }
+
+  /* Preservação rigorosa de texto branco em botões e badges pretos oficiais */
+  [class*="bg-[#171717]"],
+  [class*="bg-[#171717]"] *,
+  [class*="bg-[#2B2B2B]"],
+  [class*="bg-[#2B2B2B]"] *,
+  button[class*="bg-[#171717]"],
+  button[class*="bg-[#171717]"] *,
+  a[class*="bg-[#171717]"],
+  a[class*="bg-[#171717]"] *,
+  button[class*="bg-primary"],
+  button[class*="bg-primary"] *,
+  [data-slot="button"][class*="bg-primary"],
+  [data-slot="button"][class*="bg-primary"] *,
+  [data-slot="button"][class*="bg-[#171717]"],
+  [data-slot="button"][class*="bg-[#171717]"] *,
+  button[class*="bg-destructive"],
+  button[class*="bg-destructive"] *,
+  span[class*="bg-[#171717]"],
+  div[class*="bg-[#171717]"] { 
+    color: #FFFFFF !important; 
+  }
+
+  [class*="bg-[#171717]"] svg[class*="text-[#D8C79F]"],
+  [class*="bg-[#171717]"] [class*="text-[#D8C79F]"],
+  [class*="bg-[#171717]"] svg[class*="text-[#B89B5E]"],
+  [class*="bg-[#171717]"] [class*="text-[#B89B5E]"],
+  [class*="bg-[#171717]"] svg[class*="text-[#9F844A]"],
+  [class*="bg-[#171717]"] [class*="text-[#9F844A]"] {
+    color: #D8C79F !important;
+  }
 }

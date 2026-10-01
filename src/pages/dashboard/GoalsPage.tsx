@@ -81,7 +81,7 @@ export default function GoalsPage() {
   if (userData && !canManageGoals(userData.role)) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center p-4 font-sans">
-        <div className="max-w-md w-full bg-[#0d0d12]/90 border border-white/10 p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
+        <div className="max-w-md w-full bg-card border border-border p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">
           <div className="w-16 h-16 bg-red-600/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <AlertCircle className="w-8 h-8 text-red-500 animate-pulse" />
           </div>

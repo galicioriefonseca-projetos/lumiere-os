@@ -123,6 +123,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDemoRole(role);
   };
 
+  // Para a conta oficial do Essenza, desativa qualquer simulação de função residual
+  useEffect(() => {
+    const isEssenza = Boolean(
+      salonData?.id === 'c2c4ec8f-55f4-4f9b-ae7f-3fd38d7dc6a4' ||
+      userData?.salonId === 'c2c4ec8f-55f4-4f9b-ae7f-3fd38d7dc6a4' ||
+      (salonData?.name && /essenza/i.test(salonData.name)) ||
+      ((userData as any)?.salonName && /essenza/i.test((userData as any).salonName)) ||
+      (salonData as any)?.hideDemoRoleSwitcher === true ||
+      salonData?.ownerEmail?.toLowerCase() === 'lamalacarneoliveira@gmail.com' ||
+      currentUser?.email?.toLowerCase() === 'lamalacarneoliveira@gmail.com' ||
+      currentUser?.email?.toLowerCase() === 'laismalacarne@hotmail.com'
+    );
+    if (isEssenza) {
+      if (demoRole) {
+        setDemoRole(null);
+      }
+      try {
+        sessionStorage.removeItem('demo_role');
+      } catch (e) {}
+    }
+  }, [salonData?.id, userData?.salonId, salonData?.name, (userData as any)?.salonName, (salonData as any)?.hideDemoRoleSwitcher, salonData?.ownerEmail, currentUser?.email, demoRole]);
+
   const [diagnostics, setDiagnostics] = useState({
     firebaseProjectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'Não informada',
     firebaseAuthDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'Não informada',
@@ -1282,7 +1304,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return user;
   };
 
-  const isTargetDemo = Boolean(
+  const isEssenzaSalon = Boolean(
+    salonData?.id === 'c2c4ec8f-55f4-4f9b-ae7f-3fd38d7dc6a4' ||
+    userData?.salonId === 'c2c4ec8f-55f4-4f9b-ae7f-3fd38d7dc6a4' ||
+    (salonData?.name && /essenza/i.test(salonData.name)) ||
+    ((userData as any)?.salonName && /essenza/i.test((userData as any).salonName)) ||
+    (salonData as any)?.hideDemoRoleSwitcher === true ||
+    salonData?.ownerEmail?.toLowerCase() === 'lamalacarneoliveira@gmail.com' ||
+    currentUser?.email?.toLowerCase() === 'lamalacarneoliveira@gmail.com' ||
+    currentUser?.email?.toLowerCase() === 'laismalacarne@hotmail.com'
+  );
+
+  const effectiveDemoRole = isEssenzaSalon ? null : demoRole;
+
+  const isTargetDemo = !isEssenzaSalon && Boolean(
     DEMO_MODE_ENABLED === true ||
     (DEMO_USER_EMAIL && currentUser?.email?.toLowerCase() === DEMO_USER_EMAIL.toLowerCase()) ||
     currentUser?.email?.toLowerCase() === 'leandropfonseca20@gmail.com' ||
@@ -1291,7 +1326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     currentUser?.email?.toLowerCase() === 'demo@lumiereos.com.br'
   );
 
-  const simulatedUserData = demoRole ? {
+  const simulatedUserData = effectiveDemoRole ? {
     ...(userData || {
       id: currentUser?.uid || 'demo_user',
       fullName: currentUser?.displayName || 'Administrador de Demonstração',
@@ -1304,7 +1339,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }),
-    role: demoRole
+    role: effectiveDemoRole
   } : (userData || (isTargetDemo && currentUser ? {
     id: currentUser.uid,
     fullName: currentUser.displayName || 'Administrador de Demonstração',
@@ -1319,7 +1354,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updatedAt: Date.now(),
   } as User : null));
 
-  const effectiveSalonData = salonData || ((demoRole || isTargetDemo) ? ({
+  const effectiveSalonData = salonData || ((effectiveDemoRole || isTargetDemo) ? ({
     id: 'tutorial_lumiere_studio',
     name: "Lumiere Beauty Studio — Demo",
     businessName: "Lumiere Beauty Studio — Demo",
