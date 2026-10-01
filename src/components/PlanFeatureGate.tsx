@@ -5,11 +5,15 @@ import { FEATURE_LABELS, type PlanFeature, requiredPlanForFeature } from '@/conf
 import type { ReactNode } from 'react';
 
 const PLAN_NAMES: Record<string, string> = {
-  essential: 'Essencial',
-  professional: 'Gestão',
-  performance_plus: 'Performance',
-  multiunit: 'Multiunidade',
-  enterprise_custom: 'Enterprise',
+  start: 'Lumière Start',
+  pro: 'Lumière Pro',
+  business: 'Lumière Business',
+  enterprise: 'Lumière Enterprise',
+  essential: 'Lumière Start',
+  professional: 'Lumière Pro',
+  performance_plus: 'Lumière Business',
+  multiunit: 'Lumière Enterprise',
+  enterprise_custom: 'Lumière Enterprise',
 };
 
 type Props = {

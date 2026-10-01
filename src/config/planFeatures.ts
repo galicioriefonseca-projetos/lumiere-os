@@ -1,21 +1,14 @@
 import type { PublicPlanId } from './planPricing';
+import { getCommercialPlan, type PlanModule } from '../../shared/commercialPlanCatalog';
 
-export type PlanFeature =
-  | 'operation'
-  | 'team'
-  | 'goals'
-  | 'commissions'
-  | 'checklists'
-  | 'performance'
-  | 'crm'
-  | 'financial'
-  | 'advanced_reports'
-  | 'ai'
-  | 'automation'
-  | 'multiunit';
+export type PlanFeature = PlanModule;
 
-/** Matriz comercial centralizada: cada plano libera um conjunto de ferramentas. */
-const PLAN_FEATURES: Record<PublicPlanId, readonly PlanFeature[]> = {
+/**
+ * Legacy matrix retained for existing callers/data. New code should use the
+ * canonical plan IDs (start/pro/business/enterprise), which resolve through
+ * the shared commercial catalog.
+ */
+const PLAN_FEATURES: Record<Exclude<PublicPlanId, 'start' | 'pro' | 'business' | 'enterprise'>, readonly PlanFeature[]> = {
   essential: ['operation'],
   professional: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports'],
   performance_plus: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports', 'ai', 'automation'],
@@ -40,14 +33,16 @@ export const FEATURE_LABELS: Record<PlanFeature, string> = {
 
 export function hasPlanFeature(planId: string | null | undefined, feature: PlanFeature): boolean {
   if (!planId) return false;
-  return (PLAN_FEATURES[planId as PublicPlanId] ?? []).includes(feature);
+  const canonical = getCommercialPlan(planId);
+  if (canonical) return canonical.modules.includes(feature);
+  return (PLAN_FEATURES[planId as keyof typeof PLAN_FEATURES] ?? []).includes(feature);
 }
 
 export function requiredPlanForFeature(feature: PlanFeature): PublicPlanId {
-  if (['ai', 'automation'].includes(feature)) return 'performance_plus';
-  if (feature === 'multiunit') return 'multiunit';
-  if (feature === 'operation') return 'essential';
-  return 'professional';
+  if (['ai', 'automation'].includes(feature)) return 'business';
+  if (feature === 'multiunit') return 'enterprise';
+  if (feature === 'operation') return 'start';
+  return 'pro';
 }
 
 export function getPlanFeatureMatrix() {
