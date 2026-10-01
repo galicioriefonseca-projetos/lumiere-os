@@ -23,6 +23,8 @@ export interface PerformanceItem {
   goalsHit: number;
   avgGoalProgress: number;
   performanceScore: number;
+  complaintCount: number;
+  complaintPenalty: number;
   dataStatus: 'completo' | 'parcial_metas' | 'parcial_checklist' | 'sem_dados';
   dataStatusLabel: string;
   explanation: {
@@ -252,6 +254,9 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
         return r.percentage !== undefined || r.completionPercentage !== undefined;
       });
       const totalChecklists = validRuns.length;
+      const complaintRuns = runsInMonth.filter(r => r.qualityEvent?.type === "customer_complaint" && r.qualityEvent?.occurred === true && r.qualityEvent?.relatedToProfessional === true);
+      const complaintCount = complaintRuns.length;
+      const complaintPenalty = complaintRuns.reduce((sum, r) => sum + Math.max(0, Number(r.qualityEvent?.penalty) || 0), 0);
       const avgScore = totalChecklists > 0 
         ? validRuns.reduce((sum, r) => {
             const score = r.percentage !== undefined ? r.percentage : (r.completionPercentage ?? 0);
@@ -302,15 +307,15 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       let dataStatusLabel = '';
 
       if (hasGoals && hasChecklists) {
-        performanceScore = Math.round((avgGoalProgress * 0.70) + (avgScore * 0.30));
+        performanceScore = Math.max(0, Math.round((avgGoalProgress * 0.70) + (avgScore * 0.30) - complaintPenalty));
         dataStatus = 'completo';
         dataStatusLabel = 'Dados Completos';
       } else if (hasGoals && !hasChecklists) {
-        performanceScore = Math.round(avgGoalProgress);
+        performanceScore = Math.max(0, Math.round(avgGoalProgress - complaintPenalty));
         dataStatus = 'parcial_metas';
         dataStatusLabel = 'Parcial (Sem Checklist)';
       } else if (!hasGoals && hasChecklists) {
-        performanceScore = Math.round(avgScore);
+        performanceScore = Math.max(0, Math.round(avgScore - complaintPenalty));
         dataStatus = 'parcial_checklist';
         dataStatusLabel = 'Parcial (Sem Metas)';
       } else {
@@ -461,6 +466,10 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
         bonusColor = 'text-orange-500 bg-orange-500/10 border-orange-500/20';
       }
 
+      if (complaintCount > 0) {
+        pointsOfAttention.push(complaintCount + " reclamação(ões) relacionada(s) ao profissional no período, com penalidade acumulada de " + complaintPenalty + " ponto(s).");
+      }
+
       return {
         ...prof,
         totalRevenue,
@@ -478,6 +487,8 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
         goalsHit,
         avgGoalProgress,
         performanceScore,
+        complaintCount,
+        complaintPenalty,
         dataStatus,
         dataStatusLabel,
         explanation,

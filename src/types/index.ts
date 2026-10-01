@@ -327,6 +327,13 @@ export interface ChecklistRun {
   observations?: string;
   absenceReason?: string;
   status?: string;
+  qualityEvent?: {
+    type: 'customer_complaint';
+    occurred: boolean;
+    relatedToProfessional: boolean;
+    description?: string;
+    penalty?: number;
+  };
 
   evaluationFunction?: string;
   evaluatedFunction?: string;
