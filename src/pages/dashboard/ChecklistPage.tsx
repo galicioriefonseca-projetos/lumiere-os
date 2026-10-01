@@ -17,6 +17,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Checklist, ChecklistRun, ChecklistItemTemplate } from "../../types";
+import { CUSTOMER_COMPLAINT_PENALTY, QUALITY_EVENT_TYPES } from "../../../shared/qualityEvents";
 import { calculateCompositeScore, updateDailyScoreAndStreak, applyXPGain } from "../../lib/gamification";
 import { canEvaluateTeam, canAccessOperationalChecklist } from "../../lib/permissions";
 import { getEvaluableFunctions, sanitizeFunctionSlug } from "../../lib/evaluation";
@@ -804,6 +805,17 @@ export default function ChecklistPage() {
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
     const proFuncs = getEvaluableFunctions(targetPro);
+    const qualityEvent = customerComplaintOccurred
+      ? {
+          type: QUALITY_EVENT_TYPES.CUSTOMER_COMPLAINT,
+          occurred: true,
+          relatedToProfessional: customerComplaintRelated,
+          ...(customerComplaintRelated && customerComplaintDescription.trim()
+            ? { description: customerComplaintDescription.trim() }
+            : {}),
+          penalty: customerComplaintRelated ? CUSTOMER_COMPLAINT_PENALTY : 0,
+        }
+      : undefined;
 
     const runData: any = {
       id: runId,
@@ -986,6 +998,17 @@ export default function ChecklistPage() {
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
     const proFuncs = getEvaluableFunctions(targetPro);
+    const qualityEvent = customerComplaintOccurred
+      ? {
+          type: QUALITY_EVENT_TYPES.CUSTOMER_COMPLAINT,
+          occurred: true,
+          relatedToProfessional: customerComplaintRelated,
+          ...(customerComplaintRelated && customerComplaintDescription.trim()
+            ? { description: customerComplaintDescription.trim() }
+            : {}),
+          penalty: customerComplaintRelated ? CUSTOMER_COMPLAINT_PENALTY : 0,
+        }
+      : undefined;
 
     const runData: any = {
       id: runId,
@@ -1015,6 +1038,7 @@ export default function ChecklistPage() {
       classification: classification,
       absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
+      qualityEvent,
       createdAt:
         existingRun && existingRun.createdAt
           ? existingRun.createdAt
