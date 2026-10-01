@@ -17,6 +17,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { Checklist, ChecklistRun, ChecklistItemTemplate } from "../../types";
+import { CUSTOMER_COMPLAINT_PENALTY, QUALITY_EVENT_TYPES } from "../../../shared/qualityEvents";
 import { calculateCompositeScore, updateDailyScoreAndStreak, applyXPGain } from "../../lib/gamification";
 import { canEvaluateTeam, canAccessOperationalChecklist } from "../../lib/permissions";
 import { getEvaluableFunctions, sanitizeFunctionSlug } from "../../lib/evaluation";
@@ -186,6 +187,9 @@ export default function ChecklistPage() {
     "present" | "absent" | "not_performed" | "not_attended" | ""
   >("");
   const [observations, setObservations] = useState("");
+  const [customerComplaintOccurred, setCustomerComplaintOccurred] = useState(false);
+  const [customerComplaintRelated, setCustomerComplaintRelated] = useState(false);
+  const [customerComplaintDescription, setCustomerComplaintDescription] = useState("");
   const [categoryScores, setCategoryScores] = useState<Record<string, number>>(
     {},
   );
@@ -801,6 +805,17 @@ export default function ChecklistPage() {
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
     const proFuncs = getEvaluableFunctions(targetPro);
+    const qualityEvent = customerComplaintOccurred
+      ? {
+          type: QUALITY_EVENT_TYPES.CUSTOMER_COMPLAINT,
+          occurred: true,
+          relatedToProfessional: customerComplaintRelated,
+          ...(customerComplaintRelated && customerComplaintDescription.trim()
+            ? { description: customerComplaintDescription.trim() }
+            : {}),
+          penalty: customerComplaintRelated ? CUSTOMER_COMPLAINT_PENALTY : 0,
+        }
+      : undefined;
 
     const runData: any = {
       id: runId,
@@ -830,6 +845,7 @@ export default function ChecklistPage() {
       classification: classification,
       absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
+      qualityEvent,
       createdAt:
         existingRun && existingRun.createdAt
           ? existingRun.createdAt
@@ -914,6 +930,9 @@ export default function ChecklistPage() {
         setAttendanceStatus(nextRun?.attendanceStatus || "present");
         setCategoryScores(nextRun?.categoryScores || {});
         setObservations(nextRun?.observations || nextRun?.absenceReason || "");
+        setCustomerComplaintOccurred(nextRun?.qualityEvent?.occurred === true);
+        setCustomerComplaintRelated(nextRun?.qualityEvent?.relatedToProfessional === true);
+        setCustomerComplaintDescription(nextRun?.qualityEvent?.description || "");
         setMobileStep("evaluation");
         setTimeout(scrollEvaluationToTop, 50);
       } else {
@@ -979,6 +998,17 @@ export default function ChecklistPage() {
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
     const proFuncs = getEvaluableFunctions(targetPro);
+    const qualityEvent = customerComplaintOccurred
+      ? {
+          type: QUALITY_EVENT_TYPES.CUSTOMER_COMPLAINT,
+          occurred: true,
+          relatedToProfessional: customerComplaintRelated,
+          ...(customerComplaintRelated && customerComplaintDescription.trim()
+            ? { description: customerComplaintDescription.trim() }
+            : {}),
+          penalty: customerComplaintRelated ? CUSTOMER_COMPLAINT_PENALTY : 0,
+        }
+      : undefined;
 
     const runData: any = {
       id: runId,
@@ -1008,6 +1038,7 @@ export default function ChecklistPage() {
       classification: classification,
       absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
+      qualityEvent,
       createdAt:
         existingRun && existingRun.createdAt
           ? existingRun.createdAt
@@ -1069,6 +1100,9 @@ export default function ChecklistPage() {
       setAttendanceStatus(nextRun?.attendanceStatus || "present");
       setCategoryScores(nextRun?.categoryScores || {});
       setObservations(nextRun?.observations || nextRun?.absenceReason || "");
+      setCustomerComplaintOccurred(nextRun?.qualityEvent?.occurred === true);
+      setCustomerComplaintRelated(nextRun?.qualityEvent?.relatedToProfessional === true);
+      setCustomerComplaintDescription(nextRun?.qualityEvent?.description || "");
       setMobileStep("evaluation");
       setTimeout(scrollEvaluationToTop, 50);
     } else {
@@ -1684,6 +1718,9 @@ export default function ChecklistPage() {
                                         setAttendanceStatus(run?.attendanceStatus || "present");
                                         setCategoryScores(run?.categoryScores || {});
                                         setObservations(run?.observations || run?.absenceReason || "");
+                                        setCustomerComplaintOccurred(run?.qualityEvent?.occurred === true);
+                                        setCustomerComplaintRelated(run?.qualityEvent?.relatedToProfessional === true);
+                                        setCustomerComplaintDescription(run?.qualityEvent?.description || "");
                                         setIncompleteValidationCategories([]);
                                         setMobileStep("evaluation");
                                       }}
@@ -2059,6 +2096,33 @@ export default function ChecklistPage() {
                                     </div>
                                   )}
 
+                                  {/* Customer complaint / quality event */}
+                                  <div className="p-4 rounded-xl border border-red-500/10 bg-red-500/5 space-y-4 font-sans">
+                                    <div>
+                                      <div className="text-xs font-bold text-red-300 uppercase tracking-wider">Qualidade do atendimento</div>
+                                      <p className="text-[11px] text-zinc-400 mt-1">Registre somente reclamações relacionadas diretamente ao atendimento deste profissional. A nota original permanece preservada; o evento afeta o ranking separadamente.</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label className="text-xs text-zinc-300">Houve reclamação de cliente hoje?</Label>
+                                      <div className="flex gap-2">
+                                        <Button type="button" size="sm" variant="outline" onClick={() => { setCustomerComplaintOccurred(false); setCustomerComplaintRelated(false); setCustomerComplaintDescription(""); }} className={!customerComplaintOccurred ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-white/10 text-zinc-400"}>Não</Button>
+                                        <Button type="button" size="sm" variant="outline" onClick={() => setCustomerComplaintOccurred(true)} className={customerComplaintOccurred ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-white/10 text-zinc-400"}>Sim</Button>
+                                      </div>
+                                    </div>
+                                    {customerComplaintOccurred && (
+                                      <div className="space-y-3 animate-fade-in">
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-zinc-300">A reclamação está diretamente relacionada a este profissional?</Label>
+                                          <div className="flex gap-2">
+                                            <Button type="button" size="sm" variant="outline" onClick={() => setCustomerComplaintRelated(false)} className={!customerComplaintRelated ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-white/10 text-zinc-400"}>Não</Button>
+                                            <Button type="button" size="sm" variant="outline" onClick={() => setCustomerComplaintRelated(true)} className={customerComplaintRelated ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-white/10 text-zinc-400"}>Sim</Button>
+                                          </div>
+                                        </div>
+                                        {customerComplaintRelated && <Input value={customerComplaintDescription} onChange={(e) => setCustomerComplaintDescription(e.target.value)} placeholder="Descreva resumidamente a reclamação..." className="bg-background border-white/5 rounded-xl text-xs text-white" />}
+                                      </div>
+                                    )}
+                                  </div>
+
                                   {/* Observations input block */}
                                   <div className="space-y-1.5 mt-6 font-sans">
                                     <Label className="text-xs text-zinc-400 font-semibold uppercase tracking-wider block font-mono">
@@ -2115,6 +2179,9 @@ export default function ChecklistPage() {
                                             setAttendanceStatus("");
                                             setCategoryScores({});
                                             setObservations("");
+                                            setCustomerComplaintOccurred(false);
+                                            setCustomerComplaintRelated(false);
+                                            setCustomerComplaintDescription("");
                                           }
                                         }}
                                         className="h-10 rounded-xl text-xs text-[#a1a1aa] hover:text-white px-2.5 flex items-center gap-1 shrink-0 cursor-pointer"
