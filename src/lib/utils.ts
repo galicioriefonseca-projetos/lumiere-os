@@ -59,13 +59,26 @@ export function getYesterdayDateString(): string {
 }
 
 /**
- * Formata YYYY-MM-DD para formato legível brasileiro (ex: 02/10/2026).
+ * Formata datas com precisão brasileira (ex: 02/10/2026),
+ * sem risco de regressão de 1 dia decorrente de interpretações UTC em strings 'YYYY-MM-DD'.
  */
-export function formatDateBR(dateStr: string): string {
-  if (!dateStr) return '';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
-  const [year, month, day] = parts;
-  return `${day}/${month}/${year}`;
+export function formatDateBR(dateInput?: string | number | Date | null): string {
+  if (!dateInput) return 'Não informado';
+
+  if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    // Caso padrão 'YYYY-MM-DD' ou 'YYYY-MM-DDTHH:mm:ss...'
+    const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, year, month, day] = match;
+      return `${day}/${month}/${year}`;
+    }
+  }
+
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return 'Não informado';
+
+  // Se for Timestamp ou Date com horário
+  return d.toLocaleDateString('pt-BR');
 }
 

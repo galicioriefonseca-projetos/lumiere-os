@@ -26,9 +26,11 @@ function resolveFixedEssenzaDueDate(): string {
   const today = new Date();
   const candidate = new Date(today);
   candidate.setHours(0, 0, 0, 0);
-  candidate.setDate(3);
-  if (today.getDate() > 3) candidate.setMonth(candidate.getMonth() + 1);
-  return candidate.toISOString().split('T')[0];
+  candidate.setDate(2);
+  if (today.getDate() > 2) candidate.setMonth(candidate.getMonth() + 1);
+  const y = candidate.getFullYear();
+  const m = String(candidate.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-02`;
 }
 
 function resolveNextDueDate(salonData: any, cycle: BillingCycle): string {

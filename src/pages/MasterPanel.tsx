@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Link } from 'react-router-dom';
 import { APP_INFO } from '../config/appInfo';
 import DemoControlCard from '../components/admin/DemoControlCard';
+import { formatDateBR } from '@/lib/utils';
 
 export default function MasterPanel() {
   const { logout, isPlatformAdmin, userData, diagnostics, currentUser } = useAuth();
@@ -26,6 +27,15 @@ export default function MasterPanel() {
   const [selectedPlan, setSelectedPlan] = useState<any>('start');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [founderMigrationOption, setFounderMigrationOption] = useState<'A' | 'B'>('A');
+
+  // Estado para confirmação de pagamento manual pelo Master Admin
+  const [manualPaymentForm, setManualPaymentForm] = useState({
+    amount: 397,
+    paymentMethod: 'PIX',
+    dueDate: '2026-10-02',
+    description: ''
+  });
+  const [submittingManualPayment, setSubmittingManualPayment] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'asaas' | 'demo'>('salons');
   const [billingSettings, setAsaasSettings] = useState<any>({
@@ -276,6 +286,28 @@ export default function MasterPanel() {
     );
   };
 
+  const openPaymentPaidDialog = (salon: Salon) => {
+    setSelectedSalon(salon);
+    setDialogAction('payment_paid');
+    const planId = (salon as any).billing?.planId || salon.plan || 'professional';
+    let defaultVal = 397;
+    if (planId === 'founder') defaultVal = 297;
+    else if (planId === 'essential') defaultVal = 197;
+    else if (planId === 'performance_plus') defaultVal = 597;
+    
+    const currentVal = Number((salon as any).billing?.value || defaultVal);
+    const isEssenza = /essenza/i.test(String(salon.name || ''));
+    const nextDue = (salon as any).billing?.nextDueDate || (isEssenza ? '2026-10-02' : new Date().toISOString().split('T')[0]);
+
+    setManualPaymentForm({
+      amount: currentVal,
+      paymentMethod: 'PIX',
+      dueDate: nextDue,
+      description: `Mensalidade LumièreOS — ${salon.name} (PIX Manual)`
+    });
+    setIsDialogOpen(true);
+  };
+
   const confirmAction = async () => {
     if (!selectedSalon) return;
     
@@ -308,18 +340,43 @@ export default function MasterPanel() {
         case 'change_plan':
           updates.plan = selectedPlan;
           break;
-        case 'payment_paid':
-          updates.subscriptionStatus = 'active';
-          updates.paymentStatus = 'paid';
-          updates.isActive = true;
-          updates.activationStatus = 'active';
-          updates.lastPaymentAt = Date.now();
-          updates.lastPaymentAmount = selectedSalon.plan === 'founder' ? 297 : 0;
-          updates.lastPaymentMethod = 'pix';
-          updates.currentPeriodStart = Date.now();
-          updates.currentPeriodEnd = Date.now() + (30 * 24 * 60 * 60 * 1000);
-          updates.nextBillingDate = Date.now() + (30 * 24 * 60 * 60 * 1000);
-          break;
+        case 'payment_paid': {
+          if (!currentUser) {
+            toast.error('Usuário não autenticado.');
+            return;
+          }
+          setSubmittingManualPayment(true);
+          try {
+            const token = await currentUser.getIdToken(true);
+            const response = await fetch('/api/billing/manual-confirm', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                salonId: selectedSalon.id,
+                amount: Number(manualPaymentForm.amount),
+                dueDate: manualPaymentForm.dueDate,
+                paymentMethod: manualPaymentForm.paymentMethod,
+                description: manualPaymentForm.description
+              })
+            });
+            const resData = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(resData.error || 'Falha ao registrar pagamento manual.');
+            }
+            toast.success(resData.message || 'Pagamento manual confirmado com sucesso!');
+            setIsDialogOpen(false);
+            setSelectedSalon(null);
+            return;
+          } catch (err: any) {
+            toast.error(err.message || 'Erro ao registrar pagamento manual.');
+            return;
+          } finally {
+            setSubmittingManualPayment(false);
+          }
+        }
         case 'payment_overdue':
           updates.subscriptionStatus = 'overdue';
           updates.paymentStatus = 'overdue';
@@ -730,8 +787,27 @@ export default function MasterPanel() {
                            </div>
                         </td>
                         <td className="px-4 py-3">
-                           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                              <span className="font-semibold text-white uppercase">Provedor: {salon.billingProvider || 'Nenhum'}</span>
+                           <div className="flex flex-col gap-1 text-xs">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-white uppercase text-[11px]">
+                                  Provedor: {salon.billingProvider || (salon as any).billing?.provider || 'Nenhum'}
+                                </span>
+                                {(salon.billingProvider === 'manual_pix' || (salon as any).billing?.paymentMethod === 'PIX') && (
+                                  <span className="text-[10px] bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/35 px-1.5 py-0.5 rounded font-mono font-bold">
+                                    PIX Manual
+                                  </span>
+                                )}
+                                {((salon as any).billing?.provider === 'asaas' || (salon as any).billing?.paymentMethod === 'CREDIT_CARD') && (
+                                  <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/35 px-1.5 py-0.5 rounded font-mono font-bold">
+                                    Cartão (Asaas)
+                                  </span>
+                                )}
+                              </div>
+                              {(salon as any).billing?.nextDueDate && (
+                                <span className="text-[10px] text-zinc-400 font-mono">
+                                  Vencimento: {formatDateBR((salon as any).billing.nextDueDate)}
+                                </span>
+                              )}
                               {salon.providerCustomerId && (
                                 <div className="text-[9px] text-zinc-500 font-mono mt-0.5 flex flex-col gap-0.5" title={salon.providerCustomerId}>
                                    <span className="truncate max-w-[120px]">Asaas Cus: {salon.providerCustomerId}</span>
@@ -770,7 +846,15 @@ export default function MasterPanel() {
                                 Mudar Plano
                               </Button>
 
-                              <Select onValueChange={(val: string) => { setSelectedSalon(salon); setDialogAction(val); setIsDialogOpen(true); }}>
+                              <Select onValueChange={(val: string) => { 
+                                if (val === 'payment_paid') {
+                                  openPaymentPaidDialog(salon);
+                                } else {
+                                  setSelectedSalon(salon); 
+                                  setDialogAction(val); 
+                                  setIsDialogOpen(true); 
+                                }
+                              }}>
                                 <SelectTrigger className="w-24 h-8 text-xs bg-black/30 border-border">
                                   <SelectValue placeholder="Faturamento" />
                                 </SelectTrigger>
@@ -782,10 +866,6 @@ export default function MasterPanel() {
                                   <SelectItem value="payment_overdue">Marcar Vencido</SelectItem>
                                   <SelectItem value="payment_cancel">Cancelar Assinatura</SelectItem>
                                   <SelectItem value="payment_reactivate">Reativar Assinatura</SelectItem>
-                                  {import.meta.env.DEV && (
-                                    <>
-                                    </>
-                                  )}
                                 </SelectContent>
                               </Select>
                            </div>
@@ -991,16 +1071,86 @@ export default function MasterPanel() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-card border-border">
+        <DialogContent className="sm:max-w-[480px] bg-card border-border">
           <DialogHeader>
-            <DialogTitle className="font-heading">Confirmar Ação</DialogTitle>
+            <DialogTitle className="font-heading">
+              {dialogAction === 'payment_paid' ? 'Confirmar Pagamento Manual' : 'Confirmar Ação'}
+            </DialogTitle>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-3">
              {dialogAction === 'approve' && <p>Tem certeza que deseja <b>Aprovar/Ativar</b> a conta do salão {selectedSalon?.name}?</p>}
              {dialogAction === 'block' && <p>Tem certeza que deseja <b>Bloquear</b> a conta do salão {selectedSalon?.name}?</p>}
              {dialogAction === 'cancel' && <p className="text-destructive font-medium">Tem certeza que deseja <b>Cancelar (Soft Delete)</b> a conta do salão {selectedSalon?.name}? Isso inativará a conta completamente.</p>}
              {dialogAction === 'reactivate' && <p>Tem certeza que deseja <b>Reativar</b> a conta do salão {selectedSalon?.name}?</p>}
-             {dialogAction === 'payment_paid' && <p>Marcar o último pagamento do salão <b>{selectedSalon?.name}</b> como <b>PAGO</b>? Isso renovará o acesso por +30 dias.</p>}
+             {dialogAction === 'payment_paid' && (
+               <div className="space-y-4 text-left">
+                 <div>
+                   <p className="text-xs text-muted-foreground">
+                     Estabelecimento: <strong className="text-white text-sm">{selectedSalon?.name}</strong>
+                   </p>
+                   <p className="text-[11px] text-zinc-400">
+                     Ao registrar o pagamento manual, a mensalidade será dada como <strong>PAGA</strong> e o método de pagamento exibido será <strong>{manualPaymentForm.paymentMethod}</strong>.
+                   </p>
+                 </div>
+
+                 <div className="space-y-3 pt-1">
+                   <div>
+                     <label className="block text-xs font-medium text-zinc-300 mb-1">Valor do Pagamento (R$)</label>
+                     <Input
+                       type="number"
+                       value={manualPaymentForm.amount}
+                       onChange={e => setManualPaymentForm({ ...manualPaymentForm, amount: Number(e.target.value) })}
+                       placeholder="397"
+                       className="bg-black/50 border-border text-white text-sm"
+                     />
+                   </div>
+
+                   <div>
+                     <label className="block text-xs font-medium text-zinc-300 mb-1">Forma de Pagamento</label>
+                     <Select 
+                       value={manualPaymentForm.paymentMethod} 
+                       onValueChange={(val: string) => setManualPaymentForm({ ...manualPaymentForm, paymentMethod: val })}
+                     >
+                       <SelectTrigger className="bg-black/50 border-border text-white text-sm">
+                         <SelectValue placeholder="Selecione o método" />
+                       </SelectTrigger>
+                       <SelectContent className="bg-card border-border text-white">
+                         <SelectItem value="PIX">PIX (Manual)</SelectItem>
+                         <SelectItem value="CREDIT_CARD">Cartão de Crédito</SelectItem>
+                         <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
+                         <SelectItem value="DINHEIRO">Dinheiro / Transferência</SelectItem>
+                       </SelectContent>
+                     </Select>
+                     <p className="text-[11px] text-zinc-500 mt-1">
+                       Enquanto for manual, o sistema exibirá {manualPaymentForm.paymentMethod}. Quando o cliente pagar pelo Asaas, o webhook atualizará automaticamente.
+                     </p>
+                   </div>
+
+                   <div>
+                     <label className="block text-xs font-medium text-zinc-300 mb-1">Vencimento / Data da Mensalidade Quitada</label>
+                     <Input
+                       type="date"
+                       value={manualPaymentForm.dueDate}
+                       onChange={e => setManualPaymentForm({ ...manualPaymentForm, dueDate: e.target.value })}
+                       className="bg-black/50 border-border text-white text-sm"
+                     />
+                     <p className="text-[11px] text-zinc-500 mt-1">
+                       O próximo vencimento será calculado no ciclo subsequente (todo dia 02 no Essenza).
+                     </p>
+                   </div>
+
+                   <div>
+                     <label className="block text-xs font-medium text-zinc-300 mb-1">Observações / Descrição (Opcional)</label>
+                     <Input
+                       value={manualPaymentForm.description}
+                       onChange={e => setManualPaymentForm({ ...manualPaymentForm, description: e.target.value })}
+                       placeholder="Ex: Mensalidade paga via PIX direto ao Master"
+                       className="bg-black/50 border-border text-white text-sm"
+                     />
+                   </div>
+                 </div>
+               </div>
+             )}
              {dialogAction === 'payment_overdue' && <p>Marcar o pagamento do salão <b>{selectedSalon?.name}</b> como <b>VENCIDO</b>?</p>}
              {dialogAction === 'payment_cancel' && <p className="text-destructive font-medium">Cancelar completamente a assinatura do salão <b>{selectedSalon?.name}</b>? O acesso será bloqueado.</p>}
              {dialogAction === 'payment_reactivate' && <p>Reativar a assinatura do salão <b>{selectedSalon?.name}</b> marcando como pago?</p>}
@@ -1058,13 +1208,15 @@ export default function MasterPanel() {
                 </div>
              )}
           </div>
-          <div className="flex justify-end gap-2">
-             <Button variant="ghost" onClick={() => setIsDialogOpen(false)}>Voltar</Button>
+          <div className="flex justify-end gap-2 pt-2">
+             <Button variant="ghost" onClick={() => setIsDialogOpen(false)} disabled={submittingManualPayment}>Voltar</Button>
              <Button 
-               className={dialogAction === 'cancel' || dialogAction === 'block' ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "bg-primary text-black hover:bg-primary/90"} 
+               disabled={submittingManualPayment}
+               className={dialogAction === 'cancel' || dialogAction === 'block' ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "bg-primary text-black hover:bg-primary/90 font-bold"} 
                onClick={confirmAction}
              >
-               Confirmar
+               {submittingManualPayment && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+               {dialogAction === 'payment_paid' ? 'Confirmar e Atualizar' : 'Confirmar'}
              </Button>
           </div>
         </DialogContent>

@@ -513,6 +513,47 @@ export class BillingService {
           const userRef = adminDb.collection('users').doc(salonData.ownerId);
           transaction.set(userRef, { role: 'owner', onboardingStatus: salonData?.onboardingCompleted ? 'completed' : 'pending_setup' }, { merge: true });
         }
+
+        // Registrar / Atualizar cobrança na subcoleção salons/{salonId}/payments
+        if (payment?.id || isPaymentConfirmed) {
+          const paymentId = String(payment?.id || `asaas_pay_${now.getTime()}`);
+          const payRef = adminDb.collection(`salons/${salonId}/payments`).doc(paymentId);
+          const payVal = payment?.value != null ? Number(payment.value) : (billingUpdate.value || 0);
+          const payStatus = isPaymentConfirmed ? 'PAID' : (event === 'PAYMENT_OVERDUE' ? 'OVERDUE' : 'PENDING');
+          const payMethod = payment?.billingType || subscription?.billingType || billingUpdate.paymentMethod || 'CREDIT_CARD';
+          const payDue = payment?.dueDate || resolvedNextDueDate?.toISOString().split('T')[0] || billingUpdate.nextDueDate || now.toISOString().split('T')[0];
+          
+          transaction.set(payRef, {
+            id: paymentId,
+            salonId,
+            plan: billingUpdate.planId || activePlanId,
+            amount: payVal,
+            value: payVal,
+            description: payment?.description || `Mensalidade LumièreOS — Asaas (${payMethod})`,
+            status: payStatus,
+            dueDate: payDue,
+            paymentMethod: payMethod,
+            billingType: payMethod,
+            invoiceUrl: payment?.invoiceUrl || payment?.bankSlipUrl || null,
+            invoicePdf: payment?.invoicePdf || null,
+            paidAt: isPaymentConfirmed ? now.getTime() : null,
+            updatedAt: now.getTime()
+          }, { merge: true });
+
+          // Registrar no histórico de alterações
+          const historyRef = adminDb.collection(`salons/${salonId}/billingHistory`).doc();
+          transaction.set(historyRef, {
+            id: historyRef.id,
+            salonId,
+            action: isPaymentConfirmed ? 'asaas_payment_confirmed' : `asaas_event_${event.toLowerCase()}`,
+            description: `Evento Asaas (${event}) processado. Método: ${payMethod}. Valor: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(payVal)}. Status: ${payStatus}`,
+            timestamp: now.getTime(),
+            amount: payVal,
+            paymentMethod: payMethod,
+            dueDate: payDue,
+            createdAt: now.getTime()
+          });
+        }
       });
       if (eventId) await adminDb.collection('billing_events').doc(eventId).update({ status: 'PROCESSED', processed: true, processedAt: new Date().toISOString() });
     } catch (err: any) {

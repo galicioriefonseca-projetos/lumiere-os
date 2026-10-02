@@ -7,10 +7,11 @@ import { usePlans } from '../../hooks/usePlans';
 import { planCatalog } from '../../config/planPricing';
 import { isRealProviderSubscription } from '../../lib/billing';
 import { toast } from 'sonner';
+import { formatDateBR } from '@/lib/utils';
 import {
-  AlertTriangle, ArrowRight, CalendarDays, Check, ChevronDown, CreditCard,
-  ExternalLink, FileText, Loader2, Lock, ReceiptText, RefreshCw, ShieldCheck, Sparkles,
-  WalletCards, X, XCircle, Zap
+  AlertTriangle, ArrowRight, CalendarDays, Check, CheckCircle2, Clock, CreditCard,
+  ExternalLink, FileText, Loader2, Lock, ReceiptText, RefreshCw, ShieldAlert, ShieldCheck, Sparkles,
+  WalletCards, X, XCircle
 } from 'lucide-react';
 
 function formatDocument(value: string) {
@@ -23,6 +24,20 @@ function formatPhone(value: string) {
   const digits = value.replace(/\D/g, '').slice(0, 11);
   if (digits.length <= 10) return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{4})(\d)/, '$1-$2');
   return digits.replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2');
+}
+
+function parseDateToTimestamp(val: any): number {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') {
+    const match = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, y, m, d] = match;
+      return new Date(Number(y), Number(m) - 1, Number(d)).getTime();
+    }
+  }
+  const t = new Date(val).getTime();
+  return Number.isNaN(t) ? 0 : t;
 }
 
 type BillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
@@ -39,9 +54,7 @@ function money(value: number) {
 }
 
 function date(value?: string | number | null) {
-  if (!value) return 'Não informado';
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? 'Não informado' : d.toLocaleDateString('pt-BR');
+  return formatDateBR(value);
 }
 
 function cyclePrice(monthly: number, cycle: BillingCycle) {
@@ -56,12 +69,37 @@ function cycleMonthlyEquivalent(monthly: number, cycle: BillingCycle) {
 }
 
 function formatBillingMethod(method?: string) {
-  if (!method) return 'Ainda não configurada';
+  if (!method) return 'Cartão de Crédito';
   const m = String(method).toUpperCase();
+  if (m === 'PIX' || m === 'MANUAL_PIX' || m === 'PIX_MANUAL') return 'PIX';
   if (m === 'CREDIT_CARD' || m === 'CARTAO' || m === 'CARTÃO') return 'Cartão de Crédito';
-  if (m === 'PIX') return 'Pix';
+  if (m === 'BOLETO') return 'Boleto Bancário';
   if (m === 'UNDEFINED') return 'Aguardando definição';
   return method;
+}
+
+function formatPaymentStatus(status?: string) {
+  if (!status) return { label: '—', className: 'bg-zinc-900 text-zinc-400 border border-zinc-800' };
+  const s = String(status).toUpperCase();
+  if (['PAID', 'CONFIRMED', 'RECEIVED', 'PAGO'].includes(s)) {
+    return { label: 'Pago', className: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium' };
+  }
+  if (['REPORTED', 'INFORMADO', 'AWAITING_CONFIRMATION'].includes(s)) {
+    return { label: 'Pagamento Informado', className: 'bg-amber-500/15 text-amber-300 border border-amber-500/30' };
+  }
+  if (['PENDING', 'PENDENTE', 'PENDING_PAYMENT'].includes(s)) {
+    return { label: 'Pendente', className: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30' };
+  }
+  if (['OVERDUE', 'VENCIDO', 'ATRASADO'].includes(s)) {
+    return { label: 'Vencido', className: 'bg-rose-500/15 text-rose-400 border border-rose-500/30 font-semibold' };
+  }
+  if (['REJECTED', 'RECUSADO'].includes(s)) {
+    return { label: 'Recusado', className: 'bg-rose-500/15 text-rose-400 border border-rose-500/30' };
+  }
+  if (['CANCELLED', 'CANCELED', 'CANCELADO'].includes(s)) {
+    return { label: 'Cancelado', className: 'bg-zinc-800 text-zinc-500 border border-zinc-700' };
+  }
+  return { label: status, className: 'bg-zinc-900 text-zinc-300 border border-zinc-800' };
 }
 
 export default function SubscriptionCenterPage() {
@@ -71,11 +109,10 @@ export default function SubscriptionCenterPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [cycle, setCycle] = useState<BillingCycle>('MONTHLY');
   const [savingCycle, setSavingCycle] = useState(false);
-  const [changingPlan, setChangingPlan] = useState<string | null>(null);
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<string | null>(null);
   const [realSub, setRealSub] = useState<any>(null);
   const [realSubLoading, setRealSubLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'CREDIT_CARD' | 'PIX'>('CREDIT_CARD');
+  const [paymentMethod, setPaymentMethod] = useState<'CREDIT_CARD'>('CREDIT_CARD');
   const [updatingPayment, setUpdatingPayment] = useState(false);
   const [payments, setPayments] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
@@ -90,12 +127,12 @@ export default function SubscriptionCenterPage() {
   });
   const [savingBillingForm, setSavingBillingForm] = useState(false);
 
-  const currentPlanId = salonData?.billing?.planId || salonData?.plan || 'essential';
+  const currentPlanId = salonData?.billing?.planId || salonData?.plan || 'professional';
   const currentPlan = plans.find((p: any) => p.id === currentPlanId) || planCatalog.plans.find((p: any) => p.id === currentPlanId);
-  const currentMonthly = Number((currentPlan as any)?.price ?? (currentPlan as any)?.monthlyPrice ?? 0);
+  const currentMonthly = Number((currentPlan as any)?.price ?? (currentPlan as any)?.monthlyPrice ?? 397);
   const currentCycle = ((salonData?.billing?.billingCycle || 'MONTHLY') as BillingCycle);
   const activeCycle = CYCLE_META[currentCycle] ? currentCycle : 'MONTHLY';
-  const currentValue = Number(salonData?.billing?.value || currentMonthly || 0);
+  const currentValue = Number(salonData?.billing?.value || currentMonthly || 397);
   const canManage = Boolean(isPlatformAdmin || ['owner', 'admin', 'manager'].includes(userData?.role || ''));
   const hasRealSubscription = isRealProviderSubscription(salonData);
 
@@ -108,7 +145,7 @@ export default function SubscriptionCenterPage() {
     const unsub = onSnapshot(query(collection(db, `salons/${salonData.id}/payments`)), snap => {
       const rows: any[] = [];
       snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
-      rows.sort((a, b) => Number(b.dueDate || b.createdAt || 0) - Number(a.dueDate || a.createdAt || 0));
+      rows.sort((a, b) => parseDateToTimestamp(b.dueDate || b.createdAt || b.reportedAt) - parseDateToTimestamp(a.dueDate || a.createdAt || a.reportedAt));
       setPayments(rows);
     });
     return () => unsub();
@@ -119,7 +156,7 @@ export default function SubscriptionCenterPage() {
     const unsub = onSnapshot(query(collection(db, `salons/${salonData.id}/billingHistory`)), snap => {
       const rows: any[] = [];
       snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
-      rows.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+      rows.sort((a, b) => parseDateToTimestamp(b.timestamp || b.createdAt) - parseDateToTimestamp(a.timestamp || a.createdAt));
       setHistory(rows);
     });
     return () => unsub();
@@ -146,7 +183,35 @@ export default function SubscriptionCenterPage() {
     void load();
   }, [hasRealSubscription, salonData?.id, salonData?.billing?.subscriptionId]);
 
-  const nextDueDate = realSub?.nextDueDate || salonData?.billing?.nextDueDate;
+  const isEssenza = /essenza/i.test(String(salonData?.name || ''));
+  
+  // No Essenza, a data de vencimento é sempre dia 02 de cada mês
+  const resolveEssenzaDueDate = () => {
+    const today = new Date();
+    const candidate = new Date(today);
+    candidate.setHours(0, 0, 0, 0);
+    candidate.setDate(2);
+
+    const currentMonthPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const hasCurrentMonthPaid = payments.some(p => {
+      const pDate = String(p.dueDate || '');
+      const isCurrentMonth = pDate.startsWith(currentMonthPrefix);
+      const isPaid = ['PAID', 'CONFIRMED', 'RECEIVED', 'PAGO'].includes(String(p.status || '').toUpperCase());
+      return isCurrentMonth && isPaid;
+    });
+
+    // Se já passou do dia 2 e a cobrança deste mês já foi quitada, a próxima é dia 02 do mês subsequente
+    if (today.getDate() > 2 && hasCurrentMonthPaid) {
+      candidate.setMonth(candidate.getMonth() + 1);
+    }
+    const year = candidate.getFullYear();
+    const month = String(candidate.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}-02`;
+  };
+
+  const nextDueDate = isEssenza
+    ? resolveEssenzaDueDate()
+    : (realSub?.nextDueDate || salonData?.billing?.nextDueDate || resolveEssenzaDueDate());
   const status = String(realSub?.status || salonData?.billing?.status || salonData?.subscriptionStatus || '').toUpperCase();
   const statusLabel = status === 'ACTIVE' ? 'Ativa' : status === 'OVERDUE' ? 'Em atraso' : status === 'PENDING_PAYMENT' || status === 'PENDING' ? 'Pagamento pendente' : status === 'CANCELLED' ? 'Cancelada' : 'Em configuração';
   const pendingPayment = payments.find(p => ['PENDING', 'OVERDUE'].includes(String(p.status || '').toUpperCase()));
@@ -155,7 +220,7 @@ export default function SubscriptionCenterPage() {
 
   const chosenPlanId = selectedPlanForCheckout || currentPlanId;
   const chosenPlanObj = plans.find((p: any) => p.id === chosenPlanId) || currentPlan || planCatalog.plans.find((p: any) => p.id === chosenPlanId);
-  const chosenPlanMonthlyBase = Number((chosenPlanObj as any)?.price ?? (chosenPlanObj as any)?.monthlyPrice ?? 0);
+  const chosenPlanMonthlyBase = Number((chosenPlanObj as any)?.price ?? (chosenPlanObj as any)?.monthlyPrice ?? (isEssenza ? 397 : 0));
   const chosenPlanMonthlyEq = cycleMonthlyEquivalent(chosenPlanMonthlyBase, cycle);
   const chosenPlanCycleTotal = cyclePrice(chosenPlanMonthlyBase, cycle);
 
@@ -182,10 +247,10 @@ export default function SubscriptionCenterPage() {
     }
   }
 
-  async function goToCheckout(overridePaymentMethod?: 'CREDIT_CARD' | 'PIX', customCustomerData?: any) {
+  async function goToCheckout(overridePaymentMethod?: 'CREDIT_CARD', customCustomerData?: any) {
     if (!salonData?.id) return;
     setUpdatingPayment(true);
-    const methodToUse = overridePaymentMethod || paymentMethod;
+    const methodToUse = overridePaymentMethod || paymentMethod || 'CREDIT_CARD';
     const planToUse = selectedPlanForCheckout || currentPlanId;
 
     try {
@@ -274,32 +339,7 @@ export default function SubscriptionCenterPage() {
 
   function selectPlan(planId: string) {
     setSelectedPlanForCheckout(planId);
-    toast.success('Plano selecionado! Escolha a forma de pagamento e clique em "Ir para pagamento".');
-  }
-
-  async function updatePayment() {
-    if (!salonData?.id) return;
-    setUpdatingPayment(true);
-    try {
-      const t = await token();
-      const res = await fetch('/api/billing/update-payment-method', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
-        body: JSON.stringify({ salonId: salonData.id, paymentMethod })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Não foi possível atualizar a forma de pagamento.');
-      if (data.authorizationUrl || data.checkoutUrl) {
-        window.location.assign(data.authorizationUrl || data.checkoutUrl);
-      } else {
-        toast.success(data.message || 'Forma de pagamento atualizada.');
-        await refreshUserData();
-      }
-    } catch (e: any) {
-      toast.error(e.message || 'Falha ao atualizar a forma de pagamento.');
-    } finally {
-      setUpdatingPayment(false);
-    }
+    toast.success('Plano selecionado! Clique em "Ir para pagamento" para concluir com Cartão de Crédito.');
   }
 
   const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
@@ -328,52 +368,292 @@ export default function SubscriptionCenterPage() {
           </div>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs text-zinc-500">Plano atual</p><p className="mt-1 text-lg font-semibold">{(currentPlan as any)?.name || currentPlanId}</p></div>
-            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs text-zinc-500">Valor atual</p><p className="mt-1 text-lg font-semibold">{money(currentValue)} <span className="text-xs font-normal text-zinc-500">/ ciclo</span></p></div>
-            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs text-zinc-500">Periodicidade</p><p className="mt-1 text-lg font-semibold">{CYCLE_META[activeCycle].label}</p></div>
-            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4"><p className="text-xs text-zinc-500">Próxima cobrança</p><p className="mt-1 text-lg font-semibold">{date(nextDueDate)}</p></div>
+            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+              <p className="text-xs text-zinc-500">Plano atual</p>
+              <p className="mt-1 text-lg font-semibold">{(currentPlan as any)?.name || (isEssenza ? 'Gestão' : currentPlanId)}</p>
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+              <p className="text-xs text-zinc-500">Valor atual</p>
+              <p className="mt-1 text-lg font-semibold">{money(currentValue)} <span className="text-xs font-normal text-zinc-500">/ ciclo</span></p>
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+              <p className="text-xs text-zinc-500">Periodicidade</p>
+              <p className="mt-1 text-lg font-semibold">{CYCLE_META[activeCycle].label}</p>
+            </div>
+            <div className="rounded-2xl border border-zinc-800 bg-black/30 p-4">
+              <p className="text-xs text-zinc-500">Próximo vencimento</p>
+              <p className="mt-1 text-lg font-semibold">{date(nextDueDate)}</p>
+            </div>
           </div>
         </header>
+
+        {/* Alerta de Vencimento e Prevenção de Bloqueios */}
+        <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl shadow-amber-500/5">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5 text-amber-400 animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400 font-mono">
+                  Aviso Financeiro • Prevenção de Bloqueio
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/35 px-2 py-0.5 rounded-full font-mono font-medium">
+                  {isEssenza ? 'Vencimento Fixo: Todo dia 02' : `Vencimento: ${date(nextDueDate)}`}
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-white">
+                O pagamento da mensalidade deve ser efetuado para evitar bloqueios preventivos.
+              </p>
+              <p className="text-xs text-zinc-300 leading-relaxed font-light">
+                {isEssenza 
+                  ? 'A mensalidade do Essenza Studio di Bellezza vence sempre no dia 02 de cada mês. Efetue o pagamento da assinatura pontualmente para manter os agendamentos, checklists e recursos liberados.' 
+                  : 'Efetue o pagamento da assinatura até a data estipulada para evitar bloqueios de agendamentos e interrupções no acesso da sua equipe.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0">
+            <button
+              onClick={() => {
+                setSelectedPlanForCheckout(currentPlanId);
+                void goToCheckout();
+              }}
+              className="w-full md:w-auto flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] hover:bg-[#c49f2c] px-4 py-2.5 text-xs font-bold text-black shadow-md transition cursor-pointer"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              Efetuar Pagamento
+            </button>
+          </div>
+        </div>
 
         <nav className="flex gap-2 overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-2">
           {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition ${tab === t.id ? 'bg-[#D4AF37] text-black' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}>{t.icon}{t.label}</button>)}
         </nav>
 
         {tab === 'overview' && (
-          <section className="grid gap-6 lg:grid-cols-[1.4fr_.8fr]">
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
-              <div className="flex items-start justify-between gap-4"><div><p className="text-sm text-zinc-500">Assinatura ativa</p><h2 className="mt-1 text-2xl font-semibold">{(currentPlan as any)?.name || 'Plano atual'}</h2></div><ShieldCheck className="h-7 w-7 text-emerald-400" /></div>
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                <div><p className="text-xs text-zinc-500">Próxima cobrança</p><p className="mt-1 font-medium">{date(nextDueDate)}</p></div>
-                <div><p className="text-xs text-zinc-500">Forma de pagamento</p><p className="mt-1 font-medium">{formatBillingMethod(realSub?.billingType || salonData.billing?.paymentMethod)}</p></div>
-              </div>
-              {pendingPayment && <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4"><div className="flex gap-3"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" /><div><p className="font-medium text-amber-200">Existe uma cobrança pendente</p><p className="mt-1 text-sm text-zinc-400">A cobrança já gerada mantém suas condições originais. Alterações de ciclo valem para cobranças futuras.</p></div></div></div>}
-              <div className="mt-6 flex flex-wrap gap-3">
-                {(!hasRealSubscription || status !== 'ACTIVE') && (
-                  <button
-                    disabled={updatingPayment}
-                    onClick={() => {
-                      setSelectedPlanForCheckout(currentPlanId);
-                      void goToCheckout();
-                    }}
-                    className="flex items-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/20 hover:bg-[#c49f2c] transition active:scale-95 disabled:opacity-50"
-                  >
-                    {updatingPayment ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" /> Conectando ao Asaas...
-                      </>
-                    ) : (
-                      <>
-                        Ir para pagamento <ArrowRight className="h-4 w-4" />
-                      </>
+          <section className="space-y-6">
+            <div className="grid gap-6 lg:grid-cols-[1.4fr_.8fr]">
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase font-mono tracking-wider text-[#D4AF37]">Assinatura Ativa</p>
+                    <h2 className="mt-1 text-2xl font-semibold text-white">{(currentPlan as any)?.name || (isEssenza ? 'Gestão' : 'Plano Atual')}</h2>
+                  </div>
+                  <ShieldCheck className="h-7 w-7 text-emerald-400" />
+                </div>
+                
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-zinc-800/80 bg-black/40 p-4">
+                    <p className="text-xs text-zinc-500">Data de Vencimento</p>
+                    <p className="mt-1 font-semibold text-white text-base flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-[#D4AF37]" />
+                      {date(nextDueDate)}
+                    </p>
+                    {isEssenza && (
+                      <span className="text-[10px] text-amber-400 font-mono mt-1 block">
+                        • Fixo todo dia 02 de cada mês
+                      </span>
                     )}
-                  </button>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-800/80 bg-black/40 p-4">
+                    <p className="text-xs text-zinc-500">Forma de Pagamento</p>
+                    <p className="mt-1 font-semibold text-white text-base flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-emerald-400" />
+                      {formatBillingMethod(realSub?.billingType || salonData.billing?.paymentMethod || 'CREDIT_CARD')}
+                    </p>
+                  </div>
+                </div>
+
+                {pendingPayment && (
+                  <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-amber-200 text-sm">Existe uma mensalidade aguardando pagamento</p>
+                          <p className="mt-0.5 text-xs text-zinc-300">
+                            Vencimento em <strong>{date(pendingPayment.dueDate || nextDueDate)}</strong> no valor de <strong>{money(pendingPayment.value || pendingPayment.amount || currentValue)}</strong>.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedPlanForCheckout(currentPlanId);
+                          void goToCheckout();
+                        }}
+                        className="self-start sm:self-center shrink-0 flex items-center gap-1.5 rounded-xl bg-[#D4AF37] px-3.5 py-2 text-xs font-bold text-black hover:bg-[#c49f2c] transition shadow-md"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        Efetuar Pagamento
+                      </button>
+                    </div>
+                  </div>
                 )}
-                <button onClick={() => setTab('plan')} className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${hasRealSubscription && status === 'ACTIVE' ? 'bg-[#D4AF37] text-black' : 'border border-zinc-700 text-white hover:bg-zinc-900'}`}>Gerenciar plano <ArrowRight className="ml-1 inline h-4 w-4" /></button>
-                <button onClick={() => setTab('payment')} className="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-900">Forma de pagamento</button>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  {(!hasRealSubscription || status !== 'ACTIVE') && (
+                    <button
+                      disabled={updatingPayment}
+                      onClick={() => {
+                        setSelectedPlanForCheckout(currentPlanId);
+                        void goToCheckout();
+                      }}
+                      className="flex items-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-2.5 text-sm font-bold text-black shadow-lg shadow-[#D4AF37]/20 hover:bg-[#c49f2c] transition active:scale-95 disabled:opacity-50"
+                    >
+                      {updatingPayment ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" /> Conectando ao Asaas...
+                        </>
+                      ) : (
+                        <>
+                          Ir para pagamento <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button onClick={() => setTab('plan')} className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${hasRealSubscription && status === 'ACTIVE' ? 'bg-[#D4AF37] text-black' : 'border border-zinc-700 text-white hover:bg-zinc-900'}`}>Gerenciar plano <ArrowRight className="ml-1 inline h-4 w-4" /></button>
+                  <button onClick={() => setTab('payment')} className="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-900">Forma de pagamento</button>
+                  <button onClick={() => setTab('charges')} className="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-900 flex items-center gap-1.5">
+                    <WalletCards className="w-4 h-4 text-[#D4AF37]" />
+                    Ver Cobranças
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl flex flex-col justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Segurança & Regularidade</p>
+                  <p className="text-xs text-zinc-500 mt-1">Garantia operacional do ecossistema LumièreOS.</p>
+                  
+                  <div className="mt-5 space-y-4 text-sm text-zinc-400">
+                    <div className="flex gap-3">
+                      <Lock className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
+                      <span className="text-xs leading-relaxed">Transações financeiras protegidas e em conformidade bancária.</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <CalendarDays className="h-5 w-5 text-[#D4AF37] shrink-0 mt-0.5" />
+                      <span className="text-xs leading-relaxed">
+                        {isEssenza ? 'Mensalidade com vencimento fixo todo dia 02.' : 'Ciclo mensal sincronizado com histórico e comprovantes.'}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      <ShieldAlert className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                      <span className="text-xs leading-relaxed text-zinc-300">Pagamentos pontuais evitam bloqueios ou suspensões na agenda.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-zinc-900 flex items-center justify-between text-xs text-zinc-500">
+                  <span>Status do Salão:</span>
+                  <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Operação Liberada
+                  </span>
+                </div>
               </div>
             </div>
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"><p className="text-sm font-medium">Segurança financeira</p><div className="mt-5 space-y-4 text-sm text-zinc-400"><div className="flex gap-3"><Lock className="h-5 w-5 text-[#D4AF37]" /><span>Os dados sensíveis de cartão são processados pelo Asaas.</span></div><div className="flex gap-3"><CalendarDays className="h-5 w-5 text-[#D4AF37]" /><span>O ciclo real é sincronizado com a assinatura do gateway.</span></div><div className="flex gap-3"><ReceiptText className="h-5 w-5 text-[#D4AF37]" /><span>Cobranças e documentos ficam organizados no histórico.</span></div></div></div>
+
+            {/* SEÇÃO COMPLETA DE HISTÓRICO DE COBRANÇAS E PAGAMENTOS NA VISÃO GERAL */}
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 md:p-8 shadow-2xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-900 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
+                    <WalletCards className="h-5 w-5 text-[#D4AF37]" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Histórico de Mensalidades & Pagamentos</h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Cobranças registradas e faturas do estabelecimento (vencimentos no dia 02 de cada mês).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setTab('charges')}
+                  className="text-xs font-semibold text-[#D4AF37] hover:text-amber-400 flex items-center gap-1 self-start sm:self-center transition"
+                >
+                  Ver cobranças detalhadas <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-zinc-800 text-xs text-zinc-500 font-mono uppercase tracking-wider">
+                    <tr>
+                      <th className="px-3 py-3">Vencimento / Data</th>
+                      <th className="px-3 py-3">Descrição da Cobrança</th>
+                      <th className="px-3 py-3">Método</th>
+                      <th className="px-3 py-3">Valor</th>
+                      <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900">
+                    {payments.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-10 text-center text-zinc-500 text-xs">
+                          Nenhuma cobrança registrada ainda.
+                        </td>
+                      </tr>
+                    ) : (
+                      payments.slice(0, 5).map((p) => {
+                        const rawValue = p.value !== undefined && p.value !== null && p.value !== ''
+                          ? Number(p.value)
+                          : p.amount !== undefined && p.amount !== null && p.amount !== ''
+                            ? Number(p.amount)
+                            : 0;
+                        const rawMethod = p.billingType || p.method || p.paymentMethod || 'CREDIT_CARD';
+                        const methodLabel = formatBillingMethod(rawMethod);
+                        const statusInfo = formatPaymentStatus(p.status);
+                        const rawDate = p.dueDate || p.createdAt || p.reportedAt || p.date;
+                        const isPending = ['PENDING', 'PENDENTE', 'PENDING_PAYMENT', 'OVERDUE'].includes(String(p.status || '').toUpperCase());
+
+                        return (
+                          <tr key={p.id} className="hover:bg-zinc-900/30 transition-colors">
+                            <td className="px-3 py-4 text-zinc-300 font-mono text-xs font-medium">
+                              {date(rawDate)}
+                            </td>
+                            <td className="px-3 py-4 font-medium text-white">
+                              {p.description || 'Mensalidade LumièreOS'}
+                            </td>
+                            <td className="px-3 py-4 text-zinc-300 text-xs">
+                              {methodLabel}
+                            </td>
+                            <td className="px-3 py-4 font-semibold text-white">
+                              {money(rawValue)}
+                            </td>
+                            <td className="px-3 py-4">
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusInfo.className}`}>
+                                {statusInfo.label}
+                              </span>
+                            </td>
+                            <td className="px-3 py-4 text-right">
+                              {isPending ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedPlanForCheckout(currentPlanId);
+                                    void goToCheckout();
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#D4AF37] px-3 py-1 text-xs font-bold text-black hover:bg-[#c49f2c] transition shadow"
+                                >
+                                  <CreditCard className="w-3 h-3" />
+                                  Efetuar Pagamento
+                                </button>
+                              ) : (
+                                <span className="text-xs text-zinc-500 flex items-center justify-end gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                  Quitado
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         )}
 
@@ -483,36 +763,17 @@ export default function SubscriptionCenterPage() {
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-[#D4AF37]/15 px-3 py-1 text-xs font-semibold text-[#D4AF37]">
                       <Sparkles className="h-3.5 w-3.5" /> Confirmar e Contratar
                     </span>
-                    <span className="text-xs text-zinc-400">Defina a forma de pagamento e avance para o checkout</span>
+                    <span className="text-xs text-zinc-400">Pagamento seguro processado via Cartão de Crédito no Asaas</span>
                   </div>
                   <h3 className="text-2xl font-bold text-white">
-                    {(chosenPlanObj as any)?.name || 'Plano Selecionado'} · {CYCLE_META[cycle]?.label}
+                    {(chosenPlanObj as any)?.name || (isEssenza ? 'Gestão' : 'Plano Selecionado')} · {CYCLE_META[cycle]?.label}
                   </h3>
                   <p className="text-sm text-zinc-400">
-                    Total deste ciclo: <strong className="text-white font-semibold">{money(chosenPlanCycleTotal)}</strong> ({money(chosenPlanMonthlyEq)} / mês). Pagamento seguro processado via Asaas.
+                    Total deste ciclo: <strong className="text-white font-semibold">{money(chosenPlanCycleTotal)}</strong> ({money(chosenPlanMonthlyEq)} / mês). Vencimentos no dia 02 de cada mês.
                   </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-                  <div className="flex items-center gap-2 rounded-2xl border border-zinc-800 bg-black/60 p-1.5">
-                    <button
-                      onClick={() => setPaymentMethod('CREDIT_CARD')}
-                      className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition ${
-                        paymentMethod === 'CREDIT_CARD' ? 'bg-[#D4AF37] text-black font-bold' : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      <CreditCard className="h-4 w-4" /> Cartão
-                    </button>
-                    <button
-                      onClick={() => setPaymentMethod('PIX')}
-                      className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-medium transition ${
-                        paymentMethod === 'PIX' ? 'bg-[#D4AF37] text-black font-bold' : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      <Zap className="h-4 w-4" /> Pix
-                    </button>
-                  </div>
-
+                <div className="flex items-center gap-4">
                   <button
                     disabled={updatingPayment}
                     onClick={() => void goToCheckout()}
@@ -524,7 +785,7 @@ export default function SubscriptionCenterPage() {
                       </>
                     ) : (
                       <>
-                        Ir para pagamento <ArrowRight className="h-4 w-4" />
+                        <CreditCard className="h-4 w-4" /> Ir para pagamento <ArrowRight className="h-4 w-4" />
                       </>
                     )}
                   </button>
@@ -547,32 +808,25 @@ export default function SubscriptionCenterPage() {
 
               <div className="mt-6 rounded-2xl border border-zinc-800 bg-black/20 p-5">
                 <p className="text-xs text-zinc-500">Plano e periodicidade</p>
-                <p className="mt-1 text-lg font-semibold">{(chosenPlanObj as any)?.name || 'Plano'} · {CYCLE_META[cycle]?.label}</p>
+                <p className="mt-1 text-lg font-semibold">{(chosenPlanObj as any)?.name || (isEssenza ? 'Gestão' : 'Plano')} · {CYCLE_META[cycle]?.label}</p>
                 <p className="mt-1 text-sm text-zinc-400">
                   Total do ciclo: <strong className="text-white">{money(chosenPlanCycleTotal)}</strong> ({money(chosenPlanMonthlyEq)} / mês)
                 </p>
               </div>
 
               <div className="mt-6">
-                <p className="text-xs text-zinc-400 mb-3">Escolha a forma de pagamento desejada:</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {(['CREDIT_CARD', 'PIX'] as const).map(m => (
-                    <button
-                      key={m}
-                      onClick={() => setPaymentMethod(m)}
-                      className={`rounded-xl border p-4 text-left transition ${
-                        paymentMethod === m ? 'border-[#D4AF37] bg-[#D4AF37]/10' : 'border-zinc-800 bg-black/20 hover:border-zinc-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{m === 'CREDIT_CARD' ? 'Cartão de Crédito' : 'Pix'}</p>
-                        {paymentMethod === m && <Check className="h-4 w-4 text-[#D4AF37]" />}
-                      </div>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {m === 'CREDIT_CARD' ? 'Pagamento recorrente no cartão' : 'Pagar via Pix (QRCode e Copia e Cola)'}
-                      </p>
-                    </button>
-                  ))}
+                <p className="text-xs text-zinc-400 mb-3">Forma de cobrança:</p>
+                <div className="rounded-xl border border-[#D4AF37] bg-[#D4AF37]/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-white flex items-center gap-2">
+                      <CreditCard className="h-4 w-4 text-[#D4AF37]" />
+                      Cartão de Crédito
+                    </p>
+                    <Check className="h-4 w-4 text-[#D4AF37]" />
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Pagamento seguro recorrente processado pelo gateway Asaas.
+                  </p>
                 </div>
               </div>
 
@@ -615,7 +869,126 @@ export default function SubscriptionCenterPage() {
         )}
 
         {tab === 'charges' && (
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6"><div className="flex items-center justify-between gap-4"><div><p className="text-xs uppercase tracking-widest text-[#D4AF37]">Financeiro</p><h2 className="mt-1 text-2xl font-semibold">Cobranças</h2></div><WalletCards className="h-7 w-7 text-zinc-500" /></div><div className="mt-6 overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-zinc-800 text-xs text-zinc-500"><tr><th className="px-3 py-3">Data</th><th className="px-3 py-3">Descrição</th><th className="px-3 py-3">Método</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Status</th></tr></thead><tbody>{payments.length === 0 ? <tr><td colSpan={5} className="px-3 py-12 text-center text-zinc-500">Nenhuma cobrança registrada ainda.</td></tr> : payments.map(p => <tr key={p.id} className="border-b border-zinc-900"><td className="px-3 py-4">{date(p.dueDate || p.createdAt)}</td><td className="px-3 py-4">{p.description || 'Mensalidade LumièreOS'}</td><td className="px-3 py-4">{p.billingType || '—'}</td><td className="px-3 py-4 font-medium">{money(Number(p.value || 0))}</td><td className="px-3 py-4"><span className="rounded-full bg-zinc-900 px-2.5 py-1 text-xs">{p.status || '—'}</span></td></tr>)}</tbody></table></div></section>
+          <section className="space-y-6">
+            {/* Aviso de Prevenção de Bloqueio dentro da aba Cobranças */}
+            <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-lg shadow-amber-500/5">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 animate-pulse" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-400 font-mono">
+                      Aviso de Vencimento
+                    </span>
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/35 px-2 py-0.5 rounded-full font-mono">
+                      {isEssenza ? 'Vencimento: Todo dia 02' : `Próximo: ${date(nextDueDate)}`}
+                    </span>
+                  </div>
+                  <p className="text-sm font-semibold text-white">
+                    Mantenha a mensalidade em dia para evitar o bloqueio preventivo do sistema.
+                  </p>
+                  <p className="text-xs text-zinc-300 leading-relaxed font-light">
+                    {isEssenza
+                      ? 'A assinatura do Essenza vence sempre no dia 02 de cada mês. O pagamento pontual evita suspensões de agenda e bloqueios de acesso.'
+                      : 'O pagamento da assinatura deve ser efetuado até a data de vencimento para evitar bloqueios de agendamentos e interrupções operacionais.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+                <button
+                  onClick={() => {
+                    setSelectedPlanForCheckout(currentPlanId);
+                    void goToCheckout();
+                  }}
+                  className="w-full md:w-auto flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] px-4 py-2.5 text-xs font-bold text-black shadow-md hover:bg-amber-400 transition cursor-pointer"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Efetuar Pagamento
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-[#D4AF37] font-mono">Financeiro</p>
+                  <h2 className="mt-1 text-2xl font-semibold">Histórico de Cobranças</h2>
+                </div>
+                <WalletCards className="h-7 w-7 text-zinc-500" />
+              </div>
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-zinc-800 text-xs text-zinc-500 font-mono uppercase">
+                    <tr>
+                      <th className="px-3 py-3">Vencimento / Data</th>
+                      <th className="px-3 py-3">Descrição da Cobrança</th>
+                      <th className="px-3 py-3">Método</th>
+                      <th className="px-3 py-3">Valor</th>
+                      <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900">
+                    {payments.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-12 text-center text-zinc-500 text-xs">
+                          Nenhuma cobrança registrada ainda.
+                        </td>
+                      </tr>
+                    ) : (
+                      payments.map((p) => {
+                        const rawValue = p.value !== undefined && p.value !== null && p.value !== ''
+                          ? Number(p.value)
+                          : p.amount !== undefined && p.amount !== null && p.amount !== ''
+                            ? Number(p.amount)
+                            : 0;
+                        const rawMethod = p.billingType || p.method || p.paymentMethod || 'CREDIT_CARD';
+                        const methodLabel = formatBillingMethod(rawMethod);
+                        const statusInfo = formatPaymentStatus(p.status);
+                        const rawDate = p.dueDate || p.createdAt || p.reportedAt || p.date;
+                        const isPending = ['PENDING', 'PENDENTE', 'PENDING_PAYMENT', 'OVERDUE'].includes(String(p.status || '').toUpperCase());
+
+                        return (
+                          <tr key={p.id} className="hover:bg-zinc-900/30 transition-colors">
+                            <td className="px-3 py-4 text-zinc-300 font-mono text-xs font-medium">{date(rawDate)}</td>
+                            <td className="px-3 py-4 font-medium text-white">{p.description || 'Mensalidade LumièreOS'}</td>
+                            <td className="px-3 py-4 text-zinc-300 text-xs">{methodLabel}</td>
+                            <td className="px-3 py-4 font-semibold text-white">{money(rawValue)}</td>
+                            <td className="px-3 py-4">
+                              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${statusInfo.className}`}>
+                                {statusInfo.label}
+                              </span>
+                            </td>
+                            <td className="px-3 py-4 text-right">
+                              {isPending ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedPlanForCheckout(currentPlanId);
+                                    void goToCheckout();
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#D4AF37] px-3 py-1.5 text-xs font-bold text-black hover:bg-[#c49f2c] transition shadow"
+                                >
+                                  <CreditCard className="w-3 h-3" />
+                                  Efetuar Pagamento
+                                </button>
+                              ) : (
+                                <span className="text-xs text-zinc-500 inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                  Quitado
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         )}
 
         {tab === 'documents' && (
