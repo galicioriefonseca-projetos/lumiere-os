@@ -53,14 +53,14 @@ export function LumiMascotAvatar({
         />
       )}
 
-      {/* Corpo / Avatar 3D da Mascote Lumi */}
+      {/* Corpo / Avatar 3D da Gestora Virtual Lumi */}
       <div
         className={`relative ${sizeMap[size]} rounded-full bg-gradient-to-b from-[#1c1811] via-[#0e0c08] to-[#050403] border-2 border-[#D4AF37]/80 p-0.5 flex items-center justify-center shadow-2xl overflow-hidden`}
       >
         {!imageError ? (
           <img
             src="/images/lumi-mascot.jpg"
-            alt="Mascote Lumi - LumièreOS"
+            alt="Lumi - Gestora de Negócios Virtual LumièreOS"
             onError={() => setImageError(true)}
             className="w-full h-full object-cover object-center rounded-full scale-105 group-hover:scale-110 transition-transform duration-500"
           />

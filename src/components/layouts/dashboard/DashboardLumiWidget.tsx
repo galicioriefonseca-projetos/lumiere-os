@@ -16,7 +16,7 @@ export function DashboardLumiWidget() {
     setIsRotating(true);
     try {
       await runLumiAnalysis();
-      toast.success("Mascote Lumi atualizou as análises com os últimos dados!");
+      toast.success("A Gestora Virtual Lumi atualizou as análises com os últimos dados!");
     } catch (err) {
       console.error(err);
     } finally {
@@ -33,7 +33,7 @@ export function DashboardLumiWidget() {
         <div className="flex items-center gap-2.5">
           <LumiMascotAvatar size="sm" mood="happy" />
           <div className="flex flex-col">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Copiloto</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Gestora Virtual</span>
             <span className="text-xs font-bold text-[#D4AF37] tracking-tight">Lumi Gestão</span>
           </div>
         </div>

@@ -165,10 +165,10 @@ export function LumiSystemReadinessAlert({
               </span>
             </div>
             <h3 className="text-base font-bold text-white font-heading tracking-tight">
-              Calibração da Copiloto Lumi
+              Calibração da Gestora Virtual Lumi
             </h3>
             <p className="text-xs text-zinc-300 leading-relaxed font-light">
-              Complete as configurações abaixo para a Lumi desbloquear análises cirúrgicas de lucro, metas e prevenção de faltas.
+              Complete as configurações abaixo para a Gestora Virtual Lumi desbloquear análises cirúrgicas de lucro, metas e prevenção de faltas.
             </p>
           </div>
         </div>

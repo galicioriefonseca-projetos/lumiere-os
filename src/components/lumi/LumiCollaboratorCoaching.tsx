@@ -75,7 +75,7 @@ export function LumiCollaboratorCoaching({
       {/* Luz dourada de fundo */}
       <div className="absolute top-0 right-0 w-80 h-80 bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Header com a Mascote Lumi & Saudação */}
+      {/* Header com a Gestora Virtual Lumi & Saudação */}
       <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3.5">
           <LumiMascotAvatar size="lg" mood={mascotMood} />
@@ -83,7 +83,7 @@ export function LumiCollaboratorCoaching({
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/35 text-[#D4AF37] font-mono flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-[#D4AF37]" />
-                LUMI · SUA MENTORA DE SUCESSO
+                LUMI · SUA GESTORA VIRTUAL DE SUCESSO
               </span>
               <span className="text-[10px] text-zinc-400 font-mono">
                 {salonName}

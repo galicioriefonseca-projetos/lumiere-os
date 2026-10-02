@@ -87,7 +87,7 @@ export function LumiExecutiveAdvisor({
               </h2>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] bg-[#D4AF37]/20 border border-[#D4AF37]/35 text-[#D4AF37] px-2 py-0.5 rounded font-bold uppercase tracking-wider font-mono">
-                  Lumi · Mascote & Conselheira
+                  Lumi · Gestora de Negócios Virtual
                 </span>
                 <span className="text-[10px] text-zinc-400 font-light">
                   Consultoria Estratégica Nativa

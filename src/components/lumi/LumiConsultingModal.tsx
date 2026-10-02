@@ -190,11 +190,11 @@ Aqui está a estratégia recomendada pela Lumi:
                     <Sparkles className="w-4 h-4 text-[#D4AF37]" />
                   </DialogTitle>
                   <span className="text-[10px] bg-[#D4AF37]/20 border border-[#D4AF37]/35 text-[#D4AF37] px-2 py-0.5 rounded-full font-mono font-bold uppercase tracking-wider">
-                    Mascote & Copiloto
+                    Gestora Virtual
                   </span>
                 </div>
                 <DialogDescription className="text-xs text-zinc-300 font-light">
-                  Sua conselheira de negócios para organizar o salão, motivar a equipe e faturar mais.
+                  Sua gestora de negócios virtual para organizar o salão, motivar a equipe e faturar mais.
                 </DialogDescription>
               </div>
             </div>
