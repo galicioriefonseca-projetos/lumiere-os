@@ -58,7 +58,11 @@ import {
   Info,
   Power,
   PowerOff,
+  Clock,
+  Calendar,
+  History,
 } from "lucide-react";
+import { getLocalDateString, getYesterdayDateString, formatDateBR } from "@/lib/utils";
 import {
   predefinedTemplates,
   PredefinedTemplate,
@@ -89,11 +93,24 @@ function removeUndefinedDeep(obj: any): any {
 export default function ChecklistPage() {
   const { salonData, userData, currentUser } = useAuth();
 
-  const triggerGamificationScore = async (professionalId: string, status: string, totalScore: number, maxScore: number, targetPro: any) => {
+  // Garante que o dia permaneça ativo até as 00:00 (fuso local) sem virar prematuramente
+  const todayStr = getLocalDateString(new Date());
+  const yesterdayStr = getYesterdayDateString();
+  const [selectedEvaluationDate, setSelectedEvaluationDate] = useState<string>(todayStr);
+
+  const triggerGamificationScore = async (
+    professionalId: string,
+    status: string,
+    totalScore: number,
+    maxScore: number,
+    targetPro: any,
+    evalDateStr?: string
+  ) => {
     if (!salonData) return;
     if (status !== 'present') return;
     try {
-      const currentMonthStr = todayStr.substring(0, 7);
+      const targetDate = evalDateStr || selectedEvaluationDate || todayStr;
+      const currentMonthStr = targetDate.substring(0, 7);
       const goalRef = doc(db, `salons/${salonData.id}/professionalGoals`, `${professionalId}_${currentMonthStr}`);
       const goalSnap = await getDoc(goalRef);
       
@@ -194,9 +211,7 @@ export default function ChecklistPage() {
     {},
   );
 
-  const [reportDate, setReportDate] = useState(
-    new Date().toISOString().substring(0, 10),
-  );
+  const [reportDate, setReportDate] = useState(todayStr);
   const [reportRuns, setReportRuns] = useState<ChecklistRun[]>([]);
   const [loadingReport, setLoadingReport] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -415,8 +430,6 @@ export default function ChecklistPage() {
     return roleTranslated;
   };
 
-  const todayStr = new Date().toISOString().substring(0, 10);
-
   useEffect(() => {
     if (!salonData) return;
     const unsubs: (() => void)[] = [];
@@ -485,35 +498,6 @@ export default function ChecklistPage() {
         setAllChecklists(allList);
         setActiveOperationalChecklists(ops);
         setActiveProfessionalEvaluationChecklist(evalT);
-
-        // Fetch runs for all checklists today
-        const qrRuns = query(
-          collection(db, `salons/${salonData.id}/checklistRuns`),
-          where("date", "==", todayStr),
-        );
-        const unsubRuns = onSnapshot(qrRuns, (snap) => {
-          const evRuns: ChecklistRun[] = [];
-          const opRuns: ChecklistRun[] = [];
-
-          snap.forEach((d) => {
-            const run = { id: d.id, ...d.data() } as ChecklistRun;
-            if (evalT && run.checklistId === evalT.id) {
-              evRuns.push(run);
-            } else {
-              opRuns.push(run);
-            }
-          });
-
-          setEvaluationRuns(evRuns);
-          setEvaluatedPros(evRuns.length);
-          setOperationalRuns(opRuns);
-          setLoading(false);
-        }, (err) => {
-          console.error("Error reading runs today:", err);
-          setLoading(false);
-        });
-
-        unsubs.push(unsubRuns);
       }, (err) => {
         console.error("Error template sub", err);
         setLoading(false);
@@ -522,6 +506,41 @@ export default function ChecklistPage() {
 
     return () => unsubs.forEach((u) => u());
   }, [salonData]);
+
+  // 2. Fetch runs for selectedEvaluationDate (real-time for the selected date - today or retroactive)
+  useEffect(() => {
+    if (!salonData) return;
+    const targetDate = selectedEvaluationDate || todayStr;
+    const qrRuns = query(
+      collection(db, `salons/${salonData.id}/checklistRuns`),
+      where("date", "==", targetDate),
+    );
+    const unsubRuns = onSnapshot(qrRuns, (snap) => {
+      const evRuns: ChecklistRun[] = [];
+      const opRuns: ChecklistRun[] = [];
+
+      snap.forEach((d) => {
+        const run = { id: d.id, ...d.data() } as ChecklistRun;
+        if (activeProfessionalEvaluationChecklist && run.checklistId === activeProfessionalEvaluationChecklist.id) {
+          evRuns.push(run);
+        } else if (run.evaluatedProfessionalId) {
+          evRuns.push(run);
+        } else {
+          opRuns.push(run);
+        }
+      });
+
+      setEvaluationRuns(evRuns);
+      setEvaluatedPros(evRuns.length);
+      setOperationalRuns(opRuns);
+      setLoading(false);
+    }, (err) => {
+      console.error("Error reading runs for date:", targetDate, err);
+      setLoading(false);
+    });
+
+    return () => unsubRuns();
+  }, [salonData, selectedEvaluationDate, activeProfessionalEvaluationChecklist?.id]);
 
   const toggleProfessionalStatus = async (prof: any, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -797,10 +816,12 @@ export default function ChecklistPage() {
             : "Não executou a função";
     const maxScore = activeProfessionalEvaluationChecklist.maxScore || 40;
 
+    const targetDate = selectedEvaluationDate || todayStr;
+    const isRetroactiveRun = targetDate < todayStr;
     const existingRun = evaluationRuns.find(
-      (r) => r.evaluatedProfessionalId === evalProfessionalId && r.date === todayStr
+      (r) => r.evaluatedProfessionalId === evalProfessionalId && r.date === targetDate
     );
-    const runId = existingRun ? existingRun.id : `${todayStr}_${evalProfessionalId}`;
+    const runId = existingRun ? existingRun.id : `${targetDate}_${evalProfessionalId}`;
 
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
@@ -823,8 +844,8 @@ export default function ChecklistPage() {
       checklistTitle: activeProfessionalEvaluationChecklist.title,
       checklistType: activeProfessionalEvaluationChecklist.type,
       scoringMode: activeProfessionalEvaluationChecklist.scoringMode,
-      date: todayStr,
-      evaluationDate: todayStr,
+      date: targetDate,
+      evaluationDate: targetDate,
       evaluatedProfessionalId: evalProfessionalId,
       evaluatedProfessionalName: targetPro?.name || "Unknown",
       evaluatedProfessionalEmail: targetPro?.email || "",
@@ -845,6 +866,7 @@ export default function ChecklistPage() {
       classification: classification,
       absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
+      isRetroactive: isRetroactiveRun,
       qualityEvent,
       createdAt:
         existingRun && existingRun.createdAt
@@ -868,22 +890,24 @@ export default function ChecklistPage() {
           action: existingRun ? 'update' : 'create',
           targetEntity: 'checklistRuns',
           targetId: runId,
-          description: `${userData?.fullName || 'Usuário'} ${existingRun ? 'atualizou' : 'registrou'} a avaliação diária do profissional ${targetPro?.name || ''} (${runData.attendanceStatus === 'present' ? 'Nota ' + (runData.totalScore || 0) + '/' + (runData.maxScore || 40) : runData.attendanceStatus === 'absent' ? 'Falta' : runData.attendanceStatus === 'not_attended' ? 'Prejudicado' : 'Não Executou'})`,
+          description: `${userData?.fullName || 'Usuário'} ${existingRun ? 'atualizou' : 'registrou'} a avaliação diária ${isRetroactiveRun ? '(retroativa) ' : ''}do dia ${formatDateBR(targetDate)} do profissional ${targetPro?.name || ''} (${runData.attendanceStatus === 'present' ? 'Nota ' + (runData.totalScore || 0) + '/' + (runData.maxScore || 40) : runData.attendanceStatus === 'absent' ? 'Falta' : runData.attendanceStatus === 'not_attended' ? 'Prejudicado' : 'Não Executou'})`,
           details: {
             professionalId: evalProfessionalId,
             professionalName: targetPro?.name || '',
             attendanceStatus: runData.attendanceStatus,
             totalScore: runData.totalScore,
-            maxScore: runData.maxScore
+            maxScore: runData.maxScore,
+            date: targetDate,
+            isRetroactive: isRetroactiveRun
           }
         }
       ).catch(err => console.error('[Audit] Error logging evaluation:', err));
 
       if (runData.attendanceStatus === 'present' && runData.totalScore !== undefined) {
-        triggerGamificationScore(evalProfessionalId, runData.attendanceStatus, runData.totalScore, runData.maxScore || 40, targetPro);
+        triggerGamificationScore(evalProfessionalId, runData.attendanceStatus, runData.totalScore, runData.maxScore || 40, targetPro, targetDate);
       }
 
-      toast.success("Avaliação salva");
+      toast.success(isRetroactiveRun ? `Avaliação retroativa (${formatDateBR(targetDate)}) salva` : "Avaliação salva");
 
       const updatedRuns = [
         ...evaluationRuns.filter(r => r.id !== runId),
@@ -990,10 +1014,12 @@ export default function ChecklistPage() {
             : "Não executou a função";
     const maxScore = activeProfessionalEvaluationChecklist.maxScore || 40;
 
+    const targetDate = selectedEvaluationDate || todayStr;
+    const isRetroactiveRun = targetDate < todayStr;
     const existingRun = evaluationRuns.find(
-      (r) => r.evaluatedProfessionalId === evalProfessionalId && r.date === todayStr
+      (r) => r.evaluatedProfessionalId === evalProfessionalId && r.date === targetDate
     );
-    const runId = existingRun ? existingRun.id : `${todayStr}_${evalProfessionalId}`;
+    const runId = existingRun ? existingRun.id : `${targetDate}_${evalProfessionalId}`;
 
     const targetPro = professionals.find((p) => p.id === evalProfessionalId);
     const mainFunc = targetPro?.primaryFunction || targetPro?.professionalFunction || targetPro?.specialty || "Função não definida";
@@ -1016,8 +1042,8 @@ export default function ChecklistPage() {
       checklistTitle: activeProfessionalEvaluationChecklist.title,
       checklistType: activeProfessionalEvaluationChecklist.type,
       scoringMode: activeProfessionalEvaluationChecklist.scoringMode,
-      date: todayStr,
-      evaluationDate: todayStr,
+      date: targetDate,
+      evaluationDate: targetDate,
       evaluatedProfessionalId: evalProfessionalId,
       evaluatedProfessionalName: targetPro?.name || "Unknown",
       evaluatedProfessionalEmail: targetPro?.email || "",
@@ -1038,6 +1064,7 @@ export default function ChecklistPage() {
       classification: classification,
       absenceReason: (attendanceStatus === "absent" || attendanceStatus === "not_attended") ? observations : undefined,
       status: "completed",
+      isRetroactive: isRetroactiveRun,
       qualityEvent,
       createdAt:
         existingRun && existingRun.createdAt
@@ -1061,27 +1088,44 @@ export default function ChecklistPage() {
           action: existingRun ? 'update' : 'create',
           targetEntity: 'checklistRuns',
           targetId: runId,
-          description: `${userData?.fullName || 'Usuário'} ${existingRun ? 'atualizou' : 'registrou'} a avaliação diária do profissional ${targetPro?.name || ''} (${runData.attendanceStatus === 'present' ? 'Nota ' + (runData.totalScore || 0) + '/' + (runData.maxScore || 40) : runData.attendanceStatus === 'absent' ? 'Falta' : runData.attendanceStatus === 'not_attended' ? 'Prejudicado' : 'Não Executou'})`,
+          description: `${userData?.fullName || 'Usuário'} ${existingRun ? 'atualizou' : 'registrou'} a avaliação diária ${isRetroactiveRun ? '(retroativa) ' : ''}do dia ${formatDateBR(targetDate)} do profissional ${targetPro?.name || ''} (${runData.attendanceStatus === 'present' ? 'Nota ' + (runData.totalScore || 0) + '/' + (runData.maxScore || 40) : runData.attendanceStatus === 'absent' ? 'Falta' : runData.attendanceStatus === 'not_attended' ? 'Prejudicado' : 'Não Executou'})`,
           details: {
             professionalId: evalProfessionalId,
             professionalName: targetPro?.name || '',
             attendanceStatus: runData.attendanceStatus,
             totalScore: runData.totalScore,
-            maxScore: runData.maxScore
+            maxScore: runData.maxScore,
+            date: targetDate,
+            isRetroactive: isRetroactiveRun
           }
         }
       ).catch(err => console.error('[Audit] Error logging evaluation:', err));
 
       if (runData.attendanceStatus === 'present' && runData.totalScore !== undefined) {
-        triggerGamificationScore(evalProfessionalId, runData.attendanceStatus, runData.totalScore, runData.maxScore || 40, targetPro);
+        triggerGamificationScore(evalProfessionalId, runData.attendanceStatus, runData.totalScore, runData.maxScore || 40, targetPro, targetDate);
       }
 
-      toast.success("Avaliação salva");
+      toast.success(isRetroactiveRun ? `Avaliação retroativa (${formatDateBR(targetDate)}) salva` : "Avaliação salva");
       
       setMobileStep("list");
     } catch (e) {
       toast.error("Erro ao salvar");
       console.error(e);
+    }
+  };
+
+  const handleSelectEvaluationDate = (newDate: string) => {
+    if (!newDate) return;
+    setSelectedEvaluationDate(newDate);
+    setAttendanceStatus("");
+    setCategoryScores({});
+    setObservations("");
+    setCustomerComplaintOccurred(false);
+    setCustomerComplaintRelated(false);
+    setCustomerComplaintDescription("");
+    setIncompleteValidationCategories([]);
+    if (window.innerWidth < 768) {
+      setMobileStep("list");
     }
   };
 
@@ -1165,7 +1209,7 @@ export default function ChecklistPage() {
     setIsEvaluationOpen(false);
     setIsReportsExpanded(true);
     localStorage.setItem("lumiere_checklist_reports_expanded", "true");
-    setReportDate(todayStr);
+    setReportDate(selectedEvaluationDate || todayStr);
     setTimeout(() => {
       fetchReport();
       const el = document.getElementById("reports-section");
@@ -1433,6 +1477,108 @@ export default function ChecklistPage() {
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* Seletor de Data da Avaliação (Hoje, Ontem e Retroativo) */}
+                    <div className="bg-zinc-900/60 border border-white/10 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] shrink-0">
+                          <CalendarDays className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider font-mono">
+                              Data da Avaliação
+                            </span>
+                            {selectedEvaluationDate === todayStr ? (
+                              <span className="text-[10px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full font-mono font-medium">
+                                Hoje · Ativa até 23:59
+                              </span>
+                            ) : selectedEvaluationDate === yesterdayStr ? (
+                              <span className="text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full font-mono font-medium flex items-center gap-1">
+                                <History className="w-3 h-3" /> Ontem · Retroativo
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full font-mono font-medium flex items-center gap-1">
+                                <History className="w-3 h-3" /> Data Retroativa
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-white font-medium mt-0.5">
+                            {selectedEvaluationDate === todayStr
+                              ? `Hoje, ${formatDateBR(todayStr)}`
+                              : selectedEvaluationDate === yesterdayStr
+                                ? `Ontem, ${formatDateBR(yesterdayStr)}`
+                                : `Rotina de ${formatDateBR(selectedEvaluationDate)}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSelectEvaluationDate(todayStr)}
+                          className={`h-9 rounded-xl text-xs px-3.5 font-semibold transition-all cursor-pointer ${
+                            selectedEvaluationDate === todayStr
+                              ? "bg-[#D4AF37] text-black border-[#D4AF37] shadow-sm hover:bg-[#D4AF37]/90 hover:text-black"
+                              : "bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10"
+                          }`}
+                        >
+                          Hoje
+                        </Button>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSelectEvaluationDate(yesterdayStr)}
+                          className={`h-9 rounded-xl text-xs px-3.5 font-semibold transition-all cursor-pointer ${
+                            selectedEvaluationDate === yesterdayStr
+                              ? "bg-amber-400 text-black border-amber-400 shadow-sm hover:bg-amber-400/90 hover:text-black"
+                              : "bg-white/5 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10"
+                          }`}
+                        >
+                          Ontem
+                        </Button>
+
+                        <div className="relative flex items-center">
+                          <Input
+                            type="date"
+                            value={selectedEvaluationDate}
+                            max={todayStr}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handleSelectEvaluationDate(e.target.value);
+                              }
+                            }}
+                            className="h-9 w-36 bg-white/5 border border-white/10 rounded-xl text-xs text-white px-2.5 focus:border-[#D4AF37]/60 cursor-pointer"
+                            title="Selecione data retroativa"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Aviso de Avaliação Retroativa */}
+                    {selectedEvaluationDate < todayStr && (
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3.5 flex items-center justify-between text-xs text-amber-200 animate-fade-in shadow-inner">
+                        <div className="flex items-center gap-2.5">
+                          <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>
+                            <strong>Modo Retroativo Ativo:</strong> Você está avaliando a rotina do dia <strong>{formatDateBR(selectedEvaluationDate)}</strong>. Registros e notas serão associados a esta data.
+                          </span>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleSelectEvaluationDate(todayStr)}
+                          className="text-[11px] text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 font-bold ml-2 shrink-0 cursor-pointer h-7 px-2"
+                        >
+                          Voltar para Hoje
+                        </Button>
+                      </div>
+                    )}
+
                     {/* Compact layout representing total metrics */}
                     <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
                       <div className="bg-zinc-900/30 border border-white/5 p-3 rounded-xl text-center">
@@ -1463,7 +1609,7 @@ export default function ChecklistPage() {
 
                     <div className="space-y-2">
                        <div className="flex justify-between text-xs text-zinc-400 font-light">
-                         <span>Status de Preenchimento da Rotina</span>
+                         <span>Status de Preenchimento ({selectedEvaluationDate === todayStr ? 'Hoje' : selectedEvaluationDate === yesterdayStr ? 'Ontem' : formatDateBR(selectedEvaluationDate)})</span>
                          <span className="font-semibold">{percentual}% Concluído</span>
                        </div>
                        <Progress value={percentual} className="h-2 bg-white/5" />
@@ -1498,15 +1644,23 @@ export default function ChecklistPage() {
                       }}
                     >
                       <DialogTrigger asChild>
-                        <Button className="w-full bg-primary hover:bg-gold-500 text-black font-semibold tracking-wide shadow-md transition-all duration-300 rounded-xl h-11 text-xs uppercase font-bold cursor-pointer">
-                          {evaluationRuns.length > 0 ? "Continuar Avaliação" : "Iniciar Avaliação Diária"}
+                        <Button className="w-full bg-primary hover:bg-gold-500 text-black font-semibold tracking-wide shadow-md transition-all duration-300 rounded-xl h-11 text-xs uppercase font-bold cursor-pointer flex items-center justify-center gap-2">
+                          <Sparkles className="w-4 h-4 text-black" />
+                          <span>
+                            {evaluationRuns.length > 0 ? "Continuar Avaliação" : "Iniciar Avaliação"}
+                            {selectedEvaluationDate === todayStr
+                              ? " (Hoje)"
+                              : selectedEvaluationDate === yesterdayStr
+                                ? " (Ontem)"
+                                : ` (${formatDateBR(selectedEvaluationDate)})`}
+                          </span>
                         </Button>
                       </DialogTrigger>
                       
                       <DialogContent className="max-w-5xl md:max-w-6xl w-full h-[100dvh] md:w-[95vw] md:h-[85vh] flex flex-col bg-zinc-950 border-0 md:border border-white/10 shadow-[0_10px_50px_rgba(0,0,0,0.6)] rounded-none md:rounded-3xl p-0 overflow-hidden text-white font-sans">
                         
-                        {/* Fixed header with mobile navigation */}
-                        <DialogHeader className="p-5 pb-4 border-b border-white/5 flex flex-row items-center justify-between shrink-0">
+                        {/* Fixed header with mobile navigation and date selector */}
+                        <DialogHeader className="p-4 sm:p-5 pb-4 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
                           <div className="flex items-center gap-2">
                             {mobileStep === "evaluation" && (
                               <Button
@@ -1528,6 +1682,53 @@ export default function ChecklistPage() {
                                     : "Avaliação Diária Lumière"}
                               </span>
                             </DialogTitle>
+                          </div>
+
+                          {/* Seletor de Data dentro do Modal */}
+                          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                            <div className="flex items-center bg-zinc-900 border border-white/10 rounded-xl p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectEvaluationDate(todayStr)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                                  selectedEvaluationDate === todayStr
+                                    ? "bg-[#D4AF37] text-black shadow-sm"
+                                    : "text-zinc-400 hover:text-white"
+                                }`}
+                              >
+                                Hoje
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectEvaluationDate(yesterdayStr)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                                  selectedEvaluationDate === yesterdayStr
+                                    ? "bg-amber-400 text-black shadow-sm"
+                                    : "text-zinc-400 hover:text-white"
+                                }`}
+                              >
+                                Ontem
+                              </button>
+                            </div>
+
+                            <input
+                              type="date"
+                              value={selectedEvaluationDate}
+                              max={todayStr}
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleSelectEvaluationDate(e.target.value);
+                                }
+                              }}
+                              className="h-7 w-32 bg-zinc-900 border border-white/10 rounded-xl text-[11px] text-white px-2 focus:border-[#D4AF37]/60 cursor-pointer"
+                              title="Data da avaliação"
+                            />
+
+                            {selectedEvaluationDate < todayStr && (
+                              <span className="text-[10px] bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full font-mono">
+                                Retroativo
+                              </span>
+                            )}
                           </div>
                         </DialogHeader>
 

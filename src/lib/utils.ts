@@ -37,3 +37,35 @@ export function formatPhone(value: string) {
     .replace(/(\d{5})(\d)/, '$1-$2')
     .slice(0, 15);
 }
+
+/**
+ * Retorna a data no formato YYYY-MM-DD considerando o fuso horário local do usuário,
+ * evitando que UTC avance de dia prematuramente após as 18h/21h.
+ */
+export function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Retorna a data de ontem no formato YYYY-MM-DD considerando o fuso horário local.
+ */
+export function getYesterdayDateString(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return getLocalDateString(d);
+}
+
+/**
+ * Formata YYYY-MM-DD para formato legível brasileiro (ex: 02/10/2026).
+ */
+export function formatDateBR(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+}
+
