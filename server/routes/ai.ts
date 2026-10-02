@@ -93,7 +93,7 @@ Foque em destacar um ponto positivo e propor uma sugestão estratégica cirúrgi
 Use sempre o tom em português (do Brasil). Não use saudações introdutórias como "Olá" ou "Com base nos dados", vá direto para a análise executiva.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: prompt,
       });
 
@@ -142,7 +142,7 @@ Sem rodeios. Identifique possíveis gargalos e dê um conselho prático imediato
 Use tom em português (Brasil), elegante e encorajador.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: prompt,
       });
 
@@ -455,20 +455,36 @@ function buildHeuristicDailyInsights(data: {
   };
 }
 
+// Cache em memória no servidor para insights diários (TTL 10 minutos)
+const serverInsightsCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL_SERVER_MS = 10 * 60 * 1000;
+
+// Rate limit cooldown inteligente quando a cota do Gemini é excedida
+let geminiRateLimitCooldownUntil = 0;
+
 // API Route: LumièreIA Daily Executive Insights (Metas, Pendências e Alertas Financeiros)
 router.post("/lumiere-insights/daily", aiLimiter, async (req, res) => {
   try {
-    const { salonId, date, clientMetrics } = req.body || {};
+    const { salonId, date, clientMetrics, forceRefresh } = req.body || {};
 
     if (!salonId) {
       return res.status(400).json({ error: "O identificador do salão (salonId) é obrigatório." });
     }
 
     const todayStr = date || new Date().toISOString().substring(0, 10);
+    const cacheKey = `${salonId}_${todayStr}`;
     const currentMonthStr = todayStr.substring(0, 7);
     const now = new Date();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const currentDay = now.getDate();
+
+    // 1. Verificar cache do servidor
+    if (!forceRefresh) {
+      const cached = serverInsightsCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < CACHE_TTL_SERVER_MS)) {
+        return res.json(cached.data);
+      }
+    }
 
     let salonName = "Nosso Salão";
     let businessType = "Salão de Beleza";
@@ -567,7 +583,7 @@ router.post("/lumiere-insights/daily", aiLimiter, async (req, res) => {
         checklistRunsCount = checklistSnap.size;
       }
     } catch (dbErr) {
-      console.warn("[LumièreAI Insights] Falha não impeditiva ao ler Firestore Admin, usando métricas base:", dbErr);
+      // Falha não impeditiva, continua com dados existentes
     }
 
     // Normalizações de metas
@@ -598,15 +614,20 @@ router.post("/lumiere-insights/daily", aiLimiter, async (req, res) => {
     };
 
     const apiKey = env.gemini.apiKey;
-    if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
+    const isApiKeyConfigured = apiKey && apiKey !== "MY_GEMINI_API_KEY" && !apiKey.includes("SUA_API_KEY");
+    const isCoolingDown = Date.now() < geminiRateLimitCooldownUntil;
+
+    if (!isApiKeyConfigured || isCoolingDown) {
       // Retornar fallback inteligente e elegante imediatamente sem erro
       const fallbackResult = buildHeuristicDailyInsights(baseData);
-      return res.json({
+      const payload = {
         ...fallbackResult,
         isAiGenerated: false,
-        engine: "Lumière Heuristic Intelligence (Modo Local)",
+        engine: isCoolingDown ? "Lumière Heuristic Intelligence (Rate Limit Protegido)" : "Lumière Heuristic Intelligence (Modo Local)",
         generatedAt: new Date().toISOString()
-      });
+      };
+      serverInsightsCache.set(cacheKey, { data: payload, timestamp: Date.now() });
+      return res.json(payload);
     }
 
     try {
@@ -699,7 +720,7 @@ Retorne estritamente o JSON estruturado conforme o schema.`,
         throw new Error("Resposta vazia do modelo Gemini.");
       });
 
-      return res.json({
+      const responsePayload = {
         ...result,
         goals: {
           todayTarget,
@@ -712,16 +733,29 @@ Retorne estritamente o JSON estruturado conforme o schema.`,
         isAiGenerated: true,
         engine: "Gemini 3.8 Flash (Google AI)",
         generatedAt: new Date().toISOString()
-      });
+      };
+
+      serverInsightsCache.set(cacheKey, { data: responsePayload, timestamp: Date.now() });
+      return res.json(responsePayload);
     } catch (aiErr: any) {
-      console.warn("[LumièreAI Insights] Falha na chamada ao Gemini, utilizando fallback heurístico:", aiErr?.message || aiErr);
+      const errMsg = aiErr?.message || String(aiErr);
+      const isQuotaExceeded = errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota exceeded");
+      
+      if (isQuotaExceeded) {
+        // Ativar cooldown de 60 segundos para evitar chamadas com erro repetidas
+        geminiRateLimitCooldownUntil = Date.now() + 60 * 1000;
+      }
+
       const fallbackResult = buildHeuristicDailyInsights(baseData);
-      return res.json({
+      const fallbackPayload = {
         ...fallbackResult,
         isAiGenerated: false,
         engine: "Lumière Heuristic Intelligence (Fallback Resiliente)",
         generatedAt: new Date().toISOString()
-      });
+      };
+      
+      serverInsightsCache.set(cacheKey, { data: fallbackPayload, timestamp: Date.now() });
+      return res.json(fallbackPayload);
     }
   } catch (err: any) {
     console.error("Erro ao gerar Lumière Daily Insights:", err);

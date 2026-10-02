@@ -28,6 +28,7 @@ import { LumiTimeline } from '../../components/lumi/LumiTimeline';
 import { LumiOpportunitySuite } from '../../components/lumi/LumiOpportunitySuite';
 import { LumiDailySummary } from '../../components/lumi/LumiDailySummary';
 import { LumiereIAInsights } from '../../components/dashboard/LumiereIAInsights';
+import { LumiSystemReadinessAlert } from '../../components/lumi/LumiSystemReadinessAlert';
 
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
@@ -333,7 +334,21 @@ export default function DashboardHome() {
         <LumiereIAInsights
           salonId={salonData.id}
           salonName={salonData.name}
+          userName={userData?.fullName}
           clientMetrics={clientMetrics}
+        />
+
+        {/* Alerta de Calibração e Força Total da Lumi */}
+        <LumiSystemReadinessAlert
+          salonName={salonData.name}
+          configState={{
+            hasGoals: Boolean(clientMetrics?.monthlyGoal && clientMetrics.monthlyGoal > 0) || Boolean(context?.goals && context.goals.length > 0),
+            hasServices: Boolean(context?.services && context.services.length > 0),
+            hasProfessionals: Boolean(context?.professionals && context.professionals.length > 0),
+            hasCommissions: Boolean(context?.professionals && context.professionals.some(p => p.commissionRate !== undefined && p.commissionRate > 0)),
+            hasChecklists: Boolean(context?.checklistRuns && context.checklistRuns.length > 0) || Boolean(clientMetrics?.checklistRunsCount && clientMetrics.checklistRunsCount > 0),
+            hasSalonDetails: Boolean(salonData?.name && (salonData?.phone || salonData?.businessType)),
+          }}
         />
 
         <LumiExecutiveAdvisor userName={userData?.fullName} mainRecommendation={lumiRecommendations.length > 0 ? { title: lumiRecommendations[0].title, action: lumiRecommendations[0].actionText || "Agir", url: lumiRecommendations[0].actionUrl || "/" } : undefined} 

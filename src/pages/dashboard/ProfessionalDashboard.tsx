@@ -42,6 +42,7 @@ import {
 import { formatBRL, cn } from "@/lib/utils";
 import { calculateGoalProgress, normalizeGoal } from "../../lib/goals";
 import { requestAndRegisterNotificationPermission } from "../../lib/pushNotifications";
+import { LumiCollaboratorCoaching } from "../../components/lumi/LumiCollaboratorCoaching";
 
 
 export default function ProfessionalDashboard() {
@@ -570,6 +571,27 @@ export default function ProfessionalDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ==================== LUMI MENTORIA DO COLABORADOR ==================== */}
+      {activeTab === 'painel' && (
+        <LumiCollaboratorCoaching
+          professionalName={myProfile.name}
+          salonName={salonData?.name}
+          todayGoal={currentGoal?.targetValue ? Math.round(currentGoal.targetValue / 26) : 400}
+          todayAchieved={todayAppointments.reduce((sum, appt) => {
+            if (appt.status === 'completed') {
+              const s = services.find(srv => srv.id === appt.serviceId);
+              return sum + (appt.price !== undefined ? appt.price : (s?.price || 0));
+            }
+            return sum;
+          }, 0)}
+          monthlyGoal={currentGoal?.targetValue || 6000}
+          monthlyAchieved={currentGoal?.currentValue || currentMonthEarnings}
+          commissionRate={myProfile.commissionRate || 50}
+          scheduledTodayCount={todayAppointments.length}
+          completedTodayCount={todayAppointments.filter(a => a.status === 'completed').length}
+        />
+      )}
 
       {/* ==================== GAMIFICATION DASHBOARD ROW ==================== */}
       {(() => {

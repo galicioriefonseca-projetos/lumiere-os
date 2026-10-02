@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Sparkles, Brain, Cpu, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLumi } from '../../../lumi/hooks/useLumi';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { LumiMascotAvatar } from '../../lumi/LumiMascotAvatar';
 
 export function DashboardLumiWidget() {
   const { salonData } = useAuth();
-  const { loading: isAnalyzing, activeProvider, runAnalysis: runLumiAnalysis } = useLumi(salonData?.id);
+  const { loading: isAnalyzing, runAnalysis: runLumiAnalysis } = useLumi(salonData?.id);
   const [isRotating, setIsRotating] = useState(false);
 
   const handleManualAnalyze = async () => {
@@ -15,7 +16,7 @@ export function DashboardLumiWidget() {
     setIsRotating(true);
     try {
       await runLumiAnalysis();
-      toast.success("Módulo Lumi Intelligence atualizado com as últimas métricas!");
+      toast.success("Mascote Lumi atualizou as análises com os últimos dados!");
     } catch (err) {
       console.error(err);
     } finally {
@@ -25,17 +26,15 @@ export function DashboardLumiWidget() {
 
   return (
     <div 
-      className="p-3.5 bg-zinc-950/40 hover:bg-zinc-950/80 border border-white/5 hover:border-[#D4AF37]/20 rounded-2xl transition-all duration-300 flex flex-col gap-2 group shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
+      className="p-3.5 bg-zinc-950/40 hover:bg-zinc-950/80 border border-white/5 hover:border-[#D4AF37]/30 rounded-2xl transition-all duration-300 flex flex-col gap-2 group shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
       id="lumiere-intelligence-widget"
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <div className="p-1.5 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37] group-hover:scale-105 transition-transform">
-            <Brain className="w-3.5 h-3.5 animate-pulse" />
-          </div>
+        <div className="flex items-center gap-2.5">
+          <LumiMascotAvatar size="sm" mood="happy" />
           <div className="flex flex-col">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">AI Engine</span>
-            <span className="text-xs font-bold text-[#D4AF37] tracking-tight">Lumi Intelligence</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Copiloto</span>
+            <span className="text-xs font-bold text-[#D4AF37] tracking-tight">Lumi Gestão</span>
           </div>
         </div>
         <button
@@ -48,19 +47,18 @@ export function DashboardLumiWidget() {
         </button>
       </div>
 
-      <div className="flex items-center justify-between mt-1 text-[9px] text-zinc-500 font-mono">
+      <div className="flex items-center justify-between mt-0.5 text-[9px] text-zinc-500 font-mono">
         <span className="flex items-center gap-1 text-emerald-400 font-semibold select-none">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          Operativo
+          Ativa & Online
         </span>
-        <span className="uppercase flex items-center gap-1 select-none">
-          <Cpu className="w-2.5 h-2.5 text-zinc-600" />
-          {activeProvider === 'gemini' ? 'Google Gemini' : 'Mock Engine'}
+        <span className="uppercase text-[#D4AF37] select-none font-bold">
+          Motor Nativo
         </span>
       </div>
 
       <p className="text-[9.5px] text-zinc-400 font-light leading-relaxed mt-0.5 group-hover:text-zinc-300 transition-colors">
-        Insights de faturamento, metas, comissões e checklists operacionais gerados em tempo real.
+        Consultoria autônoma de faturamento, metas, agenda e equipe em tempo real.
       </p>
     </div>
   );

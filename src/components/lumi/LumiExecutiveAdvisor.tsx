@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { LumiMascotAvatar } from './LumiMascotAvatar';
 
 interface LumiExecutiveAdvisorProps {
   userName?: string;
@@ -76,19 +77,20 @@ export function LumiExecutiveAdvisor({
         {/* Top Header Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-[#D4AF37]/15 to-[#D4AF37]/5 rounded-2xl border border-[#D4AF37]/25 shadow-inner">
-              <Brain className="w-6 h-6 text-[#D4AF37] animate-pulse" />
-            </div>
+            <LumiMascotAvatar 
+              size="md" 
+              mood={score >= 80 ? 'celebrating' : score >= 60 ? 'strategic' : 'alert'} 
+            />
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-white font-heading tracking-tight">
                 {getGreeting()}, {userName ? userName.split(' ')[0] : 'Gestor'}
               </h2>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] bg-[#D4AF37]/20 border border-[#D4AF37]/35 text-[#D4AF37] px-2 py-0.5 rounded font-bold uppercase tracking-wider font-mono">
-                  Lumi Intelligence Engine
+                  Lumi · Mascote & Conselheira
                 </span>
-                <span className="text-[10px] text-zinc-500 font-light">
-                  Consultoria Estratégica Ativa
+                <span className="text-[10px] text-zinc-400 font-light">
+                  Consultoria Estratégica Nativa
                 </span>
               </div>
             </div>
