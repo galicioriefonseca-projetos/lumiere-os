@@ -563,6 +563,12 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // 24. Coupons
+    match /coupons/{code} {
+      allow get: if true;
+      allow write: if isPlatformAdmin();
+    }
+
     // 23. Activation Tokens (for executive salon activation)
     match /activationTokens/{token} {
       allow get: if true;

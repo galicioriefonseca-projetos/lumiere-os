@@ -54,7 +54,7 @@ const plans = [
     ] 
   },
   { 
-    id: 'performance_plus', 
+    id: 'performance', 
     name: 'Performance', 
     description: 'Gestão completa com inteligência artificial, diagnósticos em tempo real e automações.', 
     monthlyPrice: 597, 
@@ -223,7 +223,7 @@ export default function PricingPage() {
                 </ul>
 
                 <div className="mt-6 text-[10px] text-[#8B8881]">
-                  Capacidade recomendada: {plan.id==='essential'?'até 5':plan.id==='professional'?'até 15':plan.id==='performance_plus'?'até 30':'até 60'} colaboradores
+                  Capacidade recomendada: {plan.id==='essential'?'até 5':plan.id==='professional'?'até 15':plan.id==='performance'?'até 30':'até 60'} colaboradores
                 </div>
 
                 <Button 

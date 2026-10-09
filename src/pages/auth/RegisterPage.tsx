@@ -10,7 +10,7 @@ import { formatDocument, formatPhone } from '@/lib/utils';
 const PUBLIC_PLANS = {
   essential: { name: 'Essencial', price: 197, limit: 5, subtitle: 'Operação, clientes e caixa básico' },
   professional: { name: 'Gestão', price: 397, limit: 15, subtitle: 'Equipes, metas, comissões e DRE', badge: 'Mais escolhido' },
-  performance_plus: { name: 'Performance', price: 597, limit: 30, subtitle: 'Gestão completa + Lumi IA 24/7', badge: 'Com Lumi IA' },
+  performance: { name: 'Performance', price: 597, limit: 30, subtitle: 'Gestão completa + Lumi IA 24/7', badge: 'Com Lumi IA' },
   multiunit: { name: 'Multiunidade', price: 897, limit: 60, subtitle: 'Múltiplas empresas, polos e filiais' },
 } as const;
 
@@ -56,7 +56,8 @@ export default function RegisterPage() {
     password: '',
     confirmPassword: '',
     acceptedTerms: false,
-    paymentMethod: 'CREDIT_CARD'
+    paymentMethod: 'CREDIT_CARD',
+    coupon: ''
   });
 
   useEffect(() => {
@@ -388,6 +389,17 @@ export default function RegisterPage() {
                     className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
                   />
                 </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-[#44423E]">Cupom de desconto (Opcional)</span>
+                  <input 
+                    value={formData.coupon || ''} 
+                    onChange={e => update('coupon', e.target.value)} 
+                    placeholder="Código do cupom" 
+                    className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
+                  />
+                </label>
+              </div>
+              <div className="grid md:grid-cols-1 gap-4">
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-[#44423E]">Ambiente de Pagamento</span>
                   <div className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#E5E2DC] px-3.5 text-xs font-medium flex items-center gap-2 text-[#55534F]">

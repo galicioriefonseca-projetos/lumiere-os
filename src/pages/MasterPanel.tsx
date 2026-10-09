@@ -291,9 +291,8 @@ export default function MasterPanel() {
     setDialogAction('payment_paid');
     const planId = (salon as any).billing?.planId || salon.plan || 'professional';
     let defaultVal = 397;
-    if (planId === 'founder') defaultVal = 297;
-    else if (planId === 'essential') defaultVal = 197;
-    else if (planId === 'performance_plus') defaultVal = 597;
+    if (planId === 'essential') defaultVal = 197;
+    else if (planId === 'performance') defaultVal = 597;
     
     const currentVal = Number((salon as any).billing?.value || defaultVal);
     const isEssenza = /essenza/i.test(String(salon.name || ''));

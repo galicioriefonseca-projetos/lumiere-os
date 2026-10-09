@@ -12,6 +12,7 @@ import asaasRealSubscriptionHandler from "./routes/billing/real-subscription.js"
 import asaasSubscriptionStatusHandler from "./routes/billing/subscription-status.js";
 import { validateSetupTokenHandler, completeCompanySetupHandler } from "./routes/billing/setup-company.js";
 import manualConfirmHandler from "./routes/billing/manual-confirm.js";
+import applyCouponHandler from "./routes/billing/apply-coupon.js";
 import seedDemoSalonHandler from "./routes/admin/seed-demo-salon.js";
 
 import express from "express";
@@ -146,6 +147,7 @@ app.get("/api/billing/subscription-status", billingLimiter, (req, res) => asaasS
 app.get("/api/billing/setup-token", billingLimiter, (req, res) => validateSetupTokenHandler(req as any, res as any));
 app.post("/api/billing/complete-setup", billingLimiter, (req, res) => completeCompanySetupHandler(req as any, res as any));
 app.post("/api/billing/manual-confirm", adminLimiter, (req, res) => manualConfirmHandler(req as any, res as any));
+app.post("/api/billing/apply-coupon", billingLimiter, (req, res) => applyCouponHandler(req as any, res as any));
 
 // Administração de dados fictícios da conta Lumiere Beauty
 app.post("/api/admin/seed-demo-salon", adminLimiter, (req, res) => seedDemoSalonHandler(req as any, res as any));

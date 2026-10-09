@@ -114,6 +114,18 @@
         "createdAt": { "type": "integer" }
       },
       "required": ["id", "salonId", "level", "message", "pagePath", "userAgent", "isActive", "createdAt"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Cupom de desconto para ativação de planos.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "type": { "type": "string", "enum": ["free_pro"] },
+        "isValid": { "type": "boolean" },
+        "expiresAt": { "type": "integer" }
+      },
+      "required": ["code", "type", "isValid"]
     }
   },
   "firestore": {
@@ -140,6 +152,10 @@
     "/salons/{salonId}/productionLogs/{logId}": {
       "schema": "ProductionLog",
       "description": "Subcoleção contendo logs de erros em produção para suporte e depuração."
+    },
+    "/coupons/{code}": {
+      "schema": "Coupon",
+      "description": "Coleção contendo cupons de desconto válidos."
     }
   }
 }
