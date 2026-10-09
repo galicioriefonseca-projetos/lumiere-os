@@ -1,12 +1,21 @@
 import { env } from "../config/env.js";
 import { getAdminAuth, getAdminDb, isFirebaseAdminCredentialError } from "./firebaseAdmin.js";
 
-export async function verifyIdToken(req: any): Promise<any> {
-  const authHeader = req.headers.authorization;
+export async function verifyIdToken(reqOrHeader: any): Promise<any> {
+  let authHeader = '';
+  if (typeof reqOrHeader === 'string') {
+    authHeader = reqOrHeader;
+  } else if (reqOrHeader && typeof reqOrHeader === 'object') {
+    authHeader = reqOrHeader.headers?.authorization || reqOrHeader.headers?.Authorization || '';
+  }
+
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     throw new Error("Autenticação requerida (Token ausente).");
   }
-  const token = authHeader.split("Bearer ")[1];
+  const token = authHeader.split("Bearer ")[1]?.trim();
+  if (!token) {
+    throw new Error("Autenticação requerida (Token inválido).");
+  }
   const adminAuth = getAdminAuth();
   const decodedToken = await adminAuth.verifyIdToken(token);
   return decodedToken;

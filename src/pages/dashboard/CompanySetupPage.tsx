@@ -2,17 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Building2, ArrowRight, Loader2, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
-
-function mapBusinessType(segment: string): string {
-  switch (segment) {
-    case 'Barbearia': return 'barbershop';
-    case 'Clínica de Estética': return 'clinic';
-    case 'Estúdio': return 'studio';
-    case 'Outro': return 'other';
-    default: return 'salon';
-  }
-}
+import { Building2, ArrowRight, Loader2, ShieldCheck, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 
 export default function CompanySetupPage() {
   const { currentUser, userData, salonData, refreshUserData } = useAuth();
@@ -128,13 +118,19 @@ export default function CompanySetupPage() {
   if (tokenError) {
     return (
       <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white border border-[#E5E2DC] p-8 rounded-3xl shadow-xl backdrop-blur-xl text-center">
-          <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-5 text-[#8A6D36]"><AlertCircle className="w-7 h-7" /></div>
+        <div className="w-full max-w-md bg-white border border-[#E5E2DC] p-8 rounded-3xl shadow-xl text-center">
+          <div className="w-14 h-14 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto mb-5 text-[#8A6D36]">
+            <AlertCircle className="w-7 h-7" />
+          </div>
           <h2 className="text-xl font-medium text-[#171717] mb-2">Link Expirado ou Já Utilizado</h2>
           <p className="text-[#6B6B6B] text-sm leading-relaxed mb-6">{tokenError}</p>
           <div className="flex flex-col gap-2.5">
-            <button onClick={() => navigate('/dashboard')} className="w-full h-11 rounded-xl bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-sm transition">Acessar Painel</button>
-            <button onClick={() => navigate('/login')} className="w-full h-11 rounded-xl border border-[#E5E2DC] hover:bg-[#F0EFEC] text-[#171717] text-sm transition">Fazer Login</button>
+            <button onClick={() => navigate('/dashboard')} className="w-full h-11 rounded-xl bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-sm transition">
+              Acessar Painel
+            </button>
+            <button onClick={() => navigate('/login')} className="w-full h-11 rounded-xl border border-[#E5E2DC] hover:bg-[#F0EFEC] text-[#171717] text-sm transition">
+              Fazer Login
+            </button>
           </div>
         </div>
       </div>
@@ -142,38 +138,139 @@ export default function CompanySetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex items-center justify-center p-4">
-      <div className="w-full max-w-xl bg-white border border-[#E5E2DC] p-6 sm:p-8 rounded-3xl shadow-xl backdrop-blur-xl">
-        <div className="flex items-center justify-between pb-5 mb-6 border-b border-white/5 text-xs">
-          <div className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="w-4 h-4" /><span className="font-medium">1. Pagamento Confirmado</span></div>
-          <div className="h-px w-6 sm:w-10 bg-white/10" />
-          <div className="flex items-center gap-1.5 text-[#D4AF37]"><Building2 className="w-4 h-4" /><span className="font-semibold">2. Dados da Empresa</span></div>
-          <div className="h-px w-6 sm:w-10 bg-white/10 hidden sm:block" />
-          <div className="hidden sm:flex items-center gap-1.5 text-zinc-500"><span className="font-medium">3. Configuração Inicial</span></div>
+    <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex flex-col items-center justify-center p-4 py-10">
+      <div className="flex items-center gap-2 mb-6">
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#171717] shadow-sm">
+          <Sparkles className="h-4 w-4 text-[#D8C79F]" />
+        </span>
+        <span className="text-lg font-semibold tracking-tight">
+          Lumière<span className="text-[#B89B5E]">OS</span>
+        </span>
+      </div>
+
+      <div className="w-full max-w-xl bg-white border border-[#E5E2DC] p-6 sm:p-8 rounded-3xl shadow-lg">
+        {/* Progress Steps */}
+        <div className="flex items-center justify-between pb-5 mb-6 border-b border-[#E5E2DC] text-xs">
+          <div className="flex items-center gap-1.5 text-emerald-600">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="font-semibold">1. Pagamento Confirmado</span>
+          </div>
+          <div className="h-px w-6 sm:w-10 bg-[#E5E2DC]" />
+          <div className="flex items-center gap-1.5 text-[#8A6D36]">
+            <Building2 className="w-4 h-4" />
+            <span className="font-bold">2. Dados da Empresa</span>
+          </div>
+          <div className="h-px w-6 sm:w-10 bg-[#E5E2DC] hidden sm:block" />
+          <div className="hidden sm:flex items-center gap-1.5 text-[#8B8881]">
+            <span className="font-medium">3. Estrutura Inicial</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-3 rounded-2xl bg-[#D4AF37]/10 text-[#D4AF37]"><Building2 className="w-6 h-6" /></div>
+        <div className="flex items-center gap-3.5 mb-6">
+          <div className="p-3 rounded-2xl bg-[#F5F1E9] text-[#9F844A] border border-[#DCCFB3]">
+            <Building2 className="w-6 h-6" />
+          </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-light text-white">Configurar Empresa</h1>
-              {token ? <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-0.5 rounded-full border border-[#D4AF37]/20"><ShieldCheck className="w-3 h-3" /> Token Ativo</span> : <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20"><ShieldCheck className="w-3 h-3" /> Acesso Liberado</span>}
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-light text-[#171717]">Configurar Empresa</h1>
+              {token ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8A6D36] bg-[#F5F1E9] px-2.5 py-0.5 rounded-full border border-[#DCCFB3]">
+                  <ShieldCheck className="w-3 h-3" /> Token Ativo
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  <ShieldCheck className="w-3 h-3" /> Acesso Liberado
+                </span>
+              )}
             </div>
-            <p className="text-zinc-400 mt-1 text-sm">Preencha os dados do seu estabelecimento para preparar seu ambiente.</p>
+            <p className="text-[#6B6B6B] mt-1 text-xs sm:text-sm">
+              Informe os dados da sua organização para adaptar nomenclaturas, relatórios e gestão de equipe.
+            </p>
           </div>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
-          <label className="block space-y-1.5"><span className="text-xs text-zinc-400">Nome do estabelecimento</span><input required value={formData.salonName} onChange={e => update('salonName', e.target.value)} placeholder="Ex: Salão Elegance & Estética" className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37]" /></label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-[#44423E]">Nome da Empresa ou Negócio</span>
+            <input 
+              required 
+              value={formData.salonName} 
+              onChange={e => update('salonName', e.target.value)} 
+              placeholder="Ex: Grupo Lumière, Agência, Clínica ou Consultoria" 
+              className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
+            />
+          </label>
+
           <div className="grid md:grid-cols-2 gap-4">
-            <label className="block space-y-1.5"><span className="text-xs text-zinc-400">Cidade</span><input required value={formData.city} onChange={e => update('city', e.target.value)} placeholder="Sua cidade" className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37]" /></label>
-            <label className="block space-y-1.5"><span className="text-xs text-zinc-400">Estado (UF)</span><input required value={formData.state} onChange={e => update('state', e.target.value)} placeholder="UF" maxLength={2} className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-[#D4AF37] uppercase" /></label>
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-[#44423E]">Cidade</span>
+              <input 
+                required 
+                value={formData.city} 
+                onChange={e => update('city', e.target.value)} 
+                placeholder="Sua cidade" 
+                className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-[#44423E]">Estado (UF)</span>
+              <input 
+                required 
+                value={formData.state} 
+                onChange={e => update('state', e.target.value)} 
+                placeholder="UF" 
+                maxLength={2} 
+                className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors uppercase" 
+              />
+            </label>
           </div>
+
           <div className="grid md:grid-cols-2 gap-4">
-            <label className="block space-y-1.5"><span className="text-xs text-zinc-400">Segmento</span><select required value={formData.businessSegment} onChange={e => update('businessSegment', e.target.value)} className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm text-white outline-none focus:border-[#D4AF37]"><option value="">Selecione</option><option value="Salão de Beleza">Salão de Beleza</option><option value="Barbearia">Barbearia</option><option value="Clínica de Estética">Clínica de Estética</option><option value="Estúdio">Estúdio</option><option value="Outro">Outro</option></select></label>
-            <label className="block space-y-1.5"><span className="text-xs text-zinc-400">Quantidade de profissionais</span><select required value={formData.estimatedProfessionals} onChange={e => update('estimatedProfessionals', e.target.value)} className="w-full h-11 rounded-xl bg-black border border-white/10 px-3 text-sm text-white outline-none focus:border-[#D4AF37]"><option value="">Selecione</option><option value="Apenas eu">Apenas eu</option><option value="2 a 5">2 a 5</option><option value="6 a 15">6 a 15</option><option value="16 a 30">16 a 30</option><option value="31 a 60">31 a 60</option><option value="Mais de 60">Mais de 60</option></select></label>
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-[#44423E]">Segmento de Atuação</span>
+              <select 
+                required 
+                value={formData.businessSegment} 
+                onChange={e => update('businessSegment', e.target.value)} 
+                className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
+              >
+                <option value="">Selecione o segmento</option>
+                <option value="Prestador de Serviços Geral">Empresas & Negócios de Serviços</option>
+                <option value="Agência de Marketing & Mídia">Agência & Serviços Digitais</option>
+                <option value="Consultoria & Gestão Empresarial">Consultoria, Assessoria & Mentoria</option>
+                <option value="Saúde & Terapias">Saúde, Clínicas & Consultórios</option>
+                <option value="Salão de Beleza">Beleza, Estética & Bem-estar</option>
+                <option value="Estúdio">Profissional Liberal / Estúdio / Outro</option>
+              </select>
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-[#44423E]">Tamanho da Equipe (Pessoas)</span>
+              <select 
+                required 
+                value={formData.estimatedProfessionals} 
+                onChange={e => update('estimatedProfessionals', e.target.value)} 
+                className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
+              >
+                <option value="">Selecione</option>
+                <option value="Apenas eu">Apenas eu (Individual)</option>
+                <option value="2 a 5">2 a 5 colaboradores</option>
+                <option value="6 a 15">6 a 15 colaboradores</option>
+                <option value="16 a 30">16 a 30 colaboradores</option>
+                <option value="31 a 60">31 a 60 colaboradores</option>
+                <option value="Mais de 60">Mais de 60 colaboradores</option>
+              </select>
+            </label>
           </div>
-          <button disabled={loading} type="submit" className="w-full h-12 mt-4 rounded-xl bg-[#D4AF37] text-black font-bold disabled:opacity-40 hover:bg-[#c49f2c] transition flex items-center justify-center gap-2 cursor-pointer">{loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Continuar configuração'}<ArrowRight className="w-4 h-4" /></button>
+
+          <button 
+            disabled={loading} 
+            type="submit" 
+            className="w-full h-12 mt-4 rounded-xl bg-[#171717] text-white font-semibold text-sm disabled:opacity-40 hover:bg-[#2B2B2B] transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Concluir e Configurar Ambiente'}
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </form>
       </div>
     </div>

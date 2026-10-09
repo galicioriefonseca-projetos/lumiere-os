@@ -4,7 +4,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { Service } from '../../types';
-import { SERVICE_TEMPLATES, INITIAL_CATEGORIES } from '../../data/serviceTemplates';
+import { useLexicon } from '../../hooks/useLexicon';
+import { 
+  SERVICE_TEMPLATES, 
+  INITIAL_CATEGORIES, 
+  getServiceTemplatesForSegment, 
+  getCategoriesForSegment 
+} from '../../data/serviceTemplates';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,13 +27,18 @@ import {
   Clock, 
   ArrowRight, 
   DollarSign, 
-  ListPlus 
+  ListPlus,
+  Briefcase
 } from 'lucide-react';
 import { formatBRL } from '@/lib/utils';
 
 export default function OnboardingServices() {
   const { salonData } = useAuth();
+  const { segment, t, lexicon } = useLexicon();
   const navigate = useNavigate();
+
+  const segmentTemplates = React.useMemo(() => getServiceTemplatesForSegment(segment), [segment]);
+  const segmentCategories = React.useMemo(() => getCategoriesForSegment(segment), [segment]);
 
   // Firestore sync state
   const [salonsServices, setSalonsServices] = useState<Service[]>([]);
@@ -41,7 +52,7 @@ export default function OnboardingServices() {
 
   // Custom Service Form state
   const [formName, setFormName] = useState('');
-  const [formCategory, setFormCategory] = useState('Cortes');
+  const [formCategory, setFormCategory] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formPriceType, setFormPriceType] = useState<'fixed' | 'from' | 'variable'>('fixed');
   const [formDuration, setFormDuration] = useState('60');
@@ -128,10 +139,8 @@ export default function OnboardingServices() {
     if (!salonData?.id) return;
     setImportingAll(true);
 
-    // Filter to popular core salon essentials
-    const essentials = SERVICE_TEMPLATES.filter((t) => 
-      ['Corte feminino', 'Corte masculino', 'Escova M', 'Coloração até 1 tubo', 'Design de sobrancelha', 'Manicure + pedicure', 'Protocolo Kérastase'].includes(t.name)
-    );
+    // Pick the top recommended services for the active segment
+    const essentials = segmentTemplates.slice(0, 7);
 
     try {
       let importedCount = 0;
@@ -160,9 +169,9 @@ export default function OnboardingServices() {
       }
 
       if (importedCount > 0) {
-        toast.success(`Importados ${importedCount} serviços essenciais de luxo com sucesso!`);
+        toast.success(`Importados ${importedCount} serviços recomendados com sucesso!`);
       } else {
-        toast.info('Os serviços essenciais já estão cadastrados em seu catálogo.');
+        toast.info('Os serviços recomendados já estão cadastrados em seu catálogo.');
       }
     } catch (err) {
       console.error(err);
@@ -181,7 +190,8 @@ export default function OnboardingServices() {
       return;
     }
 
-    const categoryToSave = isCustomCategory ? customCategoryName.trim() : formCategory;
+    const defaultCat = segmentCategories[0] || 'Serviços';
+    const categoryToSave = isCustomCategory ? customCategoryName.trim() : (formCategory || defaultCat);
     if (!categoryToSave) {
       toast.error('Selecione ou crie uma categoria.');
       return;
@@ -220,7 +230,7 @@ export default function OnboardingServices() {
 
   const resetCustomForm = () => {
     setFormName('');
-    setFormCategory('Cortes');
+    setFormCategory(segmentCategories[0] || 'Serviços');
     setFormPrice('');
     setFormPriceType('fixed');
     setFormDuration('60');
@@ -242,7 +252,7 @@ export default function OnboardingServices() {
   };
 
   // Filtering templates representation
-  const filteredTemplates = SERVICE_TEMPLATES.filter((t) => {
+  const filteredTemplates = segmentTemplates.filter((t) => {
     const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           t.category.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'Todos' || t.category === selectedCategory;
@@ -254,11 +264,11 @@ export default function OnboardingServices() {
       {/* Step description */}
       <div className="text-center space-y-2">
         <div className="mx-auto w-12 h-12 bg-[#D4AF37]/10 rounded-full border border-[#D4AF37]/20 flex items-center justify-center mb-1">
-          <Scissors className="w-5 h-5 text-[#D4AF37]" />
+          {segment === 'agency' ? <Briefcase className="w-5 h-5 text-[#D4AF37]" /> : <Scissors className="w-5 h-5 text-[#D4AF37]" />}
         </div>
-        <h2 className="text-2xl font-heading text-white">Nossos Serviços</h2>
+        <h2 className="text-2xl font-heading text-white">{t('services', 'Nossos Serviços')}</h2>
         <p className="text-muted-foreground text-sm max-w-lg mx-auto">
-          Monte o menu de procedimentos do seu espaço. Você pode usar nossos templates ou cadastrar seus próprios valores e tratamentos exclusivos.
+          Monte o catálogo de entregas e serviços da sua empresa. Você pode usar nossos templates ou cadastrar seus próprios valores e entregas exclusivas.
         </p>
       </div>
 
@@ -268,7 +278,7 @@ export default function OnboardingServices() {
           <div>
             <h4 className="text-xs font-semibold text-primary font-mono uppercase tracking-wider">Lançamento Turbo</h4>
             <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-              Adicione instantaneamente os 7 serviços mais agendados em salões premium de alta performance (Cortes, Escova, Coloração, Manicure e Sobrancelha).
+              Adicione instantaneamente os principais serviços e entregas recomendados para o seu segmento ({lexicon.company}).
             </p>
           </div>
           <Button
@@ -283,15 +293,15 @@ export default function OnboardingServices() {
             ) : (
               <Sparkles className="w-3.5 h-3.5" />
             )}
-            Importar 7 Mais Populares
+            Importar Principais Serviços
           </Button>
         </div>
 
         <div className="bg-[#0b0b0d] border border-white/5 rounded-2xl p-4 flex flex-col justify-between space-y-3">
           <div>
-            <h4 className="text-xs font-semibold text-slate-300 font-mono uppercase tracking-wider">Procedimento Único</h4>
+            <h4 className="text-xs font-semibold text-slate-300 font-mono uppercase tracking-wider">Serviço Sob Medida</h4>
             <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-              Gostaria de criar um combo exclusivo ou um tratamento que possui duração e valores altamente personalizados? Cadastre manualmente aqui.
+              Gostaria de criar um serviço, contrato ou entrega personalizada com duração e valores específicos? Cadastre aqui.
             </p>
           </div>
           <Button
@@ -320,7 +330,7 @@ export default function OnboardingServices() {
                 <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-2.5 h-4 w-4" />
                 <Input
                   id="template-search"
-                  placeholder="Pesquisar corte, unha, escova..."
+                  placeholder="Pesquisar serviço ou categoria..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="bg-black/40 border-white/5 rounded-xl text-xs h-9 pl-9 focus:border-primary"
@@ -334,7 +344,7 @@ export default function OnboardingServices() {
                 className="bg-black/60 border border-white/5 rounded-xl text-xs text-slate-300 px-3 h-9 outline-none focus:border-primary max-w-[150px]"
               >
                 <option value="Todos">Todas Categorias</option>
-                {INITIAL_CATEGORIES.map((cat) => (
+                {segmentCategories.map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -542,7 +552,7 @@ export default function OnboardingServices() {
                   onChange={(e) => setFormCategory(e.target.value)}
                   className="w-full bg-black/60 border border-white/10 rounded-xl h-10 text-xs text-slate-200 px-3 py-2 outline-none focus:border-primary"
                 >
-                  {INITIAL_CATEGORIES.map((cat) => (
+                  {segmentCategories.map((cat) => (
                     <option key={cat} value={cat} className="bg-[#0b0b0d]">
                       {cat}
                     </option>

@@ -13,14 +13,19 @@ import {
   Trophy,
   DollarSign,
   Package,
-  Calculator
+  Calculator,
+  Briefcase,
+  Layers,
+  Video
 } from 'lucide-react';
+import { detectBusinessSegment, SEGMENTS } from '../../../config/segments';
 
 export interface NavigationItem {
   name: string;
   href: string;
   icon: any;
   exact?: boolean;
+  moduleId?: string;
 }
 
 export interface NavigationCategory {
@@ -28,7 +33,23 @@ export interface NavigationCategory {
   items: NavigationItem[];
 }
 
-export const getNavigationByRole = (role: string | undefined): NavigationCategory[] => {
+export const getNavigationByRole = (role: string | undefined, salonData?: any): NavigationCategory[] => {
+  const segment = detectBusinessSegment(salonData);
+  const cfg = SEGMENTS[segment] || SEGMENTS.beauty;
+  const lex = cfg.lexicon;
+
+  const isModuleEnabled = (modKey: string): boolean => {
+    if (!salonData) return true;
+    if (salonData.enabledModules && typeof salonData.enabledModules[modKey] === 'boolean') {
+      return salonData.enabledModules[modKey];
+    }
+    const def = (cfg.defaultModules as any)?.[modKey];
+    return def !== false;
+  };
+
+  const serviceIcon = segment === 'beauty' ? Scissors : Briefcase;
+  const appointmentsIcon = CalendarDays;
+
   if (role === 'professional') {
     return [
       {
@@ -40,7 +61,7 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
       {
         category: 'Meu Espaço',
         items: [
-          { name: 'Minha Agenda', href: '/dashboard?tab=agenda', icon: CalendarDays },
+          { name: lex.appointments || 'Minha Agenda', href: '/dashboard?tab=agenda', icon: CalendarDays },
           { name: 'Meu Desempenho', href: '/dashboard?tab=desempenho', icon: TrendingUp },
           { name: 'Arena & Conquistas', href: '/dashboard/gamificacao', icon: Trophy },
           { name: 'Minhas Avaliações', href: '/dashboard?tab=avaliacoes', icon: Star },
@@ -50,9 +71,8 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
     ];
   }
 
-  // Receptionist: front-desk operation only. No management, finance,
-  // team, commission, pricing, goals or strategic reporting.
-  if (role === 'receptionist') {
+  // Receptionist / Atendimento
+  if (role === 'receptionist' || role === 'attendant') {
     return [
       {
         category: 'Principal',
@@ -61,47 +81,17 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
         ]
       },
       {
-        category: 'Atendimento',
+        category: 'Atendimento & Operação',
         items: [
-          { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-          { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
+          { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon },
+          { name: lex.clients, href: '/dashboard/clientes', icon: Users },
           { name: 'CRM', href: '/dashboard/crm', icon: Users },
         ]
       },
       {
         category: 'Rotina',
         items: [
-          { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
-          { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
-          { name: 'Minha Conta', href: '/dashboard/minha-conta', icon: Settings },
-        ]
-      }
-    ];
-  }
-
-  // Attendant: operational access plus production recording, but no
-  // management, finance, team, commission, pricing or strategic reporting.
-  if (role === 'attendant') {
-    return [
-      {
-        category: 'Principal',
-        items: [
-          { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-        ]
-      },
-      {
-        category: 'Atendimento',
-        items: [
-          { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-          { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-          { name: 'CRM', href: '/dashboard/crm', icon: Users },
-          { name: 'Registro de Produção', href: '/dashboard/agendamentos', icon: FileText },
-        ]
-      },
-      {
-        category: 'Rotina',
-        items: [
-          { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
+          { name: lex.checklists, href: '/dashboard/checklist', icon: CheckSquare },
           { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
           { name: 'Minha Conta', href: '/dashboard/minha-conta', icon: Settings },
         ]
@@ -121,108 +111,73 @@ export const getNavigationByRole = (role: string | undefined): NavigationCategor
         category: 'Geral & Controles',
         items: [
           { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-          { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-          { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-          { name: 'Equipe', href: '/dashboard/equipe', icon: Users },
-          { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
-          { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
-          { name: 'Metas', href: '/dashboard/metas', icon: Target },
+          { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon },
+          { name: lex.clients, href: '/dashboard/clientes', icon: Users },
+          { name: lex.professionals, href: '/dashboard/equipe', icon: Users },
+          { name: lex.services, href: '/dashboard/servicos', icon: serviceIcon },
+          { name: lex.checklists, href: '/dashboard/checklist', icon: CheckSquare },
+          { name: lex.goals, href: '/dashboard/metas', icon: Target },
         ]
       },
       {
-        category: 'Gestão Financeira & Lojas',
+        category: 'Gestão Financeira & Operação',
         items: [
           { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign },
-          { name: 'Estoque', href: '/dashboard/estoque', icon: Package },
-          { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
+          { name: lex.inventory, href: '/dashboard/estoque', icon: Package },
+          { name: lex.pricing, href: '/dashboard/precificacao', icon: Calculator },
         ]
       }
     ];
   }
 
-  if (role === 'manager') {
-    return [
-      {
-        category: 'Principal',
-        items: [
-          { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-          { name: 'Meu Painel', href: '/dashboard/meu-painel', icon: TrendingUp },
-        ]
-      },
-      {
-        category: 'Operacional',
-        items: [
-          { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-          { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-        ]
-      },
-      {
-        category: 'Gestão Financeira & Lojas',
-        items: [
-          { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign },
-          { name: 'Estoque', href: '/dashboard/estoque', icon: Package },
-          { name: 'Minha Assinatura', href: '/dashboard/assinatura', icon: CreditCard },
-        ]
-      },
-      {
-        category: 'Supervisão de Equipe',
-        items: [
-          { name: 'Equipe', href: '/dashboard/equipe', icon: Users },
-          { name: 'Checklist', href: '/dashboard/checklist', icon: CheckSquare },
-          { name: 'Metas', href: '/dashboard/metas', icon: Target },
-          { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
-        ]
-      },
-      {
-        category: 'Serviços & Parcerias',
-        items: [
-          { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
-          { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
-          { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
-        ]
-      }
-    ];
-  }
+  // Owner & Manager Categories with dynamic lexicon & module filtering
+  const operationalItems: NavigationItem[] = [
+    { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon, moduleId: 'appointments' },
+    { name: lex.clients, href: '/dashboard/clientes', icon: Users, moduleId: 'clients' },
+  ].filter(i => isModuleEnabled(i.moduleId!));
 
-  // Default for Owner
+  const financialItems: NavigationItem[] = [
+    { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign, moduleId: 'financial' },
+    ...(isModuleEnabled('inventory') ? [{ name: lex.inventory, href: '/dashboard/estoque', icon: Package, moduleId: 'inventory' }] : []),
+    { name: 'Minha Assinatura', href: '/dashboard/assinatura', icon: CreditCard },
+  ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId));
+
+  const teamItems: NavigationItem[] = [
+    { name: lex.professionals, href: '/dashboard/equipe', icon: Users, moduleId: 'team' },
+    { name: lex.checklists, href: '/dashboard/checklist', icon: CheckSquare, moduleId: 'checklists' },
+    { name: lex.goals, href: '/dashboard/metas', icon: Target, moduleId: 'goals' },
+    ...(isModuleEnabled('gamification') ? [{ name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy, moduleId: 'gamification' }] : []),
+  ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId));
+
+  const servicesItems: NavigationItem[] = [
+    { name: lex.services, href: '/dashboard/servicos', icon: serviceIcon, moduleId: 'services' },
+    ...(isModuleEnabled('commissions') ? [{ name: lex.commissions, href: '/dashboard/comissoes', icon: CreditCard, moduleId: 'commissions' }] : []),
+    ...(isModuleEnabled('pricing') ? [{ name: lex.pricing, href: '/dashboard/precificacao', icon: Calculator, moduleId: 'pricing' }] : []),
+  ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId));
+
   return [
     {
       category: 'Principal',
       items: [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
+        ...(role === 'manager' ? [{ name: 'Meu Painel', href: '/dashboard/meu-painel', icon: TrendingUp }] : [])
       ]
     },
-    {
-      category: 'Atendimentos & Clientes',
-      items: [
-        { name: 'Agenda', href: '/dashboard/agendamentos', icon: CalendarDays },
-        { name: 'Clientes', href: '/dashboard/clientes', icon: Users },
-      ]
-    },
-    {
-      category: 'Gestão Financeira & Lojas',
-      items: [
-        { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign },
-        { name: 'Estoque', href: '/dashboard/estoque', icon: Package },
-        { name: 'Minha Assinatura', href: '/dashboard/assinatura', icon: CreditCard },
-      ]
-    },
-    {
-      category: 'Gestão de Equipe',
-      items: [
-        { name: 'Profissionais', href: '/dashboard/equipe', icon: Users },
-        { name: 'Checklist de Qualidade', href: '/dashboard/checklist', icon: CheckSquare },
-        { name: 'Definição de Metas', href: '/dashboard/metas', icon: Target },
-        { name: 'Arena de Equipe', href: '/dashboard/gamificacao', icon: Trophy },
-      ]
-    },
-    {
-      category: 'Serviços & Parcerias',
-      items: [
-        { name: 'Serviços / Produtos', href: '/dashboard/servicos', icon: Scissors },
-        { name: 'Comissões', href: '/dashboard/comissoes', icon: CreditCard },
-        { name: 'Precificação de Serviços', href: '/dashboard/precificacao', icon: Calculator },
-      ]
-    }
+    ...(operationalItems.length > 0 ? [{
+      category: segment === 'agency' ? 'Projetos & Contas' : 'Atendimentos & Clientes',
+      items: operationalItems
+    }] : []),
+    ...(financialItems.length > 0 ? [{
+      category: 'Gestão Financeira & Faturamento',
+      items: financialItems
+    }] : []),
+    ...(teamItems.length > 0 ? [{
+      category: segment === 'agency' ? 'Equipe & Entregas' : 'Gestão de Equipe',
+      items: teamItems
+    }] : []),
+    ...(servicesItems.length > 0 ? [{
+      category: segment === 'agency' ? 'Serviços & Contratos' : 'Serviços & Parcerias',
+      items: servicesItems
+    }] : [])
   ];
 };

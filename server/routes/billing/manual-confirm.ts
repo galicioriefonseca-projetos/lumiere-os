@@ -41,8 +41,7 @@ export default async function manualConfirmHandler(req: VercelRequest, res: Verc
   }
 
   try {
-    const authHeader = req.headers.authorization || '';
-    const user = await verifyIdToken(authHeader);
+    const user = await verifyIdToken(req);
     if (!user) {
       return res.status(401).json({ error: 'Autenticação necessária. Sessão expirada.' });
     }

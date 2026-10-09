@@ -44,7 +44,10 @@ export interface Salon {
   ownerId: string;
   ownerEmail: string;
   phone: string;
-  businessType: BusinessType;
+  businessType: BusinessType | 'agency' | 'consulting' | 'services' | string;
+  segment?: 'beauty' | 'agency' | 'consulting' | 'health' | 'services' | string;
+  enabledModules?: Record<string, boolean>;
+  monthlyGoal?: number;
   city: string;
   state: string;
   plan: PlanType;

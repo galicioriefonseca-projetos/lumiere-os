@@ -2,14 +2,30 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { getAdminDb } from '../../shared/firebaseAdmin.js';
 import { verifyIdToken } from '../../shared/auth.js';
 
-function mapBusinessType(segment: string): string {
-  switch (segment) {
-    case 'Barbearia': return 'barbershop';
-    case 'Clínica de Estética': return 'clinic';
-    case 'Estúdio': return 'studio';
-    case 'Outro': return 'other';
-    default: return 'salon';
+function mapBusinessType(segment: string): { businessType: string; segment: string } {
+  const s = (segment || '').toLowerCase();
+  if (s.includes('agência') || s.includes('agencia') || s.includes('marketing') || s.includes('mídia') || s.includes('midia') || s.includes('gf')) {
+    return { businessType: 'agency', segment: 'agency' };
   }
+  if (s.includes('consultor') || s.includes('gestão') || s.includes('gestao') || s.includes('assessoria')) {
+    return { businessType: 'consulting', segment: 'consulting' };
+  }
+  if (s.includes('saúde') || s.includes('saude') || s.includes('terapia') || s.includes('paciente') || s.includes('médic') || s.includes('medic')) {
+    return { businessType: 'clinic', segment: 'health' };
+  }
+  if (s.includes('serviço') || s.includes('servico') || s.includes('liberal') || s.includes('projeto') || s.includes('outro')) {
+    return { businessType: 'services', segment: 'services' };
+  }
+  if (s.includes('barbearia')) {
+    return { businessType: 'barbershop', segment: 'beauty' };
+  }
+  if (s.includes('estética') || s.includes('estetica') || s.includes('clínica') || s.includes('clinica')) {
+    return { businessType: 'clinic', segment: 'beauty' };
+  }
+  if (s.includes('estúdio') || s.includes('estudio')) {
+    return { businessType: 'studio', segment: 'beauty' };
+  }
+  return { businessType: 'salon', segment: 'beauty' };
 }
 
 /**
@@ -143,6 +159,7 @@ export async function completeCompanySetupHandler(req: VercelRequest, res: Verce
       return res.status(400).json({ success: false, error: 'Identificador do estabelecimento não encontrado.' });
     }
 
+    const { businessType, segment } = mapBusinessType(businessSegment);
     const maxPros = parseInt(estimatedProfessionals.split(' ')[0]) || 5;
     const now = Date.now();
 
@@ -150,7 +167,8 @@ export async function completeCompanySetupHandler(req: VercelRequest, res: Verce
     const salonRef = adminDb.collection('salons').doc(targetSalonId);
     await salonRef.set({
       name: salonName,
-      businessType: mapBusinessType(businessSegment),
+      businessType,
+      segment,
       city,
       state,
       maxProfessionals: maxPros,

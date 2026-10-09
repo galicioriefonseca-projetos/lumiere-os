@@ -29,9 +29,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { formatBRL } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useLexicon } from '../../hooks/useLexicon';
+import { SEGMENTS, BusinessSegment } from '../../config/segments';
 
 export default function AccountPage() {
   const { salonData, userData, currentUser } = useAuth();
+  const { segment, segmentConfig, lexicon, t } = useLexicon();
+
+  // Company Profile Editing State
+  const [isEditingSalon, setIsEditingSalon] = useState(false);
+  const [savingSalon, setSavingSalon] = useState(false);
+  const [salonForm, setSalonForm] = useState({
+    name: '',
+    segment: 'beauty' as BusinessSegment,
+    phone: '',
+    city: '',
+    state: ''
+  });
 
   const [bookingEnabled, setBookingEnabled] = useState(false);
   const [slug, setSlug] = useState('');
@@ -55,8 +69,45 @@ export default function AccountPage() {
       if (salonData.workingHours) {
         setWorkingHours(salonData.workingHours);
       }
+      setSalonForm({
+        name: salonData.name || '',
+        segment: (salonData.segment as BusinessSegment) || segment || 'beauty',
+        phone: salonData.phone || '',
+        city: salonData.city || '',
+        state: salonData.state || ''
+      });
     }
-  }, [salonData]);
+  }, [salonData, segment]);
+
+  const handleSaveSalonDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData) return;
+    if (!salonForm.name.trim()) {
+      toast.error('O nome da empresa é obrigatório.');
+      return;
+    }
+
+    try {
+      setSavingSalon(true);
+      const ref = doc(db, 'salons', salonData.id);
+      await updateDoc(ref, {
+        name: salonForm.name.trim(),
+        segment: salonForm.segment,
+        businessType: salonForm.segment === 'agency' ? 'agency' : salonForm.segment === 'consulting' ? 'consulting' : salonForm.segment === 'health' ? 'clinic' : salonForm.segment === 'services' ? 'services' : 'salon',
+        phone: salonForm.phone.trim(),
+        city: salonForm.city.trim(),
+        state: salonForm.state.trim().toUpperCase(),
+        updatedAt: Date.now()
+      });
+      toast.success('Dados da empresa e segmento atualizados com sucesso!');
+      setIsEditingSalon(false);
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao salvar dados da empresa.');
+    } finally {
+      setSavingSalon(false);
+    }
+  };
 
   const handleSaveBookingConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,28 +282,140 @@ export default function AccountPage() {
           {/* Salon Details Card */}
           <Card className="bg-zinc-950 border-zinc-900">
             <CardHeader className="border-b border-zinc-900/50 pb-5">
-              <CardTitle className="text-lg font-heading font-light text-white flex items-center gap-2">
-                <Building className="w-4 h-4 text-[#D4AF37]" />
-                Cadastro do Estabelecimento
-              </CardTitle>
-              <CardDescription className="text-xs text-zinc-500">Dados cadastrais fornecidos durante o processo de onboarding.</CardDescription>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle className="text-lg font-heading font-light text-white flex items-center gap-2">
+                    <Building className="w-4 h-4 text-[#D4AF37]" />
+                    Cadastro & Segmento da Empresa
+                  </CardTitle>
+                  <CardDescription className="text-xs text-zinc-500">Dados cadastrais e nicho de atuação do seu negócio no LumièreOS.</CardDescription>
+                </div>
+                {['owner', 'platform_admin'].includes(userData?.role || '') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsEditingSalon(!isEditingSalon)}
+                    className="border-zinc-800 text-xs text-zinc-300 hover:text-white hover:bg-zinc-900 h-8"
+                  >
+                    {isEditingSalon ? 'Cancelar' : 'Editar Dados'}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             
             <CardContent className="p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono">Nome do Salão/Estúdio</span>
-                  <span className="text-sm font-semibold text-white block mt-0.5 border-b border-zinc-900 pb-1.5">{salonData?.name || 'Não cadastrado'}</span>
+              {isEditingSalon ? (
+                <form onSubmit={handleSaveSalonDetails} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] text-zinc-500 uppercase font-mono">Nome da Empresa / Estabelecimento</label>
+                      <input
+                        required
+                        value={salonForm.name}
+                        onChange={e => setSalonForm(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="Ex: Agência Digital ou Salão Elegance"
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="text-[10px] text-zinc-500 uppercase font-mono">Segmento de Atuação</label>
+                      <select
+                        value={salonForm.segment}
+                        onChange={e => setSalonForm(prev => ({ ...prev, segment: e.target.value as BusinessSegment }))}
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      >
+                        <option value="agency">Agência de Marketing & Digital (Redes Sociais, Google, Sites, WhatsApp)</option>
+                        <option value="consulting">Consultoria & Gestão Empresarial</option>
+                        <option value="beauty">Beleza & Estética (Salões, Barbearias, Clínicas)</option>
+                        <option value="health">Saúde & Terapias (Consultórios, Clínicas)</option>
+                        <option value="services">Prestador de Serviços Geral & Profissionais Liberais</option>
+                      </select>
+                      <p className="text-[11px] text-zinc-500 mt-1">
+                        O segmento adapta automaticamente os termos, relatórios, templates e atalhos do sistema.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 uppercase font-mono">Telefone / WhatsApp</label>
+                      <input
+                        value={salonForm.phone}
+                        onChange={e => setSalonForm(prev => ({ ...prev, phone: e.target.value }))}
+                        placeholder="(00) 00000-0000"
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label className="text-[10px] text-zinc-500 uppercase font-mono">Cidade</label>
+                          <input
+                            value={salonForm.city}
+                            onChange={e => setSalonForm(prev => ({ ...prev, city: e.target.value }))}
+                            placeholder="Cidade"
+                            className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-sm text-white outline-none focus:border-[#D4AF37]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-500 uppercase font-mono">UF</label>
+                          <input
+                            value={salonForm.state}
+                            maxLength={2}
+                            onChange={e => setSalonForm(prev => ({ ...prev, state: e.target.value.toUpperCase() }))}
+                            placeholder="UF"
+                            className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-sm text-white outline-none focus:border-[#D4AF37] uppercase"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-zinc-900">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setIsEditingSalon(false)}
+                      className="text-xs text-zinc-400"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={savingSalon}
+                      className="bg-[#D4AF37] hover:bg-[#c49f2c] text-black font-bold text-xs"
+                    >
+                      {savingSalon ? 'Salvando...' : 'Salvar Alterações'}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase font-mono">Nome da Empresa</span>
+                    <span className="text-sm font-semibold text-white block mt-0.5 border-b border-zinc-900 pb-1.5">{salonData?.name || 'Não cadastrado'}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase font-mono">Segmento Atual</span>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D4AF37] bg-[#D4AF37]/10 px-2.5 py-1 rounded-full border border-[#D4AF37]/25 mt-0.5">
+                      <Sparkles className="w-3 h-3" />
+                      {segmentConfig?.name || 'Beleza & Estética'}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone de Contato</span>
+                    <span className="text-sm font-semibold text-white block mt-0.5 border-b border-zinc-900 pb-1.5">{salonData?.phone || 'Não cadastrado'}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1"><MapPin className="w-3 h-3" /> Cidade / Estado</span>
+                    <span className="text-sm font-semibold text-white block mt-0.5 border-b border-zinc-900 pb-1.5">{salonData?.city ? `${salonData.city} - ${salonData.state || 'MG'}` : 'Belo Horizonte - MG'}</span>
+                  </div>
+                  <div className="sm:col-span-2 bg-zinc-900/30 p-3 rounded-xl border border-zinc-900 text-xs text-zinc-400 leading-relaxed">
+                    <strong className="text-zinc-300 block mb-0.5">{segmentConfig?.badge}</strong>
+                    {segmentConfig?.description}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1"><Phone className="w-3 h-3" /> Telefone de Contato</span>
-                  <span className="text-sm font-semibold text-white block mt-0.5 border-b border-zinc-900 pb-1.5">{salonData?.phone || 'Não cadastrado'}</span>
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1"><MapPin className="w-3 h-3" /> Cidade / Estado</span>
-                  <span className="text-sm font-semibold text-white block mt-0.5">{salonData?.city ? `${salonData.city} - ${salonData.state || 'MG'}` : 'Belo Horizonte - MG'}</span>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 

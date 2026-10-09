@@ -53,10 +53,12 @@ import {
   Filter,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
-import { SERVICE_TEMPLATES, INITIAL_CATEGORIES } from "../../data/serviceTemplates";
+import { SERVICE_TEMPLATES, INITIAL_CATEGORIES, getCategoriesForSegment } from "../../data/serviceTemplates";
+import { useLexicon } from "../../hooks/useLexicon";
 
 export default function ServicesPage() {
   const { salonData, userData } = useAuth();
+  const { segment, t, lexicon } = useLexicon();
   
   // App state
   const [services, setServices] = useState<Service[]>([]);
@@ -161,17 +163,21 @@ export default function ServicesPage() {
   const allAvailableCategories = React.useMemo(() => {
     const listSet = new Set<string>();
     
-    // 1. Initial pre-defined templates list
+    // 1. Segment-specific categories
+    const segmentCats = getCategoriesForSegment(segment);
+    segmentCats.forEach(c => listSet.add(c));
+    
+    // 2. Initial pre-defined templates list
     INITIAL_CATEGORIES.forEach(c => listSet.add(c));
     
-    // 2. Old categories from firestore
+    // 3. Old categories from firestore
     categories.forEach(c => {
       if (c.name && c.isActive) {
         listSet.add(c.name);
       }
     });
 
-    // 3. Categories found dynamically in services list
+    // 4. Categories found dynamically in services list
     services.forEach(s => {
       if (s.category) {
         listSet.add(s.category);
@@ -179,7 +185,7 @@ export default function ServicesPage() {
     });
 
     return Array.from(listSet).sort((a, b) => a.localeCompare(b));
-  }, [categories, services]);
+  }, [segment, categories, services]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

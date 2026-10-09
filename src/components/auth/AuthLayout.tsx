@@ -33,12 +33,9 @@ export default function AuthLayout({
       {/* Top Header - Logo and Navigation */}
       <header className="w-full max-w-7xl mx-auto flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2.5 group">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#171717] shadow-sm">
-            <Sparkles className="h-4 w-4 text-[#D8C79F]" />
-          </span>
-          <span className="text-xl font-semibold tracking-tight text-[#171717]">
-            Lumière<span className="text-[#B89B5E]">OS</span>
-          </span>
+          <div className="bg-white p-2 rounded-xl shadow-sm border border-[#E5E2DC]">
+            <img src="/logo-full.jpg" alt="LumièreOS Logo" className="h-7 w-auto" />
+          </div>
         </Link>
 
         {showBackButton && (

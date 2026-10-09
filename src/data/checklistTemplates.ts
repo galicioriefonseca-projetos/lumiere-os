@@ -12,9 +12,96 @@ export interface PredefinedTemplate {
   items: Omit<ChecklistItemTemplate, 'id'>[];
   classificationRules?: ClassificationRule[];
   scale?: Record<number, string>;
+  segment?: 'beauty' | 'agency' | 'consulting' | 'health' | 'services' | 'all';
 }
 
 export const predefinedTemplates: PredefinedTemplate[] = [
+  // Templates para Agência de Marketing, Tráfego e Gestão Digital
+  {
+    title: 'Onboarding de Novo Cliente — Agência & Marketing',
+    description: 'Etapas essenciais para recepcionar um novo cliente, coletar acessos e iniciar a operação.',
+    type: 'standard',
+    checklistGroup: 'operational',
+    scoringMode: 'checkbox',
+    segment: 'agency',
+    items: [
+      { label: 'Criar grupo de WhatsApp do cliente com a equipe da agência', required: true },
+      { label: 'Enviar formulário de Briefing e Coleta de Informações', required: true },
+      { label: 'Solicitar acesso de Administrador no Gerenciador de Negócios (Meta Business)', required: true },
+      { label: 'Solicitar acesso de Administrador no Google Perfil de Empresa (Google Meu Negócio)', required: true },
+      { label: 'Solicitar acesso ao Instagram e páginas de redes sociais', required: true },
+      { label: 'Configurar ou validar conta de WhatsApp Business (catálogo, horário e recados)', required: true },
+      { label: 'Configurar forma de faturamento recorrente (Asaas / Pix) e enviar contrato', required: true },
+      { label: 'Realizar Reunião de Alinhamento Inicial (Kickoff) via Google Meet', required: true }
+    ]
+  },
+  {
+    title: 'Otimização Mensal — Google Meu Negócio',
+    description: 'Rotina periódica de SEO local para ranquear o cliente nas primeiras posições do Google Maps.',
+    type: 'standard',
+    checklistGroup: 'operational',
+    scoringMode: 'checkbox',
+    segment: 'agency',
+    items: [
+      { label: 'Conferir e atualizar horário de funcionamento e feriados', required: true },
+      { label: 'Adicionar 3 a 5 novas fotos de alta qualidade do espaço/serviços com geo-tags', required: true },
+      { label: 'Publicar postagem de novidade/oferta semanal no perfil', required: true },
+      { label: 'Atualizar lista de produtos e serviços com valores e descrições com palavras-chave', required: true },
+      { label: 'Responder todas as novas avaliações de clientes de forma personalizada', required: true },
+      { label: 'Enviar link de solicitação de novas avaliações de 5 estrelas para clientes recentes', required: true },
+      { label: 'Analisar relatório de visualizações, rotas e chamadas geradas no mês', required: true }
+    ]
+  },
+  {
+    title: 'Planejamento & Postagens Semanais — Redes Sociais',
+    description: 'Esteira de produção, aprovação e publicação de conteúdo para Instagram/TikTok.',
+    type: 'standard',
+    checklistGroup: 'operational',
+    scoringMode: 'checkbox',
+    segment: 'agency',
+    items: [
+      { label: 'Mapear pautas e temas da semana alinhados aos objetivos comerciais do cliente', required: true },
+      { label: 'Criar designs, carrosséis e artes no padrão visual da marca', required: true },
+      { label: 'Redigir legendas atraentes com CTAs (chamadas para ação) e hashtags estratégicas', required: true },
+      { label: 'Enviar prévia para aprovação do cliente com antecedência', required: true },
+      { label: 'Agendar publicações nos melhores horários de audiência', required: true },
+      { label: 'Monitorar e responder mensagens do Direct e comentários nas primeiras horas', required: true }
+    ]
+  },
+  {
+    title: 'Lançamento de Site / Landing Page',
+    description: 'Checklist rigoroso de qualidade para publicação de sites e páginas de alta conversão.',
+    type: 'standard',
+    checklistGroup: 'operational',
+    scoringMode: 'checkbox',
+    segment: 'agency',
+    items: [
+      { label: 'Apontar DNS do domínio e validar certificado SSL (HTTPS)', required: true },
+      { label: 'Instalar e testar Meta Pixel (Facebook Ads) e Google Tag Manager', required: true },
+      { label: 'Testar botão de WhatsApp e links de conversão em computadores e celulares', required: true },
+      { label: 'Testar velocidade de carregamento (PageSpeed / Lighthouse)', required: true },
+      { label: 'Validar formulários de contato e recebimento de leads por e-mail/WhatsApp', required: true },
+      { label: 'Conferir títulos SEO, meta descriptions e favicon do site', required: true }
+    ]
+  },
+  {
+    title: 'Consultoria de Gestão & Alinhamento Empresarial',
+    description: 'Checklist para condução de reuniões de diagnóstico e análise de resultados com clientes.',
+    type: 'standard',
+    checklistGroup: 'operational',
+    scoringMode: 'checkbox',
+    segment: 'consulting',
+    items: [
+      { label: 'Levantar faturamento, número de clientes e ticket médio do período', required: true },
+      { label: 'Analisar funil de vendas (Leads recebidos vs Agendamentos vs Fechamentos)', required: true },
+      { label: 'Apresentar relatório de ROI de marketing e crescimento de presença online', required: true },
+      { label: 'Identificar gargalos operacionais e oportunidades de novos serviços/produtos', required: true },
+      { label: 'Definir 3 metas estratégicas prioritárias para os próximos 30 dias', required: true },
+      { label: 'Registrar ata de reunião e encaminhar plano de ação no grupo do cliente', required: true }
+    ]
+  },
+
+  // Templates de Beleza & Estética (Preservados integralmente para salões como o Essenza)
   {
     title: 'Avaliação Diária do Profissional — Lumière',
     type: 'professional_daily_evaluation',
@@ -22,6 +109,7 @@ export const predefinedTemplates: PredefinedTemplate[] = [
     scoringMode: 'rating_1_5',
     scoreBy: 'category',
     maxScore: 40,
+    segment: 'beauty',
     categories: [
       'Apresentação Pessoal',
       'Pontualidade e Organização',
@@ -75,6 +163,7 @@ export const predefinedTemplates: PredefinedTemplate[] = [
     type: 'standard',
     checklistGroup: 'operational',
     scoringMode: 'checkbox',
+    segment: 'beauty',
     items: [
       { label: 'Conferir limpeza geral', required: true },
       { label: 'Ligar equipamentos necessários', required: true },
@@ -90,6 +179,7 @@ export const predefinedTemplates: PredefinedTemplate[] = [
     type: 'standard',
     checklistGroup: 'operational',
     scoringMode: 'checkbox',
+    segment: 'beauty',
     items: [
       { label: 'Limpar bancadas e espelhos', required: true },
       { label: 'Higienizar materiais', required: true },
@@ -106,6 +196,7 @@ export const predefinedTemplates: PredefinedTemplate[] = [
     type: 'standard',
     checklistGroup: 'operational',
     scoringMode: 'checkbox',
+    segment: 'beauty',
     items: [
       { label: 'Recepcionar cliente com cordialidade', required: true },
       { label: 'Confirmar procedimento agendado', required: true },
@@ -121,6 +212,7 @@ export const predefinedTemplates: PredefinedTemplate[] = [
     type: 'standard',
     checklistGroup: 'operational',
     scoringMode: 'checkbox',
+    segment: 'beauty',
     items: [
       { label: 'Limpar recepção', required: true },
       { label: 'Limpar banheiro', required: true },
@@ -136,6 +228,7 @@ export const predefinedTemplates: PredefinedTemplate[] = [
     type: 'standard',
     checklistGroup: 'operational',
     scoringMode: 'checkbox',
+    segment: 'beauty',
     items: [
       { label: 'Verificar validade de produtos', required: true },
       { label: 'Limpar equipamentos', required: true },

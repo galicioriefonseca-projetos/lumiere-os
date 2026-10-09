@@ -438,7 +438,7 @@ export default function LoginPage() {
           >
             <AuthCard
               title="Painel Executivo"
-              subtitle="Entre com suas credenciais para gerenciar sua empresa da beleza."
+              subtitle="Entre com suas credenciais para gerenciar sua empresa e suas pessoas."
               loading={loading}
               statusText={statusText}
               error={error}
@@ -446,27 +446,27 @@ export default function LoginPage() {
             >
               <form onSubmit={handleLogin} className="space-y-4 font-sans">
                 {welcomeQuery && (
-                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-emerald-200 leading-relaxed">
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-emerald-800 leading-relaxed">
                       Pagamento confirmado! Faça login com sua senha cadastrada para acessar seu painel.
                     </p>
                   </div>
                 )}
                 {/* Email Input */}
                 <div>
-                  <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                  <label className="block text-xs font-medium text-[#44423E] mb-1.5">
                     E-mail Corporativo
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="email"
-                      placeholder="seuemail@lumiereos.com"
+                      placeholder="voce@empresa.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
-                      className="w-full pl-10 pr-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                      className="w-full pl-10 pr-4 py-3 bg-[#FAF9F7] border border-[#D8D4CC] hover:border-[#B89B5E]/60 focus:border-[#B89B5E] focus:bg-white focus:outline-none rounded-xl text-sm text-[#171717] placeholder:text-zinc-400 transition-colors"
                     />
                   </div>
                 </div>
@@ -474,31 +474,31 @@ export default function LoginPage() {
                 {/* Password Input */}
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
-                    <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest">
+                    <label className="block text-xs font-medium text-[#44423E]">
                       Senha de Acesso
                     </label>
                     <button
                       type="button"
                       onClick={() => setMode('recovery')}
-                      className="text-xs text-primary hover:text-amber-300 font-sans tracking-wide transition-colors"
+                      className="text-xs font-medium text-[#8A6D36] hover:underline font-sans transition-colors"
                     >
                       Esqueceu sua senha?
                     </button>
                   </div>
                   <div className="relative">
-                    <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                    <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type={showPassword ? "text" : "password"}
-                      placeholder="Sua senha corporativa"
+                      placeholder="Sua senha de acesso"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full pl-10 pr-10 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                      className="w-full pl-10 pr-10 py-3 bg-[#FAF9F7] border border-[#D8D4CC] hover:border-[#B89B5E]/60 focus:border-[#B89B5E] focus:bg-white focus:outline-none rounded-xl text-sm text-[#171717] placeholder:text-zinc-400 transition-colors"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-300 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-[#171717] transition-colors"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -512,13 +512,13 @@ export default function LoginPage() {
                       type="checkbox"
                       checked={keepConnected}
                       onChange={(e) => setKeepConnected(e.target.checked)}
-                      className="w-4 h-4 rounded border-neutral-800 bg-neutral-950/80 text-primary focus:ring-0 focus:ring-offset-0 cursor-pointer accent-primary"
+                      className="w-4 h-4 rounded border-[#D8D4CC] bg-white text-[#171717] focus:ring-0 focus:ring-offset-0 cursor-pointer accent-[#171717]"
                     />
-                    <span className="text-xs text-neutral-400">Manter-me conectado</span>
+                    <span className="text-xs text-[#6B6B6B]">Manter-me conectado</span>
                   </label>
                   <Link
                     to="/ativar-conta"
-                    className="text-xs text-primary hover:text-amber-300 font-sans transition-colors"
+                    className="text-xs font-medium text-[#8A6D36] hover:underline font-sans transition-colors"
                   >
                     Ativar minha conta
                   </Link>
@@ -527,7 +527,7 @@ export default function LoginPage() {
                 {/* Login Button */}
                 <button
                   type="submit"
-                  className="w-full py-3.5 px-4 mt-2 rounded-xl bg-primary hover:bg-amber-500 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2.5 transition-all duration-300 shadow-[0_4px_20px_rgba(212,175,55,0.25)] hover:shadow-[0_4px_25px_rgba(212,175,55,0.4)]"
+                  className="w-full py-3.5 px-4 mt-2 rounded-xl bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-sm flex items-center justify-center gap-2.5 transition-all duration-300 shadow-md cursor-pointer"
                 >
                   <span>Entrar na Plataforma</span>
                   <ArrowRight className="w-4 h-4" />
@@ -537,10 +537,10 @@ export default function LoginPage() {
               {/* Social Login Separator */}
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-neutral-800/80" />
+                  <div className="w-full border-t border-[#E5E2DC]" />
                 </div>
                 <div className="relative flex justify-center text-[10px] uppercase font-mono">
-                  <span className="bg-[#121212] px-3 text-neutral-500 tracking-wider">OU ACESSE COM</span>
+                  <span className="bg-white px-3 text-[#77746D] tracking-wider">OU ACESSE COM</span>
                 </div>
               </div>
 
@@ -548,7 +548,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleGoogleLogin}
-                className="w-full py-3 px-4 rounded-xl bg-neutral-950/60 hover:bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-neutral-200 font-medium text-xs flex items-center justify-center gap-2.5 transition-all duration-300"
+                className="w-full py-3 px-4 rounded-xl bg-[#FAF9F7] hover:bg-zinc-100 border border-[#D8D4CC] text-[#171717] font-medium text-xs flex items-center justify-center gap-2.5 transition-all duration-300 cursor-pointer"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -561,33 +561,37 @@ export default function LoginPage() {
 
               {/* Sugestão de cadastro direto se não encontrado */}
               {error && error.includes('cadastro') && (
-                <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3">
-                  <span className="text-xs text-amber-200">Primeira vez no LumièreOS?</span>
+                <div className="mt-3 p-3 rounded-xl bg-[#FFFDF8] border border-[#DCCFB3] flex items-center justify-between gap-3">
+                  <span className="text-xs text-[#55534F]">Primeira vez no LumièreOS?</span>
                   <Link
                     to="/cadastro"
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-neutral-950 hover:bg-amber-400 transition-colors whitespace-nowrap shrink-0"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#171717] text-white hover:bg-[#2B2B2B] transition-colors whitespace-nowrap shrink-0"
                   >
-                    Cadastrar Salão
+                    Criar Conta
                   </Link>
                 </div>
               )}
 
               {/* Extra helper links: Activation Simulation or Back */}
-              <div className="mt-8 pt-6 border-t border-neutral-800/60 flex flex-col items-center gap-3">
+              <div className="mt-8 pt-6 border-t border-[#E5E2DC] flex flex-col items-center gap-3">
+                <p className="text-xs text-[#6B6B6B]">
+                  Ainda não possui conta? <Link to="/cadastro" className="font-semibold text-[#8A6D36] hover:underline">Começar agora</Link>
+                </p>
+
                 {showSimulator && (
                   <button
                     type="button"
                     onClick={() => setMode('activation-sim')}
-                    className="text-xs text-neutral-400 hover:text-primary transition-colors flex items-center gap-2 group font-mono tracking-wider"
+                    className="text-xs text-[#77746D] hover:text-[#171717] transition-colors flex items-center gap-2 group font-mono tracking-wider"
                   >
-                    <HelpCircle className="w-4 h-4 text-primary group-hover:animate-bounce shrink-0" />
+                    <HelpCircle className="w-4 h-4 text-[#B89B5E] group-hover:animate-bounce shrink-0" />
                     <span>SIMULAR RECEBIMENTO DO E-MAIL DE ATIVAÇÃO</span>
                   </button>
                 )}
 
                 <Link
                   to="/"
-                  className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors uppercase font-mono tracking-widest pt-1"
+                  className="text-xs text-[#77746D] hover:text-[#171717] transition-colors uppercase font-mono tracking-widest pt-1"
                 >
                   Voltar à Página Inicial
                 </Link>
@@ -623,30 +627,30 @@ export default function LoginPage() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                   >
-                    <p className="text-xs text-neutral-400 leading-relaxed mb-2">
-                      Insira o e-mail cadastrado em seu salão de beleza. Enviaremos um link seguro para você redefinir sua senha de acesso em instantes.
+                    <p className="text-xs text-[#6B6B6B] leading-relaxed mb-2">
+                      Insira o e-mail corporativo cadastrado na plataforma. Enviaremos um link seguro para você redefinir sua senha de acesso em instantes.
                     </p>
 
                     <div>
-                      <label className="block text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1.5">
+                      <label className="block text-xs font-medium text-[#44423E] mb-1.5">
                         E-mail Cadastrado
                       </label>
                       <div className="relative">
-                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                         <input
                           type="email"
-                          placeholder="seuemail@lumiereos.com"
+                          placeholder="voce@empresa.com"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           required
-                          className="w-full pl-10 pr-4 py-3 bg-neutral-950/80 border border-neutral-800 hover:border-neutral-700 focus:border-primary focus:outline-none rounded-xl text-sm text-neutral-100 transition-colors"
+                          className="w-full pl-10 pr-4 py-3 bg-[#FAF9F7] border border-[#D8D4CC] hover:border-[#B89B5E]/60 focus:border-[#B89B5E] focus:bg-white focus:outline-none rounded-xl text-sm text-[#171717] placeholder:text-zinc-400 transition-colors"
                         />
                       </div>
                     </div>
 
                     <button
                       type="submit"
-                      className="w-full py-3.5 px-4 rounded-xl bg-primary hover:bg-amber-500 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-300"
+                      className="w-full py-3.5 px-4 rounded-xl bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-300 shadow-sm cursor-pointer"
                     >
                       <span>Solicitar Link de Recuperação</span>
                       <Send className="w-3.5 h-3.5" />
@@ -655,7 +659,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setMode('login')}
-                      className="w-full py-3 px-4 text-xs text-neutral-400 hover:text-neutral-200 transition-colors uppercase font-mono tracking-wider pt-2"
+                      className="w-full py-3 px-4 text-xs text-[#77746D] hover:text-[#171717] transition-colors uppercase font-mono tracking-wider pt-2 cursor-pointer"
                     >
                       Cancelar e voltar ao login
                     </button>
@@ -667,16 +671,16 @@ export default function LoginPage() {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                   >
-                    <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/20">
-                      <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                    <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-200">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600" />
                     </div>
                     
-                    <h3 className="text-sm font-semibold text-neutral-100 mb-1.5">
+                    <h3 className="text-sm font-semibold text-[#171717] mb-1.5">
                       E-mail de Redefinição Enviado
                     </h3>
                     
-                    <p className="text-xs text-neutral-400 leading-relaxed mb-6">
-                      Se o endereço <b className="text-neutral-200">{email}</b> estiver cadastrado na plataforma, você receberá um link seguro para escolher sua nova senha em instantes.
+                    <p className="text-xs text-[#6B6B6B] leading-relaxed mb-6">
+                      Se o endereço <b className="text-[#171717]">{email}</b> estiver cadastrado na plataforma, você receberá um link seguro para escolher sua nova senha em instantes.
                     </p>
 
                     <button
@@ -684,7 +688,7 @@ export default function LoginPage() {
                         setRecoverySuccess(false);
                         setMode('login');
                       }}
-                      className="w-full py-3 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-100 font-semibold text-xs uppercase tracking-wider transition-colors"
+                      className="w-full py-3 px-4 rounded-xl bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-xs uppercase tracking-wider transition-colors cursor-pointer"
                     >
                       Voltar ao Painel de Login
                     </button>

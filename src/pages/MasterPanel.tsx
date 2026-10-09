@@ -1111,7 +1111,7 @@ export default function MasterPanel() {
                        value={manualPaymentForm.paymentMethod} 
                        onValueChange={(val: string) => setManualPaymentForm({ ...manualPaymentForm, paymentMethod: val })}
                      >
-                       <SelectTrigger className="bg-black/50 border-border text-white text-sm">
+                       <SelectTrigger className="w-full h-10 bg-black/50 border-border text-white text-sm">
                          <SelectValue placeholder="Selecione o método" />
                        </SelectTrigger>
                        <SelectContent className="bg-card border-border text-white">
