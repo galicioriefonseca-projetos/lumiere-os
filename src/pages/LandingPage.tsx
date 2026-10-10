@@ -271,11 +271,6 @@ export default function LandingPage() {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
 
-  useEffect(() => { 
-    const standalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true; 
-    if (standalone) navigate('/login?source=pwa', { replace: true }); 
-  }, [navigate]);
-
   // Close modal on Escape key press
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

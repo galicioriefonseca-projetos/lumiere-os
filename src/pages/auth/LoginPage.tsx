@@ -61,14 +61,20 @@ export default function LoginPage() {
   const recoveryQuery = queryParams.get('recovery');
   const welcomeQuery = queryParams.get('welcome') === '1';
 
+  const sourceQuery = queryParams.get('source');
+
   useEffect(() => {
+    if (sourceQuery === 'pwa') {
+      navigate('/', { replace: true });
+      return;
+    }
     if (emailQuery) {
       setEmail(emailQuery);
     }
     if (recoveryQuery === 'true') {
       setMode('recovery');
     }
-  }, [emailQuery, recoveryQuery]);
+  }, [sourceQuery, emailQuery, recoveryQuery, navigate]);
 
   // Session persistence and intelligent redirection on load
   useEffect(() => {
@@ -420,10 +426,10 @@ export default function LoginPage() {
 
   return (
     <AuthLayout 
-      showBackButton={mode !== 'login'} 
-      backTo="/login" 
-      backText="Voltar para login"
-      onBackClick={() => setMode('login')}
+      showBackButton={true} 
+      backTo={mode !== 'login' ? '/login' : '/'} 
+      backText={mode !== 'login' ? 'Voltar para login' : 'Voltar para a Landing Page'}
+      onBackClick={mode !== 'login' ? () => setMode('login') : undefined}
     >
       <AnimatePresence mode="wait">
         
