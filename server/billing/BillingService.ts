@@ -96,10 +96,314 @@ export class BillingService {
   }
 
   async getPlan(planId: string): Promise<Plan> {
+    const normalizedId = planId === 'performance_plus' ? 'performance' : planId;
+    const officialCatalog: Record<string, Plan> = {
+      essential: {
+        id: 'essential',
+        name: 'Essencial',
+        description: 'Operação, clientes e caixa básico',
+        price: 197,
+        semiannualPrice: Math.round(197 * 6 * 0.9),
+        annualPrice: Math.round(197 * 12 * 0.85),
+        billingCycle: 'MONTHLY',
+        trialDays: 0,
+        features: ['Agenda e gestão de horários', 'Cadastro de clientes', 'Serviços e produtos', 'Controle básico de caixa'],
+        active: true,
+        legacy: false,
+        displayOrder: 1,
+        maxProfessionals: 5,
+      } as Plan,
+      professional: {
+        id: 'professional',
+        name: 'Gestão',
+        description: 'Equipes, metas, comissões e DRE',
+        price: 397,
+        semiannualPrice: Math.round(397 * 6 * 0.9),
+        annualPrice: Math.round(397 * 12 * 0.85),
+        billingCycle: 'MONTHLY',
+        trialDays: 0,
+        features: ['Tudo do Essencial', 'Gestão de equipe e funções', 'Metas e comissões', 'Financeiro completo'],
+        active: true,
+        legacy: false,
+        displayOrder: 2,
+        maxProfessionals: 15,
+      } as Plan,
+      performance: {
+        id: 'performance',
+        name: 'Performance',
+        description: 'Gestão completa + Lumi IA 24/7',
+        price: 597,
+        semiannualPrice: Math.round(597 * 6 * 0.9),
+        annualPrice: Math.round(597 * 12 * 0.85),
+        billingCycle: 'MONTHLY',
+        trialDays: 0,
+        features: ['Tudo do Gestão', 'Lumi — IA para apoio à gestão', 'Insights automáticos', 'Automação avançada'],
+        active: true,
+        legacy: false,
+        displayOrder: 3,
+        maxProfessionals: 30,
+      } as Plan,
+      multiunit: {
+        id: 'multiunit',
+        name: 'Multiunidade',
+        description: 'Múltiplas empresas, polos e filiais',
+        price: 897,
+        semiannualPrice: Math.round(897 * 6 * 0.9),
+        annualPrice: Math.round(897 * 12 * 0.85),
+        billingCycle: 'MONTHLY',
+        trialDays: 0,
+        features: ['Tudo do Performance', 'Gestão de múltiplas unidades', 'Dashboard consolidado', 'Suporte VIP'],
+        active: true,
+        legacy: false,
+        displayOrder: 4,
+        maxProfessionals: 60,
+      } as Plan,
+    };
+
+    if (normalizedId === 'founder') {
+      throw new Error('O plano Founder foi descontinuado e não está mais disponível.');
+    }
+
     const adminDb = getAdminDb();
-    const planDoc = await adminDb.collection('plans').doc(planId).get();
-    if (!planDoc.exists) throw new Error(`Plan ${planId} not found`);
+    if (officialCatalog[normalizedId]) {
+      const catalogPlan = officialCatalog[normalizedId];
+      try {
+        await adminDb.collection('plans').doc(normalizedId).set(catalogPlan, { merge: true });
+      } catch (e) {
+        console.warn('[BillingService] Aviso ao sincronizar plano no Firestore:', e);
+      }
+      return catalogPlan;
+    }
+
+    const planDoc = await adminDb.collection('plans').doc(normalizedId).get();
+    if (!planDoc.exists) throw new Error(`Plano ${planId} não encontrado.`);
     return { id: planDoc.id, ...planDoc.data() } as Plan;
+  }
+
+  async validateCoupon(rawCode: string): Promise<{ valid: boolean; code: string; planId: string; price: number; error?: string }> {
+    const code = String(rawCode || '').trim().toUpperCase();
+    if (!code) {
+      return { valid: false, code: '', planId: 'performance', price: 597, error: 'Informe um código de cupom.' };
+    }
+
+    const adminDb = getAdminDb();
+    const couponRef = adminDb.collection('coupons').doc(code);
+    let couponSnap = await couponRef.get();
+
+    // Garante que o cupom oficial ANGULARGF esteja provisionado na coleção coupons
+    if (code === 'ANGULARGF' && !couponSnap.exists) {
+      const defaultCoupon = {
+        code: 'ANGULARGF',
+        planId: 'performance',
+        planName: 'Performance',
+        originalPrice: 597,
+        discountPercent: 100,
+        active: true,
+        isValid: true,
+        createdAt: Date.now(),
+        expiresAt: null,
+      };
+      await couponRef.set(defaultCoupon, { merge: true });
+      couponSnap = await couponRef.get();
+    }
+
+    if (!couponSnap.exists) {
+      return { valid: false, code, planId: 'performance', price: 597, error: 'Cupom de desconto inválido ou não encontrado.' };
+    }
+
+    const data = couponSnap.data() || {};
+    const isActive = data.active !== false && data.isValid !== false;
+    const isExpired = data.expiresAt && new Date(data.expiresAt).getTime() < Date.now();
+
+    if (!isActive || isExpired) {
+      return { valid: false, code, planId: 'performance', price: 597, error: 'Este cupom de desconto está inativo ou expirado.' };
+    }
+
+    return {
+      valid: true,
+      code,
+      planId: String(data.planId || 'performance'),
+      price: Number(data.originalPrice || 597),
+    };
+  }
+
+  async activateWithCoupon(params: {
+    salonId: string;
+    userId: string;
+    couponCode: string;
+    billingCycle?: string;
+    ownerName?: string;
+    email?: string;
+    phone?: string;
+    document?: string;
+    salonName?: string;
+    businessType?: string;
+    city?: string;
+    state?: string;
+  }) {
+    const validation = await this.validateCoupon(params.couponCode);
+    if (!validation.valid) {
+      throw new Error(validation.error || 'Cupom inválido.');
+    }
+
+    const adminDb = getAdminDb();
+    const plan = await this.getPlan('performance');
+    const now = Date.now();
+    const selectedCycle = String(params.billingCycle || 'MONTHLY').toUpperCase();
+
+    const salonRef = adminDb.collection('salons').doc(params.salonId);
+    const salonSnap = await salonRef.get();
+    const existingSalon = salonSnap.exists ? salonSnap.data() || {} : {};
+
+    const ownerName = String(params.ownerName || existingSalon.ownerName || 'Proprietário').trim();
+    const email = String(params.email || existingSalon.ownerEmail || existingSalon.billingEmail || '').trim().toLowerCase();
+    const phone = String(params.phone || existingSalon.phone || '').trim();
+    const document = String(params.document || existingSalon.document || existingSalon.billing?.document || '').replace(/\D/g, '');
+    const salonName = String(params.salonName || existingSalon.name || `Estabelecimento de ${ownerName}`).trim();
+    const isAlreadyOnboarded = existingSalon.onboardingCompleted === true;
+
+    const nextDue = new Date(now + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    const updatedSalonData = {
+      ...existingSalon,
+      id: params.salonId,
+      name: salonName,
+      ownerName,
+      ownerId: params.userId || existingSalon.ownerId || '',
+      ownerEmail: email,
+      billingEmail: email,
+      phone,
+      ...(document ? { document } : {}),
+      businessType: params.businessType || existingSalon.businessType || 'salon',
+      city: params.city ?? existingSalon.city ?? '',
+      state: params.state ?? existingSalon.state ?? '',
+      plan: 'performance',
+      status: 'active',
+      subscriptionStatus: 'active',
+      activationStatus: 'active',
+      paymentStatus: 'paid',
+      isActive: true,
+      onboardingCompleted: isAlreadyOnboarded,
+      onboardingStatus: isAlreadyOnboarded ? 'completed' : 'pending_setup',
+      professionalsLimit: 30,
+      professionalLimit: 30,
+      maxProfessionals: 30,
+      couponUsed: validation.code,
+      billingProvider: 'coupon',
+      billing: {
+        ...(existingSalon.billing || {}),
+        provider: 'coupon',
+        couponCode: validation.code,
+        status: 'ACTIVE',
+        planId: 'performance',
+        billingCycle: selectedCycle,
+        value: 0,
+        originalValue: Number(plan.price || 597),
+        paymentMethod: 'COUPON',
+        nextDueDate: nextDue,
+        ...(document ? { document } : {}),
+        ...(ownerName ? { legalName: ownerName } : {}),
+        ...(email ? { email } : {}),
+        ...(phone ? { mobilePhone: phone } : {}),
+        updatedAt: new Date(now).toISOString(),
+      },
+      createdAt: existingSalon.createdAt || now,
+      updatedAt: now,
+    };
+
+    await salonRef.set(updatedSalonData, { merge: true });
+
+    if (params.userId) {
+      await adminDb.collection('users').doc(params.userId).set(
+        {
+          id: params.userId,
+          email,
+          fullName: ownerName,
+          name: ownerName,
+          phone,
+          role: 'owner',
+          salonId: params.salonId,
+          isActive: true,
+          status: 'active',
+          onboardingStatus: isAlreadyOnboarded ? 'completed' : 'pending_setup',
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
+
+    // Sincronizar collections auxiliares de tenant e subscription
+    await adminDb.collection('tenants').doc(params.salonId).set(
+      {
+        id: params.salonId,
+        status: 'active',
+        subscriptionStatus: 'active',
+        active: true,
+        planId: 'performance',
+        updatedAt: new Date(now).toISOString(),
+      },
+      { merge: true }
+    );
+
+    await adminDb.collection('subscriptions').doc(params.salonId).set(
+      {
+        tenantId: params.salonId,
+        provider: 'coupon',
+        couponCode: validation.code,
+        status: 'ACTIVE',
+        planId: 'performance',
+        billingCycle: selectedCycle,
+        value: 0,
+        originalValue: 597,
+        nextDueDate: nextDue,
+        updatedAt: new Date(now).toISOString(),
+      },
+      { merge: true }
+    );
+
+    // Registrar pagamento gratuito via cupom
+    const paymentId = `coupon_${validation.code}_${now}`;
+    await adminDb.collection(`salons/${params.salonId}/payments`).doc(paymentId).set({
+      id: paymentId,
+      salonId: params.salonId,
+      plan: 'performance',
+      amount: 0,
+      value: 0,
+      originalValue: 597,
+      description: `Assinatura Plano Performance (R$ 597,00) — Cupom ${validation.code} (100% OFF)`,
+      status: 'paid',
+      paymentStatus: 'paid_via_coupon',
+      method: 'COUPON',
+      paymentMethod: 'COUPON',
+      billingType: 'COUPON',
+      couponCode: validation.code,
+      dueDate: new Date(now).toISOString().slice(0, 10),
+      paidAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Registrar histórico de auditoria
+    const historyRef = adminDb.collection(`salons/${params.salonId}/billingHistory`).doc();
+    await historyRef.set({
+      id: historyRef.id,
+      salonId: params.salonId,
+      action: 'coupon_applied',
+      description: `Cupom ${validation.code} aplicado: Plano Performance (R$ 597,00/mês) ativado gratuitamente.`,
+      couponCode: validation.code,
+      planId: 'performance',
+      amount: 0,
+      originalAmount: 597,
+      timestamp: now,
+      createdAt: now,
+    });
+
+    return {
+      salonId: params.salonId,
+      planId: 'performance',
+      couponCode: validation.code,
+      onboardingCompleted: isAlreadyOnboarded,
+    };
   }
 
   private resolvePlanPricing(plan: Plan, cycle: BillingCycle): number {

@@ -61,7 +61,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
   }
 
   try {
-    const { salonId, planId, billingCycle, customerData, paymentMethod: rawPaymentMethod } = req.body || {};
+    const { salonId, planId, billingCycle, customerData, paymentMethod: rawPaymentMethod, coupon: rawCoupon } = req.body || {};
     const selectedCycle = String(billingCycle || 'MONTHLY').toUpperCase();
     if (!salonId || !planId) return res.status(400).json({ success: false, error: 'Informe salonId e planId.' });
     if (!ALLOWED_CYCLES.has(selectedCycle)) return res.status(400).json({ success: false, error: 'Periodicidade inválida.' });
@@ -75,6 +75,63 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
     catch (err: any) { return res.status(401).json({ success: false, error: err.message || 'Não autorizado' }); }
 
     const adminDb = getAdminDb();
+
+    // Fluxo de Cupom de Desconto (ex.: ANGULARGF -> Ativa plano Performance R$ 597 gratuitamente e pula pagamento)
+    const cleanCoupon = String(rawCoupon || '').trim().toUpperCase();
+    if (cleanCoupon) {
+      const couponValidation = await billingService.validateCoupon(cleanCoupon);
+      if (!couponValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_COUPON',
+          error: couponValidation.error || 'Cupom de desconto inválido ou expirado.'
+        });
+      }
+
+      const salonDocForCoupon = await adminDb.collection('salons').doc(salonId).get();
+      if (salonDocForCoupon.exists) {
+        const authCheck = await canManageBilling(user, salonId, salonDocForCoupon.data() || {});
+        if (!authCheck.authorized && salonId !== `salon_${user.uid}`) {
+          return res.status(403).json({ success: false, error: authCheck.reason || 'Sem permissão para este salão.' });
+        }
+      } else if (salonId !== `salon_${user.uid}`) {
+        return res.status(403).json({ success: false, error: 'Identificador de empresa inválido.' });
+      }
+
+      const body = req.body || {};
+      const ownerName = String(body.ownerName || body.customerData?.legalName || user.name || '').trim();
+      const email = String(user.email || body.email || body.customerData?.email || '').trim().toLowerCase();
+      const phone = String(body.phone || body.customerData?.mobilePhone || '').trim();
+      const document = String(body.customerData?.document || body.document || '').trim();
+      const salonName = String(body.salonName || '').trim() || `Estabelecimento de ${ownerName || 'Novo Usuário'}`;
+
+      const activated = await billingService.activateWithCoupon({
+        salonId,
+        userId: user.uid,
+        couponCode: cleanCoupon,
+        billingCycle: selectedCycle,
+        ownerName,
+        email,
+        phone,
+        document,
+        salonName,
+        businessType: mapBusinessType(String(body.businessSegment || '')),
+        city: String(body.city || '').trim(),
+        state: String(body.state || '').trim().toUpperCase(),
+      });
+
+      const targetRedirect = activated.onboardingCompleted ? '/dashboard' : '/dashboard/configurar-empresa';
+      return res.status(200).json({
+        success: true,
+        couponApplied: true,
+        skipPayment: true,
+        planId: 'performance',
+        redirectUrl: targetRedirect,
+        checkoutUrl: targetRedirect,
+        message: 'Cupom ANGULARGF aplicado com sucesso! Assinatura Performance ativada gratuitamente.'
+      });
+    }
+
     const plan = await billingService.getPlan(planId);
     if (plan.active === false || plan.legacy === true) return res.status(400).json({ success: false, code: 'PLAN_UNAVAILABLE', error: 'Este plano não está disponível para novas contratações.' });
     if (plan.customPricing === true || Number(planCyclePrice(plan, selectedCycle)) <= 0) return res.status(400).json({ success: false, code: 'PLAN_CONTACT_SALES', error: 'Este plano requer contato com a equipe comercial.' });

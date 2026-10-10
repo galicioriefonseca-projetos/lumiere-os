@@ -18,6 +18,7 @@ export type PlanFeature =
 const PLAN_FEATURES: Record<PublicPlanId, readonly PlanFeature[]> = {
   essential: ['operation'],
   professional: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports'],
+  performance: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports', 'ai', 'automation'],
   performance_plus: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports', 'ai', 'automation'],
   multiunit: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports', 'ai', 'automation', 'multiunit'],
   enterprise_custom: ['operation', 'team', 'goals', 'commissions', 'checklists', 'performance', 'crm', 'financial', 'advanced_reports', 'ai', 'automation', 'multiunit'],
@@ -44,7 +45,7 @@ export function hasPlanFeature(planId: string | null | undefined, feature: PlanF
 }
 
 export function requiredPlanForFeature(feature: PlanFeature): PublicPlanId {
-  if (['ai', 'automation'].includes(feature)) return 'performance_plus';
+  if (['ai', 'automation'].includes(feature)) return 'performance';
   if (feature === 'multiunit') return 'multiunit';
   if (feature === 'operation') return 'essential';
   return 'professional';

@@ -4,38 +4,30 @@ import { planCatalog } from '../config/planPricing';
 
 /**
  * Catálogo comercial oficial do LumièreOS.
- *
- * A área Minha Assinatura não deve depender do seed antigo da coleção
- * `plans` do Firestore, pois isso permitia que planos legados voltassem
- * a aparecer na interface mesmo após a atualização do catálogo comercial.
- *
- * O Firestore continua sendo a fonte dos dados da assinatura do cliente
- * (planId, billingCycle, status, subscriptionId etc.). Aqui ficam apenas
- * os dados de apresentação/seleção dos planos comerciais.
  */
 export function usePlans() {
   const plans = useMemo<Plan[]>(() => {
-    const catalogPlans = planCatalog.plans.map((plan: any, index: number) => ({
-      id: plan.id,
-      name: plan.name,
-      description: plan.description,
-      price: Number(plan.monthlyPrice || 0),
-      billingCycle: 'MONTHLY' as const,
-      trialDays: 0,
-      features: Array.isArray(plan.features) ? plan.features : [],
-      active: plan.active !== false,
-      displayOrder: index + 1,
-      color: '#D4AF37',
-      badge: plan.badge || undefined,
-      maxProfessionals: plan.maxProfessionals ?? undefined,
-    }));
+    const catalogPlans = planCatalog.plans
+      .filter((plan: any) => plan.id !== 'founder')
+      .map((plan: any, index: number) => ({
+        id: plan.id,
+        name: plan.name,
+        description: plan.description,
+        price: Number(plan.monthlyPrice || 0),
+        billingCycle: 'MONTHLY' as const,
+        trialDays: 0,
+        features: Array.isArray(plan.features) ? plan.features : [],
+        active: plan.active !== false,
+        displayOrder: index + 1,
+        color: '#D4AF37',
+        badge: plan.badge || undefined,
+        maxProfessionals: plan.maxProfessionals ?? undefined,
+        customPricing: plan.customPricing ?? false,
+      }));
 
-    // Compatibilidade visual para contas antigas. Os aliases não aparecem
-    // como opções de compra, mas permitem exibir corretamente o plano atual
-    // enquanto a assinatura antiga não for migrada pelo backend/Asaas.
+    const perfPlan = catalogPlans.find(p => p.id === 'performance') || catalogPlans.find(p => p.id === 'professional')!;
     const aliases = [
-      { ...catalogPlans.find(p => p.id === 'professional')!, id: 'performance', legacy: true },
-      { ...catalogPlans.find(p => p.id === 'professional')!, id: 'founder', legacy: true },
+      { ...perfPlan, id: 'performance_plus', legacy: true },
       { ...catalogPlans.find(p => p.id === 'multiunit')!, id: 'network', legacy: true },
       { ...catalogPlans.find(p => p.id === 'essential')!, id: 'start', legacy: true },
     ] as unknown as Plan[];

@@ -1,10 +1,11 @@
 import catalog from './planCatalog.json';
 
-export type PublicPlanId = 'essential' | 'professional' | 'performance_plus' | 'multiunit' | 'enterprise_custom';
+export type PublicPlanId = 'essential' | 'professional' | 'performance' | 'performance_plus' | 'multiunit' | 'enterprise_custom';
 export type PublicBillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
 
 export function getPlanPrice(planId: PublicPlanId, cycle: PublicBillingCycle): number | null {
-  const plan = catalog.plans.find(item => item.id === planId);
+  const normalizedId = planId === 'performance_plus' ? 'performance' : planId;
+  const plan = catalog.plans.find(item => item.id === normalizedId || item.id === planId);
   if (!plan || plan.monthlyPrice == null) return null;
   if (cycle === 'MONTHLY') return plan.monthlyPrice;
   const months = cycle === 'SEMIANNUALLY' ? 6 : 12;

@@ -56,22 +56,6 @@ const PLAN_RESOURCES: Record<string, Record<string, boolean>> = {
     multiUnidade: false,
     suportePrioritario: false
   },
-  founder: {
-    agenda: true,
-    clientes: true,
-    financeiro: true,
-    estoque: true,
-    checklistBasico: true,
-    checklistAvancado: true,
-    metas: true,
-    gamificacao: true,
-    relatoriosBasicos: true,
-    relatoriosAvancados: true,
-    lumiInsights: true,
-    lumiAdvisor: true,
-    multiUnidade: false,
-    suportePrioritario: true
-  },
   performance: {
     agenda: true,
     clientes: true,
@@ -1006,17 +990,6 @@ export default function SubscriptionPage() {
                         )}
 
                         <div className="space-y-5">
-                          {/* Campo de Cupom aqui */}
-                          <div className="mt-4">
-                            <input
-                              type="text"
-                              placeholder="Código do cupom"
-                              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg p-2 text-xs text-white"
-                              onChange={(e) => {
-                                // Add logic for coupon code if needed
-                              }}
-                            />
-                          </div>
                           <div className="space-y-1">
                             <h4 className="text-lg font-bold text-zinc-200">{plan.name}</h4>
                             <div className="flex items-baseline gap-1 mt-1">

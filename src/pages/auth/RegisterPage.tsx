@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, Lock, ShieldCheck, Loader2, Sparkles, Crown } from 'lucide-react';
+import { ArrowLeft, Check, Lock, ShieldCheck, Loader2, Sparkles, Crown, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithCustomToken,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { useAuth } from '@/contexts/AuthContext';
 import { translateAuthError } from '@/lib/auth-helpers';
 import { formatDocument, formatPhone } from '@/lib/utils';
 
@@ -34,20 +44,23 @@ function monthlyEquivalent(plan: PlanId, cycle: BillingCycle) {
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  
+  const { refreshUserData } = useAuth();
+
   const rawPlan = params.get('plan') || params.get('planId');
   const rawCycle = params.get('cycle') || params.get('billingCycle');
-  
-  const initialPlan = rawPlan && rawPlan in PUBLIC_PLANS ? rawPlan as PlanId : null;
-  const initialCycle = rawCycle && CYCLES.includes(rawCycle.toUpperCase() as BillingCycle) ? rawCycle.toUpperCase() as BillingCycle : 'MONTHLY';
-  
+
+  const initialPlan = rawPlan && rawPlan in PUBLIC_PLANS ? (rawPlan as PlanId) : null;
+  const initialCycle = rawCycle && CYCLES.includes(rawCycle.toUpperCase() as BillingCycle)
+    ? (rawCycle.toUpperCase() as BillingCycle)
+    : 'MONTHLY';
+
   const [step, setStep] = useState<1 | 2>(initialPlan ? 2 : 1);
   const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(initialPlan);
   const [cycle, setCycle] = useState<BillingCycle>(initialCycle);
-  
+
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
-  
+
   const [formData, setFormData] = useState({
     ownerName: '',
     email: '',
@@ -75,6 +88,15 @@ export default function RegisterPage() {
 
   const update = (name: string, value: string | boolean) => setFormData(prev => ({ ...prev, [name]: value }));
 
+  const cleanCoupon = (formData.coupon || '').trim().toUpperCase();
+  const isAngularCoupon = cleanCoupon === 'ANGULARGF';
+
+  useEffect(() => {
+    if (isAngularCoupon && selectedPlan !== 'performance') {
+      setSelectedPlan('performance');
+    }
+  }, [isAngularCoupon, selectedPlan]);
+
   const isAlreadyAuthWithSameEmail = Boolean(
     currentUser?.email && currentUser.email.toLowerCase() === formData.email.trim().toLowerCase()
   );
@@ -101,7 +123,7 @@ export default function RegisterPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlan || !formData.acceptedTerms) return;
-    
+
     if (!isAlreadyAuthWithSameEmail) {
       if (formData.password !== formData.confirmPassword) {
         return toast.error('As senhas não coincidem.');
@@ -113,38 +135,59 @@ export default function RegisterPage() {
 
     let paymentWindow: Window | null = null;
     const isEmbeddedPreview = window.self !== window.top;
+    const hasCoupon = cleanCoupon.length > 0;
 
     try {
       setLoading(true);
 
-      if (isEmbeddedPreview) {
+      if (isEmbeddedPreview && !hasCoupon) {
         paymentWindow = window.open('about:blank', '_blank');
       }
 
       let user = currentUser;
+      const targetEmail = formData.email.trim().toLowerCase();
 
       if (!isAlreadyAuthWithSameEmail) {
         try {
-          const cred = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+          const cred = await createUserWithEmailAndPassword(auth, targetEmail, formData.password);
           user = cred.user;
-          await updateProfile(user, { displayName: formData.ownerName });
+          await updateProfile(user, { displayName: formData.ownerName.trim() });
         } catch (error: any) {
+          let authenticatedFallback = false;
           if (error.code === 'auth/email-already-in-use') {
             try {
-              const cred = await signInWithEmailAndPassword(auth, formData.email, formData.password);
+              const cred = await signInWithEmailAndPassword(auth, targetEmail, formData.password);
               user = cred.user;
+              authenticatedFallback = true;
             } catch {
-              throw new Error('E-mail já está em uso e a senha informada não confere. Use "Esqueci minha senha" ou faça login com o Google.');
+              // Continua para o registro assistido via backend Admin SDK
             }
-          } else {
-            throw error;
+          }
+
+          if (!authenticatedFallback) {
+            const registerResp = await fetch('/api/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: targetEmail,
+                password: formData.password,
+                ownerName: formData.ownerName.trim()
+              })
+            });
+            const registerData = await registerResp.json().catch(() => ({}));
+            if (registerResp.ok && registerData.customToken) {
+              const cred = await signInWithCustomToken(auth, registerData.customToken);
+              user = cred.user;
+            } else {
+              throw new Error(registerData.error || translateAuthError(error.code, error.message));
+            }
           }
         }
       }
 
       if (!user) throw new Error('Falha ao autenticar.');
 
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(true);
       const salonId = `salon_${user.uid}`;
 
       const checkoutResponse = await fetch('/api/billing/create-checkout', {
@@ -152,15 +195,16 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           salonId,
-          planId: selectedPlan,
+          planId: isAngularCoupon ? 'performance' : selectedPlan,
           billingCycle: cycle,
-          ownerName: formData.ownerName,
-          email: formData.email,
+          ownerName: formData.ownerName.trim(),
+          email: targetEmail,
           phone: formData.phone,
+          coupon: cleanCoupon || undefined,
           customerData: {
             document: formData.document,
-            legalName: formData.ownerName,
-            email: formData.email,
+            legalName: formData.ownerName.trim(),
+            email: targetEmail,
             mobilePhone: formData.phone,
           },
           paymentMethod: formData.paymentMethod || 'CREDIT_CARD'
@@ -168,17 +212,35 @@ export default function RegisterPage() {
       });
 
       const checkoutResult = await checkoutResponse.json().catch(() => ({}));
-      if (!checkoutResponse.ok || !checkoutResult.success || !checkoutResult.checkoutUrl) {
-        throw new Error(checkoutResult.error || 'Não foi possível gerar o pagamento. Tente novamente.');
+      if (!checkoutResponse.ok || !checkoutResult.success) {
+        throw new Error(checkoutResult.error || 'Não foi possível concluir o cadastro. Tente novamente.');
+      }
+
+      // Se aplicou cupom gratuito (ex.: ANGULARGF), pula o pagamento e vai direto para a fase de cadastramento da empresa
+      if (checkoutResult.couponApplied || checkoutResult.skipPayment) {
+        if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
+        toast.success(checkoutResult.message || 'Cupom aplicado! Assinatura Performance ativada gratuitamente.');
+        await refreshUserData().catch(() => {});
+        navigate(checkoutResult.redirectUrl || '/dashboard/configurar-empresa', { replace: true });
+        return;
+      }
+
+      const targetUrl = checkoutResult.checkoutUrl;
+      if (!targetUrl) {
+        throw new Error('Não foi possível gerar o link de pagamento. Tente novamente.');
+      }
+
+      if (targetUrl.startsWith('/')) {
+        if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
+        await refreshUserData().catch(() => {});
+        navigate(targetUrl, { replace: true });
+        return;
       }
 
       toast.success('Pronto! Abrindo o ambiente seguro de pagamento Asaas...');
-      const targetUrl = checkoutResult.checkoutUrl;
 
       if (paymentWindow && !paymentWindow.closed) {
         paymentWindow.location.href = targetUrl;
-      } else if (isEmbeddedPreview) {
-        throw new Error('O navegador bloqueou a abertura do pagamento. Abra o LumièreOS em uma nova aba e tente novamente.');
       } else {
         window.location.assign(targetUrl);
       }
@@ -310,18 +372,36 @@ export default function RegisterPage() {
               <div className="flex justify-between items-center">
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-[#8A6D36] font-bold">Plano selecionado</div>
-                  <div className="text-xl font-semibold text-[#171717] mt-0.5">{PUBLIC_PLANS[selectedPlan].name}</div>
+                  <div className="text-xl font-semibold text-[#171717] mt-0.5">
+                    {PUBLIC_PLANS[isAngularCoupon ? 'performance' : selectedPlan].name}
+                  </div>
                   <button type="button" onClick={() => setStep(1)} className="text-[11px] text-[#8A6D36] underline mt-0.5">
                     Alterar plano
                   </button>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-[#171717]">
-                    R$ {priceFor(selectedPlan, cycle).toLocaleString('pt-BR')}
-                  </div>
-                  <div className="text-xs text-[#6B6B6B]">
-                    {cycleLabel[cycle]}{cycle !== 'MONTHLY' ? ` • ${cycle === 'SEMIANNUALLY' ? '10%' : '15%'} OFF` : ''}
-                  </div>
+                  {isAngularCoupon ? (
+                    <>
+                      <div className="text-xs text-[#77746D] line-through">
+                        R$ {PUBLIC_PLANS.performance.price.toLocaleString('pt-BR')}
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-700">
+                        R$ 0,00
+                      </div>
+                      <div className="text-[11px] font-semibold text-emerald-700">
+                        Cupom ANGULARGF • 100% Gratuito
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-2xl font-bold text-[#171717]">
+                        R$ {priceFor(selectedPlan, cycle).toLocaleString('pt-BR')}
+                      </div>
+                      <div className="text-xs text-[#6B6B6B]">
+                        {cycleLabel[cycle]}{cycle !== 'MONTHLY' ? ` • ${cycle === 'SEMIANNUALLY' ? '10%' : '15%'} OFF` : ''}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -382,7 +462,7 @@ export default function RegisterPage() {
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-[#44423E]">CPF ou CNPJ</span>
                   <input 
-                    required 
+                    required={!isAngularCoupon} 
                     value={formData.document} 
                     onChange={e => update('document', formatDocument(e.target.value))} 
                     placeholder="000.000.000-00" 
@@ -391,20 +471,35 @@ export default function RegisterPage() {
                 </label>
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-[#44423E]">Cupom de desconto (Opcional)</span>
-                  <input 
-                    value={formData.coupon || ''} 
-                    onChange={e => update('coupon', e.target.value)} 
-                    placeholder="Código do cupom" 
-                    className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
-                  />
+                  <div className="relative">
+                    <input 
+                      value={formData.coupon || ''} 
+                      onChange={e => update('coupon', e.target.value.toUpperCase())} 
+                      placeholder="Código do cupom" 
+                      className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] uppercase placeholder:normal-case placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
+                    />
+                    {isAngularCoupon && (
+                      <Ticket className="w-4 h-4 text-emerald-600 absolute right-3 top-3.5" />
+                    )}
+                  </div>
                 </label>
               </div>
+
+              {isAngularCoupon && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-50 p-3.5 flex items-center gap-3 text-xs text-emerald-800">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    Cupom <strong>ANGULARGF</strong> reconhecido! Sua assinatura <strong>Performance (R$ 597,00)</strong> será ativada gratuitamente e você irá direto para o cadastramento da empresa.
+                  </span>
+                </div>
+              )}
+
               <div className="grid md:grid-cols-1 gap-4">
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-[#44423E]">Ambiente de Pagamento</span>
                   <div className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#E5E2DC] px-3.5 text-xs font-medium flex items-center gap-2 text-[#55534F]">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                    Checkout Seguro Asaas
+                    {isAngularCoupon ? 'Isento de Pagamento (Ativação Direta via Cupom)' : 'Checkout Seguro Asaas'}
                   </div>
                 </label>
               </div>
@@ -475,9 +570,15 @@ export default function RegisterPage() {
             <button 
               disabled={loading} 
               type="submit" 
-              className="w-full h-12 rounded-xl bg-[#171717] text-white font-semibold text-sm disabled:opacity-40 hover:bg-[#2B2B2B] transition flex items-center justify-center gap-2 shadow-md"
+              className="w-full h-12 rounded-xl bg-[#171717] text-white font-semibold text-sm disabled:opacity-40 hover:bg-[#2B2B2B] transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Prosseguir para o Pagamento Seguro'}
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : isAngularCoupon ? (
+                'Ativar Assinatura Gratuita e Continuar'
+              ) : (
+                'Prosseguir para o Pagamento Seguro'
+              )}
             </button>
 
             <p className="text-center text-xs text-[#6B6B6B]">

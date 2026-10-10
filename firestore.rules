@@ -269,9 +269,9 @@ service cloud.firestore {
       // Only platformAdmins can list all salons, but allow demo list for the authorized demo user, or owners to query their own salons
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
-          isTutorialDemoSalon(resource.id) ||
-          (resource != null && resource.data.ownerId == request.auth.uid) ||
-          (resource != null && 'ownerEmail' in resource.data && resource.data.ownerEmail != "" && resource.data.ownerEmail == userEmail())
+          isTutorialDemoSalon(salonId) ||
+          resource.data.ownerId == request.auth.uid ||
+          resource.data.ownerEmail == request.auth.token.email
         )
       );
       

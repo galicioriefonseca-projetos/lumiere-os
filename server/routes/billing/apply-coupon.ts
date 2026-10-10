@@ -1,36 +1,65 @@
 import { Request, Response } from 'express';
-import { getAdminDb } from '../../firebaseAdmin.js';
-import { FieldValue } from 'firebase-admin/firestore';
+import { getAdminDb } from '../../shared/firebaseAdmin.js';
+import { verifyIdToken, canManageBilling } from '../../shared/auth.js';
+import { billingService } from '../../billing/BillingService.js';
 
 export default async function applyCouponHandler(req: Request, res: Response) {
-  const { code, salonId } = req.body;
-
-  if (code !== 'ANGULARGF') {
-    return res.status(400).json({ error: 'Cupom inválido.' });
+  if (req.method && req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Método não permitido. Utilize POST.' });
   }
 
-  const db = getAdminDb();
-  
   try {
-    // 1. Check coupon validity
-    const couponRef = db.collection('coupons').doc(code);
-    const couponSnap = await couponRef.get();
-    
-    if (!couponSnap.exists || !couponSnap.data()?.isValid) {
-      return res.status(400).json({ error: 'Cupom inválido ou expirado.' });
+    const { code, coupon, salonId } = req.body || {};
+    const rawCode = String(code || coupon || '').trim().toUpperCase();
+
+    if (!rawCode) {
+      return res.status(400).json({ success: false, error: 'Informe o código do cupom.' });
     }
 
-    // 2. Update Salon plan
-    const salonRef = db.collection('salons').doc(salonId);
-    await salonRef.update({
-      plan: 'performance', // Assuming 'performance' corresponds to PRO/597
-      subscriptionStatus: 'active',
-      updatedAt: FieldValue.serverTimestamp()
+    if (!salonId) {
+      return res.status(400).json({ success: false, error: 'Identificador do salão não informado.' });
+    }
+
+    let user: any = null;
+    try {
+      user = await verifyIdToken(req);
+    } catch {
+      return res.status(401).json({ success: false, error: 'Sessão expirada. Faça login novamente.' });
+    }
+
+    const adminDb = getAdminDb();
+    const salonSnap = await adminDb.collection('salons').doc(salonId).get();
+    if (salonSnap.exists) {
+      const authResult = await canManageBilling(user, salonId, salonSnap.data() || {});
+      if (!authResult.authorized && salonId !== `salon_${user.uid}`) {
+        return res.status(403).json({ success: false, error: authResult.reason || 'Sem permissão para aplicar cupom neste salão.' });
+      }
+    }
+
+    const validation = await billingService.validateCoupon(rawCode);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, error: validation.error || 'Cupom inválido ou expirado.' });
+    }
+
+    const result = await billingService.activateWithCoupon({
+      salonId,
+      userId: user.uid,
+      couponCode: validation.code,
+      email: user.email,
+      ownerName: user.name,
     });
 
-    return res.status(200).json({ success: true, message: 'Cupom aplicado com sucesso!' });
-  } catch (error) {
-    console.error('Erro ao aplicar cupom:', error);
-    return res.status(500).json({ error: 'Erro interno ao aplicar cupom.' });
+    return res.status(200).json({
+      success: true,
+      planId: result.planId,
+      couponCode: result.couponCode,
+      message: 'Cupom ANGULARGF aplicado com sucesso! Seu plano Performance (R$ 597,00/mês) foi ativado gratuitamente.',
+    });
+  } catch (error: any) {
+    console.error('[Billing] Erro ao aplicar cupom:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Erro interno ao aplicar cupom de desconto.',
+    });
   }
 }

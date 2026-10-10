@@ -11,7 +11,7 @@ import { formatDateBR } from '@/lib/utils';
 import {
   AlertTriangle, ArrowRight, CalendarDays, Check, CheckCircle2, Clock, CreditCard,
   ExternalLink, FileText, Loader2, Lock, ReceiptText, RefreshCw, ShieldAlert, ShieldCheck, Sparkles,
-  WalletCards, X, XCircle
+  Ticket, WalletCards, X, XCircle
 } from 'lucide-react';
 
 function formatDocument(value: string) {
@@ -126,6 +126,8 @@ export default function SubscriptionCenterPage() {
     mobilePhone: ''
   });
   const [savingBillingForm, setSavingBillingForm] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
 
   const currentPlanId = salonData?.billing?.planId || salonData?.plan || 'professional';
   const currentPlan = plans.find((p: any) => p.id === currentPlanId) || planCatalog.plans.find((p: any) => p.id === currentPlanId);
@@ -342,6 +344,36 @@ export default function SubscriptionCenterPage() {
     toast.success('Plano selecionado! Clique em "Ir para pagamento" para concluir com Cartão de Crédito.');
   }
 
+  async function handleApplyCoupon(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    if (!salonData?.id) return;
+    const cleanCode = couponCode.trim().toUpperCase();
+    if (!cleanCode) {
+      toast.error('Digite um código de cupom válido.');
+      return;
+    }
+    setApplyingCoupon(true);
+    try {
+      const t = await token();
+      const res = await fetch('/api/billing/apply-coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ salonId: salonData.id, code: cleanCode })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Cupom inválido ou expirado.');
+      }
+      toast.success(data.message || 'Cupom aplicado! Assinatura Performance (R$ 597,00) ativada gratuitamente.');
+      setCouponCode('');
+      await refreshUserData();
+    } catch (err: any) {
+      toast.error(err.message || 'Não foi possível aplicar o cupom.');
+    } finally {
+      setApplyingCoupon(false);
+    }
+  }
+
   const tabs: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
     { id: 'overview', label: 'Visão geral', icon: <Sparkles className="h-4 w-4" /> },
     { id: 'plan', label: 'Plano e ciclo', icon: <RefreshCw className="h-4 w-4" /> },
@@ -551,6 +583,55 @@ export default function SubscriptionCenterPage() {
                     Operação Liberada
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* CUPOM DE DESCONTO / CÓDIGO PROMOCIONAL */}
+            <div className="rounded-3xl border border-[#D4AF37]/30 bg-gradient-to-r from-[#D4AF37]/10 via-zinc-950 to-zinc-950 p-6 shadow-xl">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="h-11 w-11 rounded-2xl bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] shrink-0">
+                    <Ticket className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-white">Possui um Cupom de Desconto?</h3>
+                      {salonData?.billing?.couponApplied && (
+                        <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                          Cupom Ativo: {salonData.billing.couponApplied}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Insira seu código promocional para liberar ou ativar gratuitamente o plano <strong className="text-white">Performance (R$ 597,00/mês)</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleApplyCoupon} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    placeholder="Ex: ANGULARGF"
+                    className="rounded-xl border border-zinc-800 bg-black/60 px-4 py-2.5 text-sm font-mono uppercase tracking-wider text-white placeholder:text-zinc-600 focus:border-[#D4AF37] focus:outline-none sm:w-52"
+                  />
+                  <button
+                    type="submit"
+                    disabled={applyingCoupon || !couponCode.trim()}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#D4AF37] hover:bg-[#c49f2c] disabled:opacity-50 px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-black transition cursor-pointer shrink-0"
+                  >
+                    {applyingCoupon ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" /> Aplicando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4" /> Aplicar Cupom
+                      </>
+                    )}
+                  </button>
+                </form>
               </div>
             </div>
 
@@ -790,6 +871,30 @@ export default function SubscriptionCenterPage() {
                     )}
                   </button>
                 </div>
+              </div>
+
+              {/* Cupom também na aba Plano e Ciclo */}
+              <div className="mt-6 pt-5 border-t border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5 text-xs text-zinc-300">
+                  <Ticket className="h-4 w-4 text-[#D4AF37] shrink-0" />
+                  <span>Tem um cupom promocional (ex: <strong>ANGULARGF</strong>)? Aplique para ativar o plano <strong>Performance (R$ 597,00)</strong> gratuitamente:</span>
+                </div>
+                <form onSubmit={handleApplyCoupon} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    placeholder="Código do cupom"
+                    className="rounded-xl border border-zinc-800 bg-black/60 px-3.5 py-2 text-xs font-mono uppercase tracking-wider text-white placeholder:text-zinc-600 focus:border-[#D4AF37] focus:outline-none w-40"
+                  />
+                  <button
+                    type="submit"
+                    disabled={applyingCoupon || !couponCode.trim()}
+                    className="rounded-xl bg-zinc-800 hover:bg-[#D4AF37] hover:text-black disabled:opacity-50 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+                  >
+                    {applyingCoupon ? 'Validando...' : 'Ativar Cupom'}
+                  </button>
+                </form>
               </div>
             </div>
           </section>

@@ -7,8 +7,8 @@ import PlanFeatureGate from './PlanFeatureGate';
 function normalizePlan(plan?: string | null) {
   switch (plan) {
     case 'start': return 'essential';
-    case 'performance': return 'professional';
-    case 'founder': return 'professional';
+    case 'performance_plus': return 'performance';
+    case 'founder': return 'performance';
     case 'network': return 'multiunit';
     default: return plan;
   }

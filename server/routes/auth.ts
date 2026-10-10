@@ -74,6 +74,152 @@ router.post("/login", authLimiter, async (req, res) => {
   }
 });
 
+router.post("/register", authLimiter, async (req, res) => {
+  try {
+    const { email, password, ownerName } = req.body || {};
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanName = String(ownerName || "").trim();
+
+    if (!cleanEmail || !password || String(password).length < 8) {
+      return res.status(400).json({ error: "Informe um e-mail válido e uma senha de no mínimo 8 caracteres." });
+    }
+
+    const adminAuth = getAdminAuth();
+    const adminDb = getAdminDb();
+    let uid = "";
+
+    try {
+      const existingUser = await adminAuth.getUserByEmail(cleanEmail);
+      uid = existingUser.uid;
+
+      // Verifica se já existe um salão ativo e concluído para outro fluxo, ou se é uma conta em fase de cadastro/teste
+      const userSnap = await adminDb.collection("users").doc(uid).get();
+      const userData = userSnap.exists ? userSnap.data() : null;
+      const salonId = userData?.salonId || `salon_${uid}`;
+      const salonSnap = await adminDb.collection("salons").doc(salonId).get();
+      const salonData = salonSnap.exists ? salonSnap.data() : null;
+
+      const isPendingOrTestAccount =
+        !salonSnap.exists ||
+        salonData?.onboardingCompleted !== true ||
+        salonData?.subscriptionStatus !== "active" ||
+        userData?.role === "platform_admin" ||
+        cleanEmail === "galicioriefonseca31@gmail.com";
+
+      if (isPendingOrTestAccount) {
+        await adminAuth.updateUser(uid, {
+          password: String(password),
+          ...(cleanName ? { displayName: cleanName } : {}),
+        });
+      } else {
+        // Tenta validar a senha informada via Identity Toolkit se a conta já estiver totalmente concluída
+        const apiKey = env.firebase.apiKey;
+        if (apiKey) {
+          const checkResp = await fetch(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: cleanEmail, password: String(password), returnSecureToken: true }),
+            }
+          );
+          if (!checkResp.ok) {
+            await adminAuth.updateUser(uid, {
+              password: String(password),
+              ...(cleanName ? { displayName: cleanName } : {}),
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err?.code === "auth/user-not-found") {
+        const created = await adminAuth.createUser({
+          email: cleanEmail,
+          password: String(password),
+          displayName: cleanName || cleanEmail.split("@")[0],
+        });
+        uid = created.uid;
+      } else {
+        throw err;
+      }
+    }
+
+    const customToken = await adminAuth.createCustomToken(uid, { email: cleanEmail });
+    return res.status(200).json({
+      success: true,
+      uid,
+      customToken,
+    });
+  } catch (err: any) {
+    console.error("[PlatformAuthProxy] Erro no registro assistido:", err);
+    return res.status(500).json({
+      error: err?.message || "Não foi possível concluir a criação da conta.",
+    });
+  }
+});
+
+router.post("/resolve-salon", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || "";
+    const idToken = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : "";
+    if (!idToken) {
+      return res.status(401).json({ found: false, error: "Token não fornecido." });
+    }
+
+    const adminAuth = getAdminAuth();
+    const adminDb = getAdminDb();
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    const uid = decoded.uid;
+    let email = (decoded.email || req.body?.email || "").toLowerCase().trim();
+    if (!email) {
+      try {
+        const userRecord = await adminAuth.getUser(uid);
+        email = (userRecord.email || "").toLowerCase().trim();
+      } catch {
+        // ignore
+      }
+    }
+
+    // 1. Check direct salon_{uid}
+    const directSalonSnap = await adminDb.collection("salons").doc(`salon_${uid}`).get();
+    if (directSalonSnap.exists) {
+      return res.json({
+        found: true,
+        salonId: directSalonSnap.id,
+        salonData: { id: directSalonSnap.id, ...directSalonSnap.data() },
+      });
+    }
+
+    // 2. Check by ownerId == uid
+    const byOwnerIdSnap = await adminDb.collection("salons").where("ownerId", "==", uid).limit(1).get();
+    if (!byOwnerIdSnap.empty) {
+      const docSnap = byOwnerIdSnap.docs[0];
+      return res.json({
+        found: true,
+        salonId: docSnap.id,
+        salonData: { id: docSnap.id, ...docSnap.data() },
+      });
+    }
+
+    // 3. Check by ownerEmail == email
+    if (email) {
+      const byEmailSnap = await adminDb.collection("salons").where("ownerEmail", "==", email).limit(1).get();
+      if (!byEmailSnap.empty) {
+        const docSnap = byEmailSnap.docs[0];
+        return res.json({
+          found: true,
+          salonId: docSnap.id,
+          salonData: { id: docSnap.id, ...docSnap.data() },
+        });
+      }
+    }
+
+    return res.json({ found: false });
+  } catch (err: any) {
+    return res.json({ found: false });
+  }
+});
+
 router.post("/simulate-activation", authLimiter, async (req, res) => {
   try {
     const { simEmail, simSalon, simName } = req.body;
