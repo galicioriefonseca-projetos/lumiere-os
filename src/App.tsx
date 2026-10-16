@@ -44,6 +44,9 @@ const OnboardingGoals = React.lazy(() => import('./pages/onboarding/OnboardingGo
 const OnboardingChecklist = React.lazy(() => import('./pages/onboarding/OnboardingChecklist'));
 const OnboardingSetupHub = React.lazy(() => import('./pages/onboarding/OnboardingSetupHub'));
 const BookingPage = React.lazy(() => import('./pages/booking/BookingPage'));
+const ClientPortalInvitePage = React.lazy(() => import('./pages/portal/ClientPortalInvitePage'));
+const ClientPortalPage = React.lazy(() => import('./pages/portal/ClientPortalPage'));
+const ClientPortalManagementPage = React.lazy(() => import('./pages/dashboard/ClientPortalManagementPage'));
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -70,6 +73,10 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/cadastro" element={<RegisterPage />} />
             <Route path="/cadastro-profissional" element={<InviteRegisterPage />} />
+            <Route path="/portal/convite" element={<ClientPortalInvitePage />} />
+            <Route path="/portal/cadastro" element={<ClientPortalInvitePage />} />
+            <Route path="/portal" element={<ProtectedRoute><ClientPortalPage /></ProtectedRoute>} />
+            <Route path="/area-do-cliente" element={<ProtectedRoute><ClientPortalPage /></ProtectedRoute>} />
             <Route path="/ativar-conta" element={<ActivationPage />} />
             <Route path="/aguardando-pagamento" element={<ProtectedRoute><WaitingPaymentPage /></ProtectedRoute>} />
             <Route path="/dashboard/configurar-empresa" element={<ProtectedRoute><CompanySetupPage /></ProtectedRoute>} />
@@ -92,6 +99,8 @@ function App() {
               <Route path="categorias" element={<FeatureRoute feature="operation"><CategoriesPage /></FeatureRoute>} />
               <Route path="clientes" element={<FeatureRoute feature="operation"><ClientsPage /></FeatureRoute>} />
               <Route path="crm" element={<FeatureRoute feature="crm"><ClientsPage /></FeatureRoute>} />
+              <Route path="area-do-cliente" element={<ClientPortalManagementPage />} />
+              <Route path="portal-clientes" element={<ClientPortalManagementPage />} />
               <Route path="agendamentos" element={<FeatureRoute feature="operation"><AppointmentsPage /></FeatureRoute>} />
               <Route path="metas" element={<FeatureRoute feature="goals"><GoalsPage /></FeatureRoute>} />
               <Route path="comissoes" element={<FeatureRoute feature="commissions"><CommissionsPage /></FeatureRoute>} />

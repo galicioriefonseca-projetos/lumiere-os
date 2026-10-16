@@ -1,5 +1,5 @@
-export type Role = 'owner' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin';
-export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'other';
+export type Role = 'owner' | 'manager' | 'receptionist' | 'attendant' | 'professional' | 'platform_admin' | 'client';
+export type BusinessType = 'salon' | 'clinic' | 'barbershop' | 'studio' | 'agency' | 'other';
 export type PlanType = 'start' | 'performance' | 'network' | 'founder' | 'enterprise';
 export type SubscriptionStatus = 'preview' | 'active' | 'pending_payment' | 'overdue' | 'canceled';
 export type ActivationStatus = 'active' | 'pending' | 'blocked' | 'canceled';
@@ -12,6 +12,8 @@ export interface User {
   phone: string;
   role: Role;
   salonId: string;
+  clientId?: string;
+  companyName?: string;
   professionalId?: string;
   specialty?: string;
   professionalFunction?: string;
@@ -477,5 +479,150 @@ export const AVAILABLE_BADGES = [
   { id: 'streak_master', name: 'Inabalável', icon: '🧬', description: 'Alcançou 15 dias seguidos de streak', category: 'streak' },
   { id: 'rank_first', name: 'Campeão Mensal', icon: '🏆', description: 'Terminou o Ranking em 1º lugar no mês', category: 'ranking' }
 ] as const;
+
+// --- Área do Cliente / Client Portal Types ---
+export interface ClientReport {
+  id: string;
+  salonId: string;
+  clientId?: string | null;
+  clientName: string;
+  clientEmail?: string;
+  title: string;
+  period: string;
+  summary: string;
+  metrics: {
+    leads?: number;
+    reach?: number;
+    conversions?: number;
+    investment?: number;
+    revenue?: number;
+    roas?: number;
+    cpc?: number;
+    cpl?: number;
+  };
+  externalUrl?: string;
+  fileUrl?: string;
+  status: 'published' | 'draft';
+  publishedAt?: number | null;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ClientContract {
+  id: string;
+  salonId: string;
+  clientId?: string | null;
+  clientName: string;
+  clientEmail?: string;
+  title: string;
+  contractType: 'retainer_monthly' | 'project' | 'setup_onboarding' | 'consulting' | 'nda' | string;
+  monthlyValue: number;
+  startDate: string;
+  endDate?: string;
+  status: 'active' | 'pending_signature' | 'signed' | 'review' | 'canceled';
+  scope: string;
+  signedDocumentUrl?: string;
+  paymentTerms?: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ClientPortalInvite {
+  id: string;
+  token: string;
+  salonId: string;
+  agencyName: string;
+  inviteType: 'client';
+  role: 'client';
+  clientName: string;
+  companyName: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  clientId?: string | null;
+  notes?: string;
+  status: 'pending' | 'accepted' | 'expired' | 'canceled';
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number;
+  acceptedAt?: number;
+  acceptedByEmail?: string;
+}
+
+export interface ClientApproval {
+  id: string;
+  salonId: string;
+  clientId?: string | null;
+  clientName?: string;
+  title: string;
+  description?: string;
+  type: 'instagram_post' | 'landing_page' | 'gmn_post' | 'other';
+  mediaUrl?: string;
+  copyText?: string;
+  previewUrl?: string;
+  status: 'pending' | 'approved' | 'revisions_requested';
+  clientFeedback?: string;
+  approvedAt?: number | null;
+  feedbackAt?: number | null;
+  createdBy?: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface ClientTicketMessage {
+  id: string;
+  senderRole: 'client' | 'agency';
+  senderName: string;
+  text: string;
+  createdAt: number;
+}
+
+export interface ClientTicket {
+  id: string;
+  salonId: string;
+  clientId?: string | null;
+  clientName?: string;
+  clientEmail?: string;
+  subject: string;
+  category: 'google_meu_negocio' | 'site_landing_page' | 'instagram' | 'geral';
+  priority: 'baixa' | 'media' | 'alta';
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  messages: ClientTicketMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ClientDeliverable {
+  id: string;
+  salonId: string;
+  clientId?: string | null;
+  clientName?: string;
+  title: string;
+  category: 'google_meu_negocio' | 'site_landing_page' | 'instagram' | 'geral';
+  dueDate: string; // YYYY-MM-DD
+  status: 'pending' | 'in_progress' | 'completed';
+  notes?: string;
+  deliverableUrl?: string;
+  completedAt?: number | null;
+  createdAt: number;
+}
+
+export interface ClientServiceRequest {
+  id: string;
+  salonId: string;
+  clientId?: string | null;
+  clientName?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  serviceId: string;
+  serviceName: string;
+  category: 'google_meu_negocio' | 'site_landing_page' | 'instagram';
+  notes?: string;
+  status: 'requested' | 'in_review' | 'quoted' | 'accepted' | 'declined';
+  createdAt: number;
+  updatedAt?: number;
+}
 
 

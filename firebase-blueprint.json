@@ -126,6 +126,114 @@
         "expiresAt": { "type": "integer" }
       },
       "required": ["code", "type", "isValid"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Relatório de performance de marketing da agência para o cliente.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "title": { "type": "string" },
+        "period": { "type": "string" },
+        "summary": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft"] },
+        "createdAt": { "type": "integer" }
+      },
+    "Report": {
+      "title": "Report",
+      "description": "Relatório de performance de marketing da agência para o cliente.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "title": { "type": "string" },
+        "period": { "type": "string" },
+        "summary": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "title", "period", "createdAt"]
+    },
+    "Contract": {
+      "title": "Contract",
+      "description": "Contrato de prestação de serviços da agência para o cliente.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "title": { "type": "string" },
+        "contractType": { "type": "string" },
+        "monthlyValue": { "type": "number" },
+        "startDate": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "title", "startDate", "status", "createdAt"]
+    },
+    "Approval": {
+      "title": "Approval",
+      "description": "Fluxo de aprovação de peças ou conteúdos.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["instagram_post", "landing_page", "gmn_post", "other"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "revisions_requested"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "title", "type", "status", "createdAt"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "Central de suporte para clientes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "subject": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved", "closed"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "subject", "status", "createdAt"]
+    },
+    "Deliverable": {
+      "title": "Deliverable",
+      "description": "Cronograma de entregas.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "title": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "title", "dueDate", "status", "createdAt"]
+    },
+    "ServiceRequest": {
+      "title": "ServiceRequest",
+      "description": "Pedido de serviço extra ou up-sell.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "salonId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "status": { "type": "string", "enum": ["requested", "quoted", "accepted", "rejected"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "salonId", "serviceName", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -152,6 +260,30 @@
     "/salons/{salonId}/productionLogs/{logId}": {
       "schema": "ProductionLog",
       "description": "Subcoleção contendo logs de erros em produção para suporte e depuração."
+    },
+    "/salons/{salonId}/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Subcoleção contendo relatórios de marketing para clientes."
+    },
+    "/salons/{salonId}/contracts/{contractId}": {
+      "schema": "Contract",
+      "description": "Subcoleção contendo contratos de prestação de serviços para clientes."
+    },
+    "/salons/{salonId}/approvals/{approvalId}": {
+      "schema": "Approval",
+      "description": "Subcoleção para fluxo de aprovação de conteúdos."
+    },
+    "/salons/{salonId}/tickets/{ticketId}": {
+      "schema": "Ticket",
+      "description": "Subcoleção de tickets de suporte."
+    },
+    "/salons/{salonId}/deliverables/{deliverableId}": {
+      "schema": "Deliverable",
+      "description": "Subcoleção de cronograma de entregas."
+    },
+    "/salons/{salonId}/serviceRequests/{requestId}": {
+      "schema": "ServiceRequest",
+      "description": "Subcoleção de pedidos de serviços extras."
     },
     "/coupons/{code}": {
       "schema": "Coupon",

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, AlertTriangle, Sparkles, ShieldAlert, ArrowRight, X } from 'lucide-react';
+import { CreditCard, AlertTriangle, Sparkles, ShieldAlert, ArrowRight, X, Gift, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatDateBR } from '@/lib/utils';
+import { PaymentSetupModal } from '@/components/billing/PaymentSetupModal';
 
 interface DashboardSubscriptionBannerProps {
   salonData: any;
@@ -15,6 +16,7 @@ export function DashboardSubscriptionBanner({
 }: DashboardSubscriptionBannerProps) {
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
+  const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
 
   // Platform admin não necessita de banner de assinatura
   if (isPlatformAdmin || !salonData) return null;
@@ -27,6 +29,11 @@ export function DashboardSubscriptionBanner({
   const billingStatus = String(salonData?.billing?.status || salonData?.subscriptionStatus || salonData?.paymentStatus || '').toUpperCase();
   const isOverdue = ['OVERDUE', 'ATRASADO', 'VENCIDO'].includes(billingStatus);
   const isPendingPayment = ['PENDING_PAYMENT', 'PENDING', 'AGUARDANDO_PAGAMENTO'].includes(billingStatus) || salonData?.paymentStatus === 'pending';
+  
+  // Forma de pagamento pendente / não definida
+  const isPaymentMethodUndefined = !salonData?.billing?.paymentMethod || 
+    salonData?.billing?.paymentMethod === 'UNDEFINED' || 
+    salonData?.billing?.paymentMethodDefined === false;
 
   // Resolução da data de vencimento do Essenza (Sempre dia 02 de cada mês)
   const today = new Date();
@@ -37,6 +44,82 @@ export function DashboardSubscriptionBanner({
   // No Essenza, a data de vencimento é sempre dia 02
   const essenzaDueDateStr = salonData?.billing?.nextDueDate || '2026-10-02';
   const formattedEssenzaDate = formatDateBR(essenzaDueDateStr);
+
+  // 1. BANNER DE ESTÍMULO: FORMA DE PAGAMENTO NÃO DEFINIDA (ESSENZA E DEMAIS SALÕES)
+  if (isPaymentMethodUndefined && !dismissed) {
+    return (
+      <>
+        <div className="mb-6 space-y-3">
+          <div className="relative overflow-hidden rounded-2xl border border-[#DFC498]/50 bg-gradient-to-r from-[#0A261E] via-[#0D3328] to-[#0A261E] p-4 sm:p-5 shadow-2xl shadow-[#DFC498]/10">
+            <div className="absolute -right-8 -top-8 h-36 w-36 rounded-full bg-[#DFC498]/10 blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-[#DFC498]/20 border border-[#DFC498]/40 flex items-center justify-center text-[#DFC498] shrink-0 mt-0.5 shadow-inner">
+                  <Sparkles className="w-5 h-5 text-[#DFC498] animate-pulse" />
+                </div>
+                
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#DFC498] font-mono flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#DFC498]" />
+                      Forma de Pagamento Pendente • Escolha seu Ciclo
+                    </span>
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-mono font-bold">
+                      Até 15% OFF + Suporte VIP
+                    </span>
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-medium">
+                      {isEssenza ? 'Vencimento Fixo: Dia 02' : 'Evite Interrupções'}
+                    </span>
+                  </div>
+
+                  <h3 className="text-sm md:text-base font-semibold text-white tracking-tight">
+                    {isEssenza 
+                      ? 'Defina a forma de pagamento do Essenza Studio di Bellezza e ative vantagens exclusivas.' 
+                      : 'Configure a sua forma de pagamento preferida para manter sua conta 100% ativa.'}
+                  </h3>
+                  
+                  <p className="text-xs text-[#8FAEA2] leading-relaxed font-light max-w-3xl">
+                    Selecione como prefere efetuar o acerto da sua assinatura. Optando pelo <strong className="text-white font-medium">Semestral (10% OFF)</strong> ou <strong className="text-white font-medium">Anual (15% OFF com Tarifa Congelada)</strong>, você economiza até R$ 714,00 e ganha atendimento VIP prioritário via WhatsApp para você e sua equipe.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 self-start md:self-center">
+                <Button 
+                  size="sm" 
+                  onClick={() => setIsSetupModalOpen(true)}
+                  className="w-full md:w-auto bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold rounded-xl text-xs h-9.5 px-5 transition-all font-sans cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#DFC498]/20 border border-[#DFC498]/40"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Definir Pagamento & Vantagens
+                  <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                </Button>
+
+                <button
+                  onClick={() => setDismissed(true)}
+                  className="p-2 text-zinc-500 hover:text-zinc-300 transition-colors rounded-lg hover:bg-zinc-900/50"
+                  title="Minimizar aviso"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <PaymentSetupModal
+          isOpen={isSetupModalOpen}
+          onClose={() => setIsSetupModalOpen(false)}
+          salonData={salonData}
+          onSuccess={() => {
+            setIsSetupModalOpen(false);
+            window.location.reload();
+          }}
+        />
+      </>
+    );
+  }
 
   // Alerta específico do Essenza
   if (isEssenza && (isPendingPayment || isDueDay || isPastDueDay || isOverdue)) {

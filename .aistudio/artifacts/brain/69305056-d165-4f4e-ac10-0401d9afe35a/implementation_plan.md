@@ -1,25 +1,29 @@
-# Plano de Implementação: Cupons de Desconto no LumièreOS
+# Plano de Implementação: Gestão Adaptativa LumièreOS
 
-A funcionalidade de cupom de desconto será implementada para permitir que assinaturas específicas sejam ativadas gratuitamente.
+## Objetivo
+Transformar o LumièreOS em uma plataforma de gestão adaptável, que se molda automaticamente para atender desde profissionais liberais (agilidade e simplicidade) até empresas com estruturas complexas (métricas avançadas e hierarquia).
 
-## Tarefas
+## Fases de Implementação
 
-### 1. Backend: Validação de Cupons
-- Criar uma coleção `coupons` no Firestore com os campos `code` (string), `planId` (string), `active` (boolean), `expiresAt` (timestamp).
-- Criar uma função de serviço para validar o cupom no `BillingService.ts`.
+### Fase 1: Módulo de Configuração de "Modo de Gestão"
+*   **Settings Hub:** Criar uma nova área de configuração em `src/pages/dashboard/SettingsPage.tsx` para o dono da empresa selecionar seu "Modo de Gestão" (Simples/Liberal vs. Completo/Empresa).
+*   **Persistência:** Atualizar o Firestore `salons` para armazenar a preferência de modo (`simple` ou `advanced`).
 
-### 2. Frontend: Registro com Cupom
-- Atualizar `src/pages/auth/RegisterPage.tsx` para enviar o campo `coupon` na requisição `POST /api/billing/create-checkout`.
+### Fase 2: Adaptação Dinâmica de Interface (UI)
+*   **Navigation Factory:** Refatorar `src/components/layouts/dashboard/getNavigationByRole.ts` para cruzar o `role` do usuário com o `modo de gestão` definido pelo dono.
+*   **Dashboard Condicional:** Criar layouts adaptáveis para o `DashboardHome.tsx`. Modo Simples foca em agenda/financeiro; Modo Empresa adiciona widgets de metas, performance da equipe e comissões.
 
-### 3. Backend: Integração do Cupom no Checkout
-- Atualizar `/server/routes/billing/create-checkout.ts` para:
-  - Verificar se o cupom enviado é válido.
-  - Se o cupom for válido e tornar a assinatura gratuita:
-    - Pular a criação do Checkout no Asaas.
-    - Ativar o salão/assinatura diretamente como "active" e com o plano correspondente (Performance, R$ 597,00).
-    - Registrar a ativação na coleção de pagamentos/histórico como "paid_via_coupon".
+### Fase 3: Escalabilidade de Métricas
+*   **Métricas Escaláveis:** Desenvolver componentes de dashboard que detectam o modo de gestão para exibir dados (ex: Modo Simples mostra total de vendas; Modo Empresa mostra DRE, comissões acumuladas e métricas por profissional).
+*   **Customização Modular:** Permitir que o dono, no modo avançado, escolha quais módulos (comissões, estoque, gamificação) deseja ativar ou ocultar.
 
-## Considerações de Segurança
-- A validação de cupons será feita estritamente no backend.
-- O campo `coupon` enviado pelo frontend será validado contra a coleção `coupons`.
-- Nenhuma informação de pagamento será processada se o cupom for utilizado com sucesso.
+## Impacto Técnico
+*   `AuthContext`: Adicionar o estado `managementMode` para fácil acesso em toda a aplicação.
+*   `Firestore`: Atualizar schema de `salons` para incluir a preferência de modo de gestão.
+*   `DashboardLayout`: Atualizar lógica para renderizar dinamicamente a sidebar e as páginas permitidas.
+
+## Cronograma
+1.  Configuração e Banco (2 dias)
+2.  Refatoração de Navegação e Layout (3 dias)
+3.  Adaptação de Dashboards e Métricas (4 dias)
+4.  Testes e Refinamento de UX (2 dias)

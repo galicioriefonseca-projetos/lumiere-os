@@ -551,6 +551,64 @@ service cloud.firestore {
       allow update, delete: if isPlatformAdmin();
     }
     
+    // 25. Client Portal: Reports (Relatórios de Performance)
+    match /salons/{salonId}/reports/{reportId} {
+      allow read: if canManageSalon(salonId) || isSalonMember(salonId) || (
+        isSignedIn() && userRole() == "client" && userSalonId() == salonId && (
+          !('clientId' in resource.data) || resource.data.clientId == null ||
+          ('clientId' in userDoc().data && resource.data.clientId == userDoc().data.clientId) ||
+          ('clientEmail' in resource.data && resource.data.clientEmail == userEmail())
+        )
+      );
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 26. Client Portal: Contracts (Contratos de Serviços)
+    match /salons/{salonId}/contracts/{contractId} {
+      allow read: if canManageSalon(salonId) || isSalonMember(salonId) || (
+        isSignedIn() && userRole() == "client" && userSalonId() == salonId && (
+          !('clientId' in resource.data) || resource.data.clientId == null ||
+          ('clientId' in userDoc().data && resource.data.clientId == userDoc().data.clientId) ||
+          ('clientEmail' in resource.data && resource.data.clientEmail == userEmail())
+        )
+      );
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 27. Client Portal: Invites da Agência
+    match /salons/{salonId}/client_invites/{inviteId} {
+      allow read, write: if canManageSalon(salonId);
+    }
+
+    // 28. Client Portal: Aprovações
+    match /salons/{salonId}/approvals/{approvalId} {
+      allow read, write: if canManageSalon(salonId) || (
+        isSignedIn() && userRole() == "client" && userSalonId() == salonId
+      );
+    }
+
+    // 29. Client Portal: Tickets de Suporte
+    match /salons/{salonId}/tickets/{ticketId} {
+      allow read, write: if canManageSalon(salonId) || (
+        isSignedIn() && userRole() == "client" && userSalonId() == salonId
+      );
+    }
+
+    // 30. Client Portal: Entregáveis
+    match /salons/{salonId}/deliverables/{deliverableId} {
+      allow read: if canManageSalon(salonId) || (
+        isSignedIn() && userRole() == "client" && userSalonId() == salonId
+      );
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 31. Client Portal: Pedidos de Serviço
+    match /salons/{salonId}/serviceRequests/{requestId} {
+      allow read, write: if canManageSalon(salonId) || (
+        isSignedIn() && userRole() == "client" && userSalonId() == salonId
+      );
+    }
+
     // Fallback Catch-All for any other subcollections under salons
     match /salons/{salonId}/{collectionName}/{docId} {
       allow read, write: if isPlatformAdmin();

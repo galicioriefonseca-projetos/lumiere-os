@@ -29,9 +29,11 @@ import { LumiOpportunitySuite } from '../../components/lumi/LumiOpportunitySuite
 import { LumiDailySummary } from '../../components/lumi/LumiDailySummary';
 import { LumiereIAInsights } from '../../components/dashboard/LumiereIAInsights';
 import { LumiSystemReadinessAlert } from '../../components/lumi/LumiSystemReadinessAlert';
+import { SubscriptionBanner } from '@/components/dashboard/SubscriptionBanner';
 
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
+  const isPaymentPending = salonData?.billing?.status !== 'ACTIVE';
   const navigate = useNavigate();
   const location = useLocation();
   const { 
@@ -208,6 +210,7 @@ export default function DashboardHome() {
 
   return (
     <div className="space-y-6 md:space-y-8 font-sans pb-12 animate-fade-in">
+      {isPaymentPending && <SubscriptionBanner />}
       
       {/* Header Profile - Premium Luxury Styling */}
       <div className="relative overflow-hidden bg-card rounded-3xl border border-primary/20 p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm">

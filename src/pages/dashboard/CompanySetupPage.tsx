@@ -19,7 +19,8 @@ export default function CompanySetupPage() {
     businessSegment: '',
     city: salonData?.city || '',
     state: salonData?.state || '',
-    estimatedProfessionals: ''
+    estimatedProfessionals: '',
+    managementMode: 'liberal'
   });
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function CompanySetupPage() {
           businessSegment: formData.businessSegment,
           city: formData.city,
           state: formData.state,
-          estimatedProfessionals: formData.estimatedProfessionals
+          estimatedProfessionals: formData.estimatedProfessionals, managementMode: formData.managementMode
         })
       });
 
@@ -245,23 +246,36 @@ export default function CompanySetupPage() {
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-[#44423E]">Tamanho da Equipe (Pessoas)</span>
+              <span className="text-xs font-medium text-[#44423E]">Modo de Gestão</span>
               <select 
                 required 
-                value={formData.estimatedProfessionals} 
-                onChange={e => update('estimatedProfessionals', e.target.value)} 
+                value={formData.managementMode} 
+                onChange={e => update('managementMode', e.target.value)} 
                 className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
               >
-                <option value="">Selecione</option>
-                <option value="Apenas eu">Apenas eu (Individual)</option>
-                <option value="2 a 5">2 a 5 colaboradores</option>
-                <option value="6 a 15">6 a 15 colaboradores</option>
-                <option value="16 a 30">16 a 30 colaboradores</option>
-                <option value="31 a 60">31 a 60 colaboradores</option>
-                <option value="Mais de 60">Mais de 60 colaboradores</option>
+                <option value="liberal">Simples (Liberal / Autônomo)</option>
+                <option value="business">Avançado (Empresas / Equipes Grandes)</option>
               </select>
             </label>
           </div>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-[#44423E]">Tamanho da Equipe (Pessoas)</span>
+            <select 
+              required 
+              value={formData.estimatedProfessionals} 
+              onChange={e => update('estimatedProfessionals', e.target.value)} 
+              className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
+            >
+              <option value="">Selecione</option>
+              <option value="Apenas eu">Apenas eu (Individual)</option>
+              <option value="2 a 5">2 a 5 colaboradores</option>
+              <option value="6 a 15">6 a 15 colaboradores</option>
+              <option value="16 a 30">16 a 30 colaboradores</option>
+              <option value="31 a 60">31 a 60 colaboradores</option>
+              <option value="Mais de 60">Mais de 60 colaboradores</option>
+            </select>
+          </label>
 
           <button 
             disabled={loading} 

@@ -185,6 +185,7 @@ export default async function asaasUpdatePaymentMethodHandler(req: VercelRequest
       await salonRef.update({
         'billing.provider': 'asaas', 'billing.subscriptionId': newSub.id, 'billing.customerId': customerId, 'billing.planId': planId,
         'billing.value': value, 'billing.billingCycle': cycle, 'billing.status': 'ACTIVE', 'billing.paymentMethod': paymentMethod,
+        'billing.paymentMethodDefined': true,
         'billing.nextDueDate': newSub.nextDueDate, 'billing.providerStatus': newSub.status, 'billing.updatedAt': new Date().toISOString(), plan: planId
       });
 

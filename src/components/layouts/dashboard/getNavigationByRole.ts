@@ -16,7 +16,8 @@ import {
   Calculator,
   Briefcase,
   Layers,
-  Video
+  Video,
+  Globe
 } from 'lucide-react';
 import { detectBusinessSegment, SEGMENTS } from '../../../config/segments';
 
@@ -49,6 +50,19 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any): 
 
   const serviceIcon = segment === 'beauty' ? Scissors : Briefcase;
   const appointmentsIcon = CalendarDays;
+
+  if (role === 'client') {
+    return [
+      {
+        category: 'Área do Cliente',
+        items: [
+          { name: 'Meu Portal', href: '/portal', icon: LayoutDashboard, exact: true },
+          { name: 'Relatórios', href: '/portal?tab=reports', icon: FileText },
+          { name: 'Contratos', href: '/portal?tab=contracts', icon: Briefcase },
+        ]
+      }
+    ];
+  }
 
   if (role === 'professional') {
     return [
@@ -130,11 +144,19 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any): 
     ];
   }
 
+  const isAgencyAccount = segment === 'agency' || 
+    salonData?.segment === 'agency' || 
+    salonData?.businessType === 'agency' || 
+    String(salonData?.ownerEmail || '').toLowerCase().includes('galicioriefonseca31@gmail.com');
+
   // Owner & Manager Categories with dynamic lexicon & module filtering
   const operationalItems: NavigationItem[] = [
     { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon, moduleId: 'appointments' },
     { name: lex.clients, href: '/dashboard/clientes', icon: Users, moduleId: 'clients' },
-  ].filter(i => isModuleEnabled(i.moduleId!));
+    ...(isAgencyAccount || isModuleEnabled('clientPortal') ? [
+      { name: 'Área do Cliente (Portal)', href: '/dashboard/area-do-cliente', icon: Globe, moduleId: 'clientPortal' }
+    ] : []),
+  ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId!));
 
   const financialItems: NavigationItem[] = [
     { name: 'Financeiro', href: '/dashboard/financeiro', icon: DollarSign, moduleId: 'financial' },

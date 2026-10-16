@@ -16,6 +16,7 @@ import {
   MessageSquare, User, Tag, Calendar, AlertCircle, Sparkles, FolderOpen, RotateCcw,
   Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2
 } from 'lucide-react';
+import { useLumiLexicon } from '../../hooks/useLumiLexicon';
 
 import KanbanBoard from '../../components/crm/KanbanBoard';
 import ClientDetailsDrawer from '../../components/crm/ClientDetailsDrawer';
@@ -33,6 +34,7 @@ const CRM_STAGES = [
 
 export default function ClientsPage() {
   const { salonData, currentUser, userData } = useAuth();
+  const lex = useLumiLexicon();
   const userRole = userData?.role || 'professional';
 
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
@@ -821,7 +823,7 @@ export default function ClientsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-800 pb-5">
         <div>
           <h2 className="text-3xl font-heading font-light text-zinc-100 flex items-center gap-2">
-            CRM de Clientes
+            CRM de {lex.clients}
             <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25 px-2.5 py-0.5 rounded-full font-medium">LumièreOS</span>
           </h2>
           <p className="text-zinc-400 text-sm mt-1">

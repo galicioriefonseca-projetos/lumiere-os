@@ -63,6 +63,14 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
 
   if (role === 'platform_admin' && !location.pathname.startsWith('/master')) return <Navigate to="/master" replace />;
 
+  // Usuário do Portal do Cliente (cliente da agência)
+  if (role === 'client') {
+    if (location.pathname.startsWith('/portal') || location.pathname === '/area-do-cliente') {
+      return <>{children}</>;
+    }
+    return <Navigate to="/portal" replace />;
+  }
+
   // Durante o cadastro, o usuário precisa acessar a tela de dados de faturamento
   // antes de o webhook da Asaas promover a conta de pending para owner.
   if ((role as string) === 'pending') {
@@ -77,7 +85,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
     return <>{children}</>;
   }
 
-  if ((role as string) === 'function_link' || (role && !['platform_admin', 'owner', 'manager', 'receptionist', 'attendant', 'professional', 'pending'].includes(role))) {
+  if ((role as string) === 'function_link' || (role && !['platform_admin', 'owner', 'manager', 'receptionist', 'attendant', 'professional', 'pending', 'client'].includes(role))) {
     return (
       <div className="min-h-screen bg-[#061A14] text-[#F5F9F7] flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-[#0A261E]/95 border border-[#17473A] p-8 rounded-2xl shadow-2xl backdrop-blur-xl text-center">

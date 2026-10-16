@@ -171,6 +171,7 @@ export async function completeCompanySetupHandler(req: VercelRequest, res: Verce
       segment,
       city,
       state,
+      managementMode: body.managementMode || 'liberal',
       maxProfessionals: maxPros,
       status: 'active',
       subscriptionStatus: 'active',

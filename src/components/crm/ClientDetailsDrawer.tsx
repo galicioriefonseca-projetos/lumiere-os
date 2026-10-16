@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { 
   X, Calendar, Phone, Mail, Clock, MessageSquare, Tag, UserCheck, 
-  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp
+  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2
 } from 'lucide-react';
 
 interface ClientDetailsDrawerProps {
@@ -85,6 +85,40 @@ export default function ClientDetailsDrawer({
       return `https://wa.me/55${clean}`;
     }
     return `https://wa.me/${clean}`;
+  };
+
+  const [generatingInvite, setGeneratingInvite] = useState(false);
+
+  const handleGeneratePortalInvite = async () => {
+    if (!client) return;
+    try {
+      setGeneratingInvite(true);
+      const idToken = await currentUser?.getIdToken?.();
+      const res = await fetch('/api/client-portal/invites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          clientId: client.id,
+          clientName: client.name,
+          companyName: client.name,
+          clientEmail: client.email || '',
+          clientPhone: client.phone || ''
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao gerar convite.');
+
+      const fullLink = `${window.location.origin}/portal/convite?token=${data.invite?.token}`;
+      await navigator.clipboard.writeText(fullLink);
+      toast.success('Link do Portal do Cliente gerado e copiado para a área de transferência!');
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar link da área do cliente.');
+    } finally {
+      setGeneratingInvite(false);
+    }
   };
 
   // Pre-populate states
@@ -513,6 +547,17 @@ export default function ClientDetailsDrawer({
                 >
                   <Mail className="w-3.5 h-3.5" /> Enviar E-mail
                 </a>
+              )}
+              {isManagerOrOwner && (
+                <Button
+                  onClick={handleGeneratePortalInvite}
+                  disabled={generatingInvite}
+                  variant="outline"
+                  className="flex items-center gap-1.5 text-xs bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] border border-[#DFC498]/30 px-3 py-1.5 rounded-lg font-medium transition shrink-0 h-auto"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  {generatingInvite ? 'Gerando...' : 'Convidar p/ Área do Cliente'}
+                </Button>
               )}
               {isManagerOrOwner && (
                 <Button

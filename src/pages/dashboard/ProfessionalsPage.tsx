@@ -16,6 +16,7 @@ import {
   ChevronDown, ChevronUp, Search, Filter, Mail, Phone, Calendar, Sparkles
 } from 'lucide-react';
 import { PROFESSIONAL_SPECIALTIES } from '../../data/professionalSpecialties';
+import { useLumiLexicon } from '../../hooks/useLumiLexicon';
 
 const roleTranslations: Record<string, string> = {
   manager: 'Gerente',
@@ -47,6 +48,7 @@ interface Invite {
 
 export default function ProfessionalsPage() {
   const { salonData, userData, isPlatformAdmin, currentUser } = useAuth();
+  const lex = useLumiLexicon();
   const { performanceData } = useAlerts(salonData?.id, userData?.id, userData?.role);
   const isAdmin = isPlatformAdmin;
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -587,9 +589,9 @@ export default function ProfessionalsPage() {
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-heading font-light">Equipe</h2>
+          <h2 className="text-2xl font-heading font-light">{lex.professionals}</h2>
           <p className="text-muted-foreground text-sm">
-            {professionals.length} de {salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 22) : salonData?.professionalsLimit} profissionais cadastrados ({activeCount} ativos).
+            {professionals.length} de {salonData?.plan === 'founder' ? Math.max(salonData?.professionalsLimit || 0, 22) : salonData?.professionalsLimit} {lex.professionals.toLowerCase()} cadastrados ({activeCount} ativos).
           </p>
         </div>
         

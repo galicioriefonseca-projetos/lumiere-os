@@ -37,6 +37,13 @@ export default function MasterPanel() {
   });
   const [submittingManualPayment, setSubmittingManualPayment] = useState(false);
 
+  // Estado para definição de ciclo e forma de pagamento pelo Master Admin
+  const [paymentSetupForm, setPaymentSetupForm] = useState({
+    billingCycle: 'SEMIANNUALLY' as 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY',
+    paymentMethod: 'CREDIT_CARD' as 'CREDIT_CARD' | 'PIX' | 'BOLETO'
+  });
+  const [submittingPaymentSetup, setSubmittingPaymentSetup] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'salons' | 'bugs' | 'asaas' | 'demo'>('salons');
   const [billingSettings, setAsaasSettings] = useState<any>({
     mode: 'sandbox' as 'sandbox' | 'production',
@@ -307,6 +314,39 @@ export default function MasterPanel() {
     setIsDialogOpen(true);
   };
 
+  const handleSendPaymentIncentiveWhatsApp = (salon: Salon) => {
+    const phone = salon.phone || (salon as any).billing?.mobilePhone || '';
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (!cleanPhone) {
+      toast.error('Telefone do estabelecimento não cadastrado.');
+      return;
+    }
+    const isEssenza = /essenza/i.test(salon.name);
+    const contactName = salon.ownerName || salon.name || 'Cliente';
+    const message = encodeURIComponent(
+      `Olá, ${contactName}! Tudo bem? Aqui é da equipe executiva do LumièreOS.\n\n` +
+      `Entramos em contato para orientar sobre a definição da forma de pagamento da sua assinatura para o ${salon.name} (com vencimento todo dia 02).\n\n` +
+      `Para sua comodidade, você pode escolher pagar via Cartão de Crédito Automático, Pix ou Boleto.\n\n` +
+      `💎 Vantagens Especiais de Contratação:\n` +
+      `• Plano Semestral: 10% de desconto real em todas as mensalidades + Atendimento VIP Prioritário no WhatsApp + Auditoria de Indicadores do Salão.\n` +
+      `• Plano Anual: 15% de desconto máximo + Tarifa Congelada por 12 meses + Consultoria Estratégica Individual de Metas da Equipe.\n\n` +
+      `Podemos te ajudar a cadastrar a melhor opção para o seu salão hoje?`
+    );
+    window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
+  };
+
+  const openDefinePaymentMethodDialog = (salon: Salon) => {
+    setSelectedSalon(salon);
+    setDialogAction('define_payment_method');
+    const existingCycle = ((salon as any).billing?.billingCycle || 'SEMIANNUALLY') as any;
+    const existingMethod = ((salon as any).billing?.paymentMethod || 'CREDIT_CARD') as any;
+    setPaymentSetupForm({
+      billingCycle: existingCycle,
+      paymentMethod: existingMethod
+    });
+    setIsDialogOpen(true);
+  };
+
   const confirmAction = async () => {
     if (!selectedSalon) return;
     
@@ -391,7 +431,35 @@ export default function MasterPanel() {
           updates.paymentStatus = 'paid';
           updates.isActive = true;
           updates.activationStatus = 'active';
-          break;
+          case 'define_payment_method': {
+          setSubmittingPaymentSetup(true);
+          try {
+            const cycle = paymentSetupForm.billingCycle || 'SEMIANNUALLY';
+            const method = paymentSetupForm.paymentMethod || 'CREDIT_CARD';
+            const discountPct = cycle === 'YEARLY' ? 15 : cycle === 'SEMIANNUALLY' ? 10 : 0;
+            
+            await updateDoc(ref, {
+              'billing.paymentMethod': method,
+              'billing.billingCycle': cycle,
+              'billing.paymentMethodDefined': true,
+              'billing.discountApplied': discountPct,
+              'billing.paymentMethodConfiguredAt': new Date().toISOString(),
+              'billing.updatedAt': new Date().toISOString(),
+              updatedAt: Date.now()
+            });
+
+            toast.success(`Forma de pagamento definida com sucesso para ${selectedSalon.name}: Ciclo ${cycle} via ${method}.`);
+            setIsDialogOpen(false);
+            setSelectedSalon(null);
+            return;
+          } catch (err: any) {
+            console.error('Erro ao definir pagamento pelo Master:', err);
+            toast.error(err.message || 'Falha ao salvar preferências de pagamento.');
+            return;
+          } finally {
+            setSubmittingPaymentSetup(false);
+          }
+        }
         case 'migrate_founder':
           if (founderMigrationOption === 'A') {
             if (!currentUser) {
@@ -801,6 +869,11 @@ export default function MasterPanel() {
                                     Cartão (Asaas)
                                   </span>
                                 )}
+                                {(!(salon as any).billing?.paymentMethod || (salon as any).billing?.paymentMethod === 'UNDEFINED' || (salon as any).billing?.paymentMethodDefined === false) && (
+                                  <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-0.5">
+                                    ⚠️ Pagamento Pendente
+                                  </span>
+                                )}
                               </div>
                               {(salon as any).billing?.nextDueDate && (
                                 <span className="text-[10px] text-zinc-400 font-mono">
@@ -848,6 +921,10 @@ export default function MasterPanel() {
                               <Select onValueChange={(val: string) => { 
                                 if (val === 'payment_paid') {
                                   openPaymentPaidDialog(salon);
+                                } else if (val === 'whatsapp_payment_incentive') {
+                                  handleSendPaymentIncentiveWhatsApp(salon);
+                                } else if (val === 'define_payment_method') {
+                                  openDefinePaymentMethodDialog(salon);
                                 } else {
                                   setSelectedSalon(salon); 
                                   setDialogAction(val); 
@@ -861,6 +938,12 @@ export default function MasterPanel() {
                                   {isSimulatedFounder(salon) && (
                                     <SelectItem value="migrate_founder">Converter Founder (Produção)</SelectItem>
                                   )}
+                                  <SelectItem value="whatsapp_payment_incentive" className="text-emerald-400 font-medium">
+                                    Enviar WhatsApp (Vantagens)
+                                  </SelectItem>
+                                  <SelectItem value="define_payment_method" className="text-[#DFC498] font-medium">
+                                    Definir Pagamento & Ciclo
+                                  </SelectItem>
                                   <SelectItem value="payment_paid">Marcar como Pago</SelectItem>
                                   <SelectItem value="payment_overdue">Marcar Vencido</SelectItem>
                                   <SelectItem value="payment_cancel">Cancelar Assinatura</SelectItem>
@@ -1153,6 +1236,58 @@ export default function MasterPanel() {
              {dialogAction === 'payment_overdue' && <p>Marcar o pagamento do salão <b>{selectedSalon?.name}</b> como <b>VENCIDO</b>?</p>}
              {dialogAction === 'payment_cancel' && <p className="text-destructive font-medium">Cancelar completamente a assinatura do salão <b>{selectedSalon?.name}</b>? O acesso será bloqueado.</p>}
              {dialogAction === 'payment_reactivate' && <p>Reativar a assinatura do salão <b>{selectedSalon?.name}</b> marcando como pago?</p>}
+             {dialogAction === 'define_payment_method' && (
+                <div className="space-y-4 text-left">
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1">
+                    <p className="text-xs font-bold text-amber-300">Definição de Faturamento e Vantagens (Master)</p>
+                    <p className="text-xs text-zinc-300">
+                      Configure a periodicidade e forma de pagamento acordada com o salão <b>{selectedSalon?.name}</b>.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">Periodicidade (Ciclo)</label>
+                    <Select
+                      value={paymentSetupForm.billingCycle}
+                      onValueChange={(val: any) => setPaymentSetupForm(prev => ({ ...prev, billingCycle: val }))}
+                    >
+                      <SelectTrigger className="w-full h-10 bg-black/50 border-border text-white text-sm">
+                        <SelectValue placeholder="Selecione o ciclo" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border text-white">
+                        <SelectItem value="MONTHLY">Mensal (Padrão - R$ 397/mês)</SelectItem>
+                        <SelectItem value="SEMIANNUALLY">Semestral (10% OFF + Suporte VIP WhatsApp)</SelectItem>
+                        <SelectItem value="YEARLY">Anual (15% OFF + Tarifa Congelada 12 Meses)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-zinc-400 mt-1">
+                      {paymentSetupForm.billingCycle === 'SEMIANNUALLY' && 'Aplica 10% de desconto real (R$ 357,30/mês) e ativa atendimento VIP WhatsApp.'}
+                      {paymentSetupForm.billingCycle === 'YEARLY' && 'Aplica 15% de desconto máximo (R$ 337,45/mês) e congela a tarifa por 12 meses.'}
+                      {paymentSetupForm.billingCycle === 'MONTHLY' && 'Valor padrão sem desconto contratual.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">Forma de Pagamento</label>
+                    <Select
+                      value={paymentSetupForm.paymentMethod}
+                      onValueChange={(val: any) => setPaymentSetupForm(prev => ({ ...prev, paymentMethod: val }))}
+                    >
+                      <SelectTrigger className="w-full h-10 bg-black/50 border-border text-white text-sm">
+                        <SelectValue placeholder="Selecione o método" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-card border-border text-white">
+                        <SelectItem value="CREDIT_CARD">Cartão de Crédito Automático</SelectItem>
+                        <SelectItem value="PIX">PIX Automático / Chave</SelectItem>
+                        <SelectItem value="BOLETO">Boleto Bancário</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      Salva a preferência oficial no cadastro do salão e remove o status de pendência.
+                    </p>
+                  </div>
+                </div>
+              )}
              {dialogAction === 'change_plan' && (
                 <div className="space-y-4">
                    <p>Alterar plano para o salão <b>{selectedSalon?.name}</b>:</p>

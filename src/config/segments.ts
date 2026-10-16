@@ -267,8 +267,13 @@ export function detectBusinessSegment(salonData: any): BusinessSegment {
 
   const name = String(salonData.name || '').toLowerCase();
   const segmentRaw = String(salonData.businessType || salonData.segment || '').toLowerCase();
+  const emailRaw = String(salonData.ownerEmail || salonData.email || '').toLowerCase();
 
-  if (segmentRaw === 'agency' || /agencia|agência|marketing|mídia|midia|trafego|tráfego|web|publicidade|gf\s*marketing/i.test(name)) {
+  if (
+    segmentRaw === 'agency' || 
+    emailRaw.includes('galicioriefonseca31@gmail.com') ||
+    /agencia|agência|marketing|mídia|midia|trafego|tráfego|web|publicidade|gf\s*marketing/i.test(name)
+  ) {
     return 'agency';
   }
   if (segmentRaw === 'consulting' || /consultor|consultoria|gestao|gestão|assessoria|mentor/i.test(name)) {
