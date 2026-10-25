@@ -28,7 +28,7 @@ export function SubscriptionBanner({ className = '' }: SubscriptionBannerProps) 
           </div>
         </div>
         <Button
-          onClick={() => navigate('/dashboard/subscription')}
+          onClick={() => navigate('/dashboard/assinatura')}
           className="bg-[#D4AF37] hover:bg-[#C5A880] text-[#04140F] font-bold h-11 px-6 rounded-xl shadow-lg transition-all active:scale-95 shrink-0"
         >
           Definir Pagamento <ArrowRight className="ml-2 h-4 w-4" />

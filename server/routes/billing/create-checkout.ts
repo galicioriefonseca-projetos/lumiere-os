@@ -9,15 +9,39 @@ import { env } from '../../config/env.js';
 const ALLOWED_CYCLES = new Set(['MONTHLY', 'SEMIANNUALLY', 'YEARLY']);
 const ALLOWED_CHECKOUT_METHODS = new Set(['CREDIT_CARD', 'PIX']);
 
-function mapBusinessType(segment: string): string {
-  switch (segment) {
-    case 'Barbearia': return 'barbershop';
-    case 'Clínica de Estética': return 'clinic';
-    case 'Estúdio': return 'studio';
-    case 'Outro': return 'other';
-    default: return 'salon';
+function mapBusinessType(segment: string): { businessType: string; segment: string } {
+  const s = (segment || '').toLowerCase();
+  if (s.includes('agência') || s.includes('agencia') || s.includes('marketing') || s.includes('mídia') || s.includes('midia') || s === 'agency') {
+    return { businessType: 'agency', segment: 'agency' };
   }
+  if (s.includes('consultor') || s.includes('gestão') || s.includes('gestao') || s.includes('assessoria') || s === 'consulting') {
+    return { businessType: 'consulting', segment: 'consulting' };
+  }
+  if (s.includes('saúde') || s.includes('saude') || s.includes('terapia') || s.includes('paciente') || s.includes('médic') || s.includes('medic') || s === 'health') {
+    return { businessType: 'clinic', segment: 'health' };
+  }
+  if (s.includes('serviço') || s.includes('servico') || s.includes('liberal') || s.includes('projeto') || s.includes('outro') || s === 'services') {
+    return { businessType: 'services', segment: 'services' };
+  }
+  if (s.includes('barbearia') || s === 'barbershop') {
+    return { businessType: 'barbershop', segment: 'beauty' };
+  }
+  if (s.includes('estética') || s.includes('estetica') || s === 'clinic') {
+    return { businessType: 'clinic', segment: 'beauty' };
+  }
+  if (s.includes('estúdio') || s.includes('estudio') || s === 'studio') {
+    return { businessType: 'studio', segment: 'beauty' };
+  }
+  return { businessType: 'salon', segment: 'beauty' };
 }
+
+const DEFAULT_MODULES_BY_SEGMENT: Record<string, Record<string, boolean>> = {
+  beauty: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: true, commissions: true, pricing: true, gamification: true, clientPortal: false },
+  agency: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: false, commissions: true, pricing: true, gamification: true, clientPortal: true },
+  consulting: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: false, commissions: true, pricing: true, gamification: false, clientPortal: false },
+  health: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: true, commissions: true, pricing: true, gamification: true, clientPortal: false },
+  services: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: true, commissions: true, pricing: true, gamification: true, clientPortal: false }
+};
 
 function planCyclePrice(plan: any, cycle: string): number {
   if (cycle === 'MONTHLY') return Number(plan.price || 0);
@@ -115,7 +139,7 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
         phone,
         document,
         salonName,
-        businessType: mapBusinessType(String(body.businessSegment || '')),
+        businessType: mapBusinessType(String(body.businessSegment || '')).businessType,
         city: String(body.city || '').trim(),
         state: String(body.state || '').trim().toUpperCase(),
       });
@@ -145,21 +169,44 @@ export default async function createCheckoutHandler(req: VercelRequest, res: Ver
       const body = req.body || {};
       const now = Date.now();
       const ownerName = String(body.ownerName || body.customerData?.legalName || user.name || '').trim();
-      const salonName = String(body.salonName || '').trim() || `Estabelecimento de ${ownerName || 'Novo Usuário'}`;
+      const companyName = String(body.companyName || body.salonName || '').trim();
+      const salonName = companyName || `Negócio de ${ownerName || 'Novo Usuário'}`;
       const phone = String(body.phone || body.customerData?.mobilePhone || '').trim();
       const email = String(user.email || body.email || '').trim().toLowerCase();
       const city = String(body.city || '').trim();
       const state = String(body.state || '').trim().toUpperCase();
       if (ownerName.length < 2 || !email) return res.status(422).json({ success: false, code: 'REGISTRATION_DATA_INVALID', error: 'Dados básicos incompletos (nome e email são obrigatórios).' });
+      
+      const mapped = mapBusinessType(String(body.businessSegment || body.segment || ''));
+      const defaultModules = DEFAULT_MODULES_BY_SEGMENT[mapped.segment] || DEFAULT_MODULES_BY_SEGMENT.beauty;
+
       salonData = {
-        id: salonId, name: salonName, ownerName, ownerId: user.uid, ownerEmail: email, phone,
-        businessType: mapBusinessType(String(body.businessSegment || '')), city, state, plan: planId,
-        subscriptionStatus: 'pending_payment', activationStatus: 'pending', paymentStatus: 'pending',
-        previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000, isActive: false,
-        professionalsLimit: Number(plan.maxProfessionals || 0), professionalLimit: Number(plan.maxProfessionals || 0), maxProfessionals: Number(plan.maxProfessionals || 0),
-        billingEmail: email, onboardingCompleted: false,
+        id: salonId,
+        name: salonName,
+        ownerName,
+        ownerId: user.uid,
+        ownerEmail: email,
+        phone,
+        businessType: mapped.businessType,
+        segment: mapped.segment,
+        managementMode: String(body.managementMode || 'liberal'),
+        enabledModules: defaultModules,
+        city,
+        state,
+        plan: planId,
+        subscriptionStatus: 'pending_payment',
+        activationStatus: 'pending',
+        paymentStatus: 'pending',
+        previewEndsAt: now + Number(plan.trialDays || 0) * 24 * 60 * 60 * 1000,
+        isActive: false,
+        professionalsLimit: Number(plan.maxProfessionals || 0),
+        professionalLimit: Number(plan.maxProfessionals || 0),
+        maxProfessionals: Number(plan.maxProfessionals || 0),
+        billingEmail: email,
+        onboardingCompleted: false,
         billing: { provider: 'asaas', status: 'PENDING_CHECKOUT', planId, billingCycle: selectedCycle, value: planCyclePrice(plan, selectedCycle), updatedAt: new Date(now).toISOString() },
-        createdAt: now, updatedAt: now
+        createdAt: now,
+        updatedAt: now
       };
       await salonRef.create(salonData);
       await adminDb.collection('users').doc(user.uid).set({ id: user.uid, email, fullName: ownerName, name: ownerName, phone, role: 'pending', salonId, onboardingStatus: 'pending_payment', updatedAt: now }, { merge: true });

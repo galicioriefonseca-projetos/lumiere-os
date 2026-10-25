@@ -28,6 +28,22 @@ function mapBusinessType(segment: string): { businessType: string; segment: stri
   return { businessType: 'salon', segment: 'beauty' };
 }
 
+const DEFAULT_MODULES_BY_SEGMENT: Record<string, Record<string, boolean>> = {
+  beauty: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: true, commissions: true, pricing: true, gamification: true, clientPortal: false },
+  agency: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: false, commissions: true, pricing: true, gamification: true, clientPortal: true },
+  consulting: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: false, commissions: true, pricing: true, gamification: false, clientPortal: false },
+  health: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: true, commissions: true, pricing: true, gamification: true, clientPortal: false },
+  services: { appointments: true, clients: true, financial: true, services: true, team: true, checklists: true, goals: true, inventory: true, commissions: true, pricing: true, gamification: true, clientPortal: false }
+};
+
+const INITIAL_CATEGORIES_MAP: Record<string, string[]> = {
+  beauty: ['Cortes & Barba', 'Cabelo & Penteados', 'Unhas & Esmaltação', 'Coloração & Tratamentos', 'Estética Facial & Corporal'],
+  agency: ['Google Meu Negócio & SEO Local', 'Instagram & Redes Sociais', 'Landing Pages & Sites', 'WhatsApp Business & Automações', 'Tráfego Pago & Performance'],
+  consulting: ['Diagnóstico Empresarial', 'Mentorias & Alinhamentos', 'Finanças & DRE', 'Planejamento Estratégico', 'Processos & Operações'],
+  health: ['Consultas & Avaliações', 'Sessões & Tratamentos', 'Planos & Acompanhamentos', 'Exames & Procedimentos'],
+  services: ['Atendimento & Diagnóstico', 'Projetos & Execução', 'Contratos & Manutenção', 'Consultoria Especializada']
+};
+
 /**
  * GET /api/billing/setup-token?token=...
  * Valida se um token de sessão única para configuração da empresa é válido e não foi usado.
@@ -160,6 +176,7 @@ export async function completeCompanySetupHandler(req: VercelRequest, res: Verce
     }
 
     const { businessType, segment } = mapBusinessType(businessSegment);
+    const defaultModules = DEFAULT_MODULES_BY_SEGMENT[segment] || DEFAULT_MODULES_BY_SEGMENT.beauty;
     const maxPros = parseInt(estimatedProfessionals.split(' ')[0]) || 5;
     const now = Date.now();
 
@@ -169,6 +186,7 @@ export async function completeCompanySetupHandler(req: VercelRequest, res: Verce
       name: salonName,
       businessType,
       segment,
+      enabledModules: defaultModules,
       city,
       state,
       managementMode: body.managementMode || 'liberal',
@@ -182,6 +200,29 @@ export async function completeCompanySetupHandler(req: VercelRequest, res: Verce
       setupToken: { used: true, completedAt: new Date(now).toISOString() },
       updatedAt: now
     }, { merge: true });
+
+    // Se o catálogo de categorias estiver vazio, cadastra as categorias iniciais do nicho
+    try {
+      const catSnap = await salonRef.collection('categories').limit(1).get();
+      if (catSnap.empty) {
+        const initialList = INITIAL_CATEGORIES_MAP[segment] || INITIAL_CATEGORIES_MAP.beauty;
+        const batch = adminDb.batch();
+        initialList.forEach((catName, idx) => {
+          const catRef = salonRef.collection('categories').doc();
+          batch.set(catRef, {
+            id: catRef.id,
+            name: catName,
+            order: idx,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now
+          });
+        });
+        await batch.commit();
+      }
+    } catch (catErr) {
+      console.warn('[Setup Company] Falha ao pré-cadastrar categorias do segmento:', catErr);
+    }
 
     // Atualiza o perfil do proprietário
     if (targetOwnerId) {

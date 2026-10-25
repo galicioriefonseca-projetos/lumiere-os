@@ -1,29 +1,50 @@
-# Plano de Implementação: Gestão Adaptativa LumièreOS
+# Plano & Arquitetura: Configuração de Contexto & Vocabulário Adaptativo (LumièreOS)
 
 ## Objetivo
-Transformar o LumièreOS em uma plataforma de gestão adaptável, que se molda automaticamente para atender desde profissionais liberais (agilidade e simplicidade) até empresas com estruturas complexas (métricas avançadas e hierarquia).
+Implementar o serviço de **Configuração de Contexto**, permitindo que o LumièreOS reconheça o nicho do negócio ao cadastrar ou finalizar o onboarding (`salão`, `clínica`, `estúdio`, `freelancer`, `agência`, `consultoria`), salvando as preferências no Firestore e adaptando dinamicamente a interface e o vocabulário (ex: "cliente" vs "paciente", "cadeira" vs "sala / consultório", "comanda" vs "prontuário").
 
-## Fases de Implementação
+---
 
-### Fase 1: Módulo de Configuração de "Modo de Gestão"
-*   **Settings Hub:** Criar uma nova área de configuração em `src/pages/dashboard/SettingsPage.tsx` para o dono da empresa selecionar seu "Modo de Gestão" (Simples/Liberal vs. Completo/Empresa).
-*   **Persistência:** Atualizar o Firestore `salons` para armazenar a preferência de modo (`simple` ou `advanced`).
+## 1. Estrutura de Tipos & Schemas (`src/types/index.ts`)
+- **`NicheType`**: `'salon' | 'clinic' | 'studio' | 'freelancer' | 'agency' | 'consulting'`.
+- **`VocabularyConfig`**:
+  - `clientTerm` / `clientTermPlural` (ex: Cliente vs Paciente vs Contratante)
+  - `workstationTerm` / `workstationTermPlural` (ex: Cadeira vs Sala / Consultório vs Estação vs Meu Espaço)
+  - `professionalTerm` / `professionalTermPlural` (ex: Profissional vs Especialista vs Artista vs Consultor)
+  - `serviceTerm` / `serviceTermPlural` (ex: Serviço vs Consulta vs Sessão vs Trabalho)
+  - `flowItemTerm` / `flowItemTermPlural` (ex: Comanda vs Prontuário vs Ordem de Serviço vs Proposta)
+  - `workplaceTerm` / `workplaceTermPlural` (ex: Salão vs Clínica vs Estúdio vs Escritório)
+- **`UiPreferences`**: Preferências de visualização (ex: visão de fluxo vs calendário, badges, comissões, portal do cliente).
+- **`ContextConfig`**: Armazenado diretamente no documento do tenant `salons/{salonId}.contextConfig`.
 
-### Fase 2: Adaptação Dinâmica de Interface (UI)
-*   **Navigation Factory:** Refatorar `src/components/layouts/dashboard/getNavigationByRole.ts` para cruzar o `role` do usuário com o `modo de gestão` definido pelo dono.
-*   **Dashboard Condicional:** Criar layouts adaptáveis para o `DashboardHome.tsx`. Modo Simples foca em agenda/financeiro; Modo Empresa adiciona widgets de metas, performance da equipe e comissões.
+---
 
-### Fase 3: Escalabilidade de Métricas
-*   **Métricas Escaláveis:** Desenvolver componentes de dashboard que detectam o modo de gestão para exibir dados (ex: Modo Simples mostra total de vendas; Modo Empresa mostra DRE, comissões acumuladas e métricas por profissional).
-*   **Customização Modular:** Permitir que o dono, no modo avançado, escolha quais módulos (comissões, estoque, gamificação) deseja ativar ou ocultar.
+## 2. Backend & Rotas Express (`server/routes/contextConfig.ts`)
+- `GET /api/context-config`: Consulta as configurações de contexto e vocabulário do salão autenticado.
+- `GET /api/context-config/templates`: Retorna os modelos pré-definidos para cada nicho.
+- `POST /api/context-config/initialize`: Executado ao concluir o onboarding para persistir o nicho, configurar módulos padrões e salvar no Firestore.
+- `PUT /api/context-config`: Permite alterações manuais de termos e preferências de UI.
 
-## Impacto Técnico
-*   `AuthContext`: Adicionar o estado `managementMode` para fácil acesso em toda a aplicação.
-*   `Firestore`: Atualizar schema de `salons` para incluir a preferência de modo de gestão.
-*   `DashboardLayout`: Atualizar lógica para renderizar dinamicamente a sidebar e as páginas permitidas.
+---
 
-## Cronograma
-1.  Configuração e Banco (2 dias)
-2.  Refatoração de Navegação e Layout (3 dias)
-3.  Adaptação de Dashboards e Métricas (4 dias)
-4.  Testes e Refinamento de UX (2 dias)
+## 3. Serviços e Hooks Frontend
+- **`src/services/contextConfigService.ts`**: Cliente HTTP autenticado com Firebase Bearer Token.
+- **`src/hooks/useLexicon.ts`**: Hook unificado que integra `salonData.contextConfig` com fallback inteligente, expondo termos diretos (`clientTerm`, `workstationTerm`, `flowItemTerm`, etc.) e flags (`isClinic`, `isStudio`, `isFreelancer`, `isBeauty`, etc.).
+- **`src/hooks/useLumiLexicon.ts`**: Sincronizado para garantir uniformidade em todos os componentes legados e novos.
+
+---
+
+## 4. Integração no Onboarding (`src/pages/onboarding/OnboardingSetupHub.tsx`)
+- Seletor visual interativo com os 4 nichos principais (Salão, Clínica, Estúdio, Freelancer) e pré-seleção automática.
+- Visualização instantânea das terminologias correspondentes.
+- Persistência automática no Firestore ao salvar e no botão final "Acessar Painel Principal".
+
+---
+
+## 5. Adaptação Dinâmica nas Telas do Dashboard
+- **`AppointmentsPage.tsx`**:
+  - Detecção da aba padrão (fluxo de comandas para salões; agenda/calendário para clínicas, estúdios e freelancers).
+  - Acolhimento dinâmico na estação ("Acolher no(a) Cadeira", "No(a) Sala / Consultório", "No(a) Estação").
+  - Termos de clientes e fluxo adaptados ("Check-In de paciente/cliente", "Abrir Prontuário/Comanda").
+- **`ClientsPage.tsx`**: Títulos e cabeçalhos refletindo "Pacientes", "Clientes & Contas" ou "Contratantes".
+- **`DashboardHome.tsx`**: Ícones de ação rápida (Scissors vs Activity vs Briefcase) e atalhos customizados.

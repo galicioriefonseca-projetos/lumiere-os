@@ -36,6 +36,7 @@ export interface SegmentConfig {
     commissions: boolean;
     pricing: boolean;
     gamification: boolean;
+    clientPortal?: boolean;
   };
   sampleServices: Array<{
     name: string;
@@ -123,7 +124,8 @@ export const SEGMENTS: Record<BusinessSegment, SegmentConfig> = {
       inventory: false,
       commissions: true,
       pricing: true,
-      gamification: true
+      gamification: true,
+      clientPortal: true
     },
     sampleServices: [
       { name: 'Gestão de Google Meu Negócio (Mensal)', category: 'SEO Local', price: 650, durationMinutes: 60, isRecurring: true, description: 'Otimização contínua de perfil, fotos, produtos, postagens semanais e gestão de avaliações.' },
@@ -261,12 +263,17 @@ export const SEGMENTS: Record<BusinessSegment, SegmentConfig> = {
 export function detectBusinessSegment(salonData: any): BusinessSegment {
   if (!salonData) return 'beauty';
   
-  if (salonData.segment && SEGMENTS[salonData.segment as BusinessSegment]) {
-    return salonData.segment as BusinessSegment;
+  const explicitSegment = salonData.segment || salonData.businessSegment;
+  if (explicitSegment && SEGMENTS[explicitSegment as BusinessSegment]) {
+    return explicitSegment as BusinessSegment;
+  }
+
+  if (salonData.businessType && SEGMENTS[salonData.businessType as BusinessSegment]) {
+    return salonData.businessType as BusinessSegment;
   }
 
   const name = String(salonData.name || '').toLowerCase();
-  const segmentRaw = String(salonData.businessType || salonData.segment || '').toLowerCase();
+  const segmentRaw = String(salonData.businessType || salonData.segment || salonData.businessSegment || '').toLowerCase();
   const emailRaw = String(salonData.ownerEmail || salonData.email || '').toLowerCase();
 
   if (

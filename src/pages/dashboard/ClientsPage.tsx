@@ -827,7 +827,7 @@ export default function ClientsPage() {
             <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25 px-2.5 py-0.5 rounded-full font-medium">LumièreOS</span>
           </h2>
           <p className="text-zinc-400 text-sm mt-1">
-            Organize clientes, retornos e oportunidades em um fluxo de trabalho visual.
+            Organize {lex.clients.toLowerCase()}, retornos e oportunidades em um fluxo de trabalho visual.
           </p>
         </div>
 

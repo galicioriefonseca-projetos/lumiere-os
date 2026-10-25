@@ -1,12 +1,15 @@
 import { Router } from "express";
 import { getAdminDb, getAdminAuth, isFirebaseAdminCredentialError } from "../firebaseAdmin.js";
 import { verifyIdToken, resolvePlatformAdmin } from "../shared/auth.js";
+import { env } from "../config/env.js";
+import { withDeveloperAuth } from "../shared/gemini.js";
 import crypto from "crypto";
 
 export const clientPortalRoutes = Router();
 
 // Helper para validar acesso do usuário ao tenant (salonId)
-async function getAuthenticatedUserAndSalon(req: any) {
+// Apenas a conta galicioriefonseca31@gmail.com e contas de agência têm acesso à gestão do portal
+async function getAuthenticatedUserAndSalon(req: any, requireAgency: boolean = true) {
   const user = await verifyIdToken(req);
   const adminDb = getAdminDb();
   
@@ -16,10 +19,47 @@ async function getAuthenticatedUserAndSalon(req: any) {
   const isMaster = await resolvePlatformAdmin(user, adminDb);
   const salonId = userData?.salonId || (isMaster ? req.query?.salonId || req.body?.salonId : null);
 
+  // Validação de acesso à agência / portal
+  const userEmail = String(user.email || "").toLowerCase();
+  const isOwnerEmail = userEmail === 'galicioriefonseca31@gmail.com' || userEmail === 'galicioriefonseca@gmail.com';
+  let isAgency = isMaster || isOwnerEmail;
+
+  if (!isAgency && salonId) {
+    const salonSnap = await adminDb.collection("salons").doc(salonId).get();
+    if (salonSnap.exists) {
+      const sData = salonSnap.data() || {};
+      const ownerEmail = String(sData.ownerEmail || '').toLowerCase();
+      if (
+        ownerEmail === 'galicioriefonseca31@gmail.com' ||
+        ownerEmail === 'galicioriefonseca@gmail.com' ||
+        sData.segment === 'agency' || 
+        sData.businessType === 'agency' ||
+        sData.enabledModules?.clientPortal === true ||
+        ['owner', 'manager', 'platform_admin'].includes(userData?.role)
+      ) {
+        isAgency = true;
+      }
+    }
+  }
+
+  // Se a rota exige privilégio de gestão da agência:
+  if (requireAgency) {
+    if (!isAgency) {
+      throw new Error("Acesso à gestão do Portal do Cliente exclusivo para a agência ou administrador.");
+    }
+  } else {
+    // Acesso liberado para a agência ou cliente convidado da agência
+    const isClient = userData?.role === 'client';
+    if (!isAgency && !isClient) {
+      throw new Error("Acesso exclusivo para clientes cadastrados ou gestores da agência.");
+    }
+  }
+
   return {
     user,
     userData,
     isMaster,
+    isAgency,
     salonId: String(salonId || "").trim()
   };
 }
@@ -194,10 +234,6 @@ clientPortalRoutes.post("/invites", async (req, res) => {
 
     const { clientName, clientEmail, clientPhone, companyName, clientId, notes } = req.body || {};
 
-    if (!clientName && !companyName) {
-      return res.status(400).json({ error: "Informe o nome do cliente ou da empresa." });
-    }
-
     const adminDb = getAdminDb();
     const token = `cli_${crypto.randomBytes(16).toString("hex")}`;
     const now = Date.now();
@@ -251,6 +287,119 @@ clientPortalRoutes.post("/invites", async (req, res) => {
   } catch (error: any) {
     console.error("[ClientPortal create-invite]", error);
     return res.status(500).json({ error: error?.message || "Erro ao criar convite." });
+  }
+});
+
+// ----------------------------------------------------
+// 3.1 CADASTRAR CLIENTE E GERAR CONVITE IMEDIATO
+// ----------------------------------------------------
+clientPortalRoutes.post("/clients-with-invite", async (req, res) => {
+  try {
+    const { salonId, user } = await getAuthenticatedUserAndSalon(req);
+    if (!salonId) return res.status(403).json({ error: "Agência não identificada." });
+
+    const {
+      name,
+      contactName,
+      email,
+      phone,
+      notes
+    } = req.body || {};
+
+    if (!name && !contactName) {
+      return res.status(400).json({ error: "O nome do cliente ou da empresa é obrigatório." });
+    }
+
+    const adminDb = getAdminDb();
+    const now = Date.now();
+    const clientRef = adminDb.collection(`salons/${salonId}/clients`).doc();
+    const token = `cli_${crypto.randomBytes(16).toString("hex")}`;
+    const expiresAt = now + (30 * 24 * 60 * 60 * 1000); // 30 dias
+
+    // Busca nome da agência
+    const salonSnap = await adminDb.collection("salons").doc(salonId).get();
+    const salonData = salonSnap.data() || {};
+    const agencyName = salonData.name || "Agência LumièreOS";
+
+    const finalName = (name || contactName).trim();
+    const finalContact = (contactName || name).trim();
+    const finalEmail = email ? String(email).trim().toLowerCase() : "";
+    const finalPhone = phone ? String(phone).trim() : "";
+
+    const clientPayload = {
+      id: clientRef.id,
+      name: finalName,
+      contactName: finalContact,
+      email: finalEmail,
+      phone: finalPhone,
+      notes: notes || "",
+      crmStage: "active",
+      status: "active",
+      archived: false,
+      portalAccessEnabled: true,
+      lastInviteToken: token,
+      lastInviteCreatedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: user.uid
+    };
+
+    await clientRef.set(clientPayload);
+
+    const invitePayload = {
+      inviteId: token,
+      token,
+      salonId,
+      agencyName,
+      inviteType: "client",
+      role: "client",
+      clientName: finalContact,
+      companyName: finalName,
+      clientEmail: finalEmail,
+      clientPhone: finalPhone,
+      clientId: clientRef.id,
+      notes: notes || "",
+      status: "pending",
+      createdBy: user.uid,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt
+    };
+
+    await adminDb.collection("invites").doc(token).set(invitePayload);
+    await adminDb.collection(`salons/${salonId}/client_invites`).doc(token).set(invitePayload);
+
+    return res.json({
+      success: true,
+      client: clientPayload,
+      invite: invitePayload,
+      inviteToken: token,
+      inviteLink: `/portal/convite?token=${token}`
+    });
+  } catch (error: any) {
+    console.error("[ClientPortal clients-with-invite]", error);
+    return res.status(500).json({ error: error?.message || "Erro ao cadastrar cliente e gerar convite." });
+  }
+});
+
+// ----------------------------------------------------
+// 3.2 LISTAR CLIENTES DA AGÊNCIA (PARA SELEÇÃO DE RELATÓRIOS E PORTAL)
+// ----------------------------------------------------
+clientPortalRoutes.get("/clients", async (req, res) => {
+  try {
+    const { salonId } = await getAuthenticatedUserAndSalon(req);
+    if (!salonId) return res.status(403).json({ error: "Agência não identificada." });
+
+    const adminDb = getAdminDb();
+    const snap = await adminDb.collection(`salons/${salonId}/clients`).get();
+    const clients: any[] = [];
+    snap.forEach(doc => clients.push({ id: doc.id, ...doc.data() }));
+    clients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    return res.json({ clients });
+  } catch (error: any) {
+    console.error("[ClientPortal get-clients]", error);
+    return res.status(500).json({ error: "Erro ao obter clientes." });
   }
 });
 
@@ -323,43 +472,41 @@ clientPortalRoutes.delete("/invites/:token", async (req, res) => {
 // ----------------------------------------------------
 clientPortalRoutes.get("/client-view", async (req, res) => {
   try {
-    const user = await verifyIdToken(req);
-    const adminDb = getAdminDb();
-
-    const userSnap = await adminDb.collection("users").doc(user.uid).get();
-    const userData = userSnap.exists ? userSnap.data() : null;
-
-    let salonId = userData?.salonId;
-    let clientId = userData?.clientId;
+    const { salonId: authenticatedSalonId, user, userData } = await getAuthenticatedUserAndSalon(req, false);
+    
+    let finalSalonId = authenticatedSalonId;
+    let finalClientId = userData?.clientId;
     let isPreview = false;
+
+    const adminDb = getAdminDb();
 
     // Se for o dono da agência ou admin visualizando em modo preview:
     if (userData?.role === "owner" || userData?.role === "manager" || userData?.role === "platform_admin" || await resolvePlatformAdmin(user, adminDb)) {
       isPreview = true;
-      if (req.query.salonId) salonId = String(req.query.salonId);
-      if (req.query.clientId) clientId = String(req.query.clientId);
+      if (req.query.salonId) finalSalonId = String(req.query.salonId);
+      if (req.query.clientId) finalClientId = String(req.query.clientId);
     }
 
-    if (!salonId) {
+    if (!finalSalonId) {
       return res.status(403).json({ error: "Nenhuma agência associada a este usuário." });
     }
 
     // Busca agência
-    const salonSnap = await adminDb.collection("salons").doc(salonId).get();
+    const salonSnap = await adminDb.collection("salons").doc(finalSalonId).get();
     const salonData = salonSnap.data() || {};
 
     // Busca relatórios
-    let reportsQuery = adminDb.collection(`salons/${salonId}/reports`);
+    let reportsQuery = adminDb.collection(`salons/${finalSalonId}/reports`);
     const reportsSnap = await reportsQuery.get();
     let reports: any[] = [];
     reportsSnap.forEach(doc => {
       const data = doc.data();
       if (!isPreview) {
-        if (data.status === "published" && (!data.clientId || data.clientId === clientId || (data.clientEmail && data.clientEmail.toLowerCase() === user.email.toLowerCase()))) {
+        if (data.status === "published" && (!data.clientId || data.clientId === finalClientId || (data.clientEmail && data.clientEmail.toLowerCase() === user.email.toLowerCase()))) {
           reports.push({ id: doc.id, ...data });
         }
       } else {
-        if (!clientId || data.clientId === clientId) {
+        if (!finalClientId || data.clientId === finalClientId) {
           reports.push({ id: doc.id, ...data });
         }
       }
@@ -367,16 +514,16 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
     reports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     // Busca contratos
-    const contractsSnap = await adminDb.collection(`salons/${salonId}/contracts`).get();
+    const contractsSnap = await adminDb.collection(`salons/${finalSalonId}/contracts`).get();
     let contracts: any[] = [];
     contractsSnap.forEach(doc => {
       const data = doc.data();
       if (!isPreview) {
-        if (!data.clientId || data.clientId === clientId || (data.clientEmail && data.clientEmail.toLowerCase() === user.email.toLowerCase())) {
+        if (!data.clientId || data.clientId === finalClientId || (data.clientEmail && data.clientEmail.toLowerCase() === user.email.toLowerCase())) {
           contracts.push({ id: doc.id, ...data });
         }
       } else {
-        if (!clientId || data.clientId === clientId) {
+        if (!finalClientId || data.clientId === finalClientId) {
           contracts.push({ id: doc.id, ...data });
         }
       }
@@ -384,33 +531,33 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
     contracts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     // Busca Aprovações
-    const approvalsSnap = await adminDb.collection(`salons/${salonId}/approvals`).get();
+    const approvalsSnap = await adminDb.collection(`salons/${finalSalonId}/approvals`).get();
     const approvals: any[] = [];
     approvalsSnap.forEach(doc => {
         const data = doc.data();
-        if (isPreview || data.clientId === clientId) approvals.push({ id: doc.id, ...data });
+        if (isPreview || data.clientId === finalClientId) approvals.push({ id: doc.id, ...data });
     });
 
     // Busca Tickets
-    const ticketsSnap = await adminDb.collection(`salons/${salonId}/tickets`).get();
+    const ticketsSnap = await adminDb.collection(`salons/${finalSalonId}/tickets`).get();
     const tickets: any[] = [];
     ticketsSnap.forEach(doc => {
         const data = doc.data();
-        if (isPreview || data.clientId === clientId) tickets.push({ id: doc.id, ...data });
+        if (isPreview || data.clientId === finalClientId) tickets.push({ id: doc.id, ...data });
     });
 
     // Busca Entregáveis
-    const deliverablesSnap = await adminDb.collection(`salons/${salonId}/deliverables`).get();
+    const deliverablesSnap = await adminDb.collection(`salons/${finalSalonId}/deliverables`).get();
     const deliverables: any[] = [];
     deliverablesSnap.forEach(doc => {
         const data = doc.data();
-        if (isPreview || data.clientId === clientId) deliverables.push({ id: doc.id, ...data });
+        if (isPreview || data.clientId === finalClientId) deliverables.push({ id: doc.id, ...data });
     });
 
     // Busca informações do cliente
     let clientInfo: any = null;
-    if (clientId) {
-      const clientSnap = await adminDb.collection(`salons/${salonId}/clients`).doc(clientId).get();
+    if (finalClientId) {
+      const clientSnap = await adminDb.collection(`salons/${finalSalonId}/clients`).doc(finalClientId).get();
       if (clientSnap.exists) {
         clientInfo = clientSnap.data();
       }
@@ -418,7 +565,7 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
 
     return res.json({
       agency: {
-        id: salonId,
+        id: finalSalonId,
         name: salonData.name || "Agência de Marketing",
         ownerName: salonData.ownerName || "",
         phone: salonData.phone || "",
@@ -427,7 +574,7 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
         state: salonData.state || ""
       },
       client: {
-        id: clientId || user.uid,
+        id: finalClientId || user.uid,
         name: userData?.companyName || clientInfo?.name || userData?.fullName || "Cliente",
         contactName: userData?.fullName || clientInfo?.contactName || "",
         email: user.email,
@@ -479,7 +626,9 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       clientEmail,
       period,
       summary,
+      reportType,
       metrics,
+      gmbMetrics,
       externalUrl,
       fileUrl,
       status
@@ -502,6 +651,7 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       title: title.trim(),
       period: period.trim(),
       summary: summary || "",
+      reportType: reportType || (gmbMetrics ? "google_meu_negocio" : "general"),
       metrics: {
         leads: Number(metrics?.leads || 0),
         reach: Number(metrics?.reach || 0),
@@ -512,6 +662,18 @@ clientPortalRoutes.post("/reports", async (req, res) => {
         cpc: Number(metrics?.cpc || 0),
         cpl: Number(metrics?.cpl || 0)
       },
+      gmbMetrics: gmbMetrics ? {
+        directionRequests: Number(gmbMetrics.directionRequests || 0),
+        calls: Number(gmbMetrics.calls || 0),
+        websiteClicks: Number(gmbMetrics.websiteClicks || 0),
+        mapsImpressions: Number(gmbMetrics.mapsImpressions || 0),
+        searchImpressions: Number(gmbMetrics.searchImpressions || 0),
+        rankingPosition: gmbMetrics.rankingPosition ? Number(gmbMetrics.rankingPosition) : undefined,
+        targetKeyword: String(gmbMetrics.targetKeyword || "").trim(),
+        topKeywords: Array.isArray(gmbMetrics.topKeywords) ? gmbMetrics.topKeywords : [],
+        rating: gmbMetrics.rating ? Number(gmbMetrics.rating) : undefined,
+        reviewsCount: gmbMetrics.reviewsCount ? Number(gmbMetrics.reviewsCount) : undefined
+      } : null,
       externalUrl: externalUrl || "",
       fileUrl: fileUrl || "",
       status: status === "draft" ? "draft" : "published",
@@ -567,6 +729,253 @@ clientPortalRoutes.delete("/reports/:id", async (req, res) => {
   } catch (error: any) {
     console.error("[ClientPortal delete-report]", error);
     return res.status(500).json({ error: "Erro ao excluir relatório." });
+  }
+});
+
+// ----------------------------------------------------
+// 7.1 RECONHECIMENTO AUTOMÁTICO DE PDF (GEMINI AI)
+// ----------------------------------------------------
+clientPortalRoutes.post("/reports/parse-pdf", async (req, res) => {
+  try {
+    const { salonId } = await getAuthenticatedUserAndSalon(req);
+    if (!salonId) return res.status(403).json({ error: "Agência não identificada." });
+
+    const { pdfBase64, fileName, clientId } = req.body || {};
+    if (!pdfBase64) {
+      return res.status(400).json({ error: "Arquivo PDF em formato Base64 não fornecido." });
+    }
+
+    const apiKey = env.gemini.apiKey;
+    if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
+      return res.status(400).json({
+        error: "Chave de API do Gemini não configurada. Configure GEMINI_API_KEY nas variáveis de ambiente."
+      });
+    }
+
+    // Limpar prefixo data:application/pdf;base64, caso venha de FileReader
+    const cleanBase64 = pdfBase64.includes(",") ? pdfBase64.split(",")[1] : pdfBase64;
+
+    const parsedData = await withDeveloperAuth(apiKey, async (ai) => {
+      const prompt = `Você é um analista sênior de inteligência de dados especializado em relatórios de desempenho do Google Meu Negócio (Google Business Profile - GBP) e Google Maps.
+Analise detalhadamente o documento PDF anexo fornecido pelo Google.
+Extraia com máxima fidelidade todas as métricas de performance da empresa presentes no documento (visualizações de busca, mapas, chamadas telefônicas, solicitações de rotas/direções, acessos ao site, nota de estrelas e avaliações).
+Retorne ESTRITAMENTE um objeto JSON válido (sem blocos markdown e sem textos adicionais antes ou depois) com a estrutura exata:
+{
+  "businessName": string,
+  "period": string,
+  "month": number,
+  "year": number,
+  "searchImpressions": number,
+  "mapsImpressions": number,
+  "totalImpressions": number,
+  "websiteClicks": number,
+  "directionRequests": number,
+  "calls": number,
+  "rating": number,
+  "reviewsCount": number,
+  "targetKeyword": string,
+  "topKeywords": [
+    { "keyword": string, "count": number }
+  ],
+  "summary": string
+}
+Regras:
+1. "businessName": Nome comercial do estabelecimento indicado no cabeçalho ou título do relatório.
+2. "period": Mês e ano de referência por extenso em português (ex: "Outubro / 2026", "Setembro / 2026").
+3. "month": Número do mês (1 a 12).
+4. "year": Ano (ex: 2026).
+5. "searchImpressions": Total de pessoas que viram o perfil na Pesquisa Google.
+6. "mapsImpressions": Total de pessoas que viram o perfil no Google Maps.
+7. "totalImpressions": Total de impressões ou visualizações gerais do perfil.
+8. "websiteClicks": Quantidade de cliques que levaram para o site da empresa.
+9. "directionRequests": Quantidade de solicitações de rotas / direções no mapa.
+10. "calls": Ligações diretas iniciadas a partir do perfil no Google.
+11. "rating": Média geral de estrelas (ex: 4.9 ou 5.0).
+12. "reviewsCount": Quantidade total de avaliações recebidas.
+13. "targetKeyword": Palavra-chave principal que mais gerou impressões.
+14. "topKeywords": Lista das principais buscas com contagem aproximada.
+15. "summary": Um resumo executivo analítico impecável em português do Brasil (3 a 5 frases), destacando o crescimento de visibilidade, as principais ações dos clientes (chamadas, rotas, visitas ao site) e recomendações para o próximo mês.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: 'application/pdf',
+                  data: cleanBase64
+                }
+              },
+              {
+                text: prompt
+              }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      const responseText = response.text || '';
+      try {
+        return JSON.parse(responseText.trim());
+      } catch (e) {
+        const match = responseText.match(/\{[\s\S]*\}/);
+        if (match) {
+          return JSON.parse(match[0]);
+        }
+        throw new Error('Falha ao interpretar o JSON retornado pela inteligência artificial.');
+      }
+    });
+
+    // Se tiver clientId ou se puder inferir o cliente pelo nome, buscar relatórios anteriores para calcular o Comparativo de Meses
+    const adminDb = getAdminDb();
+    let targetClientId = clientId;
+
+    if (!targetClientId && parsedData.businessName) {
+      const clientsSnap = await adminDb.collection(`salons/${salonId}/clients`).get();
+      clientsSnap.forEach(doc => {
+        const cData = doc.data();
+        const cName = String(cData.name || '').toLowerCase();
+        const pName = String(parsedData.businessName || '').toLowerCase();
+        if (cName.includes(pName) || pName.includes(cName)) {
+          targetClientId = doc.id;
+        }
+      });
+    }
+
+    let comparison = null;
+    if (targetClientId) {
+      const priorReportsSnap = await adminDb.collection(`salons/${salonId}/reports`)
+        .where("clientId", "==", targetClientId)
+        .get();
+
+      const existingReports: any[] = [];
+      priorReportsSnap.forEach(doc => {
+        existingReports.push({ id: doc.id, ...doc.data() });
+      });
+
+      existingReports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+      if (existingReports.length > 0) {
+        const prev = existingReports[0];
+        const prevGmb = prev.gmbMetrics || {};
+        const prevCalls = prevGmb.calls || prev.metrics?.leads || 0;
+        const prevRoutes = prevGmb.directionRequests || 0;
+        const prevWeb = prevGmb.websiteClicks || 0;
+        const prevSearch = prevGmb.searchImpressions || 0;
+        const prevMaps = prevGmb.mapsImpressions || 0;
+
+        const calcDiff = (curr: number, prior: number) => {
+          if (!prior || prior === 0) return curr > 0 ? 100 : 0;
+          return Number((((curr - prior) / prior) * 100).toFixed(1));
+        };
+
+        comparison = {
+          previousPeriod: prev.period || 'Mês anterior',
+          callsDiffPct: calcDiff(parsedData.calls || 0, prevCalls),
+          directionRequestsDiffPct: calcDiff(parsedData.directionRequests || 0, prevRoutes),
+          websiteClicksDiffPct: calcDiff(parsedData.websiteClicks || 0, prevWeb),
+          searchImpressionsDiffPct: calcDiff(parsedData.searchImpressions || 0, prevSearch),
+          mapsImpressionsDiffPct: calcDiff(parsedData.mapsImpressions || 0, prevMaps),
+          reviewsDiff: (parsedData.reviewsCount || 0) - (prevGmb.reviewsCount || 0)
+        };
+      }
+    }
+
+    return res.json({
+      success: true,
+      parsedData,
+      comparison,
+      detectedClientId: targetClientId || null
+    });
+  } catch (error: any) {
+    console.error("[ClientPortal parse-pdf] Erro:", error);
+    return res.status(500).json({ error: error.message || "Erro ao processar PDF com IA." });
+  }
+});
+
+// ----------------------------------------------------
+// 7.2 COMPARATIVO MENSAL HISTÓRICO DE RELATÓRIOS
+// ----------------------------------------------------
+clientPortalRoutes.get("/reports/comparison", async (req, res) => {
+  try {
+    const { salonId } = await getAuthenticatedUserAndSalon(req, false);
+    const clientId = req.query.clientId as string;
+
+    if (!salonId || !clientId) {
+      return res.status(400).json({ error: "salonId e clientId são obrigatórios." });
+    }
+
+    const adminDb = getAdminDb();
+    const reportsSnap = await adminDb.collection(`salons/${salonId}/reports`)
+      .where("clientId", "==", clientId)
+      .where("status", "==", "published")
+      .get();
+
+    const reports: any[] = [];
+    reportsSnap.forEach(doc => {
+      reports.push({ id: doc.id, ...doc.data() });
+    });
+
+    // Ordenar do mais antigo ao mais recente
+    reports.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+    const calcDiff = (curr: number, prior: number) => {
+      if (!prior || prior === 0) return curr > 0 ? 100 : 0;
+      return Number((((curr - prior) / prior) * 100).toFixed(1));
+    };
+
+    // Calcular evolução mês a mês
+    const reportsWithComparison = reports.map((rep, index) => {
+      if (index === 0) {
+        return {
+          ...rep,
+          isBaseline: true,
+          comparison: null
+        };
+      }
+
+      const prev = reports[index - 1];
+      const prevGmb = prev.gmbMetrics || {};
+      const currGmb = rep.gmbMetrics || {};
+
+      const callsDiff = calcDiff(currGmb.calls || 0, prevGmb.calls || 0);
+      const routesDiff = calcDiff(currGmb.directionRequests || 0, prevGmb.directionRequests || 0);
+      const websiteDiff = calcDiff(currGmb.websiteClicks || 0, prevGmb.websiteClicks || 0);
+      const searchDiff = calcDiff(currGmb.searchImpressions || 0, prevGmb.searchImpressions || 0);
+      const mapsDiff = calcDiff(currGmb.mapsImpressions || 0, prevGmb.mapsImpressions || 0);
+      const reviewsDiff = (currGmb.reviewsCount || 0) - (prevGmb.reviewsCount || 0);
+
+      return {
+        ...rep,
+        isBaseline: false,
+        comparison: {
+          previousPeriod: prev.period,
+          callsDiffPct: callsDiff,
+          directionRequestsDiffPct: routesDiff,
+          websiteClicksDiffPct: websiteDiff,
+          searchImpressionsDiffPct: searchDiff,
+          mapsImpressionsDiffPct: mapsDiff,
+          reviewsDiff: reviewsDiff
+        }
+      };
+    });
+
+    // Reverter para apresentar do mais recente ao mais antigo na UI
+    reportsWithComparison.reverse();
+
+    return res.json({
+      success: true,
+      reports: reportsWithComparison,
+      totalMonths: reports.length
+    });
+  } catch (error: any) {
+    console.error("[ClientPortal comparison]", error);
+    return res.status(500).json({ error: "Erro ao gerar comparativo mensal." });
   }
 });
 
@@ -759,9 +1168,10 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
       clientId: "demo_cli_acme",
       clientName: "Acme Odontologia Integrada",
       clientEmail: "contato@acmeodonto.com.br",
-      title: "Relatório de Performance Meta Ads & Google Ads - Outubro/2026",
+      title: "Desempenho Google Meu Negócio & Campanhas Meta Ads - Outubro/2026",
       period: "Outubro / 2026",
-      summary: "Excelente mês de tração! Campanhas focadas em implantes e alinhadores invisíveis geraram 148 leads qualificados, reduzindo o CPL em 24% em relação ao mês anterior.",
+      summary: "Excelente mês de tração! A ficha no Google Maps alcançou o Top 2 local com 218 rotas traçadas e 94 ligações telefônicas diretas. Campanhas focadas em implantes e Invisalign geraram 148 leads qualificados.",
+      reportType: "google_meu_negocio",
       metrics: {
         leads: 148,
         reach: 84200,
@@ -771,6 +1181,23 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
         roas: 7.1,
         cpc: 1.15,
         cpl: 28.37
+      },
+      gmbMetrics: {
+        directionRequests: 218,
+        calls: 94,
+        websiteClicks: 165,
+        mapsImpressions: 14200,
+        searchImpressions: 8900,
+        rankingPosition: 2,
+        targetKeyword: "Dentista Invisalign & Implantes",
+        topKeywords: [
+          { keyword: "dentista perto de mim", count: 312 },
+          { keyword: "implante dentario preco", count: 184 },
+          { keyword: "clinica odontologica centro", count: 142 },
+          { keyword: "invisalign parcelado", count: 96 }
+        ],
+        rating: 4.9,
+        reviewsCount: 88
       },
       externalUrl: "https://lookerstudio.google.com",
       status: "published",
@@ -787,9 +1214,10 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
       clientId: "demo_cli_lumina",
       clientName: "Lumina Estética Avançada",
       clientEmail: "diretoria@luminaestetica.com.br",
-      title: "Relatório Mensal de Gestão de Redes Sociais & Tráfego Local",
+      title: "Relatório de Ranqueamento no Google Maps & Tráfego Local",
       period: "Outubro / 2026",
-      summary: "Crescimento orgânico de 1.840 novos seguidores qualificados na região metropolitana e 92 agendamentos diretos via direct e WhatsApp.",
+      summary: "A Lumina conquistou o 1º Lugar no ranking do Google Maps para 'Clínica de Estética & Botox Facial' na região. 185 rotas no Waze/Maps e 76 ligações diretas geradas organicamente.",
+      reportType: "google_meu_negocio",
       metrics: {
         leads: 92,
         reach: 125000,
@@ -799,6 +1227,23 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
         roas: 5.9,
         cpc: 0.88,
         cpl: 33.69
+      },
+      gmbMetrics: {
+        directionRequests: 185,
+        calls: 76,
+        websiteClicks: 142,
+        mapsImpressions: 19800,
+        searchImpressions: 12400,
+        rankingPosition: 1,
+        targetKeyword: "Clínica de Estética & Botox Facial",
+        topKeywords: [
+          { keyword: "clinica de estetica facial", count: 420 },
+          { keyword: "botox valor da aplicacao", count: 295 },
+          { keyword: "harmonizacao orofacial", count: 180 },
+          { keyword: "drenagem linfatica corporal", count: 115 }
+        ],
+        rating: 5.0,
+        reviewsCount: 104
       },
       externalUrl: "https://lookerstudio.google.com",
       status: "published",
@@ -1055,7 +1500,7 @@ clientPortalRoutes.post("/approvals", async (req, res) => {
 
 clientPortalRoutes.patch("/approvals/:id/review", async (req, res) => {
   try {
-    const { salonId, user } = await getAuthenticatedUserAndSalon(req);
+    const { salonId, user } = await getAuthenticatedUserAndSalon(req, false);
     const { id } = req.params;
     const { status, clientFeedback } = req.body || {};
 
@@ -1108,7 +1553,7 @@ clientPortalRoutes.delete("/approvals/:id", async (req, res) => {
 // ----------------------------------------------------
 clientPortalRoutes.get("/tickets", async (req, res) => {
   try {
-    const { salonId } = await getAuthenticatedUserAndSalon(req);
+    const { salonId } = await getAuthenticatedUserAndSalon(req, false);
     if (!salonId) return res.status(403).json({ error: "Agência não identificada." });
     const adminDb = getAdminDb();
     const snap = await adminDb.collection(`salons/${salonId}/tickets`).get();
@@ -1123,7 +1568,7 @@ clientPortalRoutes.get("/tickets", async (req, res) => {
 
 clientPortalRoutes.post("/tickets", async (req, res) => {
   try {
-    const { salonId, user, userData } = await getAuthenticatedUserAndSalon(req);
+    const { salonId, user, userData } = await getAuthenticatedUserAndSalon(req, false);
     if (!salonId) return res.status(403).json({ error: "Agência não identificada." });
     
     const { subject, category, priority, initialMessage, clientId, clientName, clientEmail } = req.body || {};
@@ -1171,7 +1616,7 @@ clientPortalRoutes.post("/tickets", async (req, res) => {
 
 clientPortalRoutes.post("/tickets/:id/messages", async (req, res) => {
   try {
-    const { salonId, user, userData } = await getAuthenticatedUserAndSalon(req);
+    const { salonId, user, userData } = await getAuthenticatedUserAndSalon(req, false);
     const { id } = req.params;
     const { text, senderName } = req.body || {};
 
@@ -1343,7 +1788,7 @@ clientPortalRoutes.get("/service-requests", async (req, res) => {
 
 clientPortalRoutes.post("/service-requests", async (req, res) => {
   try {
-    const { salonId, user } = await getAuthenticatedUserAndSalon(req);
+    const { salonId, user } = await getAuthenticatedUserAndSalon(req, false);
     if (!salonId) return res.status(403).json({ error: "Agência não identificada." });
     
     const { serviceId, serviceName, category, notes, clientName, clientEmail, clientPhone, clientId } = req.body || {};

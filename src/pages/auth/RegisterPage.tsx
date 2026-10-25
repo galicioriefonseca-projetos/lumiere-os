@@ -63,6 +63,9 @@ export default function RegisterPage() {
 
   const [formData, setFormData] = useState({
     ownerName: '',
+    companyName: '',
+    businessSegment: 'beauty',
+    managementMode: 'business',
     email: '',
     phone: '',
     document: '',
@@ -198,12 +201,15 @@ export default function RegisterPage() {
           planId: isAngularCoupon ? 'performance' : selectedPlan,
           billingCycle: cycle,
           ownerName: formData.ownerName.trim(),
+          companyName: formData.companyName.trim() || formData.ownerName.trim(),
+          businessSegment: formData.businessSegment,
+          managementMode: formData.managementMode,
           email: targetEmail,
           phone: formData.phone,
           coupon: cleanCoupon || undefined,
           customerData: {
             document: formData.document,
-            legalName: formData.ownerName.trim(),
+            legalName: formData.companyName.trim() || formData.ownerName.trim(),
             email: targetEmail,
             mobilePhone: formData.phone,
           },
@@ -423,16 +429,59 @@ export default function RegisterPage() {
 
             {/* Form Inputs */}
             <div className="space-y-4">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-[#44423E]">Nome completo do responsável</span>
-                <input 
-                  required 
-                  value={formData.ownerName} 
-                  onChange={e => update('ownerName', e.target.value)} 
-                  placeholder="Seu nome ou razão social" 
-                  className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
-                />
-              </label>
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-[#44423E]">Nome completo do responsável</span>
+                  <input 
+                    required 
+                    value={formData.ownerName} 
+                    onChange={e => update('ownerName', e.target.value)} 
+                    placeholder="Seu nome completo" 
+                    className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-[#44423E]">Nome da Empresa / Marca / Negócio</span>
+                  <input 
+                    required 
+                    value={formData.companyName} 
+                    onChange={e => update('companyName', e.target.value)} 
+                    placeholder="Ex: GF Marketing, Clínica Alpha, Studio Belle..." 
+                    className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3.5 text-sm text-[#171717] placeholder:text-zinc-400 outline-none focus:border-[#B89B5E] focus:bg-white transition-colors" 
+                  />
+                </label>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-[#44423E]">Segmento / Nicho de Atuação</span>
+                  <select 
+                    required 
+                    value={formData.businessSegment} 
+                    onChange={e => update('businessSegment', e.target.value)} 
+                    className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
+                  >
+                    <option value="beauty">Beleza & Estética (Salões, Barbearias, Clínicas de Estética, Spas)</option>
+                    <option value="agency">Agência de Marketing & Digital (Tráfego, Social Media, Google Maps, Sites)</option>
+                    <option value="consulting">Consultoria & Gestão (Empresarial, Finanças, RH, Mentoria)</option>
+                    <option value="health">Saúde & Terapias (Nutrição, Psicologia, Fisioterapia, Clínicas)</option>
+                    <option value="services">Profissional Liberal & Serviços (Projetos, Tatuagem, Autônomos)</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-[#44423E]">Estrutura de Gestão</span>
+                  <select 
+                    required 
+                    value={formData.managementMode} 
+                    onChange={e => update('managementMode', e.target.value)} 
+                    className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
+                  >
+                    <option value="business">Empresa com Equipe (Múltiplos colaboradores)</option>
+                    <option value="liberal">Profissional Liberal / Autônomo (Atuação individual)</option>
+                  </select>
+                </label>
+              </div>
 
               <div className="grid md:grid-cols-2 gap-4">
                 <label className="block space-y-1.5">

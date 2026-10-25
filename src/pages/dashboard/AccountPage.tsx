@@ -90,16 +90,18 @@ export default function AccountPage() {
     try {
       setSavingSalon(true);
       const ref = doc(db, 'salons', salonData.id);
+      const defaultModules = SEGMENTS[salonForm.segment]?.defaultModules || SEGMENTS.beauty.defaultModules;
       await updateDoc(ref, {
         name: salonForm.name.trim(),
         segment: salonForm.segment,
         businessType: salonForm.segment === 'agency' ? 'agency' : salonForm.segment === 'consulting' ? 'consulting' : salonForm.segment === 'health' ? 'clinic' : salonForm.segment === 'services' ? 'services' : 'salon',
+        enabledModules: defaultModules,
         phone: salonForm.phone.trim(),
         city: salonForm.city.trim(),
         state: salonForm.state.trim().toUpperCase(),
         updatedAt: Date.now()
       });
-      toast.success('Dados da empresa e segmento atualizados com sucesso!');
+      toast.success('Dados da empresa, ferramentas e linguagem atualizados com sucesso!');
       setIsEditingSalon(false);
     } catch (err) {
       console.error(err);

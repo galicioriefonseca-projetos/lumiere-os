@@ -19,6 +19,7 @@ import { formatBRL } from '@/lib/utils';
 import { triggerAppointmentPushNotification } from '../../lib/pushNotifications';
 import { motion, AnimatePresence } from 'motion/react';
 import { getAvailableSlots } from '../../lib/availability';
+import { useLexicon } from '../../hooks/useLexicon';
 
 interface ComandaItem {
   type: 'service' | 'product';
@@ -48,9 +49,25 @@ interface ComandaFlow {
 
 export default function AppointmentsPage() {
   const { salonData, userData } = useAuth();
+  const { 
+    segment, 
+    lex, 
+    isBeauty, 
+    clientTerm, 
+    clientTermPlural, 
+    workstationTerm, 
+    flowItemTerm, 
+    flowItemTermPlural, 
+    isClinic, 
+    isStudio, 
+    isFreelancer,
+    uiPreferences
+  } = useLexicon();
   const userRole = userData?.role || 'professional';
 
-  const [activePageTab, setActivePageTab] = useState<'flow' | 'traditional'>('flow');
+  const [activePageTab, setActivePageTab] = useState<'flow' | 'traditional'>(
+    uiPreferences.enableComandasFlow ? 'flow' : 'traditional'
+  );
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [comandas, setComandas] = useState<ComandaFlow[]>([]);
@@ -738,26 +755,17 @@ export default function AppointmentsPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-zinc-950 via-zinc-900 to-black p-6 rounded-2xl border border-[#D4AF37]/10">
         <div>
           <h2 className="text-2xl font-bold font-heading text-white flex items-center gap-2">
-            ⚡ Lumière <span className="text-[#D4AF37]">Flow & Agenda</span>
+            ⚡ Lumière <span className="text-[#D4AF37]">{lex.appointments || 'Agenda & Atendimentos'}</span>
           </h2>
           <p className="text-[#a1a1aa] text-xs">
-            Controle a recepção, adicione adicionais na comanda do cliente em curso, feche o caixa e pague comissões automáticas.
+            {isBeauty 
+              ? 'Controle a recepção, adicione adicionais na comanda do cliente em curso, feche o caixa e pague comissões automáticas.'
+              : 'Gestão completa de horários, reuniões, sessões, fechamento de faturamento e fluxo de atendimentos.'}
           </p>
         </div>
 
         {/* Escolha de Visualização */}
         <div className="flex items-center gap-2 bg-[#121214] p-1 rounded-xl border border-zinc-800">
-          <button
-            onClick={() => setActivePageTab('flow')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activePageTab === 'flow'
-                ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                : 'text-zinc-400 hover:text-white border border-transparent'
-            }`}
-          >
-            Fluxo de Comandas (Salão)
-          </button>
-          
           <button
             onClick={() => setActivePageTab('traditional')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
@@ -766,7 +774,18 @@ export default function AppointmentsPage() {
                 : 'text-zinc-400 hover:text-white border border-transparent'
             }`}
           >
-            Agenda Tradicional
+            {lex.appointments || 'Agenda & Calendário'}
+          </button>
+
+          <button
+            onClick={() => setActivePageTab('flow')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              activePageTab === 'flow'
+                ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
+                : 'text-zinc-400 hover:text-white border border-transparent'
+            }`}
+          >
+            {uiPreferences.enableComandasFlow ? 'Fluxo de Comandas (Salão)' : `Fluxo de ${flowItemTermPlural || 'Atendimentos'}`}
           </button>
         </div>
       </div>
@@ -778,7 +797,7 @@ export default function AppointmentsPage() {
       ) : (
         <AnimatePresence mode="wait">
           
-          {/* TAB 1: FLUXO DE COMANDAS INTELIGENTES DO SALÃO */}
+          {/* TAB 1: FLUXO DE COMANDAS / ATENDIMENTO */}
           {activePageTab === 'flow' && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -789,29 +808,29 @@ export default function AppointmentsPage() {
             >
               <div className="flex justify-end gap-3">
                 
-                {/* Lançar Comanda */}
+                {/* Lançar Comanda / Fluxo */}
                 <Dialog open={isNewComandaOpen} onOpenChange={setIsNewComandaOpen}>
                   <DialogTrigger asChild>
                     <Button className="bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold px-5 py-2.5 rounded-xl flex items-center gap-2">
-                      <UserPlus className="w-4 h-4" /> Registrar Entrada (Check-In cliente)
+                      <UserPlus className="w-4 h-4" /> Registrar Entrada (Check-In {clientTerm.toLowerCase()})
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="bg-zinc-950 border-zinc-800 text-white max-w-sm rounded-xl">
                     <DialogHeader>
                       <DialogTitle className="font-heading text-[#D4AF37] text-lg flex items-center gap-2">
-                        🔑 Abrir Comanda Operacional
+                        🔑 Abrir {flowItemTerm} Operacional
                       </DialogTitle>
                       <CardDescription className="text-zinc-400">
-                        O cliente acabou de entrar no espaço. Defina quem irá realizar o primeiro procedimento.
+                        O(A) {clientTerm.toLowerCase()} acabou de chegar. Defina quem irá realizar o primeiro atendimento no(a) {workstationTerm.toLowerCase()}.
                       </CardDescription>
                     </DialogHeader>
 
                     <form onSubmit={handleInitComanda} className="space-y-4 pt-3">
                       <div className="space-y-2">
-                        <Label className="text-zinc-300">Cliente</Label>
+                        <Label className="text-zinc-300">{clientTerm}</Label>
                         <Select value={comandaFormData.clientId} onValueChange={(v) => setComandaFormData(p => ({ ...p, clientId: v }))}>
                           <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                            <SelectValue placeholder="Escolha um cliente cadastrado" />
+                            <SelectValue placeholder={`Escolha um(a) ${clientTerm.toLowerCase()} cadastrado(a)`} />
                           </SelectTrigger>
                           <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
                             <SelectItem value="consumidor-final">-- Consumidor Final (Sem Cadastro) --</SelectItem>
@@ -861,28 +880,28 @@ export default function AppointmentsPage() {
                       </div>
 
                       <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-xl">
-                        Gerar Comanda de Fluxo
+                        Gerar {flowItemTerm} de Fluxo
                       </Button>
                     </form>
                   </DialogContent>
                 </Dialog>
               </div>
 
-              {/* Quadro Board de Fluxos do Salão */}
+              {/* Quadro Board de Fluxos Operacionais */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* COLUNA 1: ESPERA / CHECK-IN */}
                 <div className="bg-[#09090b]/80 border border-zinc-900 rounded-2xl p-4 flex flex-col space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
                     <span className="text-xs font-extrabold uppercase tracking-widest text-[#D4AF37] font-sans">
-                      ⏳ Fila / Espera ({comandasByStatus.checked_in.length})
+                      ⏳ Fila / Recepção ({comandasByStatus.checked_in.length})
                     </span>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
                   </div>
 
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px]">
                     {comandasByStatus.checked_in.length === 0 ? (
-                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum cliente aguardando na fila.</p>
+                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} aguardando na fila.</p>
                     ) : (
                       comandasByStatus.checked_in.map(c => (
                         <Card key={c.id} className="bg-zinc-950 border border-zinc-900 p-4 rounded-xl space-y-3">
@@ -907,7 +926,7 @@ export default function AppointmentsPage() {
 
                           <div className="flex gap-2">
                             <Button size="sm" onClick={() => handleMoveComanda(c.id, 'in_service')} className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-[10px] h-8 hover:bg-zinc-800 gap-1 rounded-lg">
-                              Acolher <ArrowRight className="w-3 h-3 text-[#D4AF37]" />
+                              Acolher no(a) {workstationTerm.split('/')[0].trim()} <ArrowRight className="w-3 h-3 text-[#D4AF37]" />
                             </Button>
                           </div>
                         </Card>
@@ -920,14 +939,14 @@ export default function AppointmentsPage() {
                 <div className="bg-[#09090b]/80 border border-zinc-900 rounded-2xl p-4 flex flex-col space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
                     <span className="text-xs font-extrabold uppercase tracking-widest text-[#D4AF37] font-sans">
-                      💇 Atendimento Ativo ({comandasByStatus.in_service.length})
+                      {isClinic ? '🩺' : isStudio ? '🎨' : isBeauty ? '💇' : '⚡'} No(a) {workstationTerm} ({comandasByStatus.in_service.length})
                     </span>
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                   </div>
 
                   <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px]">
                     {comandasByStatus.in_service.length === 0 ? (
-                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum cliente em atendimento agora.</p>
+                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} em atendimento agora.</p>
                     ) : (
                       comandasByStatus.in_service.map(c => (
                         <Card key={c.id} className="bg-[#0c0d11] border border-[#D4AF37]/10 p-4 rounded-xl space-y-3 relative overflow-hidden">
@@ -947,8 +966,8 @@ export default function AppointmentsPage() {
                             {c.items.map((itm, idx) => (
                               <div key={idx} className="flex justify-between items-center text-[11px] bg-zinc-950 px-2 py-1.5 rounded-md border border-zinc-900">
                                 <div className="space-y-0.5">
-                                  <span className="text-zinc-200 block font-semibold leading-none">{itm.name}</span>
-                                  <span className="text-[9px] text-[#D4AF37]/80">{itm.professionalName}</span>
+                                   <span className="text-zinc-200 block font-semibold leading-none">{itm.name}</span>
+                                   <span className="text-[9px] text-[#D4AF37]/80">{itm.professionalName}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono text-zinc-400 font-bold">{formatBRL(itm.price)}</span>
@@ -998,7 +1017,7 @@ export default function AppointmentsPage() {
 
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px]">
                     {comandasByStatus.checkout_pending.length === 0 ? (
-                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum cliente aguardando faturamento.</p>
+                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} aguardando faturamento.</p>
                     ) : (
                       comandasByStatus.checkout_pending.map(c => (
                         <Card key={c.id} className="bg-zinc-950 border border-zinc-900 p-4 rounded-xl space-y-3">

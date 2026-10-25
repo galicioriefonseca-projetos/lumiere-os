@@ -236,12 +236,11 @@ export default function CompanySetupPage() {
                 className="w-full h-11 rounded-xl bg-[#FAF9F7] border border-[#D8D4CC] px-3 text-sm text-[#171717] outline-none focus:border-[#B89B5E] focus:bg-white transition-colors"
               >
                 <option value="">Selecione o segmento</option>
-                <option value="Prestador de Serviços Geral">Empresas & Negócios de Serviços</option>
-                <option value="Agência de Marketing & Mídia">Agência & Serviços Digitais</option>
-                <option value="Consultoria & Gestão Empresarial">Consultoria, Assessoria & Mentoria</option>
-                <option value="Saúde & Terapias">Saúde, Clínicas & Consultórios</option>
-                <option value="Salão de Beleza">Beleza, Estética & Bem-estar</option>
-                <option value="Estúdio">Profissional Liberal / Estúdio / Outro</option>
+                <option value="beauty">Beleza & Estética (Salões, Barbearias, Clínicas de Estética, Spas)</option>
+                <option value="agency">Agência de Marketing & Serviços Digitais (Tráfego, Social Media, Google Maps, Sites)</option>
+                <option value="consulting">Consultoria & Gestão Empresarial (Consultores, Assessores, Mentores)</option>
+                <option value="health">Saúde & Terapias (Nutrição, Psicologia, Fisioterapia, Clínicas)</option>
+                <option value="services">Profissional Liberal & Serviços (Projetos, Tatuagem, Autônomos)</option>
               </select>
             </label>
 

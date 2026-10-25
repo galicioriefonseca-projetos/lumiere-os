@@ -5,6 +5,44 @@ export type SubscriptionStatus = 'preview' | 'active' | 'pending_payment' | 'ove
 export type ActivationStatus = 'active' | 'pending' | 'blocked' | 'canceled';
 export type PaymentStatus = 'none' | 'pending' | 'reported' | 'paid' | 'overdue' | 'rejected' | 'canceled';
 
+export type NicheType = 'salon' | 'clinic' | 'studio' | 'freelancer' | 'agency' | 'consulting';
+
+export interface VocabularyConfig {
+  clientTerm: string;
+  clientTermPlural: string;
+  workstationTerm: string;
+  workstationTermPlural: string;
+  professionalTerm: string;
+  professionalTermPlural: string;
+  serviceTerm: string;
+  serviceTermPlural: string;
+  appointmentTerm: string;
+  appointmentTermPlural: string;
+  workplaceTerm: string;
+  workplaceTermPlural: string;
+  flowItemTerm: string;
+  flowItemTermPlural: string;
+}
+
+export interface UiPreferences {
+  themeBadge: string;
+  defaultView: 'flow' | 'calendar' | 'agenda';
+  primaryIcon: string;
+  enableComandasFlow: boolean;
+  enableWorkstations: boolean;
+  enableClientPortal: boolean;
+  enableMedicalRecords: boolean;
+}
+
+export interface ContextConfig {
+  niche: NicheType;
+  nicheLabel: string;
+  vocabulary: VocabularyConfig;
+  uiPreferences: UiPreferences;
+  customOverrides?: Partial<VocabularyConfig>;
+  updatedAt: number;
+}
+
 export interface User {
   id: string; // from Firebase Auth uid
   fullName: string;
@@ -48,7 +86,9 @@ export interface Salon {
   phone: string;
   businessType: BusinessType | 'agency' | 'consulting' | 'services' | string;
   segment?: 'beauty' | 'agency' | 'consulting' | 'health' | 'services' | string;
+  managementMode?: 'liberal' | 'business' | string;
   enabledModules?: Record<string, boolean>;
+  contextConfig?: ContextConfig;
   monthlyGoal?: number;
   city: string;
   state: string;
@@ -490,6 +530,7 @@ export interface ClientReport {
   title: string;
   period: string;
   summary: string;
+  reportType?: 'general' | 'google_meu_negocio' | 'meta_ads' | 'seo';
   metrics: {
     leads?: number;
     reach?: number;
@@ -499,6 +540,18 @@ export interface ClientReport {
     roas?: number;
     cpc?: number;
     cpl?: number;
+  };
+  gmbMetrics?: {
+    directionRequests?: number; // Solicitações de rota (Waze / Google Maps)
+    calls?: number; // Chamadas telefônicas diretas
+    websiteClicks?: number; // Cliques no site / WhatsApp
+    mapsImpressions?: number; // Impressões no Google Maps
+    searchImpressions?: number; // Impressões no Google Search
+    rankingPosition?: number; // Posição no Mapa local (ex: 1, 2, 3...)
+    targetKeyword?: string; // Palavra-chave principal monitorada
+    topKeywords?: Array<{ keyword: string; count?: number } | string>; // Consultas de busca
+    rating?: number; // Avaliação média (ex: 4.9)
+    reviewsCount?: number; // Total de avaliações
   };
   externalUrl?: string;
   fileUrl?: string;

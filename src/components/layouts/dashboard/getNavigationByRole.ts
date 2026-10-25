@@ -34,12 +34,22 @@ export interface NavigationCategory {
   items: NavigationItem[];
 }
 
-export const getNavigationByRole = (role: string | undefined, salonData?: any): NavigationCategory[] => {
+export const getNavigationByRole = (role: string | undefined, salonData?: any, userEmail?: string): NavigationCategory[] => {
   const segment = detectBusinessSegment(salonData);
   const cfg = SEGMENTS[segment] || SEGMENTS.beauty;
   const lex = cfg.lexicon;
 
+  const emailCandidate = String(salonData?.ownerEmail || userEmail || '').toLowerCase();
+  const isAgencyAccount = 
+    emailCandidate.includes('galicioriefonseca31@gmail.com') ||
+    segment === 'agency' || 
+    salonData?.segment === 'agency' || 
+    salonData?.businessType === 'agency';
+
   const isModuleEnabled = (modKey: string): boolean => {
+    if (modKey === 'clientPortal') {
+      return isAgencyAccount;
+    }
     if (!salonData) return true;
     if (salonData.enabledModules && typeof salonData.enabledModules[modKey] === 'boolean') {
       return salonData.enabledModules[modKey];
@@ -144,16 +154,11 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any): 
     ];
   }
 
-  const isAgencyAccount = segment === 'agency' || 
-    salonData?.segment === 'agency' || 
-    salonData?.businessType === 'agency' || 
-    String(salonData?.ownerEmail || '').toLowerCase().includes('galicioriefonseca31@gmail.com');
-
   // Owner & Manager Categories with dynamic lexicon & module filtering
   const operationalItems: NavigationItem[] = [
     { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon, moduleId: 'appointments' },
     { name: lex.clients, href: '/dashboard/clientes', icon: Users, moduleId: 'clients' },
-    ...(isAgencyAccount || isModuleEnabled('clientPortal') ? [
+    ...(isAgencyAccount ? [
       { name: 'Área do Cliente (Portal)', href: '/dashboard/area-do-cliente', icon: Globe, moduleId: 'clientPortal' }
     ] : []),
   ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId!));

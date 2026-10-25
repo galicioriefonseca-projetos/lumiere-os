@@ -16,15 +16,79 @@ import {
   CheckCircle2, 
   Sparkles, 
   MessageSquare,
-  Check
+  Activity,
+  Check,
+  Palette,
+  SlidersHorizontal,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OFFICIAL_SUPPORT_WHATSAPP } from '../../config/billing';
+import { NicheType } from '../../types';
+import { ContextConfigService } from '../../services/contextConfigService';
+import { toast } from 'sonner';
+
+interface NicheOption {
+  id: NicheType;
+  title: string;
+  badge: string;
+  description: string;
+  icon: React.ElementType;
+  clientTerm: string;
+  workstationTerm: string;
+  flowItemTerm: string;
+}
+
+const NICHE_OPTIONS: NicheOption[] = [
+  {
+    id: 'salon',
+    title: 'Salão de Beleza & Barbearia',
+    badge: 'Beleza & Estética',
+    description: 'Fluxo visual com cadeiras, comandas operacionais e comissões integradas.',
+    icon: Scissors,
+    clientTerm: 'Cliente',
+    workstationTerm: 'Cadeira / Bancada',
+    flowItemTerm: 'Comanda'
+  },
+  {
+    id: 'clinic',
+    title: 'Clínica & Consultório',
+    badge: 'Saúde & Terapias',
+    description: 'Gestão focada em prontuários, agendamentos clínicos e salas de consulta.',
+    icon: Activity,
+    clientTerm: 'Paciente',
+    workstationTerm: 'Sala / Consultório',
+    flowItemTerm: 'Prontuário'
+  },
+  {
+    id: 'studio',
+    title: 'Estúdio & Ateliê Criativo',
+    badge: 'Tatuagem, Foto & Arte',
+    description: 'Ideal para sessões agendadas, estações de trabalho e ordens de serviço.',
+    icon: Sparkles,
+    clientTerm: 'Cliente',
+    workstationTerm: 'Estação / Espaço',
+    flowItemTerm: 'Ordem de Serviço'
+  },
+  {
+    id: 'freelancer',
+    title: 'Profissional Liberal & Autônomo',
+    badge: 'Carreira Solo / PJ',
+    description: 'Simplificado para quem atua sozinho, sem comandas e focado em propostas.',
+    icon: Briefcase,
+    clientTerm: 'Contratante',
+    workstationTerm: 'Meu Espaço',
+    flowItemTerm: 'Proposta / Pedido'
+  }
+];
 
 export default function OnboardingSetupHub() {
   const navigate = useNavigate();
   const { salonData } = useAuth();
-  const { lex, segment } = useLexicon();
+  const { lex, segment, niche: currentNiche } = useLexicon();
+
+  const [selectedNiche, setSelectedNiche] = useState<NicheType>('salon');
+  const [savingContext, setSavingContext] = useState(false);
 
   const [completedSteps, setCompletedSteps] = useState<Record<string, boolean>>({
     team: false,
@@ -34,6 +98,25 @@ export default function OnboardingSetupHub() {
     checklists: false
   });
   const [checkingProgress, setCheckingProgress] = useState(true);
+
+  // Inicializar o nicho selecionado a partir do salonData existente
+  useEffect(() => {
+    if (salonData?.contextConfig?.niche) {
+      setSelectedNiche(salonData.contextConfig.niche);
+    } else if (salonData?.managementMode === 'liberal') {
+      setSelectedNiche('freelancer');
+    } else if (salonData?.businessType === 'clinic' || salonData?.segment === 'health') {
+      setSelectedNiche('clinic');
+    } else if (salonData?.businessType === 'studio') {
+      setSelectedNiche('studio');
+    } else if (salonData?.businessType === 'agency' || salonData?.segment === 'agency') {
+      setSelectedNiche('agency');
+    } else if (salonData?.businessType === 'consulting' || salonData?.segment === 'consulting') {
+      setSelectedNiche('consulting');
+    } else {
+      setSelectedNiche('salon');
+    }
+  }, [salonData]);
 
   useEffect(() => {
     async function checkOnboardingStatus() {
@@ -68,13 +151,41 @@ export default function OnboardingSetupHub() {
     checkOnboardingStatus();
   }, [salonData]);
 
-  const ServiceIcon = segment === 'beauty' ? Scissors : Briefcase;
+  const handleSelectNiche = async (nicheId: NicheType) => {
+    setSelectedNiche(nicheId);
+    try {
+      await ContextConfigService.initializeContextConfig(nicheId);
+      toast.success(`Contexto adaptado para ${NICHE_OPTIONS.find(n => n.id === nicheId)?.title || nicheId}!`);
+    } catch (e: any) {
+      console.warn('Erro ao salvar contexto imediato:', e);
+    }
+  };
+
+  const handleFinishOnboarding = async () => {
+    setSavingContext(true);
+    try {
+      await ContextConfigService.initializeContextConfig(selectedNiche);
+      toast.success('Configuração de contexto salva com sucesso!');
+      navigate('/dashboard', { replace: true });
+    } catch (err: any) {
+      console.error('Erro ao finalizar onboarding:', err);
+      // Mesmo se a chamada falhar offline, direcionar para o dashboard
+      toast.info('Acessando painel principal...');
+      navigate('/dashboard', { replace: true });
+    } finally {
+      setSavingContext(false);
+    }
+  };
+
+  const ServiceIcon = selectedNiche === 'clinic' ? Activity : (selectedNiche === 'salon' ? Scissors : Briefcase);
 
   const setupItems = [
     { 
       id: 'team',
-      title: lex.professionals || 'Equipe & Pessoas', 
-      description: 'Cadastre seus colaboradores e especialistas ou gere o link de convite para acesso individual.', 
+      title: lex.professionals || 'Equipe & Especialistas', 
+      description: selectedNiche === 'freelancer' 
+        ? 'Configuração de perfil individual e parâmetros de atuação.' 
+        : 'Cadastre seus colaboradores e especialistas ou gere o link de convite para acesso individual.', 
       path: '/onboarding/equipe', 
       dashboardPath: '/dashboard/equipe?onboarding=1',
       icon: Users, 
@@ -92,7 +203,7 @@ export default function OnboardingSetupHub() {
     { 
       id: 'clients',
       title: `${lex.clients || 'Clientes'} & CRM`, 
-      description: 'Importe sua carteira atual por planilha CSV/Excel ou cadastre seus primeiros clientes ativos.', 
+      description: `Importe sua carteira atual por planilha CSV/Excel ou cadastre seus primeiros ${lex.clients.toLowerCase()} ativos.`, 
       path: '/dashboard/clientes?onboarding=1', 
       dashboardPath: '/dashboard/clientes?onboarding=1',
       icon: UserRound, 
@@ -104,14 +215,14 @@ export default function OnboardingSetupHub() {
     { 
       id: 'goals',
       title: lex.goals || 'Metas de Faturamento', 
-      description: 'Defina a meta mensal da empresa e acompanhe o ritmo diário da equipe.', 
+      description: 'Defina a meta mensal da empresa e acompanhe o ritmo diário.', 
       path: '/onboarding/metas', 
       icon: Target 
     },
     { 
       id: 'checklists',
       title: lex.checklists || 'Checklists & Processos', 
-      description: 'Padronize as rotinas operacionais e critérios de qualidade da equipe.', 
+      description: 'Padronize as rotinas operacionais e critérios de qualidade.', 
       path: '/onboarding/checklist', 
       icon: ClipboardCheck 
     }
@@ -125,6 +236,8 @@ export default function OnboardingSetupHub() {
     window.open(`https://wa.me/${OFFICIAL_SUPPORT_WHATSAPP}?text=${text}`, '_blank');
   };
 
+  const activeNicheConfig = NICHE_OPTIONS.find(n => n.id === selectedNiche) || NICHE_OPTIONS[0];
+
   return (
     <div className="min-h-screen bg-background text-foreground px-4 py-8 sm:py-12">
       <div className="max-w-4xl mx-auto">
@@ -135,98 +248,150 @@ export default function OnboardingSetupHub() {
             <Sparkles className="w-7 h-7 text-primary" />
           </div>
           <p className="text-[11px] uppercase tracking-[0.25em] text-primary font-bold mb-2">
-            Implantação Guiada • Empresas & Pessoas
+            Implantação Guiada • Configuração de Contexto
           </p>
           <h1 className="text-3xl sm:text-4xl font-light tracking-tight">
-            Vamos deixar o seu <span className="text-primary font-normal">LumièreOS</span> pronto
+            Prepare seu <span className="font-semibold text-primary">{activeNicheConfig.title.split('&')[0]}</span> para decolar
           </h1>
-          <p className="text-muted-foreground text-sm sm:text-base max-w-2xl mx-auto mt-3 leading-relaxed">
-            Estruture sua operação e sua equipe em poucos minutos. Tudo o que você configurar agora poderá ser ajustado a qualquer momento no painel.
+          <p className="text-muted-foreground text-sm max-w-xl mx-auto mt-2">
+            O LumièreOS adapta seu vocabulário, rotinas e ferramentas automaticamente conforme o nicho da sua empresa.
           </p>
         </div>
 
-        {/* Company Status & Progress Bar */}
-        <div className="bg-card border border-emerald-500/20 rounded-2xl p-5 mb-8 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-emerald-500/10 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold">{salonData?.name || 'Sua Empresa'} está ativa</p>
-                  <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold">
-                    {lex.company}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Progresso da configuração inicial: <strong>{totalCompleted} de 5 etapas concluídas</strong>
-                </p>
-              </div>
+        {/* SELETOR DE CONTEXTO & NICHO */}
+        <div className="mb-8 bg-card border border-primary/20 rounded-2xl p-5 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-border pb-3">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-primary" />
+              <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+                Qual é o modelo da sua operação?
+              </h2>
             </div>
-
-            <Button 
-              onClick={() => navigate('/dashboard', { replace: true })} 
-              variant="outline"
-              className="shrink-0 rounded-xl text-xs font-semibold h-9 border-primary/30 text-primary hover:bg-primary/10"
-            >
-              Ir direto ao Dashboard <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              Ajusta todo o vocabulário e módulos do sistema
+            </span>
           </div>
 
-          <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {NICHE_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const isSelected = selectedNiche === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => handleSelectNiche(opt.id)}
+                  className={`text-left p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-primary/10 border-primary shadow-sm text-foreground ring-1 ring-primary/40'
+                      : 'bg-background/60 border-border hover:border-primary/30 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                        isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                      }`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold bg-primary text-primary-foreground px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Ativo
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-xs font-bold text-foreground leading-tight mb-1">
+                      {opt.title}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2 mb-3">
+                      {opt.description}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-border/60 text-[10px] space-y-0.5">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Pessoa:</span>
+                      <span className="font-semibold text-foreground">{opt.clientTerm}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Local:</span>
+                      <span className="font-semibold text-foreground">{opt.workstationTerm}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Fluxo:</span>
+                      <span className="font-semibold text-foreground">{opt.flowItemTerm}</span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="bg-card border rounded-2xl p-4 sm:p-6 mb-8 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Progresso do Onboarding
+            </span>
+            <span className="text-xs font-bold text-primary">
+              {totalCompleted} de 5 etapas concluídas ({progressPercent}%)
+            </span>
+          </div>
+          <div className="w-full h-2.5 bg-secondary rounded-full overflow-hidden">
             <div 
-              className="h-full bg-gradient-to-r from-primary to-emerald-500 transition-all duration-500" 
-              style={{ width: `${ Math.max(10, progressPercent) }%` }}
+              className="h-full bg-primary transition-all duration-500 rounded-full" 
+              style={{ width: `${progressPercent}%` }} 
             />
           </div>
         </div>
 
-        {/* Core 3 Pillars */}
-        <div className="grid md:grid-cols-3 gap-4">
+        {/* Essential Setup Cards */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs uppercase tracking-widest text-primary font-semibold">Passos Principais</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
           {setupItems.map((item) => {
             const Icon = item.icon;
             const isDone = completedSteps[item.id];
             return (
               <div 
                 key={item.id} 
-                className={`bg-card border rounded-2xl p-5 flex flex-col shadow-sm transition-all duration-200 ${
-                  isDone 
-                    ? 'border-emerald-500/30 bg-emerald-500/[0.02]' 
-                    : 'border-border hover:shadow-md hover:-translate-y-0.5 hover:border-primary/30'
+                className={`bg-card border rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all duration-200 ${
+                  isDone ? 'border-emerald-500/30' : 'border-border hover:border-primary/20 hover:shadow-sm'
                 }`}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`w-11 h-11 rounded-xl border flex items-center justify-center ${
-                    isDone ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-accent border-primary/15 text-primary'
+                <div className="flex items-start gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                    isDone ? 'bg-emerald-500/10 text-emerald-500' : 'bg-primary/10 text-primary'
                   }`}>
-                    <Icon className="w-5 h-5" />
+                    <Icon className="w-6 h-6" />
                   </div>
-                  {!checkingProgress && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full flex items-center gap-1 ${
-                      isDone 
-                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                        : 'bg-zinc-800 text-zinc-400'
-                    }`}>
-                      {isDone ? <><Check className="w-3 h-3" /> Concluído</> : 'Pendente'}
-                    </span>
-                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-base">{item.title}</h3>
+                      {isDone && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3" /> Configurado
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-lg leading-relaxed">
+                      {item.description}
+                    </p>
+                  </div>
                 </div>
 
-                <h2 className="text-base font-semibold">{item.title}</h2>
-                <p className="text-xs text-muted-foreground leading-relaxed mt-2 flex-1">{item.description}</p>
-                
                 <Button 
                   onClick={() => navigate(item.path)} 
                   variant={isDone ? 'outline' : 'default'}
-                  className={`mt-5 w-full font-semibold rounded-xl h-10 text-xs ${
-                    isDone 
-                      ? 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10' 
-                      : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                  className={`w-full sm:w-auto shrink-0 font-medium rounded-xl h-10 px-5 ${
+                    isDone ? 'border-border text-foreground hover:bg-secondary' : 'bg-primary hover:bg-primary/90 text-primary-foreground'
                   }`}
                 >
-                  {isDone ? `Revisar ${item.title.toLowerCase()}` : item.action}
-                  <ArrowRight className="w-3.5 h-3.5 ml-2" />
+                  {isDone ? 'Revisar' : item.action} <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
                 </Button>
               </div>
             );
@@ -283,10 +448,20 @@ export default function OnboardingSetupHub() {
           </div>
           
           <Button 
-            onClick={() => navigate('/dashboard', { replace: true })} 
+            disabled={savingContext}
+            onClick={handleFinishOnboarding} 
             className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl h-11 px-7 shadow-md"
           >
-            Acessar Painel Principal <ArrowRight className="w-4 h-4 ml-2" />
+            {savingContext ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Salvando Contexto...
+              </>
+            ) : (
+              <>
+                Acessar Painel Principal <ArrowRight className="w-4 h-4 ml-2" />
+              </>
+            )}
           </Button>
         </div>
 

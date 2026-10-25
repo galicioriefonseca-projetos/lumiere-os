@@ -390,7 +390,7 @@ export default function LandingPage() {
               animate={{ opacity: 1, y: 0 }} 
               className="mx-auto mb-7 inline-flex items-center gap-2 rounded-full border border-[#DCCFB3] bg-white/80 px-4 py-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#8A6D36] shadow-sm"
             >
-              <Sparkles className="h-3.5 w-3.5 text-[#B89B5E]" /> Sistema de Gestão de Empresas e Pessoas
+              <Sparkles className="h-3.5 w-3.5 text-[#B89B5E]" /> Sistema de Gestão Empresarial, Financeira e de Pessoas
             </motion.div>
             
             <motion.h1 
@@ -399,7 +399,7 @@ export default function LandingPage() {
               className="mx-auto max-w-5xl text-5xl font-light leading-[1.02] tracking-[-.045em] md:text-7xl lg:text-[80px]"
             >
               O sistema definitivo para gerenciar<br />
-              <span className="text-[#9F844A] font-normal">sua empresa e suas pessoas.</span>
+              <span className="text-[#9F844A] font-normal">empresas e equipes de alta performance.</span>
             </motion.h1>
             
             <motion.p 
@@ -408,22 +408,22 @@ export default function LandingPage() {
               transition={{ delay: .1 }} 
               className="mx-auto mt-7 max-w-3xl text-base leading-7 text-[#66645F] md:text-xl md:leading-8"
             >
-              Finanças, processos, metas, equipes, comissões automáticas e conselheira executiva com Inteligência Artificial no mesmo lugar. A plataforma completa para transformar a rotina do negócio e potencializar o talento das pessoas.
+              Substitua planilhas fragmentadas e cálculos manuais por uma plataforma executiva completa. Fluxo de caixa, DRE gerencial, comissões automáticas, metas de equipe e Inteligência Artificial no mesmo lugar.
             </motion.p>
 
             <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
               <Button onClick={() => go('planos')} className="h-14 rounded-xl bg-[#171717] px-8 text-sm font-semibold text-white shadow-lg shadow-black/10 hover:bg-[#2B2B2B]">
-                Conhecer ferramentas e planos <ArrowRight className="ml-2 h-4 w-4" />
+                Ver ferramentas e planos <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
               <Button variant="outline" onClick={() => navigate('/diagnostico')} className="h-14 rounded-xl border-[#D8D4CC] bg-white/70 px-8 text-sm text-[#333] hover:bg-white">
-                Fazer diagnóstico da minha empresa
+                Fazer diagnóstico gratuito do negócio
               </Button>
             </div>
 
             <div className="mt-7 flex flex-wrap justify-center gap-x-7 gap-y-2 text-xs text-[#77746D]">
-              <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> Gestão financeira e de pessoas</span>
+              <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> Finanças, DRE e comissões automáticas</span>
               <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-[#B89B5E]" /> Pagamento seguro via Asaas</span>
-              <span className="inline-flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-[#B89B5E]" /> Acesso em qualquer dispositivo (PWA)</span>
+              <span className="inline-flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-[#B89B5E]" /> Acesso em celulares, tablets e PCs (PWA)</span>
             </div>
           </div>
         </section>
@@ -432,12 +432,12 @@ export default function LandingPage() {
         <section id="gestao" className="scroll-mt-20 md:scroll-mt-24 border-y border-[#E5E2DC] bg-white px-5 py-20 md:py-24">
           <div className="mx-auto max-w-6xl">
             <div className="mx-auto max-w-3xl text-center mb-16 space-y-3">
-              <span className="text-[10px] font-bold uppercase tracking-[.2em] text-[#9F844A]">Dois Pilares, Uma Só Plataforma</span>
+              <span className="text-[10px] font-bold uppercase tracking-[.2em] text-[#9F844A]">Arquitetura de Gestão</span>
               <h2 className="text-4xl font-light md:text-5xl">
-                O equilíbrio exato entre a gestão do negócio e a liderança de pessoas.
+                O equilíbrio exato entre o rigor financeiro e a liderança de pessoas.
               </h2>
               <p className="text-sm text-[#6B6B6B] leading-relaxed">
-                Empresas não prosperam apenas com planilhas financeiras, nem apenas com motivação. O LumièreOS integra números precisos e pessoas engajadas.
+                Empresas líderes não prosperam apenas com planilhas de caixa, nem apenas com motivação. O LumièreOS une números transparentes e equipes engajadas em um único ecossistema.
               </p>
             </div>
 
@@ -763,21 +763,23 @@ export default function LandingPage() {
         <section id="recursos" className="scroll-mt-20 md:scroll-mt-24 px-5 py-24 md:py-28 bg-white">
           <div className="mx-auto max-w-6xl">
             <div className="mx-auto max-w-3xl text-center">
-              <span className="text-[10px] font-bold uppercase tracking-[.2em] text-[#9F844A]">Ecossistema Completo</span>
+              <span className="text-[10px] font-bold uppercase tracking-[.2em] text-[#9F844A]">Ecossistema Completo de Ferramentas</span>
               <h2 className="mt-4 text-4xl font-light md:text-5xl">
-                Todas as engrenagens conectadas em tempo real.
+                O sistema de gestão ideal para quem busca precisão e crescimento.
               </h2>
-              <p className="mt-5 text-[#6B6B6B]">
-                Elimine sistemas fragmentados. Finanças, pessoas, clientes e inteligência estratégica operando em perfeita sincronia.
+              <p className="mt-5 text-[#6B6B6B] leading-relaxed">
+                Desenvolvido com as ferramentas mais procuradas por líderes e empresas: controle de fluxo de caixa, DRE gerencial, comissões automáticas, metas de equipe e Inteligência Artificial Executiva.
               </p>
             </div>
 
-            <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
               {[
-                [Building2, 'Gestão de Empresas', 'Controle de contratos, DRE gerencial, fluxo de caixa, despesas fixas e visão integrada de receitas.'],
-                [Users, 'Gestão de Pessoas', 'Regras de comissões automáticas, metas de produtividade, ranking de especialistas e divisão de tarefas.'],
-                [CalendarCheck2, 'Operação & Rotinas', 'Agenda centralizada, checklists de conferência de processos e controle de atendimentos ou serviços.'],
-                [BarChart3, 'Lumi & Indicadores', 'Diagnósticos com IA executiva para tomada de decisão, prevenção de cancelamentos e faturamento.'],
+                [CircleDollarSign, 'Software de Gestão Financeira', 'Controle completo de fluxo de caixa, DRE gerencial, contas a pagar e receber, e previsibilidade de receitas em tempo real.'],
+                [Users, 'Cálculo de Comissões Automáticas', 'Sistema automatizado para repasses e comissões de equipe com regras flexíveis por colaborador e serviço.'],
+                [Target, 'Gestão de Metas e Produtividade', 'Acompanhamento diário de metas individuais e coletivas com ranking de desempenho para engajar a equipe.'],
+                [Building2, 'Gestão de Contratos e Clientes', 'CRM completo, histórico de interações, contratos recorrentes e portal do cliente integrado.'],
+                [BarChart3, 'Relatórios e Indicadores (KPIs)', 'Métricas de desempenho, margens de lucro, relatórios gerenciais e exportação simplificada.'],
+                [Bot, 'Lumi — IA Executiva 24/7', 'Inteligência Artificial conselheira que analisa dados da empresa, aponta gargalos e sugere alavancas de crescimento.'],
               ].map(([Icon, title, text]) => { 
                 const I = Icon as any; 
                 return (

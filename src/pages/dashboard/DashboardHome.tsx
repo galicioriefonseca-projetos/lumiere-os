@@ -13,8 +13,11 @@ import {
   Briefcase, 
   FileText, 
   Compass, 
+  Globe,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useLexicon } from '../../hooks/useLexicon';
 import ProfessionalDashboard from './ProfessionalDashboard';
 import { useLumi } from '../../lumi/hooks/useLumi';
 import { useSalonPerformanceRanking } from '../../hooks/useSalonPerformanceRanking';
@@ -33,6 +36,7 @@ import { SubscriptionBanner } from '@/components/dashboard/SubscriptionBanner';
 
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
+  const { segment, lex, isAgency, isModuleEnabled } = useLexicon();
   const isPaymentPending = salonData?.billing?.status !== 'ACTIVE';
   const navigate = useNavigate();
   const location = useLocation();
@@ -281,40 +285,62 @@ export default function DashboardHome() {
               </button>
            </div>
          </div>
-         <div className={cn("grid gap-3.5", 
-           isReceptionistOrAttendant ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
-         )}>
+          <div className={cn("grid gap-3.5", 
+            isReceptionistOrAttendant 
+              ? "grid-cols-3" 
+              : (isAgency || isModuleEnabled('clientPortal')) 
+                ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-7" 
+                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+          )}>
             <Link to="/dashboard/agendamentos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
                <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                  <CalendarPlus className="w-5 h-5 text-primary" />
                </div>
-               <span className="text-xs font-semibold text-foreground">Agenda</span>
+               <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.appointments || 'Agenda'}</span>
             </Link>
             <Link to="/dashboard/clientes" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
                <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                  <Users className="w-5 h-5 text-primary" />
                </div>
-               <span className="text-xs font-semibold text-foreground">Clientes</span>
+               <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.clients || 'Clientes'}</span>
             </Link>
             <Link to="/dashboard/servicos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
                <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                 <Scissors className="w-5 h-5 text-primary" />
+                 {segment === 'beauty' ? (
+                   <Scissors className="w-5 h-5 text-primary" />
+                 ) : segment === 'health' ? (
+                   <Activity className="w-5 h-5 text-primary" />
+                 ) : (
+                   <Briefcase className="w-5 h-5 text-primary" />
+                 )}
                </div>
-               <span className="text-xs font-semibold text-foreground">Serviços</span>
+               <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.services || 'Serviços'}</span>
             </Link>
+
+            {(isAgency || isModuleEnabled('clientPortal')) && (
+              <Link to="/dashboard/area-do-cliente" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-emerald-500/20 hover:border-emerald-500/40 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
+                 <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 group-hover:border-emerald-500/40 group-hover:scale-105 transition-all duration-300 text-emerald-400">
+                   <Globe className="w-5 h-5" />
+                 </div>
+                 <span className="text-xs font-semibold text-white line-clamp-1">Portal Clientes</span>
+              </Link>
+            )}
+
             {isOwnerOrManager && (
               <>
                 <Link to="/dashboard/equipe" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
                    <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                      <Briefcase className="w-5 h-5 text-primary" />
                    </div>
-                   <span className="text-xs font-semibold text-foreground">Equipe</span>
+                   <span className="text-xs font-semibold text-foreground line-clamp-1">
+                     {salonData?.managementMode === 'liberal' ? 'Meu Perfil' : (lex.professionals || 'Equipe')}
+                   </span>
                 </Link>
                 <Link to="/dashboard/checklist" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
                    <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                      <ListTodo className="w-5 h-5 text-primary" />
                    </div>
-                   <span className="text-xs font-semibold text-foreground">Checklists</span>
+                   <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.checklists || 'Checklists'}</span>
                 </Link>
                 <button onClick={() => {
                   navigate('/dashboard/relatorios');
@@ -322,7 +348,7 @@ export default function DashboardHome() {
                    <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                      <FileText className="w-5 h-5 text-primary" />
                    </div>
-                   <span className="text-xs font-semibold text-foreground flex items-center justify-center gap-1.5">
+                   <span className="text-xs font-semibold text-foreground flex items-center justify-center gap-1.5 line-clamp-1">
                      Relatórios
                    </span>
                 </button>

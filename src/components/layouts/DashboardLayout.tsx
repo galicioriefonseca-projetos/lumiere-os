@@ -14,7 +14,7 @@ import { DashboardDialogs } from './dashboard/DashboardDialogs';
 import { getNavigationByRole } from './dashboard/getNavigationByRole';
 
 export default function DashboardLayout() {
-  const { userData, salonData, isPlatformAdmin, logout } = useAuth();
+  const { userData, salonData, isPlatformAdmin, logout, currentUser } = useAuth();
 
   // Dialog States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -33,7 +33,7 @@ export default function DashboardLayout() {
     }
   }, []);
 
-  const navigation = getNavigationByRole(userData?.role, salonData);
+  const navigation = getNavigationByRole(userData?.role, salonData, currentUser?.email || userData?.email);
 
   return (
     <DashboardShell

@@ -28,7 +28,11 @@ import {
   AlertCircle,
   Eye,
   ArrowRight,
-  Filter
+  Filter,
+  MapPin,
+  Navigation,
+  Search,
+  Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ClientReport, ClientContract, ClientApproval, ClientTicket, ClientDeliverable } from '../../types';
@@ -508,10 +512,24 @@ export default function ClientPortalPage() {
                     className="bg-[#0A261E]/95 border-[#17473A] hover:border-[#DFC498]/40 transition-all shadow-lg flex flex-col justify-between"
                   >
                     <CardHeader className="space-y-2 pb-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 font-mono text-[11px]">
-                          {report.period}
-                        </Badge>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 font-mono text-[11px]">
+                            {report.period}
+                          </Badge>
+                          {report.gmbMetrics?.rankingPosition && (
+                            <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] flex items-center gap-1 font-semibold">
+                              <MapPin className="w-3 h-3 text-emerald-400" />
+                              Google Maps #{report.gmbMetrics.rankingPosition}
+                            </Badge>
+                          )}
+                          {report.reportType === 'google_meu_negocio' && !report.gmbMetrics?.rankingPosition && (
+                            <Badge className="bg-blue-500/10 text-blue-300 border-blue-500/20 text-[10px] flex items-center gap-1 font-semibold">
+                              <MapPin className="w-3 h-3 text-blue-400" />
+                              Google Meu Negócio
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {new Date(report.createdAt).toLocaleDateString('pt-BR')}
@@ -520,6 +538,11 @@ export default function ClientPortalPage() {
                       <CardTitle className="text-base font-bold text-white leading-snug">
                         {report.title}
                       </CardTitle>
+                      {report.gmbMetrics?.targetKeyword && (
+                        <p className="text-[11px] text-[#DFC498] font-mono flex items-center gap-1">
+                          <Search className="w-3 h-3 text-[#DFC498]" /> Palavra-chave: "{report.gmbMetrics.targetKeyword}"
+                        </p>
+                      )}
                       <CardDescription className="text-xs text-[#8FAEA2] line-clamp-3 leading-relaxed">
                         {report.summary || 'Resumo executivo da performance e entregas do mês.'}
                       </CardDescription>
@@ -527,26 +550,55 @@ export default function ClientPortalPage() {
 
                     <CardContent className="space-y-4 pt-0">
                       {/* KPI Grid */}
-                      <div className="grid grid-cols-3 gap-2 bg-black/30 p-3 rounded-xl border border-white/5 text-center">
-                        <div>
-                          <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
-                          <span className="text-sm font-bold text-white">
-                            {report.metrics?.leads || 0}
-                          </span>
+                      {report.gmbMetrics ? (
+                        <div className="grid grid-cols-3 gap-2 bg-black/30 p-3 rounded-xl border border-white/5 text-center">
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                              <Navigation className="w-2.5 h-2.5 text-emerald-400" /> Rotas
+                            </span>
+                            <span className="text-sm font-bold text-white">
+                              {report.gmbMetrics.directionRequests || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                              <Phone className="w-2.5 h-2.5 text-emerald-400" /> Chamadas
+                            </span>
+                            <span className="text-sm font-bold text-white">
+                              {report.gmbMetrics.calls || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                              <Star className="w-2.5 h-2.5 text-amber-400" /> Avaliação
+                            </span>
+                            <span className="text-sm font-bold text-amber-400">
+                              {report.gmbMetrics.rating ? `${report.gmbMetrics.rating} ★` : (report.metrics?.roas ? `${report.metrics.roas}x` : '-')}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-[#8FAEA2] block">Alcance</span>
-                          <span className="text-sm font-bold text-white">
-                            {report.metrics?.reach ? (report.metrics.reach > 1000 ? `${(report.metrics.reach / 1000).toFixed(1)}k` : report.metrics.reach) : '-'}
-                          </span>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2 bg-black/30 p-3 rounded-xl border border-white/5 text-center">
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
+                            <span className="text-sm font-bold text-white">
+                              {report.metrics?.leads || 0}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block">Alcance</span>
+                            <span className="text-sm font-bold text-white">
+                              {report.metrics?.reach ? (report.metrics.reach > 1000 ? `${(report.metrics.reach / 1000).toFixed(1)}k` : report.metrics.reach) : '-'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
+                            <span className="text-sm font-bold text-emerald-400">
+                              {report.metrics?.roas ? `${report.metrics.roas}x` : '-'}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
-                          <span className="text-sm font-bold text-emerald-400">
-                            {report.metrics?.roas ? `${report.metrics.roas}x` : '-'}
-                          </span>
-                        </div>
-                      </div>
+                      )}
 
                       {/* Action buttons */}
                       <div className="flex items-center gap-2 pt-1">
@@ -765,11 +817,17 @@ export default function ClientPortalPage() {
 
       {/* REPORT DETAILS MODAL */}
       <Dialog open={!!selectedReport} onOpenChange={open => !open && setSelectedReport(null)}>
-        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-lg">
+        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center gap-2 text-xs text-[#DFC498] font-mono">
               <Calendar className="w-3.5 h-3.5" />
               {selectedReport?.period}
+              {selectedReport?.gmbMetrics?.rankingPosition && (
+                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] ml-auto font-bold flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-emerald-400" />
+                  Top #{selectedReport.gmbMetrics.rankingPosition} no Google Maps
+                </Badge>
+              )}
             </div>
             <DialogTitle className="text-lg font-bold text-white">
               {selectedReport?.title}
@@ -788,30 +846,136 @@ export default function ClientPortalPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
-                  <span className="text-sm font-bold text-white">{selectedReport.metrics?.leads || 0}</span>
+              {/* DEDICATED GOOGLE MEU NEGÓCIO & LOCAL SEO SECTION */}
+              {selectedReport.gmbMetrics && (
+                <div className="space-y-3 bg-[#04140F]/90 p-3.5 rounded-xl border border-emerald-500/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-white">Google Meu Negócio & Busca Local</h5>
+                        <p className="text-[11px] text-[#8FAEA2]">Métricas auditadas de presença e atração no Google</p>
+                      </div>
+                    </div>
+                    {selectedReport.gmbMetrics.rankingPosition && (
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-xs px-2.5 py-0.5 font-bold">
+                        Rank #{selectedReport.gmbMetrics.rankingPosition}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {selectedReport.gmbMetrics.targetKeyword && (
+                    <div className="text-xs text-[#8FAEA2] bg-black/40 px-3 py-2 rounded-lg border border-white/5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Search className="w-3.5 h-3.5 text-[#DFC498]" /> Palavra-chave Monitorada:
+                      </span>
+                      <strong className="text-white font-mono">{selectedReport.gmbMetrics.targetKeyword}</strong>
+                    </div>
+                  )}
+
+                  {/* Actions Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                        <Navigation className="w-3 h-3 text-emerald-400" /> Rotas
+                      </span>
+                      <span className="text-base font-bold text-white">
+                        {selectedReport.gmbMetrics.directionRequests?.toLocaleString('pt-BR') || 0}
+                      </span>
+                    </div>
+                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                        <Phone className="w-3 h-3 text-emerald-400" /> Ligações
+                      </span>
+                      <span className="text-base font-bold text-white">
+                        {selectedReport.gmbMetrics.calls?.toLocaleString('pt-BR') || 0}
+                      </span>
+                    </div>
+                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                        <ExternalLink className="w-3 h-3 text-emerald-400" /> Cliques Site/Wpp
+                      </span>
+                      <span className="text-base font-bold text-white">
+                        {selectedReport.gmbMetrics.websiteClicks?.toLocaleString('pt-BR') || 0}
+                      </span>
+                    </div>
+                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                        <Star className="w-3 h-3 text-amber-400" /> Avaliações
+                      </span>
+                      <span className="text-base font-bold text-amber-400">
+                        {selectedReport.gmbMetrics.rating || 5.0} ★ <span className="text-[10px] text-[#8FAEA2] font-normal">({selectedReport.gmbMetrics.reviewsCount || 0})</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Impressions Breakdown */}
+                  {(selectedReport.gmbMetrics.mapsImpressions || selectedReport.gmbMetrics.searchImpressions) && (
+                    <div className="grid grid-cols-2 gap-2 text-xs bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      <div className="flex justify-between items-center px-1">
+                        <span className="text-[#8FAEA2]">Impressões no Maps:</span>
+                        <span className="font-semibold text-white">{selectedReport.gmbMetrics.mapsImpressions?.toLocaleString('pt-BR') || 0}</span>
+                      </div>
+                      <div className="flex justify-between items-center px-1">
+                        <span className="text-[#8FAEA2]">Impressões na Busca:</span>
+                        <span className="font-semibold text-white">{selectedReport.gmbMetrics.searchImpressions?.toLocaleString('pt-BR') || 0}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Search Queries Pills */}
+                  {selectedReport.gmbMetrics.topKeywords && selectedReport.gmbMetrics.topKeywords.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[11px] font-semibold text-[#8FAEA2] flex items-center gap-1">
+                        <Search className="w-3 h-3 text-[#DFC498]" /> Termos Mais Pesquisados no Google:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedReport.gmbMetrics.topKeywords.map((item, i) => {
+                          const query = typeof item === 'string' ? item : item.keyword;
+                          const count = typeof item === 'object' ? item.count : undefined;
+                          return (
+                            <Badge key={i} className="bg-white/5 hover:bg-white/10 text-[#8FAEA2] text-[11px] font-normal border-white/10 flex items-center gap-1">
+                              <span>{query}</span>
+                              {count ? <span className="text-[10px] text-emerald-400 font-mono">({count}x)</span> : null}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[10px] text-[#8FAEA2] block">Alcance</span>
-                  <span className="text-sm font-bold text-white">{selectedReport.metrics?.reach?.toLocaleString('pt-BR') || 0}</span>
-                </div>
-                <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[10px] text-[#8FAEA2] block">Conversões</span>
-                  <span className="text-sm font-bold text-white">{selectedReport.metrics?.conversions || 0}</span>
-                </div>
-                <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[10px] text-[#8FAEA2] block">Investimento</span>
-                  <span className="text-sm font-bold text-white">{formatCurrency(selectedReport.metrics?.investment || 0)}</span>
-                </div>
-                <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[10px] text-[#8FAEA2] block">Faturamento</span>
-                  <span className="text-sm font-bold text-white">{formatCurrency(selectedReport.metrics?.revenue || 0)}</span>
-                </div>
-                <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
-                  <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
-                  <span className="text-sm font-bold text-emerald-400">{selectedReport.metrics?.roas || 0}x</span>
+              )}
+
+              {/* GENERAL / META ADS KPI GRID */}
+              <div className="space-y-1.5">
+                <h5 className="text-xs font-semibold text-[#DFC498] uppercase tracking-wider">Métricas Gerais & Financeiras</h5>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
+                    <span className="text-sm font-bold text-white">{selectedReport.metrics?.leads || 0}</span>
+                  </div>
+                  <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block">Alcance</span>
+                    <span className="text-sm font-bold text-white">{selectedReport.metrics?.reach?.toLocaleString('pt-BR') || 0}</span>
+                  </div>
+                  <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block">Conversões</span>
+                    <span className="text-sm font-bold text-white">{selectedReport.metrics?.conversions || 0}</span>
+                  </div>
+                  <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block">Investimento</span>
+                    <span className="text-sm font-bold text-white">{formatCurrency(selectedReport.metrics?.investment || 0)}</span>
+                  </div>
+                  <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block">Faturamento</span>
+                    <span className="text-sm font-bold text-white">{formatCurrency(selectedReport.metrics?.revenue || 0)}</span>
+                  </div>
+                  <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
+                    <span className="text-sm font-bold text-emerald-400">{selectedReport.metrics?.roas || 0}x</span>
+                  </div>
                 </div>
               </div>
 

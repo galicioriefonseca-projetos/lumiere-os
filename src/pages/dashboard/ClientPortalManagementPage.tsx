@@ -39,13 +39,20 @@ import {
   Instagram,
   Zap,
   MessageCircle,
-  MessageSquare
+  MessageSquare,
+  Upload,
+  FileUp,
+  ArrowUpRight,
+  ArrowDownRight,
+  Layers,
+  BarChart3,
+  FileSearch
 } from 'lucide-react';
 import { ClientReport, ClientContract, ClientPortalInvite, ClientApproval, ClientTicket, ClientDeliverable, ClientServiceRequest } from '../../types';
 
 export default function ClientPortalManagementPage() {
   const { currentUser, salonData } = useAuth();
-  const [activeTab, setActiveTab] = useState<'invites' | 'reports' | 'contracts' | 'approvals' | 'deliverables' | 'tickets' | 'serviceRequests'>('invites');
+  const [activeTab, setActiveTab] = useState<'invites' | 'reports' | 'comparison' | 'contracts' | 'approvals' | 'deliverables' | 'tickets' | 'serviceRequests'>('invites');
 
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -55,12 +62,33 @@ export default function ClientPortalManagementPage() {
 
   // Data states
   const [invites, setInvites] = useState<ClientPortalInvite[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [reports, setReports] = useState<ClientReport[]>([]);
   const [contracts, setContracts] = useState<ClientContract[]>([]);
   const [approvals, setApprovals] = useState<ClientApproval[]>([]);
   const [deliverables, setDeliverables] = useState<ClientDeliverable[]>([]);
   const [tickets, setTickets] = useState<ClientTicket[]>([]);
   const [serviceRequests, setServiceRequests] = useState<ClientServiceRequest[]>([]);
+
+  // Modal de sucesso de convite gerado com link pronto e WhatsApp
+  const [createdInviteModal, setCreatedInviteModal] = useState<{
+    clientName: string;
+    companyName: string;
+    clientPhone: string;
+    token: string;
+    link: string;
+  } | null>(null);
+
+  // Upload e Parsing de PDF com IA Gemini
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfParsedResult, setPdfParsedResult] = useState<any | null>(null);
+  const [pdfComparison, setPdfComparison] = useState<any | null>(null);
+  const [selectedClientIdForPdf, setSelectedClientIdForPdf] = useState<string>('auto');
+
+  // Seleção de cliente para a aba de Comparativo Mensal
+  const [selectedComparisonClient, setSelectedComparisonClient] = useState<string>('all');
 
   // Modals state
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -90,12 +118,24 @@ export default function ClientPortalManagementPage() {
     clientEmail: '',
     period: 'Outubro / 2026',
     summary: '',
+    reportType: 'google_meu_negocio' as 'google_meu_negocio' | 'general' | 'meta_ads',
     leads: 0,
     reach: 0,
     conversions: 0,
     investment: 0,
     revenue: 0,
     roas: 0,
+    // Métricas GMB / Google Maps
+    directionRequests: 0,
+    calls: 0,
+    websiteClicks: 0,
+    mapsImpressions: 0,
+    searchImpressions: 0,
+    rankingPosition: 1,
+    targetKeyword: '',
+    topKeywordsStr: '',
+    rating: 5.0,
+    reviewsCount: 0,
     externalUrl: '',
     status: 'published'
   });
@@ -143,8 +183,9 @@ export default function ClientPortalManagementPage() {
       const idToken = await currentUser.getIdToken();
       const headers = { Authorization: `Bearer ${idToken}` };
 
-      const [invitesRes, reportsRes, contractsRes, approvalsRes, deliverablesRes, ticketsRes, serviceRequestsRes] = await Promise.all([
+      const [invitesRes, clientsRes, reportsRes, contractsRes, approvalsRes, deliverablesRes, ticketsRes, serviceRequestsRes] = await Promise.all([
         fetch('/api/client-portal/invites', { headers }),
+        fetch('/api/client-portal/clients', { headers }),
         fetch('/api/client-portal/reports', { headers }),
         fetch('/api/client-portal/contracts', { headers }),
         fetch('/api/client-portal/approvals', { headers }),
@@ -153,8 +194,9 @@ export default function ClientPortalManagementPage() {
         fetch('/api/client-portal/service-requests', { headers })
       ]);
 
-      const [invitesData, reportsData, contractsData, approvalsData, deliverablesData, ticketsData, serviceRequestsData] = await Promise.all([
+      const [invitesData, clientsData, reportsData, contractsData, approvalsData, deliverablesData, ticketsData, serviceRequestsData] = await Promise.all([
         invitesRes.json(),
+        clientsRes.json(),
         reportsRes.json(),
         contractsRes.json(),
         approvalsRes.json(),
@@ -164,6 +206,7 @@ export default function ClientPortalManagementPage() {
       ]);
 
       setInvites(invitesData.invites || []);
+      setClients(clientsData.clients || []);
       setReports(reportsData.reports || []);
       setContracts(contractsData.contracts || []);
       setApprovals(approvalsData.data || []);
@@ -207,7 +250,7 @@ export default function ClientPortalManagementPage() {
     }
   };
 
-  // Create Invite Link
+  // Create Client & Generate Invite Link Immediately
   const handleCreateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -215,18 +258,33 @@ export default function ClientPortalManagementPage() {
     try {
       setActionLoading(true);
       const idToken = await currentUser.getIdToken();
-      const res = await fetch('/api/client-portal/invites', {
+      const res = await fetch('/api/client-portal/clients-with-invite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`
         },
-        body: JSON.stringify(inviteForm)
+        body: JSON.stringify({
+          name: inviteForm.companyName || inviteForm.clientName,
+          contactName: inviteForm.clientName,
+          email: inviteForm.clientEmail,
+          phone: inviteForm.clientPhone,
+          notes: inviteForm.notes
+        })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao gerar link de convite.');
+      if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar cliente e gerar convite.');
 
-      toast.success('Link de convite exclusivo gerado com sucesso!');
+      const fullLink = `${window.location.origin}/portal/convite?token=${data.inviteToken}`;
+      setCreatedInviteModal({
+        clientName: inviteForm.clientName || inviteForm.companyName,
+        companyName: inviteForm.companyName || inviteForm.clientName,
+        clientPhone: inviteForm.clientPhone,
+        token: data.inviteToken,
+        link: fullLink
+      });
+
+      toast.success('Cliente cadastrado e link de convite gerado com sucesso!');
       setIsInviteModalOpen(false);
       setInviteForm({
         clientName: '',
@@ -237,7 +295,7 @@ export default function ClientPortalManagementPage() {
       });
       await fetchData();
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao criar convite.');
+      toast.error(err.message || 'Erro ao cadastrar cliente e gerar convite.');
     } finally {
       setActionLoading(false);
     }
@@ -291,12 +349,17 @@ export default function ClientPortalManagementPage() {
       setActionLoading(true);
       const idToken = await currentUser.getIdToken();
 
+      const keywordsArray = reportForm.topKeywordsStr
+        ? reportForm.topKeywordsStr.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)
+        : [];
+
       const payload = {
         title: reportForm.title,
         clientName: reportForm.clientName || 'Geral',
         clientEmail: reportForm.clientEmail,
         period: reportForm.period,
         summary: reportForm.summary,
+        reportType: reportForm.reportType,
         metrics: {
           leads: Number(reportForm.leads || 0),
           reach: Number(reportForm.reach || 0),
@@ -304,6 +367,18 @@ export default function ClientPortalManagementPage() {
           investment: Number(reportForm.investment || 0),
           revenue: Number(reportForm.revenue || 0),
           roas: Number(reportForm.roas || 0)
+        },
+        gmbMetrics: {
+          directionRequests: Number(reportForm.directionRequests || 0),
+          calls: Number(reportForm.calls || 0),
+          websiteClicks: Number(reportForm.websiteClicks || 0),
+          mapsImpressions: Number(reportForm.mapsImpressions || 0),
+          searchImpressions: Number(reportForm.searchImpressions || 0),
+          rankingPosition: reportForm.rankingPosition ? Number(reportForm.rankingPosition) : 1,
+          targetKeyword: reportForm.targetKeyword.trim(),
+          topKeywords: keywordsArray,
+          rating: reportForm.rating ? Number(reportForm.rating) : 5.0,
+          reviewsCount: Number(reportForm.reviewsCount || 0)
         },
         externalUrl: reportForm.externalUrl,
         status: reportForm.status
@@ -620,6 +695,46 @@ export default function ClientPortalManagementPage() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
 
+  const emailCandidate = String(salonData?.ownerEmail || currentUser?.email || '').toLowerCase();
+  const isAgencyAccount = 
+    emailCandidate.includes('galicioriefonseca31@gmail.com') ||
+    salonData?.segment === 'agency' || 
+    salonData?.businessType === 'agency';
+
+  if (!loading && !isAgencyAccount) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-6">
+        <div className="max-w-lg w-full bg-[#0A261E] border border-[#17473A] rounded-2xl p-8 text-center space-y-4 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-[#DFC498]/10 border border-[#DFC498]/20 flex items-center justify-center text-[#DFC498] mx-auto">
+            <Building2 className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-white">Módulo Exclusivo para Agências</h2>
+          <p className="text-sm text-[#8FAEA2] leading-relaxed">
+            O Portal do Cliente (relatórios de marketing, aprovação de criativos e contratos) é uma funcionalidade exclusiva para contas de Agência (disponível para a conta <span className="text-[#DFC498] font-mono">galicioriefonseca31@gmail.com</span>).
+          </p>
+          <p className="text-xs text-[#8FAEA2]/80">
+            Para salões de beleza e estética, utilize o módulo de Clientes & CRM para a gestão de fichas, histórico e atendimentos.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <Button
+              onClick={() => window.location.href = '/dashboard/clientes'}
+              className="w-full sm:w-auto bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs h-10 px-5 rounded-xl cursor-pointer"
+            >
+              Ir para Clientes & CRM
+            </Button>
+            <Button
+              onClick={() => window.location.href = '/dashboard'}
+              variant="outline"
+              className="w-full sm:w-auto border-white/10 hover:bg-white/5 text-white text-xs h-10 px-5 rounded-xl cursor-pointer"
+            >
+              Voltar ao Início
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12">
       {/* Top Banner / Actions */}
@@ -882,31 +997,58 @@ export default function ClientPortalManagementPage() {
               <h3 className="text-sm font-bold text-white">Relatórios de Marketing & Campanhas</h3>
               <p className="text-xs text-[#8FAEA2]">Publique números consolidados de campanhas, tráfego e relatórios Looker Studio.</p>
             </div>
-            <Button
-              onClick={() => {
-                setEditingReport(null);
-                setReportForm({
-                  title: '',
-                  clientName: '',
-                  clientEmail: '',
-                  period: 'Outubro / 2026',
-                  summary: '',
-                  leads: 0,
-                  reach: 0,
-                  conversions: 0,
-                  investment: 0,
-                  revenue: 0,
-                  roas: 0,
-                  externalUrl: '',
-                  status: 'published'
-                });
-                setIsReportModalOpen(true);
-              }}
-              size="sm"
-              className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs rounded-xl h-9 gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" /> Novo Relatório
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => {
+                  setPdfFile(null);
+                  setPdfParsedResult(null);
+                  setPdfComparison(null);
+                  setIsPdfModalOpen(true);
+                }}
+                size="sm"
+                variant="outline"
+                className="border-[#DFC498]/40 bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] font-semibold text-xs rounded-xl h-9 gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" /> Ler PDF do GBP (IA)
+              </Button>
+
+              <Button
+                onClick={() => {
+                  setEditingReport(null);
+                  setReportForm({
+                    title: '',
+                    clientName: '',
+                    clientEmail: '',
+                    period: 'Outubro / 2026',
+                    summary: '',
+                    reportType: 'google_meu_negocio',
+                    leads: 0,
+                    reach: 0,
+                    conversions: 0,
+                    investment: 0,
+                    revenue: 0,
+                    roas: 0,
+                    directionRequests: 0,
+                    calls: 0,
+                    websiteClicks: 0,
+                    mapsImpressions: 0,
+                    searchImpressions: 0,
+                    rankingPosition: 1,
+                    targetKeyword: '',
+                    topKeywordsStr: '',
+                    rating: 5.0,
+                    reviewsCount: 0,
+                    externalUrl: '',
+                    status: 'published'
+                  });
+                  setIsReportModalOpen(true);
+                }}
+                size="sm"
+                className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs rounded-xl h-9 gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Novo Relatório
+              </Button>
+            </div>
           </div>
 
           {loading ? (
@@ -938,14 +1080,22 @@ export default function ClientPortalManagementPage() {
                 <Card key={rep.id} className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/30 transition-all">
                   <CardHeader className="pb-3 space-y-1">
                     <div className="flex items-center justify-between">
-                      <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 font-mono text-[10px]">
-                        {rep.period}
-                      </Badge>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 font-mono text-[10px]">
+                          {rep.period}
+                        </Badge>
+                        {rep.gmbMetrics && (
+                          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] flex items-center gap-1 font-bold">
+                            <MapPin className="w-3 h-3 text-emerald-400" />
+                            Google Maps #{rep.gmbMetrics.rankingPosition || 1}
+                          </Badge>
+                        )}
+                      </div>
                       <span className="text-[10px] text-[#8FAEA2]">
                         Cliente: <strong className="text-white">{rep.clientName || 'Geral'}</strong>
                       </span>
                     </div>
-                    <CardTitle className="text-sm font-bold text-white">
+                    <CardTitle className="text-sm font-bold text-white flex items-center gap-1.5">
                       {rep.title}
                     </CardTitle>
                     <CardDescription className="text-xs text-[#8FAEA2] line-clamp-2">
@@ -954,20 +1104,52 @@ export default function ClientPortalManagementPage() {
                   </CardHeader>
 
                   <CardContent className="space-y-3 pt-0">
-                    <div className="grid grid-cols-3 gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5 text-center text-xs">
-                      <div>
-                        <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
-                        <span className="font-bold text-white">{rep.metrics?.leads || 0}</span>
+                    {rep.gmbMetrics ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5 text-center text-xs">
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] flex items-center justify-center gap-1">
+                              <MapPin className="w-2.5 h-2.5 text-[#DFC498]" /> Rotas
+                            </span>
+                            <span className="font-bold text-white">{rep.gmbMetrics.directionRequests || 0}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] flex items-center justify-center gap-1">
+                              <Phone className="w-2.5 h-2.5 text-emerald-400" /> Ligações
+                            </span>
+                            <span className="font-bold text-white">{rep.gmbMetrics.calls || 0}</span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] flex items-center justify-center gap-1">
+                              <Globe className="w-2.5 h-2.5 text-blue-400" /> Cliques
+                            </span>
+                            <span className="font-bold text-white">{rep.gmbMetrics.websiteClicks || 0}</span>
+                          </div>
+                        </div>
+
+                        {rep.gmbMetrics.targetKeyword && (
+                          <div className="text-[11px] text-[#8FAEA2] bg-white/5 px-2.5 py-1 rounded-lg flex items-center justify-between">
+                            <span>Palavra-Chave Top:</span>
+                            <strong className="text-[#DFC498] font-mono">{rep.gmbMetrics.targetKeyword}</strong>
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <span className="text-[10px] text-[#8FAEA2] block">Investimento</span>
-                        <span className="font-bold text-white">{formatCurrency(rep.metrics?.investment || 0)}</span>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 bg-black/30 p-2.5 rounded-xl border border-white/5 text-center text-xs">
+                        <div>
+                          <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
+                          <span className="font-bold text-white">{rep.metrics?.leads || 0}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-[#8FAEA2] block">Investimento</span>
+                          <span className="font-bold text-white">{formatCurrency(rep.metrics?.investment || 0)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
+                          <span className="font-bold text-emerald-400">{rep.metrics?.roas || 0}x</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
-                        <span className="font-bold text-emerald-400">{rep.metrics?.roas || 0}x</span>
-                      </div>
-                    </div>
+                    )}
 
                     <div className="flex items-center justify-between pt-1">
                       {rep.externalUrl ? (
@@ -986,6 +1168,12 @@ export default function ClientPortalManagementPage() {
                       <div className="flex items-center gap-1.5">
                         <Button
                           onClick={() => {
+                            const keywordsStr = rep.gmbMetrics?.topKeywords
+                              ? (Array.isArray(rep.gmbMetrics.topKeywords) 
+                                  ? rep.gmbMetrics.topKeywords.map((k: any) => typeof k === 'string' ? k : k.keyword).join(', ')
+                                  : '')
+                              : '';
+
                             setEditingReport(rep);
                             setReportForm({
                               title: rep.title,
@@ -993,12 +1181,23 @@ export default function ClientPortalManagementPage() {
                               clientEmail: rep.clientEmail || '',
                               period: rep.period,
                               summary: rep.summary,
+                              reportType: (rep.reportType as any) || (rep.gmbMetrics ? 'google_meu_negocio' : 'general'),
                               leads: rep.metrics?.leads || 0,
                               reach: rep.metrics?.reach || 0,
                               conversions: rep.metrics?.conversions || 0,
                               investment: rep.metrics?.investment || 0,
                               revenue: rep.metrics?.revenue || 0,
                               roas: rep.metrics?.roas || 0,
+                              directionRequests: rep.gmbMetrics?.directionRequests || 0,
+                              calls: rep.gmbMetrics?.calls || 0,
+                              websiteClicks: rep.gmbMetrics?.websiteClicks || 0,
+                              mapsImpressions: rep.gmbMetrics?.mapsImpressions || 0,
+                              searchImpressions: rep.gmbMetrics?.searchImpressions || 0,
+                              rankingPosition: rep.gmbMetrics?.rankingPosition || 1,
+                              targetKeyword: rep.gmbMetrics?.targetKeyword || '',
+                              topKeywordsStr: keywordsStr,
+                              rating: rep.gmbMetrics?.rating || 5.0,
+                              reviewsCount: rep.gmbMetrics?.reviewsCount || 0,
                               externalUrl: rep.externalUrl || '',
                               status: rep.status
                             });
@@ -1611,25 +1810,65 @@ export default function ClientPortalManagementPage() {
 
       {/* MODAL: CRIAR / EDITAR RELATÓRIO */}
       <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
-        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-lg">
+        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
               <FileText className="w-5 h-5 text-[#DFC498]" />
               {editingReport ? 'Editar Relatório de Marketing' : 'Publicar Novo Relatório de Marketing'}
             </DialogTitle>
             <DialogDescription className="text-xs text-[#8FAEA2]">
-              Insira as métricas do período para exibição na Área do Cliente.
+              Insira as métricas consolidadas do Google Meu Negócio, tráfego e campanhas para exibição no portal do cliente.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveReport} className="space-y-3.5 pt-2">
+          <form onSubmit={handleSaveReport} className="space-y-4 pt-2">
+            {/* Tipo de Relatório */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-[#8FAEA2]">Tipo de Relatório</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReportForm(prev => ({ ...prev, reportType: 'google_meu_negocio' }))}
+                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    reportForm.reportType === 'google_meu_negocio'
+                      ? 'border-[#DFC498] bg-[#DFC498]/15 text-[#DFC498]'
+                      : 'border-white/10 bg-black/20 text-[#8FAEA2] hover:text-white'
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5" /> Google Meu Negócio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportForm(prev => ({ ...prev, reportType: 'meta_ads' }))}
+                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    reportForm.reportType === 'meta_ads'
+                      ? 'border-[#DFC498] bg-[#DFC498]/15 text-[#DFC498]'
+                      : 'border-white/10 bg-black/20 text-[#8FAEA2] hover:text-white'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" /> Tráfego & Meta Ads
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportForm(prev => ({ ...prev, reportType: 'general' }))}
+                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                    reportForm.reportType === 'general'
+                      ? 'border-[#DFC498] bg-[#DFC498]/15 text-[#DFC498]'
+                      : 'border-white/10 bg-black/20 text-[#8FAEA2] hover:text-white'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Consolidado Geral
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs text-[#8FAEA2]">Título do Relatório *</Label>
               <Input
                 required
                 value={reportForm.title}
                 onChange={e => setReportForm(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="Ex: Relatório de Performance Meta Ads & Google Ads"
+                placeholder="Ex: Performance Google Meu Negócio & Tráfego Local"
                 className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
               />
             </div>
@@ -1658,73 +1897,192 @@ export default function ClientPortalManagementPage() {
               </div>
             </div>
 
+            {/* SEÇÃO GOOGLE MEU NEGÓCIO & RANQUEAMENTO */}
+            <div className="p-3.5 rounded-xl bg-black/30 border border-[#DFC498]/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#DFC498] flex items-center gap-1.5 uppercase tracking-wider">
+                  <MapPin className="w-3.5 h-3.5 text-[#DFC498]" />
+                  Métricas do Google Meu Negócio & Ranqueamento Local
+                </span>
+                <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono">
+                  Google API Ready
+                </span>
+              </div>
+
+              {/* Ranqueamento no Mapa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#8FAEA2]">Posição no Ranking Google Maps</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={reportForm.rankingPosition}
+                      onChange={e => setReportForm(prev => ({ ...prev, rankingPosition: Number(e.target.value) }))}
+                      className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs font-bold w-24 text-center"
+                    />
+                    <span className="text-[11px] text-emerald-400 font-medium">
+                      {reportForm.rankingPosition <= 3 ? 'Top 3 do Google Maps' : `Posição #${reportForm.rankingPosition}`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#8FAEA2]">Palavra-Chave Principal Auditada</Label>
+                  <Input
+                    value={reportForm.targetKeyword}
+                    onChange={e => setReportForm(prev => ({ ...prev, targetKeyword: e.target.value }))}
+                    placeholder="Ex: Dentista Invisalign Centro"
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Conversões Diretas (Performance API) */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-[#DFC498]" /> Rotas no Mapa
+                  </Label>
+                  <Input
+                    type="number"
+                    value={reportForm.directionRequests}
+                    onChange={e => setReportForm(prev => ({ ...prev, directionRequests: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-emerald-400" /> Ligações
+                  </Label>
+                  <Input
+                    type="number"
+                    value={reportForm.calls}
+                    onChange={e => setReportForm(prev => ({ ...prev, calls: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-blue-400" /> Cliques Site/Zap
+                  </Label>
+                  <Input
+                    type="number"
+                    value={reportForm.websiteClicks}
+                    onChange={e => setReportForm(prev => ({ ...prev, websiteClicks: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Impressões e Reputação */}
+              <div className="grid grid-cols-4 gap-2 pt-1">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">Visualizações Maps</Label>
+                  <Input
+                    type="number"
+                    value={reportForm.mapsImpressions}
+                    onChange={e => setReportForm(prev => ({ ...prev, mapsImpressions: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">Visualizações Busca</Label>
+                  <Input
+                    type="number"
+                    value={reportForm.searchImpressions}
+                    onChange={e => setReportForm(prev => ({ ...prev, searchImpressions: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">Nota Média (⭐)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min={1}
+                    max={5}
+                    value={reportForm.rating}
+                    onChange={e => setReportForm(prev => ({ ...prev, rating: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">Total Reviews</Label>
+                  <Input
+                    type="number"
+                    value={reportForm.reviewsCount}
+                    onChange={e => setReportForm(prev => ({ ...prev, reviewsCount: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Palavras-chave pesquisadas pelos clientes */}
+              <div className="space-y-1 pt-1">
+                <Label className="text-[11px] text-[#8FAEA2]">
+                  Termos Mais Pesquisados no Google pelos Clientes (Separados por vírgula)
+                </Label>
+                <Input
+                  value={reportForm.topKeywordsStr}
+                  onChange={e => setReportForm(prev => ({ ...prev, topKeywordsStr: e.target.value }))}
+                  placeholder="Ex: dentista perto de mim, implante dentario valor, invisalign centro"
+                  className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs text-[#8FAEA2]">Resumo Executivo / Destaques do Mês</Label>
               <textarea
                 rows={3}
                 value={reportForm.summary}
                 onChange={e => setReportForm(prev => ({ ...prev, summary: e.target.value }))}
-                placeholder="Ex: Redução de 20% no custo por lead com alta no faturamento gerado por campanhas de Google Ads."
+                placeholder="Ex: Crescimento expressivo de rotas no Google Maps e ligações telefônicas. O perfil alcançou o Top 2 local com 218 rotas traçadas."
                 className="w-full bg-black/30 border border-white/10 text-white rounded-xl p-3 text-xs focus:border-[#DFC498] resize-none"
               />
             </div>
 
-            {/* Metrics Grid */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="space-y-1">
-                <Label className="text-[11px] text-[#8FAEA2]">Leads Gerados</Label>
-                <Input
-                  type="number"
-                  value={reportForm.leads}
-                  onChange={e => setReportForm(prev => ({ ...prev, leads: Number(e.target.value) }))}
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-[#8FAEA2]">Alcance Total</Label>
-                <Input
-                  type="number"
-                  value={reportForm.reach}
-                  onChange={e => setReportForm(prev => ({ ...prev, reach: Number(e.target.value) }))}
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-[#8FAEA2]">Conversões</Label>
-                <Input
-                  type="number"
-                  value={reportForm.conversions}
-                  onChange={e => setReportForm(prev => ({ ...prev, conversions: Number(e.target.value) }))}
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-[#8FAEA2]">Investimento (R$)</Label>
-                <Input
-                  type="number"
-                  value={reportForm.investment}
-                  onChange={e => setReportForm(prev => ({ ...prev, investment: Number(e.target.value) }))}
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-[#8FAEA2]">Faturamento (R$)</Label>
-                <Input
-                  type="number"
-                  value={reportForm.revenue}
-                  onChange={e => setReportForm(prev => ({ ...prev, revenue: Number(e.target.value) }))}
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-9 text-xs"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[11px] text-[#8FAEA2]">ROAS (x)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={reportForm.roas}
-                  onChange={e => setReportForm(prev => ({ ...prev, roas: Number(e.target.value) }))}
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-9 text-xs"
-                />
+            {/* Metrics Grid (Tráfego / Mídia Paga) */}
+            <div className="p-3 rounded-xl bg-black/20 border border-white/5 space-y-2">
+              <span className="text-[11px] font-semibold text-[#8FAEA2] uppercase tracking-wider block">
+                Métricas Financeiras & Mídia Paga (Opcional)
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">Leads Gerados</Label>
+                  <Input
+                    type="number"
+                    value={reportForm.leads}
+                    onChange={e => setReportForm(prev => ({ ...prev, leads: Number(e.target.value) }))}
+                    className="bg-black/30 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">Investimento (R$)</Label>
+                  <Input
+                    type="number"
+                    value={reportForm.investment}
+                    onChange={e => setReportForm(prev => ({ ...prev, investment: Number(e.target.value) }))}
+                    className="bg-black/30 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-[#8FAEA2]">ROAS (x)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={reportForm.roas}
+                    onChange={e => setReportForm(prev => ({ ...prev, roas: Number(e.target.value) }))}
+                    className="bg-black/30 border-white/10 text-white rounded-xl h-8 text-xs"
+                  />
+                </div>
               </div>
             </div>
 
@@ -2118,6 +2476,319 @@ export default function ClientPortalManagementPage() {
           )}
         </DialogContent>
       </Dialog>
+      {/* MODAL: SUCESSO DE CONVITE CRIADO & LINK PRONTO PARA WHATSAPP */}
+      <Dialog open={!!createdInviteModal} onOpenChange={open => !open && setCreatedInviteModal(null)}>
+        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-md">
+          <DialogHeader>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mx-auto mb-2">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-white">
+              Cliente Cadastrado com Sucesso!
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-[#8FAEA2]">
+              O cliente <strong className="text-white">{createdInviteModal?.clientName}</strong> foi cadastrado no CRM e o link exclusivo de acesso à Área do Cliente foi gerado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {createdInviteModal && (
+            <div className="space-y-4 pt-3">
+              <div className="bg-black/40 p-3 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-medium">Link de Acesso Exclusivo</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-mono text-[#DFC498] truncate">{createdInviteModal.link}</span>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdInviteModal.link);
+                      toast.success('Link copiado para a área de transferência!');
+                    }}
+                    variant="ghost"
+                    className="h-7 px-2 text-white hover:bg-white/5"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-1">
+                <Button
+                  onClick={() => {
+                    const message = encodeURIComponent(
+                      `Olá ${createdInviteModal.clientName}! Segue o link de acesso exclusivo à sua Área do Cliente no LumièreOS:\n\n${createdInviteModal.link}\n\nAli você encontrará seus relatórios de desempenho e contratos.`
+                    );
+                    const cleanPhone = (createdInviteModal.clientPhone || '').replace(/\D/g, '');
+                    const url = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${message}` : `https://wa.me/?text=${message}`;
+                    window.open(url, '_blank');
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 rounded-xl gap-2 text-xs"
+                >
+                  <Phone className="w-4 h-4" /> Enviar Convite via WhatsApp
+                </Button>
+                
+                <Button
+                  onClick={() => setCreatedInviteModal(null)}
+                  variant="outline"
+                  className="w-full border-white/10 hover:bg-white/5 text-white h-10 rounded-xl text-xs"
+                >
+                  Fechar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: UPLOAD DE PDF E LEITURA INTELIGENTE COM IA GEMINI */}
+      <Dialog open={isPdfModalOpen} onOpenChange={open => !open && setIsPdfModalOpen(false)}>
+        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-xl">
+          <DialogHeader>
+            <div className="w-12 h-12 rounded-2xl bg-[#DFC498]/10 border border-[#DFC498]/20 flex items-center justify-center text-[#DFC498] mx-auto mb-2">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-white">
+              Leitura Inteligente de Relatório em PDF (IA)
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-[#8FAEA2]">
+              Envie o PDF de desempenho do Google Meu Negócio / Google Maps. O LumièreOS extrai automaticamente as métricas, gera o resumo executivo e calcula o comparativo mês a mês.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* Seleção de Cliente */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-[#8FAEA2]">Vincular ao Cliente (Opcional - IA tentará reconhecer pelo nome)</Label>
+              <select
+                value={selectedClientIdForPdf}
+                onChange={e => setSelectedClientIdForPdf(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl text-white px-3 h-10 text-xs"
+              >
+                <option value="auto">-- Auto-detectar pelo nome da empresa no PDF --</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name || c.contactName}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* File Upload Box */}
+            {!pdfParsedResult && (
+              <div className="space-y-3">
+                <div
+                  className="border-2 border-dashed border-[#17473A] hover:border-[#DFC498]/50 bg-black/30 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 transition cursor-pointer text-center"
+                  onClick={() => document.getElementById('gmb-pdf-input')?.click()}
+                >
+                  <FileUp className="w-10 h-10 text-[#DFC498]" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      {pdfFile ? pdfFile.name : 'Clique para selecionar o PDF do Google Meu Negócio'}
+                    </p>
+                    <p className="text-xs text-[#8FAEA2] mt-1">Suporta arquivos PDF de desempenho gerados pelo Google</p>
+                  </div>
+                  <input
+                    id="gmb-pdf-input"
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={e => {
+                      if (e.target.files && e.target.files[0]) {
+                        setPdfFile(e.target.files[0]);
+                      }
+                    }}
+                  />
+                </div>
+
+                <Button
+                  disabled={!pdfFile || pdfParsing}
+                  onClick={async () => {
+                    if (!pdfFile || !currentUser) return;
+                    try {
+                      setPdfParsing(true);
+                      const reader = new FileReader();
+                      reader.readAsDataURL(pdfFile);
+                      reader.onload = async () => {
+                        const base64 = reader.result as string;
+                        const idToken = await currentUser.getIdToken();
+                        const res = await fetch('/api/client-portal/reports/parse-pdf', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${idToken}`
+                          },
+                          body: JSON.stringify({
+                            pdfBase64: base64,
+                            fileName: pdfFile.name,
+                            clientId: selectedClientIdForPdf === 'auto' ? null : selectedClientIdForPdf
+                          })
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Erro ao processar PDF.');
+
+                        setPdfParsedResult(data.parsedData);
+                        setPdfComparison(data.comparison);
+                        toast.success('Relatório extraído e analisado pela IA com sucesso!');
+                        setPdfParsing(false);
+                      };
+                    } catch (err: any) {
+                      console.error(err);
+                      toast.error(err.message || 'Erro ao analisar PDF com IA.');
+                      setPdfParsing(false);
+                    }
+                  }}
+                  className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold h-11 rounded-xl text-xs gap-2"
+                >
+                  {pdfParsing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Analisando PDF com Inteligência Artificial...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" /> Processar Relatório com IA
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* Parsed Preview & Comparison Results */}
+            {pdfParsedResult && (
+              <div className="space-y-4 bg-black/40 p-4 rounded-2xl border border-white/10 max-h-[60vh] overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white">{pdfParsedResult.businessName}</h4>
+                    <span className="text-xs text-[#DFC498] font-mono">{pdfParsedResult.period}</span>
+                  </div>
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
+                    IA Processado com Sucesso
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="bg-[#0A261E] p-2.5 rounded-xl border border-[#17473A]">
+                    <span className="text-[10px] text-[#8FAEA2] block">Pesquisa</span>
+                    <span className="font-bold text-white text-sm">{pdfParsedResult.searchImpressions?.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="bg-[#0A261E] p-2.5 rounded-xl border border-[#17473A]">
+                    <span className="text-[10px] text-[#8FAEA2] block">Google Maps</span>
+                    <span className="font-bold text-white text-sm">{pdfParsedResult.mapsImpressions?.toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="bg-[#0A261E] p-2.5 rounded-xl border border-[#17473A]">
+                    <span className="text-[10px] text-[#8FAEA2] block">Total Visualizações</span>
+                    <span className="font-bold text-[#DFC498] text-sm">{pdfParsedResult.totalImpressions?.toLocaleString('pt-BR')}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="bg-black/30 p-2 rounded-xl border border-white/5">
+                    <span className="text-[10px] text-[#8FAEA2] block">Cliques no Site</span>
+                    <span className="font-bold text-blue-400">{pdfParsedResult.websiteClicks}</span>
+                  </div>
+                  <div className="bg-black/30 p-2 rounded-xl border border-white/5">
+                    <span className="text-[10px] text-[#8FAEA2] block">Solicitações de Rotas</span>
+                    <span className="font-bold text-emerald-400">{pdfParsedResult.directionRequests}</span>
+                  </div>
+                  <div className="bg-black/30 p-2 rounded-xl border border-white/5">
+                    <span className="text-[10px] text-[#8FAEA2] block">Ligações Telefônicas</span>
+                    <span className="font-bold text-[#DFC498]">{pdfParsedResult.calls}</span>
+                  </div>
+                </div>
+
+                {/* Comparativo com Mês Anterior */}
+                {pdfComparison && (
+                  <div className="bg-[#061A14] p-3 rounded-xl border border-emerald-500/20 space-y-2">
+                    <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
+                      <BarChart3 className="w-3.5 h-3.5" /> Comparativo com o Mês Anterior ({pdfComparison.previousPeriod})
+                    </span>
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="bg-black/20 p-2 rounded-lg">
+                        <span className="text-[10px] text-[#8FAEA2] block">Ligações</span>
+                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.callsDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {pdfComparison.callsDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          {pdfComparison.callsDiffPct}%
+                        </span>
+                      </div>
+                      <div className="bg-black/20 p-2 rounded-lg">
+                        <span className="text-[10px] text-[#8FAEA2] block">Rotas (GPS)</span>
+                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.directionRequestsDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {pdfComparison.directionRequestsDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          {pdfComparison.directionRequestsDiffPct}%
+                        </span>
+                      </div>
+                      <div className="bg-black/20 p-2 rounded-lg">
+                        <span className="text-[10px] text-[#8FAEA2] block">Cliques Site</span>
+                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.websiteClicksDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {pdfComparison.websiteClicksDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          {pdfComparison.websiteClicksDiffPct}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-semibold">Resumo Executivo Gerado por IA</span>
+                  <p className="text-xs text-[#E1EDE8] bg-white/5 p-3 rounded-xl leading-relaxed">
+                    {pdfParsedResult.summary}
+                  </p>
+                </div>
+
+                <Button
+                  onClick={async () => {
+                    if (!currentUser) return;
+                    try {
+                      setActionLoading(true);
+                      const idToken = await currentUser.getIdToken();
+                      const res = await fetch('/api/client-portal/reports', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${idToken}`
+                        },
+                        body: JSON.stringify({
+                          title: `Desempenho Google Meu Negócio • ${pdfParsedResult.period}`,
+                          clientName: pdfParsedResult.businessName,
+                          clientId: selectedClientIdForPdf === 'auto' ? null : selectedClientIdForPdf,
+                          period: pdfParsedResult.period,
+                          summary: pdfParsedResult.summary,
+                          reportType: 'google_meu_negocio',
+                          gmbMetrics: {
+                            directionRequests: pdfParsedResult.directionRequests,
+                            calls: pdfParsedResult.calls,
+                            websiteClicks: pdfParsedResult.websiteClicks,
+                            mapsImpressions: pdfParsedResult.mapsImpressions,
+                            searchImpressions: pdfParsedResult.searchImpressions,
+                            rankingPosition: 1,
+                            targetKeyword: pdfParsedResult.targetKeyword,
+                            topKeywords: pdfParsedResult.topKeywords,
+                            rating: pdfParsedResult.rating,
+                            reviewsCount: pdfParsedResult.reviewsCount
+                          },
+                          status: 'published'
+                        })
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Erro ao publicar relatório.');
+
+                      toast.success('Relatório extraído via PDF e publicado com sucesso na Área do Cliente!');
+                      setIsPdfModalOpen(false);
+                      setPdfFile(null);
+                      setPdfParsedResult(null);
+                      await fetchData();
+                    } catch (err: any) {
+                      toast.error(err.message || 'Erro ao salvar relatório.');
+                    } finally {
+                      setActionLoading(false);
+                    }
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 rounded-xl text-xs gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Publicar Relatório na Área do Cliente
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
