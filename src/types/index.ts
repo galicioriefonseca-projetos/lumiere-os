@@ -553,6 +553,10 @@ export interface ClientReport {
     rating?: number; // Avaliação média (ex: 4.9)
     reviewsCount?: number; // Total de avaliações
   };
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  month?: number;     // 1 a 12
+  year?: number;      // ex: 2026
   externalUrl?: string;
   fileUrl?: string;
   status: 'published' | 'draft';

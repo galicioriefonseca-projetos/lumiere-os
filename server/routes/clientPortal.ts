@@ -629,6 +629,10 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       reportType,
       metrics,
       gmbMetrics,
+      startDate,
+      endDate,
+      month,
+      year,
       externalUrl,
       fileUrl,
       status
@@ -642,6 +646,31 @@ clientPortalRoutes.post("/reports", async (req, res) => {
     const reportRef = adminDb.collection(`salons/${salonId}/reports`).doc();
     const now = Date.now();
 
+    // Inferir startDate e endDate se não fornecidos
+    let finalStartDate = startDate;
+    let finalEndDate = endDate;
+    let finalMonth = month ? Number(month) : null;
+    let finalYear = year ? Number(year) : null;
+
+    if (!finalStartDate || !finalEndDate) {
+      const match = period.match(/(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro).*?(\d{4})/i);
+      if (match) {
+        const monthNames = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+        const mIndex = monthNames.indexOf(match[1].toLowerCase()) + 1;
+        const yr = parseInt(match[2], 10);
+        finalMonth = finalMonth || mIndex;
+        finalYear = finalYear || yr;
+        const paddedMonth = String(mIndex).padStart(2, '0');
+        const lastDay = new Date(yr, mIndex, 0).getDate();
+        finalStartDate = finalStartDate || `${yr}-${paddedMonth}-01`;
+        finalEndDate = finalEndDate || `${yr}-${paddedMonth}-${String(lastDay).padStart(2, '0')}`;
+      } else {
+        const isoNow = new Date(now).toISOString().slice(0, 10);
+        finalStartDate = finalStartDate || isoNow;
+        finalEndDate = finalEndDate || isoNow;
+      }
+    }
+
     const reportData = {
       id: reportRef.id,
       salonId,
@@ -650,6 +679,10 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       clientEmail: clientEmail || "",
       title: title.trim(),
       period: period.trim(),
+      startDate: finalStartDate,
+      endDate: finalEndDate,
+      month: finalMonth,
+      year: finalYear,
       summary: summary || "",
       reportType: reportType || (gmbMetrics ? "google_meu_negocio" : "general"),
       metrics: {
@@ -763,6 +796,8 @@ Retorne ESTRITAMENTE um objeto JSON válido (sem blocos markdown e sem textos ad
 {
   "businessName": string,
   "period": string,
+  "startDate": string,
+  "endDate": string,
   "month": number,
   "year": number,
   "searchImpressions": number,
@@ -782,19 +817,21 @@ Retorne ESTRITAMENTE um objeto JSON válido (sem blocos markdown e sem textos ad
 Regras:
 1. "businessName": Nome comercial do estabelecimento indicado no cabeçalho ou título do relatório.
 2. "period": Mês e ano de referência por extenso em português (ex: "Outubro / 2026", "Setembro / 2026").
-3. "month": Número do mês (1 a 12).
-4. "year": Ano (ex: 2026).
-5. "searchImpressions": Total de pessoas que viram o perfil na Pesquisa Google.
-6. "mapsImpressions": Total de pessoas que viram o perfil no Google Maps.
-7. "totalImpressions": Total de impressões ou visualizações gerais do perfil.
-8. "websiteClicks": Quantidade de cliques que levaram para o site da empresa.
-9. "directionRequests": Quantidade de solicitações de rotas / direções no mapa.
-10. "calls": Ligações diretas iniciadas a partir do perfil no Google.
-11. "rating": Média geral de estrelas (ex: 4.9 ou 5.0).
-12. "reviewsCount": Quantidade total de avaliações recebidas.
-13. "targetKeyword": Palavra-chave principal que mais gerou impressões.
-14. "topKeywords": Lista das principais buscas com contagem aproximada.
-15. "summary": Um resumo executivo analítico impecável em português do Brasil (3 a 5 frases), destacando o crescimento de visibilidade, as principais ações dos clientes (chamadas, rotas, visitas ao site) e recomendações para o próximo mês.`;
+3. "startDate": Data de início do período analisado em formato ISO YYYY-MM-DD (ex: "2026-10-01").
+4. "endDate": Data de término do período analisado em formato ISO YYYY-MM-DD (ex: "2026-10-31").
+5. "month": Número do mês (1 a 12).
+6. "year": Ano (ex: 2026).
+7. "searchImpressions": Total de pessoas que viram o perfil na Pesquisa Google.
+8. "mapsImpressions": Total de pessoas que viram o perfil no Google Maps.
+9. "totalImpressions": Total de impressões ou visualizações gerais do perfil.
+10. "websiteClicks": Quantidade de cliques que levaram para o site da empresa.
+11. "directionRequests": Quantidade de solicitações de rotas / direções no mapa.
+12. "calls": Ligações diretas iniciadas a partir do perfil no Google.
+13. "rating": Média geral de estrelas (ex: 4.9 ou 5.0).
+14. "reviewsCount": Quantidade total de avaliações recebidas.
+15. "targetKeyword": Palavra-chave principal que mais gerou impressões.
+16. "topKeywords": Lista das principais buscas com contagem aproximada.
+17. "summary": Um resumo executivo analítico impecável em português do Brasil (3 a 5 frases), destacando o crescimento de visibilidade, as principais ações dos clientes (chamadas, rotas, visitas ao site) e recomendações para o próximo mês.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.8-flash',
@@ -1160,7 +1197,105 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
       updatedAt: now
     }, { merge: true });
 
-    // 3. Criar relatórios de exemplo
+    // 3. Criar relatórios de exemplo com histórico multimensal para comparação
+    const repAugRef = adminDb.collection(`salons/${salonId}/reports`).doc("demo_rep_ago_acme");
+    await repAugRef.set({
+      id: "demo_rep_ago_acme",
+      salonId,
+      clientId: "demo_cli_acme",
+      clientName: "Acme Odontologia Integrada",
+      clientEmail: "contato@acmeodonto.com.br",
+      title: "Desempenho Google Meu Negócio - Agosto/2026",
+      period: "Agosto / 2026",
+      startDate: "2026-08-01",
+      endDate: "2026-08-31",
+      month: 8,
+      year: 2026,
+      summary: "Início do trabalho de SEO Local no Google Maps. Aumento de relevância para termos locais e primeiros picos de rotas geradas.",
+      reportType: "google_meu_negocio",
+      metrics: {
+        leads: 95,
+        reach: 52000,
+        conversions: 22,
+        investment: 3000,
+        revenue: 16500,
+        roas: 5.5,
+        cpc: 1.25,
+        cpl: 31.5
+      },
+      gmbMetrics: {
+        directionRequests: 140,
+        calls: 58,
+        websiteClicks: 110,
+        mapsImpressions: 8900,
+        searchImpressions: 5400,
+        rankingPosition: 4,
+        targetKeyword: "Dentista Invisalign & Implantes",
+        topKeywords: [
+          { keyword: "dentista perto de mim", count: 180 },
+          { keyword: "clinica odontologica centro", count: 95 },
+          { keyword: "implante dentario preco", count: 70 }
+        ],
+        rating: 4.8,
+        reviewsCount: 72
+      },
+      externalUrl: "https://lookerstudio.google.com",
+      status: "published",
+      publishedAt: now - 60 * 86400000,
+      createdBy: user.uid,
+      createdAt: now - 60 * 86400000,
+      updatedAt: now - 60 * 86400000
+    }, { merge: true });
+
+    const repSepRef = adminDb.collection(`salons/${salonId}/reports`).doc("demo_rep_set_acme");
+    await repSepRef.set({
+      id: "demo_rep_set_acme",
+      salonId,
+      clientId: "demo_cli_acme",
+      clientName: "Acme Odontologia Integrada",
+      clientEmail: "contato@acmeodonto.com.br",
+      title: "Desempenho Google Meu Negócio - Setembro/2026",
+      period: "Setembro / 2026",
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+      month: 9,
+      year: 2026,
+      summary: "Crescimento sólido com otimização de fotos e palavras-chave. As solicitações de rota saltaram para 175 e ligações subiram para 74.",
+      reportType: "google_meu_negocio",
+      metrics: {
+        leads: 120,
+        reach: 68000,
+        conversions: 29,
+        investment: 3500,
+        revenue: 22400,
+        roas: 6.4,
+        cpc: 1.18,
+        cpl: 29.1
+      },
+      gmbMetrics: {
+        directionRequests: 175,
+        calls: 74,
+        websiteClicks: 138,
+        mapsImpressions: 11200,
+        searchImpressions: 7100,
+        rankingPosition: 3,
+        targetKeyword: "Dentista Invisalign & Implantes",
+        topKeywords: [
+          { keyword: "dentista perto de mim", count: 240 },
+          { keyword: "implante dentario preco", count: 130 },
+          { keyword: "clinica odontologica centro", count: 110 }
+        ],
+        rating: 4.8,
+        reviewsCount: 80
+      },
+      externalUrl: "https://lookerstudio.google.com",
+      status: "published",
+      publishedAt: now - 30 * 86400000,
+      createdBy: user.uid,
+      createdAt: now - 30 * 86400000,
+      updatedAt: now - 30 * 86400000
+    }, { merge: true });
+
     const rep1Ref = adminDb.collection(`salons/${salonId}/reports`).doc("demo_rep_out_acme");
     await rep1Ref.set({
       id: "demo_rep_out_acme",
@@ -1170,6 +1305,10 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
       clientEmail: "contato@acmeodonto.com.br",
       title: "Desempenho Google Meu Negócio & Campanhas Meta Ads - Outubro/2026",
       period: "Outubro / 2026",
+      startDate: "2026-10-01",
+      endDate: "2026-10-31",
+      month: 10,
+      year: 2026,
       summary: "Excelente mês de tração! A ficha no Google Maps alcançou o Top 2 local com 218 rotas traçadas e 94 ligações telefônicas diretas. Campanhas focadas em implantes e Invisalign geraram 148 leads qualificados.",
       reportType: "google_meu_negocio",
       metrics: {
@@ -1216,6 +1355,10 @@ clientPortalRoutes.post("/seed-agency-demo", async (req, res) => {
       clientEmail: "diretoria@luminaestetica.com.br",
       title: "Relatório de Ranqueamento no Google Maps & Tráfego Local",
       period: "Outubro / 2026",
+      startDate: "2026-10-01",
+      endDate: "2026-10-31",
+      month: 10,
+      year: 2026,
       summary: "A Lumina conquistou o 1º Lugar no ranking do Google Maps para 'Clínica de Estética & Botox Facial' na região. 185 rotas no Waze/Maps e 76 ligações diretas geradas organicamente.",
       reportType: "google_meu_negocio",
       metrics: {

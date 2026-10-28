@@ -2748,6 +2748,10 @@ export default function ClientPortalManagementPage() {
                           clientName: pdfParsedResult.businessName,
                           clientId: selectedClientIdForPdf === 'auto' ? null : selectedClientIdForPdf,
                           period: pdfParsedResult.period,
+                          startDate: pdfParsedResult.startDate,
+                          endDate: pdfParsedResult.endDate,
+                          month: pdfParsedResult.month,
+                          year: pdfParsedResult.year,
                           summary: pdfParsedResult.summary,
                           reportType: 'google_meu_negocio',
                           gmbMetrics: {

@@ -43,6 +43,7 @@ import CreativeLibraryTab from '@/components/portal/CreativeLibraryTab';
 import MarketingGlossaryTab from '@/components/portal/MarketingGlossaryTab';
 import AdditionalServicesTab from '@/components/portal/AdditionalServicesTab';
 import AccountTimelineTab from '@/components/portal/AccountTimelineTab';
+import ReportsAnalyticsTab from '@/components/portal/ReportsAnalyticsTab';
 
 interface ClientPortalData {
   agency: {
@@ -84,7 +85,6 @@ export default function ClientPortalPage() {
   const [portalData, setPortalData] = useState<ClientPortalData | null>(null);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
   const [selectedContract, setSelectedContract] = useState<ClientContract | null>(null);
-  const [filterPeriod, setFilterPeriod] = useState<string>('all');
 
   const loadPortal = async () => {
     try {
@@ -173,11 +173,6 @@ export default function ClientPortalPage() {
 
   const pendingApprovalsCount = approvals.filter((a: any) => a.status === 'pending').length;
   const openTicketsCount = tickets.filter((t: any) => t.status === 'open' || t.status === 'in_progress').length;
-
-  const periods = ['all', ...Array.from(new Set(reports.map(r => r.period)))];
-  const filteredReports = filterPeriod === 'all' 
-    ? reports 
-    : reports.filter(r => r.period === filterPeriod);
 
   return (
     <div className="min-h-screen bg-[#061A14] text-[#F5F9F7] flex flex-col">
@@ -467,166 +462,20 @@ export default function ClientPortalPage() {
               Histórico & Linha do Tempo
             </button>
           </div>
-
-          {activeTab === 'reports' && periods.length > 2 && (
-            <div className="hidden sm:flex items-center gap-2 text-xs shrink-0">
-              <Filter className="w-3.5 h-3.5 text-[#8FAEA2]" />
-              <select
-                value={filterPeriod}
-                onChange={e => setFilterPeriod(e.target.value)}
-                className="bg-[#0A261E] border border-white/10 rounded-lg text-white px-2.5 py-1 text-xs"
-              >
-                <option value="all">Todos os Períodos</option>
-                {periods.filter(p => p !== 'all').map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
       </div>
 
       {/* Main Body */}
       <main className="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1 space-y-6">
         
-        {/* TAB 1: REPORTS */}
+        {/* TAB 1: RELATÓRIOS & ANÁLISE DO GOOGLE MEU NEGÓCIO */}
         {activeTab === 'reports' && (
-          <div className="space-y-6">
-            {filteredReports.length === 0 ? (
-              <Card className="bg-[#0A261E]/60 border-[#17473A] text-center py-12">
-                <CardContent className="space-y-3">
-                  <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto text-[#8FAEA2]">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-base font-semibold text-white">Nenhum relatório publicado ainda</h3>
-                  <p className="text-xs text-[#8FAEA2] max-w-md mx-auto">
-                    A equipe da <strong className="text-white">{agency.name}</strong> está consolidando as métricas das suas campanhas. Em breve seus relatórios estarão disponíveis aqui.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {filteredReports.map(report => (
-                  <Card 
-                    key={report.id}
-                    className="bg-[#0A261E]/95 border-[#17473A] hover:border-[#DFC498]/40 transition-all shadow-lg flex flex-col justify-between"
-                  >
-                    <CardHeader className="space-y-2 pb-3">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 font-mono text-[11px]">
-                            {report.period}
-                          </Badge>
-                          {report.gmbMetrics?.rankingPosition && (
-                            <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] flex items-center gap-1 font-semibold">
-                              <MapPin className="w-3 h-3 text-emerald-400" />
-                              Google Maps #{report.gmbMetrics.rankingPosition}
-                            </Badge>
-                          )}
-                          {report.reportType === 'google_meu_negocio' && !report.gmbMetrics?.rankingPosition && (
-                            <Badge className="bg-blue-500/10 text-blue-300 border-blue-500/20 text-[10px] flex items-center gap-1 font-semibold">
-                              <MapPin className="w-3 h-3 text-blue-400" />
-                              Google Meu Negócio
-                            </Badge>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {new Date(report.createdAt).toLocaleDateString('pt-BR')}
-                        </span>
-                      </div>
-                      <CardTitle className="text-base font-bold text-white leading-snug">
-                        {report.title}
-                      </CardTitle>
-                      {report.gmbMetrics?.targetKeyword && (
-                        <p className="text-[11px] text-[#DFC498] font-mono flex items-center gap-1">
-                          <Search className="w-3 h-3 text-[#DFC498]" /> Palavra-chave: "{report.gmbMetrics.targetKeyword}"
-                        </p>
-                      )}
-                      <CardDescription className="text-xs text-[#8FAEA2] line-clamp-3 leading-relaxed">
-                        {report.summary || 'Resumo executivo da performance e entregas do mês.'}
-                      </CardDescription>
-                    </CardHeader>
-
-                    <CardContent className="space-y-4 pt-0">
-                      {/* KPI Grid */}
-                      {report.gmbMetrics ? (
-                        <div className="grid grid-cols-3 gap-2 bg-black/30 p-3 rounded-xl border border-white/5 text-center">
-                          <div>
-                            <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                              <Navigation className="w-2.5 h-2.5 text-emerald-400" /> Rotas
-                            </span>
-                            <span className="text-sm font-bold text-white">
-                              {report.gmbMetrics.directionRequests || 0}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                              <Phone className="w-2.5 h-2.5 text-emerald-400" /> Chamadas
-                            </span>
-                            <span className="text-sm font-bold text-white">
-                              {report.gmbMetrics.calls || 0}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                              <Star className="w-2.5 h-2.5 text-amber-400" /> Avaliação
-                            </span>
-                            <span className="text-sm font-bold text-amber-400">
-                              {report.gmbMetrics.rating ? `${report.gmbMetrics.rating} ★` : (report.metrics?.roas ? `${report.metrics.roas}x` : '-')}
-                            </span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-3 gap-2 bg-black/30 p-3 rounded-xl border border-white/5 text-center">
-                          <div>
-                            <span className="text-[10px] text-[#8FAEA2] block">Leads</span>
-                            <span className="text-sm font-bold text-white">
-                              {report.metrics?.leads || 0}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#8FAEA2] block">Alcance</span>
-                            <span className="text-sm font-bold text-white">
-                              {report.metrics?.reach ? (report.metrics.reach > 1000 ? `${(report.metrics.reach / 1000).toFixed(1)}k` : report.metrics.reach) : '-'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#8FAEA2] block">ROAS</span>
-                            <span className="text-sm font-bold text-emerald-400">
-                              {report.metrics?.roas ? `${report.metrics.roas}x` : '-'}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          onClick={() => setSelectedReport(report)}
-                          variant="outline"
-                          size="sm"
-                          className="flex-1 border-white/10 text-white hover:bg-white/5 rounded-xl text-xs h-9"
-                        >
-                          Ver Detalhes
-                        </Button>
-
-                        {report.externalUrl && (
-                          <Button
-                            onClick={() => window.open(report.externalUrl, '_blank')}
-                            size="sm"
-                            className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold rounded-xl text-xs h-9 gap-1.5 shadow"
-                          >
-                            Abrir Dashboard Looker <ExternalLink className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
+          <ReportsAnalyticsTab
+            reports={reports}
+            agencyName={agency.name}
+            clientName={client.name}
+            onOpenReportDetails={(report) => setSelectedReport(report)}
+          />
         )}
 
         {/* TAB 2: CENTRAL DE APROVAÇÕES */}

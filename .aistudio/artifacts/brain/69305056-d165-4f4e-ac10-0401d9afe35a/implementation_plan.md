@@ -1,50 +1,44 @@
-# Plano & Arquitetura: Configuração de Contexto & Vocabulário Adaptativo (LumièreOS)
+# Relatórios Inteligentes do Google Meu Negócio & Comparativo na Área do Cliente (LumièreOS)
 
-## Objetivo
-Implementar o serviço de **Configuração de Contexto**, permitindo que o LumièreOS reconheça o nicho do negócio ao cadastrar ou finalizar o onboarding (`salão`, `clínica`, `estúdio`, `freelancer`, `agência`, `consultoria`), salvando as preferências no Firestore e adaptando dinamicamente a interface e o vocabulário (ex: "cliente" vs "paciente", "cadeira" vs "sala / consultório", "comanda" vs "prontuário").
-
----
-
-## 1. Estrutura de Tipos & Schemas (`src/types/index.ts`)
-- **`NicheType`**: `'salon' | 'clinic' | 'studio' | 'freelancer' | 'agency' | 'consulting'`.
-- **`VocabularyConfig`**:
-  - `clientTerm` / `clientTermPlural` (ex: Cliente vs Paciente vs Contratante)
-  - `workstationTerm` / `workstationTermPlural` (ex: Cadeira vs Sala / Consultório vs Estação vs Meu Espaço)
-  - `professionalTerm` / `professionalTermPlural` (ex: Profissional vs Especialista vs Artista vs Consultor)
-  - `serviceTerm` / `serviceTermPlural` (ex: Serviço vs Consulta vs Sessão vs Trabalho)
-  - `flowItemTerm` / `flowItemTermPlural` (ex: Comanda vs Prontuário vs Ordem de Serviço vs Proposta)
-  - `workplaceTerm` / `workplaceTermPlural` (ex: Salão vs Clínica vs Estúdio vs Escritório)
-- **`UiPreferences`**: Preferências de visualização (ex: visão de fluxo vs calendário, badges, comissões, portal do cliente).
-- **`ContextConfig`**: Armazenado diretamente no documento do tenant `salons/{salonId}.contextConfig`.
+## 1. Visão Geral da Funcionalidade
+O sistema agora processa os relatórios em PDF de desempenho do Google Meu Negócio (GBP) enviados pela agência e os converte em inteligência visual interativa na Área do Cliente:
+- Extração automática via IA Gemini (`gemini-3.8-flash`) das métricas de performance (Pesquisa Google, Google Maps, Chamadas telefônicas, Solicitações de Rotas GPS, Cliques no Website, Avaliações e Palavras-chave).
+- Persistência estruturada com intervalos de datas (`startDate`, `endDate`, `month`, `year`) no Firestore.
+- Visualização completa na Área do Cliente com seleção de datas no calendário, gráficos interativos e comparativo automatizado mês a mês.
 
 ---
 
-## 2. Backend & Rotas Express (`server/routes/contextConfig.ts`)
-- `GET /api/context-config`: Consulta as configurações de contexto e vocabulário do salão autenticado.
-- `GET /api/context-config/templates`: Retorna os modelos pré-definidos para cada nicho.
-- `POST /api/context-config/initialize`: Executado ao concluir o onboarding para persistir o nicho, configurar módulos padrões e salvar no Firestore.
-- `PUT /api/context-config`: Permite alterações manuais de termos e preferências de UI.
+## 2. Componentes e Endpoints Implementados
 
----
+### Backend (`/server/routes/clientPortal.ts`)
+1. **Endpoint `POST /reports/parse-pdf`**:
+   - Processamento de PDFs em Base64 com Gemini Flash.
+   - Extração estruturada de datas ISO (`startDate`, `endDate`), mês, ano e indicadores de conversão física (rotas, chamadas, cliques).
+   - Cálculo do comparativo preliminar com relatórios anteriores do cliente.
+2. **Endpoints `POST /reports` e `PUT /reports/:id`**:
+   - Validação e gravação de metadados temporais para filtros de calendário flexíveis.
+   - Inferência automática de datas a partir do rótulo do mês/ano se não fornecidos explicitamente.
+3. **Endpoint `GET /reports/comparison`**:
+   - Cálculo de taxas de variação percentual (Δ%) mês a mês para o histórico do cliente.
 
-## 3. Serviços e Hooks Frontend
-- **`src/services/contextConfigService.ts`**: Cliente HTTP autenticado com Firebase Bearer Token.
-- **`src/hooks/useLexicon.ts`**: Hook unificado que integra `salonData.contextConfig` com fallback inteligente, expondo termos diretos (`clientTerm`, `workstationTerm`, `flowItemTerm`, etc.) e flags (`isClinic`, `isStudio`, `isFreelancer`, `isBeauty`, etc.).
-- **`src/hooks/useLumiLexicon.ts`**: Sincronizado para garantir uniformidade em todos os componentes legados e novos.
-
----
-
-## 4. Integração no Onboarding (`src/pages/onboarding/OnboardingSetupHub.tsx`)
-- Seletor visual interativo com os 4 nichos principais (Salão, Clínica, Estúdio, Freelancer) e pré-seleção automática.
-- Visualização instantânea das terminologias correspondentes.
-- Persistência automática no Firestore ao salvar e no botão final "Acessar Painel Principal".
-
----
-
-## 5. Adaptação Dinâmica nas Telas do Dashboard
-- **`AppointmentsPage.tsx`**:
-  - Detecção da aba padrão (fluxo de comandas para salões; agenda/calendário para clínicas, estúdios e freelancers).
-  - Acolhimento dinâmico na estação ("Acolher no(a) Cadeira", "No(a) Sala / Consultório", "No(a) Estação").
-  - Termos de clientes e fluxo adaptados ("Check-In de paciente/cliente", "Abrir Prontuário/Comanda").
-- **`ClientsPage.tsx`**: Títulos e cabeçalhos refletindo "Pacientes", "Clientes & Contas" ou "Contratantes".
-- **`DashboardHome.tsx`**: Ícones de ação rápida (Scissors vs Activity vs Briefcase) e atalhos customizados.
+### Frontend (`/src/components/portal/ReportsAnalyticsTab.tsx`)
+1. **Seletor de Datas no Calendário**:
+   - Atalhos rápidos: *Todos os Meses*, *Últimos 3 Meses*, *Últimos 6 Meses*, *Filtrar Datas (Calendário)*.
+   - Date inputs (`startDate` e `endDate`) com atualização instantânea de todos os gráficos e KPIs.
+   - **Toggle de Comparativo Direto Mês a Mês**: permite ao cliente escolher um Mês Base e comparar diretamente com outro mês específico (ex: Outubro vs Setembro).
+2. **Cards de KPIs com Variação (Δ%)**:
+   - Visualizações Google (Pesquisa + Maps) com tag de crescimento/queda.
+   - Chamadas Telefônicas (ligações diretas).
+   - Solicitações de Rotas no Mapa (GPS / Waze).
+   - Cliques no Website / WhatsApp e Nota de Avaliação (★).
+3. **Gráficos Visuais Interativos (`recharts`)**:
+   - **Gráfico 1**: Evolução de Visibilidade Google (Área/Barras) com Google Maps vs Pesquisa Google.
+   - **Gráfico 2**: Conversões Mês a Mês (Rotas vs Ligações vs Cliques no Site).
+   - **Gráfico 3**: Distribuição de Ações dos Consumidores (Donut/Pie Chart).
+   - **Gráfico 4**: Ranking com os Termos Mais Buscados no Google.
+4. **Tabela Comparativa Mês a Mês Lado a Lado**:
+   - Comparação tabular linha a linha de todas as métricas com variações recentes.
+5. **Resumo Executivo da IA**:
+   - Síntese estratégica gerada para o período selecionado.
+6. **Acervo de Relatórios Oficiais**:
+   - Cards com visualização detalhada em modal, link do Looker Studio e PDF.
