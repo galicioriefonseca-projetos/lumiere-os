@@ -91,23 +91,94 @@ export default function PricingCalculatorPage() {
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(25); // Margem de Lucro Desejada
   const [partnerCommissionPercent, setPartnerCommissionPercent] = useState<number>(40); // Comissão Profissional
 
-  // --- STEP 3: PRODUCTS & INSUMOS (CONSUMIBLES LIST FOR THE SPECIFIC SERVICE) ---
-  const [colorCost, setColorCost] = useState<number>(18.5); // Tinta / Coloração
-  const [shampooCost, setShampooCost] = useState<number>(3.2); // Shampoo / Condicionador
-  const [hairMaskCost, setHairMaskCost] = useState<number>(5.5); // Máscara Capilar
-  const [treatmentCost, setTreatmentCost] = useState<number>(0); // Progressiva / Botox
-  const [keratinCost, setKeratinCost] = useState<number>(0); // Queratina
-  const [hydrogenPeroxideCost, setHydrogenPeroxideCost] = useState<number>(4.8); // Água Oxigenada
-  const [glovesCost, setGlovesCost] = useState<number>(1.5); // Luvas / Descartáveis
-  const [teamMaintenanceCost, setTeamMaintenanceCost] = useState<number>(0.5); // Manutenção de equipe
-  const [otherProductsCost, setOtherProductsCost] = useState<number>(1.2); // Outros produtos
+  // --- BUSINESS ADAPTATION CONFIGURATION ---
+  const segment = salonData?.segment || 'salon';
+  const [agencyPricingMode, setAgencyPricingMode] = useState<'retainer' | 'project' | 'hourly'>('retainer');
+  
+  const pricingConfig = useMemo(() => {
+    switch (segment) {
+      case 'clinic':
+        return {
+          nicheName: 'Clínica de Estética & Saúde',
+          unitName: 'Maca / Sala',
+          unitLabel: 'Custo por Hora na Maca / Sala',
+          productsTitle: 'Insumos Biomédicos e Descartáveis',
+          professionalLabel: 'Profissional / Biomédico',
+          defaultItems: [
+            { name: 'Toxina Botulínica (Dose)', cost: 35.0 },
+            { name: 'Ácido / Preenchedor (ml)', cost: 120.0 },
+            { name: 'Seringas e Agulhas', cost: 4.5 },
+            { name: 'Luvas e Máscaras', cost: 2.0 },
+            { name: 'Gaze e Antisséptico', cost: 1.5 },
+            { name: 'Anestésico Tópico', cost: 5.0 },
+            { name: 'Descartáveis de Maca', cost: 3.0 },
+          ]
+        };
+      case 'agency':
+        return {
+          nicheName: 'Agência de Marketing & Serviços',
+          unitName: 'Especialista / Hora Técnica',
+          unitLabel: 'Custo por Hora Técnica do Especialista',
+          productsTitle: 'Ferramentas, Softwares (SaaS) e Custos de Projeto',
+          professionalLabel: 'Especialista / Consultor',
+          defaultItems: [
+            { name: 'Licenças Adobe / Figma / Design', cost: 120.0 },
+            { name: 'Ferramentas SEO / Semrush / Ahrefs', cost: 180.0 },
+            { name: 'Assinaturas IA / ChatGPT / Claude', cost: 90.0 },
+            { name: 'Gestão de Tarefas (Asana / ClickUp)', cost: 45.0 },
+            { name: 'Hospedagem & Servidores (AWS/Vercel)', cost: 80.0 },
+            { name: 'Ferramentas de Automação & CRM', cost: 110.0 },
+          ]
+        };
+      case 'studio':
+        return {
+          nicheName: 'Estúdio & Espaço de Atendimento',
+          unitName: 'Estação / Sala',
+          unitLabel: 'Custo por Hora na Estação',
+          productsTitle: 'Insumos e Materiais de Apoio',
+          professionalLabel: 'Artista / Profissional',
+          defaultItems: [
+            { name: 'Insumo Base A', cost: 15.0 },
+            { name: 'Insumo Base B', cost: 8.0 },
+            { name: 'Descartáveis', cost: 3.0 },
+            { name: 'Esterilização / Limpeza', cost: 4.0 },
+            { name: 'Luvas', cost: 1.5 },
+          ]
+        };
+      case 'salon':
+      default:
+        return {
+          nicheName: 'Salão de Beleza & Estética',
+          unitName: 'Cadeira',
+          unitLabel: 'Custo por Hora na Cadeira',
+          productsTitle: 'Produtos & Insumos no Serviço',
+          professionalLabel: 'Cabeleireiro / Profissional',
+          defaultItems: [
+            { name: 'Tinta / Coloração', cost: 18.5 },
+            { name: 'Shampoo / Condicionador', cost: 3.2 },
+            { name: 'Máscara Capilar', cost: 5.5 },
+            { name: 'Progressiva / Botox / Alisamento', cost: 0 },
+            { name: 'Água Oxigenada / Pó', cost: 4.8 },
+            { name: 'Luvas / Descartáveis', cost: 1.5 },
+            { name: 'Toalhas / Manutenção', cost: 0.5 },
+          ]
+        };
+    }
+  }, [segment]);
 
-  const [customProducts, setCustomProducts] = useState<CustomProductRow[]>([]);
-  const [newCustomName, setNewCustomName] = useState('');
-  const [newCustomCost, setNewCustomCost] = useState<string>('');
+  // --- STEP 3: PRODUCTS, INSUMOS & TOOLS ---
+  const [pricingItems, setPricingItems] = useState<Array<{ name: string; cost: number }>>([]);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemCost, setNewItemCost] = useState<string>('');
+
+  useEffect(() => {
+    if (pricingConfig && pricingConfig.defaultItems && pricingItems.length === 0) {
+      setPricingItems(pricingConfig.defaultItems);
+    }
+  }, [pricingConfig]);
 
   // --- STEP 4: SERVICE DETAILS ---
-  const [serviceName, setServiceName] = useState('Coloração Lumière Excellence');
+  const [serviceName, setServiceName] = useState('Serviço / Procedimento Principal');
   const [durationHours, setDurationHours] = useState<number>(1);
   const [durationMinutes, setDurationMinutes] = useState<number>(30);
 
@@ -135,17 +206,9 @@ export default function PricingCalculatorPage() {
   }, [totalMonthlyCosts, totalCapacityHours]);
 
   // Step 3 totals (Insumos)
-  const baseProductsCost = useMemo(() => {
-    return colorCost + shampooCost + hairMaskCost + treatmentCost + keratinCost + hydrogenPeroxideCost + glovesCost + teamMaintenanceCost + otherProductsCost;
-  }, [colorCost, shampooCost, hairMaskCost, treatmentCost, keratinCost, hydrogenPeroxideCost, glovesCost, teamMaintenanceCost, otherProductsCost]);
-
-  const customProductsTotal = useMemo(() => {
-    return customProducts.reduce((sum, item) => sum + item.cost, 0);
-  }, [customProducts]);
-
   const totalProductsCost = useMemo(() => {
-    return baseProductsCost + customProductsTotal;
-  }, [baseProductsCost, customProductsTotal]);
+    return pricingItems.reduce((sum, item) => sum + item.cost, 0);
+  }, [pricingItems]);
 
   // Step 4 final calculation
   const totalServiceDurationInHours = useMemo(() => {
@@ -217,28 +280,7 @@ export default function PricingCalculatorPage() {
     }
   };
 
-  const addCustomProduct = () => {
-    if (!newCustomName.trim()) {
-      toast.error("Insira o nome do insumo.");
-      return;
-    }
-    const parsedCost = parseFloat(newCustomCost.replace(',', '.'));
-    if (isNaN(parsedCost) || parsedCost < 0) {
-      toast.error("Valor inválido.");
-      return;
-    }
 
-    setCustomProducts([...customProducts, { name: newCustomName.trim(), cost: parsedCost }]);
-    setNewCustomName('');
-    setNewCustomCost('');
-    toast.success("Insumo adicional adicionado!");
-  };
-
-  const removeCustomProduct = (index: number) => {
-    const updated = customProducts.filter((_, idx) => idx !== index);
-    setCustomProducts(updated);
-    toast.success("Insumo removido.");
-  };
 
   const handleSaveCalculation = async () => {
     if (!salonData?.id) {
@@ -324,16 +366,9 @@ export default function PricingCalculatorPage() {
     setProfitMarginPercent(25);
     setPartnerCommissionPercent(40);
 
-    setColorCost(18.5);
-    setShampooCost(3.2);
-    setHairMaskCost(5.5);
-    setTreatmentCost(0);
-    setKeratinCost(0);
-    setHydrogenPeroxideCost(4.8);
-    setGlovesCost(1.5);
-    setTeamMaintenanceCost(0.5);
-    setOtherProductsCost(1.2);
-    setCustomProducts([]);
+    if (pricingConfig && pricingConfig.defaultItems) {
+      setPricingItems(pricingConfig.defaultItems);
+    }
 
     toast.info("Valores padrão restaurados.");
   };
@@ -349,10 +384,10 @@ export default function PricingCalculatorPage() {
         <div>
           <h2 className="text-2xl font-heading font-light text-white tracking-tight flex items-center gap-2">
             <Calculator className="w-6 h-6 text-[#D4AF37]" />
-            Calculadora de Precificação de Serviços
+            Calculadora de Precificação ({pricingConfig.nicheName})
           </h2>
           <p className="text-zinc-400 text-xs mt-1 font-light">
-            Defina o preço de venda científico ideal dos seus serviços de alta costura com base nos custos reais do salão.
+            Defina o preço de venda científico ideal dos seus serviços ou projetos com base nos custos reais da sua operação.
           </p>
         </div>
         <div className="flex bg-zinc-950 p-1 border border-white/5 rounded-xl self-stretch sm:self-auto shrink-0 shadow-lg">
@@ -387,7 +422,7 @@ export default function PricingCalculatorPage() {
           {/* Main Left Columns: Form Steps (8 columns on desktop) */}
           <div className="lg:col-span-8 space-y-6">
             
-            {/* ETAPA 1: VALOR DA HORA NA CADEIRA */}
+            {/* ETAPA 1: VALOR DA HORA */}
             <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
               <div className="absolute top-0 left-0 w-2 h-full bg-[#D4AF37]/50" />
               <div className="flex items-center gap-3 mb-4 pl-2">
@@ -395,8 +430,8 @@ export default function PricingCalculatorPage() {
                   <Clock className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold tracking-wider text-white uppercase">ETAPA 1: Valor da Hora na Cadeira</h3>
-                  <p className="text-[10px] text-zinc-400 font-light mt-0.5">Custos fixos, variáveis e capacidade de atendimento mensal do estabelecimento</p>
+                  <h3 className="text-sm font-semibold tracking-wider text-white uppercase">ETAPA 1: Valor da Hora ({pricingConfig.unitName})</h3>
+                  <p className="text-[10px] text-zinc-400 font-light mt-0.5">Custos fixos, variáveis e capacidade de atendimento mensal da empresa</p>
                 </div>
               </div>
 
@@ -669,7 +704,7 @@ export default function PricingCalculatorPage() {
               </div>
             </div>
 
-            {/* ETAPA 3: PRODUTOS & INSUMOS NO SERVIÇO */}
+            {/* ETAPA 3: PRODUTOS, INSUMOS & FERRAMENTAS NO SERVIÇO */}
             <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
               <div className="absolute top-0 left-0 w-2 h-full bg-[#D4AF37]/50" />
               <div className="flex items-center justify-between gap-3 mb-4 pl-2">
@@ -678,202 +713,97 @@ export default function PricingCalculatorPage() {
                     <Package className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold tracking-wider text-white uppercase">ETAPA 3: Produtos & Insumos no Serviço</h3>
-                    <p className="text-[10px] text-zinc-400 font-light mt-0.5">Custos diretos proporcionais dos produtos aplicados durante este procedimento específico</p>
+                    <h3 className="text-sm font-semibold tracking-wider text-white uppercase">ETAPA 3: {pricingConfig.productsTitle}</h3>
+                    <p className="text-[10px] text-zinc-400 font-light mt-0.5">Custos diretos proporcionais aplicados durante este atendimento ou projeto</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[9px] text-zinc-500 block uppercase tracking-wider">Custo de Produtos</span>
+                  <span className="text-[9px] text-zinc-500 block uppercase tracking-wider">Custo de Insumos</span>
                   <span className="text-sm font-semibold font-mono text-pink-400">R$ {totalProductsCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3.5 bg-zinc-950/25 p-4 rounded-xl border border-white/[0.02]">
-                
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Tinta / Coloração</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={colorCost === 0 ? '' : colorCost}
-                      onChange={(e) => setColorCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
+              {/* Dynamic items list */}
+              <div className="space-y-3 bg-zinc-950/25 p-4 rounded-xl border border-white/[0.02]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {pricingItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-3 bg-zinc-950/60 p-2.5 rounded-xl border border-white/5">
+                      <span className="text-xs text-zinc-300 font-light truncate max-w-[160px]">{item.name}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-24">
+                          <Input 
+                            type="number"
+                            step="0.01"
+                            value={item.cost === 0 ? '' : item.cost}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseFloat(e.target.value) || 0);
+                              const updated = [...pricingItems];
+                              updated[idx].cost = val;
+                              setPricingItems(updated);
+                            }}
+                            className="text-right font-mono text-xs bg-zinc-900 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
+                          />
+                          <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setPricingItems(pricingItems.filter((_, i) => i !== idx));
+                            toast.success("Item removido.");
+                          }}
+                          className="p-1.5 text-zinc-500 hover:text-red-400 transition"
+                          title="Remover item"
+                        >
+                          <Trash className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Shampoo / Condicionado</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={shampooCost === 0 ? '' : shampooCost}
-                      onChange={(e) => setShampooCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Máscara Capilar</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={hairMaskCost === 0 ? '' : hairMaskCost}
-                      onChange={(e) => setHairMaskCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Progressiva / Botox / Alisamento</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={treatmentCost === 0 ? '' : treatmentCost}
-                      onChange={(e) => setTreatmentCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Queratina / Reconstrução</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={keratinCost === 0 ? '' : keratinCost}
-                      onChange={(e) => setKeratinCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Água Oxigenada / Pó</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={hydrogenPeroxideCost === 0 ? '' : hydrogenPeroxideCost}
-                      onChange={(e) => setHydrogenPeroxideCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Luvas / Descartáveis</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={glovesCost === 0 ? '' : glovesCost}
-                      onChange={(e) => setGlovesCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Manutenção de Equipe / Toalhas</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={teamMaintenanceCost === 0 ? '' : teamMaintenanceCost}
-                      onChange={(e) => setTeamMaintenanceCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-2.5">
-                  <span className="text-[11px] text-zinc-300 font-light">Outros insumos pequenos</span>
-                  <div className="relative">
-                    <Input 
-                      type="number"
-                      step="0.01"
-                      value={otherProductsCost === 0 ? '' : otherProductsCost}
-                      onChange={(e) => setOtherProductsCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-24 text-right font-mono text-xs bg-zinc-950 border-white/5 h-8 pr-5 focus:border-[#D4AF37]/30"
-                    />
-                    <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2">R$</span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Dynamic list of custom chemical products */}
-              <div className="mt-4 pt-3.5 border-t border-white/5 space-y-3">
-                <span className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider block">Adicionar Insumo Personalizado</span>
-                <div className="flex flex-col sm:flex-row gap-3">
+                {/* Add new item */}
+                <div className="pt-3 border-t border-white/5 flex flex-col sm:flex-row gap-2">
                   <Input 
                     type="text"
-                    placeholder="Nome do produto especial"
-                    value={newCustomName}
-                    onChange={(e) => setNewCustomName(e.target.value)}
+                    placeholder="Nome do novo insumo ou ferramenta"
+                    value={newItemName}
+                    onChange={(e) => setNewItemName(e.target.value)}
                     className="flex-1 bg-zinc-950 border-white/5 text-xs h-9 focus:border-[#D4AF37]/35"
                   />
                   <div className="flex gap-2">
-                    <div className="relative w-32">
+                    <div className="relative w-28">
                       <Input 
-                        type="text"
+                        type="number"
+                        step="0.01"
                         placeholder="Custo (R$)"
-                        value={newCustomCost}
-                        onChange={(e) => setNewCustomCost(e.target.value)}
+                        value={newItemCost}
+                        onChange={(e) => setNewItemCost(e.target.value)}
                         className="text-right font-mono text-xs bg-zinc-950 border-white/5 h-9 pr-6 focus:border-[#D4AF37]/35"
                       />
                       <span className="text-[9px] text-zinc-500 absolute right-1.5 top-2.5">R$</span>
                     </div>
                     <Button 
-                      onClick={addCustomProduct}
+                      onClick={() => {
+                        if (!newItemName.trim()) {
+                          toast.error("Informe o nome do insumo.");
+                          return;
+                        }
+                        const costNum = parseFloat(newItemCost.replace(',', '.')) || 0;
+                        setPricingItems([...pricingItems, { name: newItemName.trim(), cost: costNum }]);
+                        setNewItemName('');
+                        setNewItemCost('');
+                        toast.success("Insumo adicionado!");
+                      }}
                       size="sm" 
-                      className="bg-zinc-800 text-white border border-white/10 hover:bg-zinc-700 h-9 shrink-0 gap-1"
+                      className="bg-[#D4AF37] hover:bg-[#c49f2c] text-black font-semibold h-9 shrink-0 gap-1 text-xs"
                     >
-                      <Plus className="w-4 h-4 text-[#D4AF37]" />
-                      Adicionar
+                      <Plus className="w-3.5 h-3.5" /> Adicionar
                     </Button>
                   </div>
                 </div>
-
-                {customProducts.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                    {customProducts.map((p, idx) => (
-                      <div 
-                        key={idx} 
-                        className="flex items-center justify-between p-2 rounded-xl bg-zinc-950/60 border border-[#D4AF37]/15 text-xs font-light"
-                      >
-                        <span className="truncate max-w-[150px]">{p.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[#D4AF37] font-semibold">R$ {p.cost.toFixed(2)}</span>
-                          <button 
-                            onClick={() => removeCustomProduct(idx)}
-                            className="text-zinc-500 hover:text-red-400 p-1"
-                          >
-                            <Trash className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
+
+
 
             {/* ETAPA 4: DADOS DO SERVIÇO */}
             <div className="bg-zinc-900/60 border border-white/5 rounded-2xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-md">
@@ -883,10 +813,40 @@ export default function PricingCalculatorPage() {
                   <Scissors className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold tracking-wider text-white uppercase">ETAPA 4: Dados do Serviço & Tempo</h3>
-                  <p className="text-[10px] text-zinc-400 font-light mt-0.5">Informe o nome do procedimento e a quantidade de tempo em que a cadeira ficará ocupada</p>
+                  <h3 className="text-sm font-semibold tracking-wider text-white uppercase">
+                    ETAPA 4: {segment === 'agency' ? 'Dados do Escopo & Modelo de Cobrança' : 'Dados do Serviço & Tempo'}
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 font-light mt-0.5">
+                    {segment === 'agency' ? 'Defina o modelo de contrato (Retainer, Projeto ou Hora Técnica) e estimativa' : 'Informe o nome do procedimento e a quantidade de tempo em que a cadeira ficará ocupada'}
+                  </p>
                 </div>
               </div>
+
+              {segment === 'agency' && (
+                <div className="mb-5 bg-zinc-950/60 p-3 rounded-xl border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <span className="text-xs text-zinc-300 font-light">Modelo de Contrato / Cobrança:</span>
+                  <div className="flex bg-zinc-900 p-1 rounded-lg border border-white/5 w-full sm:w-auto">
+                    <button
+                      onClick={() => setAgencyPricingMode('retainer')}
+                      className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-md text-[11px] font-semibold transition ${agencyPricingMode === 'retainer' ? 'bg-[#D4AF37] text-black' : 'text-zinc-400 hover:text-white'}`}
+                    >
+                      Retainer Mensal (MRR)
+                    </button>
+                    <button
+                      onClick={() => setAgencyPricingMode('project')}
+                      className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-md text-[11px] font-semibold transition ${agencyPricingMode === 'project' ? 'bg-[#D4AF37] text-black' : 'text-zinc-400 hover:text-white'}`}
+                    >
+                      Projeto / Job Fechado
+                    </button>
+                    <button
+                      onClick={() => setAgencyPricingMode('hourly')}
+                      className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-md text-[11px] font-semibold transition ${agencyPricingMode === 'hourly' ? 'bg-[#D4AF37] text-black' : 'text-zinc-400 hover:text-white'}`}
+                    >
+                      Hora Técnica / Consultoria
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-2">
