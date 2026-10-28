@@ -46,7 +46,8 @@ import {
   ArrowDownRight,
   Layers,
   BarChart3,
-  FileSearch
+  FileSearch,
+  AlertCircle
 } from 'lucide-react';
 import { ClientReport, ClientContract, ClientPortalInvite, ClientApproval, ClientTicket, ClientDeliverable, ClientServiceRequest } from '../../types';
 
@@ -85,7 +86,7 @@ export default function ClientPortalManagementPage() {
   const [pdfParsing, setPdfParsing] = useState(false);
   const [pdfParsedResult, setPdfParsedResult] = useState<any | null>(null);
   const [pdfComparison, setPdfComparison] = useState<any | null>(null);
-  const [selectedClientIdForPdf, setSelectedClientIdForPdf] = useState<string>('auto');
+  const [selectedClientIdForPdf, setSelectedClientIdForPdf] = useState<string>('');
 
   // Seleção de cliente para a aba de Comparativo Mensal
   const [selectedComparisonClient, setSelectedComparisonClient] = useState<string>('all');
@@ -111,9 +112,10 @@ export default function ClientPortalManagementPage() {
     notes: ''
   });
 
-  // Report Form State
+  // Report Form State (com clientId obrigatório)
   const [reportForm, setReportForm] = useState({
     title: '',
+    clientId: '',
     clientName: '',
     clientEmail: '',
     period: 'Outubro / 2026',
@@ -346,6 +348,11 @@ export default function ClientPortalManagementPage() {
     if (!currentUser) return;
 
     try {
+      if (!reportForm.clientId) {
+        toast.error('Por favor, selecione primeiramente o cliente da agência para vincular este relatório.');
+        return;
+      }
+
       setActionLoading(true);
       const idToken = await currentUser.getIdToken();
 
@@ -355,7 +362,8 @@ export default function ClientPortalManagementPage() {
 
       const payload = {
         title: reportForm.title,
-        clientName: reportForm.clientName || 'Geral',
+        clientId: reportForm.clientId,
+        clientName: reportForm.clientName,
         clientEmail: reportForm.clientEmail,
         period: reportForm.period,
         summary: reportForm.summary,
@@ -1017,6 +1025,7 @@ export default function ClientPortalManagementPage() {
                   setEditingReport(null);
                   setReportForm({
                     title: '',
+                    clientId: '',
                     clientName: '',
                     clientEmail: '',
                     period: 'Outubro / 2026',
@@ -1177,6 +1186,7 @@ export default function ClientPortalManagementPage() {
                             setEditingReport(rep);
                             setReportForm({
                               title: rep.title,
+                              clientId: rep.clientId || '',
                               clientName: rep.clientName,
                               clientEmail: rep.clientEmail || '',
                               period: rep.period,
@@ -1873,28 +1883,67 @@ export default function ClientPortalManagementPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[#8FAEA2]">Nome do Cliente / Empresa *</Label>
-                <Input
-                  required
-                  value={reportForm.clientName}
-                  onChange={e => setReportForm(prev => ({ ...prev, clientName: e.target.value }))}
-                  placeholder="Ex: Acme Odontologia"
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
-                />
+            {/* 1. SELEÇÃO MANDATÓRIA DO CLIENTE DESTINATÁRIO */}
+            <div className="space-y-2 bg-black/40 p-3.5 rounded-xl border border-white/10">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5 uppercase tracking-wider">
+                  <Building2 className="w-3.5 h-3.5 text-[#DFC498]" /> 1. Cliente da Agência Destinatário (Obrigatório) *
+                </Label>
+                <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  Acesso Isolado & Protegido
+                </span>
               </div>
+              <p className="text-[11px] text-[#8FAEA2]">
+                Primeiramente selecione para qual cliente este relatório está sendo preenchido. Outros usuários não terão acesso a estes dados.
+              </p>
+              <select
+                required
+                value={reportForm.clientId}
+                onChange={e => {
+                  const selId = e.target.value;
+                  const cFound = clients.find(c => c.id === selId);
+                  setReportForm(prev => ({
+                    ...prev,
+                    clientId: selId,
+                    clientName: cFound?.name || cFound?.contactName || '',
+                    clientEmail: cFound?.email || ''
+                  }));
+                }}
+                className="w-full bg-[#061A14] border border-[#17473A] text-white rounded-xl h-10 px-3 text-xs focus:border-[#DFC498]"
+              >
+                <option value="">-- Selecione o cliente obrigatório --</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.email ? `(${c.email})` : ''}
+                  </option>
+                ))}
+              </select>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[#8FAEA2]">Mês / Período *</Label>
-                <Input
-                  required
-                  value={reportForm.period}
-                  onChange={e => setReportForm(prev => ({ ...prev, period: e.target.value }))}
-                  placeholder="Ex: Outubro / 2026"
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
-                />
-              </div>
+              {reportForm.clientId ? (
+                <div className="text-[11px] text-emerald-300 flex items-center justify-between bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Destinatário: <strong>{reportForm.clientName}</strong> {reportForm.clientEmail && `(${reportForm.clientEmail})`}
+                  </span>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">Privado para este cliente</Badge>
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-300 flex items-center gap-1.5 bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Selecione o cliente destinatário para prosseguir com o preenchimento.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-[#8FAEA2]">Mês / Período do Relatório *</Label>
+              <Input
+                required
+                value={reportForm.period}
+                onChange={e => setReportForm(prev => ({ ...prev, period: e.target.value }))}
+                placeholder="Ex: Outubro / 2026"
+                className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
+              />
             </div>
 
             {/* SEÇÃO GOOGLE MEU NEGÓCIO & RANQUEAMENTO */}
@@ -2555,39 +2604,98 @@ export default function ClientPortalManagementPage() {
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
-            {/* Seleção de Cliente */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-[#8FAEA2]">Vincular ao Cliente (Opcional - IA tentará reconhecer pelo nome)</Label>
+            {/* PASSO 1: SELEÇÃO MANDATÓRIA DO CLIENTE DESTINATÁRIO */}
+            <div className="space-y-2 bg-black/40 p-4 rounded-2xl border border-white/10">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5 uppercase tracking-wider">
+                  <Building2 className="w-4 h-4 text-[#DFC498]" /> Passo 1: Selecione o Cliente Destinatário *
+                </Label>
+                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  Acesso Restrito & Isolado
+                </span>
+              </div>
+              <p className="text-xs text-[#8FAEA2] leading-relaxed">
+                Para que você possa subir o relatório, primeiramente selecione qual é o cliente. Outros clientes da agência não terão acesso aos relatórios dele.
+              </p>
+              
               <select
                 value={selectedClientIdForPdf}
-                onChange={e => setSelectedClientIdForPdf(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl text-white px-3 h-10 text-xs"
+                onChange={e => {
+                  setSelectedClientIdForPdf(e.target.value);
+                  setPdfParsedResult(null);
+                  setPdfComparison(null);
+                }}
+                className="w-full bg-[#061A14] border border-[#17473A] rounded-xl text-white px-3 h-11 text-xs focus:border-[#DFC498] font-medium"
               >
-                <option value="auto">-- Auto-detectar pelo nome da empresa no PDF --</option>
+                <option value="">-- Selecione o cliente da agência (Obrigatório) --</option>
                 {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.name || c.contactName}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.email ? `(${c.email})` : ''}
+                  </option>
                 ))}
               </select>
+
+              {selectedClientIdForPdf ? (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-xs text-emerald-300 flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="font-bold text-white block">
+                        Cliente Selecionado: {clients.find(c => c.id === selectedClientIdForPdf)?.name}
+                      </span>
+                      <span className="text-[11px] text-[#8FAEA2]">
+                        E-mail de acesso: <strong className="text-white">{clients.find(c => c.id === selectedClientIdForPdf)?.email || 'Não informado'}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
+                    Acesso Exclusivo
+                  </Badge>
+                </div>
+              ) : (
+                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl text-xs text-amber-300 flex items-center gap-2.5 mt-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Selecione primeiramente o cliente acima para liberar o envio do arquivo PDF do Google Meu Negócio.</span>
+                </div>
+              )}
             </div>
 
-            {/* File Upload Box */}
+            {/* PASSO 2: UPLOAD DO PDF (Bloqueado até a escolha do cliente) */}
             {!pdfParsedResult && (
-              <div className="space-y-3">
+              <div className={`space-y-3 transition-all ${!selectedClientIdForPdf ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+                <div className="flex items-center justify-between pt-1">
+                  <Label className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5 uppercase tracking-wider">
+                    <FileUp className="w-4 h-4 text-[#DFC498]" /> Passo 2: Arquivo PDF de Desempenho do Google *
+                  </Label>
+                  <span className="text-[10px] text-[#8FAEA2]">Google Business Profile</span>
+                </div>
+
                 <div
-                  className="border-2 border-dashed border-[#17473A] hover:border-[#DFC498]/50 bg-black/30 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 transition cursor-pointer text-center"
-                  onClick={() => document.getElementById('gmb-pdf-input')?.click()}
+                  className="border-2 border-dashed border-[#17473A] hover:border-[#DFC498]/50 bg-black/30 rounded-2xl p-7 flex flex-col items-center justify-center gap-3 transition cursor-pointer text-center"
+                  onClick={() => {
+                    if (!selectedClientIdForPdf) {
+                      toast.error('Selecione primeiramente o cliente antes de escolher o PDF.');
+                      return;
+                    }
+                    document.getElementById('gmb-pdf-input')?.click();
+                  }}
                 >
                   <FileUp className="w-10 h-10 text-[#DFC498]" />
                   <div>
                     <p className="text-sm font-semibold text-white">
                       {pdfFile ? pdfFile.name : 'Clique para selecionar o PDF do Google Meu Negócio'}
                     </p>
-                    <p className="text-xs text-[#8FAEA2] mt-1">Suporta arquivos PDF de desempenho gerados pelo Google</p>
+                    <p className="text-xs text-[#8FAEA2] mt-1">
+                      {selectedClientIdForPdf 
+                        ? `O relatório será vinculado especificamente para ${clients.find(c => c.id === selectedClientIdForPdf)?.name}`
+                        : 'Selecione o cliente no Passo 1 para habilitar'}
+                    </p>
                   </div>
                   <input
                     id="gmb-pdf-input"
                     type="file"
                     accept="application/pdf"
+                    disabled={!selectedClientIdForPdf}
                     className="hidden"
                     onChange={e => {
                       if (e.target.files && e.target.files[0]) {
@@ -2598,9 +2706,14 @@ export default function ClientPortalManagementPage() {
                 </div>
 
                 <Button
-                  disabled={!pdfFile || pdfParsing}
+                  disabled={!selectedClientIdForPdf || !pdfFile || pdfParsing}
                   onClick={async () => {
+                    if (!selectedClientIdForPdf) {
+                      toast.error('Selecione primeiramente qual é o cliente ao qual este relatório pertence.');
+                      return;
+                    }
                     if (!pdfFile || !currentUser) return;
+
                     try {
                       setPdfParsing(true);
                       const reader = new FileReader();
@@ -2617,7 +2730,7 @@ export default function ClientPortalManagementPage() {
                           body: JSON.stringify({
                             pdfBase64: base64,
                             fileName: pdfFile.name,
-                            clientId: selectedClientIdForPdf === 'auto' ? null : selectedClientIdForPdf
+                            clientId: selectedClientIdForPdf
                           })
                         });
                         const data = await res.json();
@@ -2642,7 +2755,7 @@ export default function ClientPortalManagementPage() {
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" /> Processar Relatório com IA
+                      <Sparkles className="w-4 h-4" /> Processar Relatório com IA para Este Cliente
                     </>
                   )}
                 </Button>
@@ -2654,11 +2767,14 @@ export default function ClientPortalManagementPage() {
               <div className="space-y-4 bg-black/40 p-4 rounded-2xl border border-white/10 max-h-[60vh] overflow-y-auto">
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
                   <div>
-                    <h4 className="text-sm font-bold text-white">{pdfParsedResult.businessName}</h4>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-[#DFC498]" />
+                      {clients.find(c => c.id === selectedClientIdForPdf)?.name || pdfParsedResult.businessName}
+                    </h4>
                     <span className="text-xs text-[#DFC498] font-mono">{pdfParsedResult.period}</span>
                   </div>
-                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs">
-                    IA Processado com Sucesso
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs font-semibold">
+                    ✓ Vinculado a este Cliente
                   </Badge>
                 </div>
 
@@ -2734,6 +2850,12 @@ export default function ClientPortalManagementPage() {
                 <Button
                   onClick={async () => {
                     if (!currentUser) return;
+                    if (!selectedClientIdForPdf) {
+                      toast.error('Erro: Nenhum cliente selecionado.');
+                      return;
+                    }
+                    const targetClient = clients.find(c => c.id === selectedClientIdForPdf);
+
                     try {
                       setActionLoading(true);
                       const idToken = await currentUser.getIdToken();
@@ -2745,8 +2867,9 @@ export default function ClientPortalManagementPage() {
                         },
                         body: JSON.stringify({
                           title: `Desempenho Google Meu Negócio • ${pdfParsedResult.period}`,
-                          clientName: pdfParsedResult.businessName,
-                          clientId: selectedClientIdForPdf === 'auto' ? null : selectedClientIdForPdf,
+                          clientId: selectedClientIdForPdf,
+                          clientName: targetClient?.name || pdfParsedResult.businessName,
+                          clientEmail: targetClient?.email || '',
                           period: pdfParsedResult.period,
                           startDate: pdfParsedResult.startDate,
                           endDate: pdfParsedResult.endDate,
@@ -2772,7 +2895,7 @@ export default function ClientPortalManagementPage() {
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || 'Erro ao publicar relatório.');
 
-                      toast.success('Relatório extraído via PDF e publicado com sucesso na Área do Cliente!');
+                      toast.success(`Relatório publicado com sucesso! Exclusivo para o cliente ${targetClient?.name || ''}.`);
                       setIsPdfModalOpen(false);
                       setPdfFile(null);
                       setPdfParsedResult(null);
@@ -2783,9 +2906,9 @@ export default function ClientPortalManagementPage() {
                       setActionLoading(false);
                     }
                   }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 rounded-xl text-xs gap-2"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl text-xs gap-2 shadow-lg"
                 >
-                  <CheckCircle2 className="w-4 h-4" /> Publicar Relatório na Área do Cliente
+                  <CheckCircle2 className="w-4 h-4" /> Publicar Relatório Exclusivo para Este Cliente
                 </Button>
               </div>
             )}

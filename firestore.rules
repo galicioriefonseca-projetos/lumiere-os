@@ -553,11 +553,10 @@ service cloud.firestore {
     
     // 25. Client Portal: Reports (Relatórios de Performance)
     match /salons/{salonId}/reports/{reportId} {
-      allow read: if canManageSalon(salonId) || isSalonMember(salonId) || (
+      allow read: if canManageSalon(salonId) || (
         isSignedIn() && userRole() == "client" && userSalonId() == salonId && (
-          !('clientId' in resource.data) || resource.data.clientId == null ||
-          ('clientId' in userDoc().data && resource.data.clientId == userDoc().data.clientId) ||
-          ('clientEmail' in resource.data && resource.data.clientEmail == userEmail())
+          (exists(userDoc()) && 'clientId' in get(userDoc()).data && 'clientId' in resource.data && resource.data.clientId == get(userDoc()).data.clientId) ||
+          ('clientEmail' in resource.data && resource.data.clientEmail != "" && resource.data.clientEmail == userEmail())
         )
       );
       allow write: if canManageSalon(salonId);
@@ -565,11 +564,10 @@ service cloud.firestore {
 
     // 26. Client Portal: Contracts (Contratos de Serviços)
     match /salons/{salonId}/contracts/{contractId} {
-      allow read: if canManageSalon(salonId) || isSalonMember(salonId) || (
+      allow read: if canManageSalon(salonId) || (
         isSignedIn() && userRole() == "client" && userSalonId() == salonId && (
-          !('clientId' in resource.data) || resource.data.clientId == null ||
-          ('clientId' in userDoc().data && resource.data.clientId == userDoc().data.clientId) ||
-          ('clientEmail' in resource.data && resource.data.clientEmail == userEmail())
+          (exists(userDoc()) && 'clientId' in get(userDoc()).data && 'clientId' in resource.data && resource.data.clientId == get(userDoc()).data.clientId) ||
+          ('clientEmail' in resource.data && resource.data.clientEmail != "" && resource.data.clientEmail == userEmail())
         )
       );
       allow write: if canManageSalon(salonId);

@@ -499,10 +499,17 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
     let reportsQuery = adminDb.collection(`salons/${finalSalonId}/reports`);
     const reportsSnap = await reportsQuery.get();
     let reports: any[] = [];
+    const userEmail = String(user.email || "").toLowerCase().trim();
+    const userClientId = finalClientId || userData?.clientId || null;
+
     reportsSnap.forEach(doc => {
       const data = doc.data();
       if (!isPreview) {
-        if (data.status === "published" && (!data.clientId || data.clientId === finalClientId || (data.clientEmail && data.clientEmail.toLowerCase() === user.email.toLowerCase()))) {
+        // Apenas relatórios publicados vinculados estritamente ao cliente logado
+        const matchesClientId = Boolean(data.clientId && userClientId && String(data.clientId) === String(userClientId));
+        const matchesClientEmail = Boolean(data.clientEmail && userEmail && String(data.clientEmail).toLowerCase().trim() === userEmail);
+
+        if (data.status === "published" && (matchesClientId || matchesClientEmail)) {
           reports.push({ id: doc.id, ...data });
         }
       } else {
@@ -519,7 +526,10 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
     contractsSnap.forEach(doc => {
       const data = doc.data();
       if (!isPreview) {
-        if (!data.clientId || data.clientId === finalClientId || (data.clientEmail && data.clientEmail.toLowerCase() === user.email.toLowerCase())) {
+        const matchesClientId = Boolean(data.clientId && userClientId && String(data.clientId) === String(userClientId));
+        const matchesClientEmail = Boolean(data.clientEmail && userEmail && String(data.clientEmail).toLowerCase().trim() === userEmail);
+
+        if (matchesClientId || matchesClientEmail) {
           contracts.push({ id: doc.id, ...data });
         }
       } else {
@@ -642,7 +652,22 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       return res.status(400).json({ error: "Título e período são obrigatórios." });
     }
 
+    if (!clientId || clientId === 'auto' || clientId === 'general' || String(clientId).trim() === '') {
+      return res.status(400).json({ error: "É obrigatório selecionar primeiramente o cliente da agência para vincular este relatório." });
+    }
+
     const adminDb = getAdminDb();
+    const cleanClientId = String(clientId).trim();
+    const clientSnap = await adminDb.collection(`salons/${salonId}/clients`).doc(cleanClientId).get();
+    
+    if (!clientSnap.exists) {
+      return res.status(404).json({ error: "Cliente selecionado não foi encontrado no cadastro da agência." });
+    }
+
+    const clientDocData = clientSnap.data() || {};
+    const finalClientName = clientDocData.name || clientDocData.companyName || clientName || "Cliente";
+    const finalClientEmail = String(clientDocData.email || clientEmail || "").toLowerCase().trim();
+
     const reportRef = adminDb.collection(`salons/${salonId}/reports`).doc();
     const now = Date.now();
 
@@ -674,9 +699,9 @@ clientPortalRoutes.post("/reports", async (req, res) => {
     const reportData = {
       id: reportRef.id,
       salonId,
-      clientId: clientId || null,
-      clientName: clientName || "Geral",
-      clientEmail: clientEmail || "",
+      clientId: cleanClientId,
+      clientName: finalClientName,
+      clientEmail: finalClientEmail,
       title: title.trim(),
       period: period.trim(),
       startDate: finalStartDate,
@@ -778,6 +803,18 @@ clientPortalRoutes.post("/reports/parse-pdf", async (req, res) => {
       return res.status(400).json({ error: "Arquivo PDF em formato Base64 não fornecido." });
     }
 
+    if (!clientId || clientId === 'auto' || String(clientId).trim() === '') {
+      return res.status(400).json({ error: "Selecione primeiramente qual é o cliente ao qual este relatório pertence antes de processar o PDF." });
+    }
+
+    const adminDb = getAdminDb();
+    const cleanClientId = String(clientId).trim();
+    const clientSnap = await adminDb.collection(`salons/${salonId}/clients`).doc(cleanClientId).get();
+    if (!clientSnap.exists) {
+      return res.status(404).json({ error: "Cliente selecionado não foi localizado no cadastro da agência." });
+    }
+    const clientDoc = clientSnap.data() || {};
+
     const apiKey = env.gemini.apiKey;
     if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("SUA_API_KEY")) {
       return res.status(400).json({
@@ -868,66 +905,56 @@ Regras:
       }
     });
 
-    // Se tiver clientId ou se puder inferir o cliente pelo nome, buscar relatórios anteriores para calcular o Comparativo de Meses
-    const adminDb = getAdminDb();
-    let targetClientId = clientId;
-
-    if (!targetClientId && parsedData.businessName) {
-      const clientsSnap = await adminDb.collection(`salons/${salonId}/clients`).get();
-      clientsSnap.forEach(doc => {
-        const cData = doc.data();
-        const cName = String(cData.name || '').toLowerCase();
-        const pName = String(parsedData.businessName || '').toLowerCase();
-        if (cName.includes(pName) || pName.includes(cName)) {
-          targetClientId = doc.id;
-        }
-      });
-    }
-
+    // Buscar relatórios anteriores do cliente selecionado para calcular o Comparativo de Meses
+    const targetClientId = cleanClientId;
     let comparison = null;
-    if (targetClientId) {
-      const priorReportsSnap = await adminDb.collection(`salons/${salonId}/reports`)
-        .where("clientId", "==", targetClientId)
-        .get();
 
-      const existingReports: any[] = [];
-      priorReportsSnap.forEach(doc => {
-        existingReports.push({ id: doc.id, ...doc.data() });
-      });
+    const priorReportsSnap = await adminDb.collection(`salons/${salonId}/reports`)
+      .where("clientId", "==", targetClientId)
+      .get();
 
-      existingReports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const existingReports: any[] = [];
+    priorReportsSnap.forEach(doc => {
+      existingReports.push({ id: doc.id, ...doc.data() });
+    });
 
-      if (existingReports.length > 0) {
-        const prev = existingReports[0];
-        const prevGmb = prev.gmbMetrics || {};
-        const prevCalls = prevGmb.calls || prev.metrics?.leads || 0;
-        const prevRoutes = prevGmb.directionRequests || 0;
-        const prevWeb = prevGmb.websiteClicks || 0;
-        const prevSearch = prevGmb.searchImpressions || 0;
-        const prevMaps = prevGmb.mapsImpressions || 0;
+    existingReports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-        const calcDiff = (curr: number, prior: number) => {
-          if (!prior || prior === 0) return curr > 0 ? 100 : 0;
-          return Number((((curr - prior) / prior) * 100).toFixed(1));
-        };
+    if (existingReports.length > 0) {
+      const prev = existingReports[0];
+      const prevGmb = prev.gmbMetrics || {};
+      const prevCalls = prevGmb.calls || prev.metrics?.leads || 0;
+      const prevRoutes = prevGmb.directionRequests || 0;
+      const prevWeb = prevGmb.websiteClicks || 0;
+      const prevSearch = prevGmb.searchImpressions || 0;
+      const prevMaps = prevGmb.mapsImpressions || 0;
 
-        comparison = {
-          previousPeriod: prev.period || 'Mês anterior',
-          callsDiffPct: calcDiff(parsedData.calls || 0, prevCalls),
-          directionRequestsDiffPct: calcDiff(parsedData.directionRequests || 0, prevRoutes),
-          websiteClicksDiffPct: calcDiff(parsedData.websiteClicks || 0, prevWeb),
-          searchImpressionsDiffPct: calcDiff(parsedData.searchImpressions || 0, prevSearch),
-          mapsImpressionsDiffPct: calcDiff(parsedData.mapsImpressions || 0, prevMaps),
-          reviewsDiff: (parsedData.reviewsCount || 0) - (prevGmb.reviewsCount || 0)
-        };
-      }
+      const calcDiff = (curr: number, prior: number) => {
+        if (!prior || prior === 0) return curr > 0 ? 100 : 0;
+        return Number((((curr - prior) / prior) * 100).toFixed(1));
+      };
+
+      comparison = {
+        previousPeriod: prev.period || 'Mês anterior',
+        callsDiffPct: calcDiff(parsedData.calls || 0, prevCalls),
+        directionRequestsDiffPct: calcDiff(parsedData.directionRequests || 0, prevRoutes),
+        websiteClicksDiffPct: calcDiff(parsedData.websiteClicks || 0, prevWeb),
+        searchImpressionsDiffPct: calcDiff(parsedData.searchImpressions || 0, prevSearch),
+        mapsImpressionsDiffPct: calcDiff(parsedData.mapsImpressions || 0, prevMaps),
+        reviewsDiff: (parsedData.reviewsCount || 0) - (prevGmb.reviewsCount || 0)
+      };
     }
 
     return res.json({
       success: true,
       parsedData,
       comparison,
-      detectedClientId: targetClientId || null
+      client: {
+        id: targetClientId,
+        name: clientDoc.name || clientDoc.companyName || "Cliente",
+        email: clientDoc.email || ""
+      },
+      detectedClientId: targetClientId
     });
   } catch (error: any) {
     console.error("[ClientPortal parse-pdf] Erro:", error);
@@ -940,11 +967,18 @@ Regras:
 // ----------------------------------------------------
 clientPortalRoutes.get("/reports/comparison", async (req, res) => {
   try {
-    const { salonId } = await getAuthenticatedUserAndSalon(req, false);
+    const { salonId, userData, isAgency } = await getAuthenticatedUserAndSalon(req, false);
     const clientId = req.query.clientId as string;
 
     if (!salonId || !clientId) {
       return res.status(400).json({ error: "salonId e clientId são obrigatórios." });
+    }
+
+    // Se for usuário cliente, impedir consulta de relatórios de outros clientes
+    if (!isAgency && userData?.role === 'client') {
+      if (userData.clientId && String(userData.clientId) !== String(clientId)) {
+        return res.status(403).json({ error: "Acesso negado. Você só pode acessar os relatórios da sua empresa." });
+      }
     }
 
     const adminDb = getAdminDb();
