@@ -851,7 +851,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <Sparkles className="w-4 h-4 text-[#DFC498]" />
-          Clientes LumièreOS (GMN) ({systemUsers.length})
+          Empresas & Proprietários ({systemUsers.length})
         </button>
 
         <button
@@ -946,13 +946,13 @@ export default function ClientPortalManagementPage() {
           <div className="bg-gradient-to-r from-[#0A261E] via-[#0E352A] to-[#0A261E] border border-[#DFC498]/30 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1.5 max-w-3xl">
               <div className="inline-flex items-center gap-1.5 text-xs text-[#DFC498] font-bold uppercase tracking-wider bg-[#DFC498]/10 px-2.5 py-0.5 rounded-full border border-[#DFC498]/20">
-                <Sparkles className="w-3.5 h-3.5" /> Integração de Clientes LumièreOS com o Portal
+                <Sparkles className="w-3.5 h-3.5" /> Exclusivo para Contas de Empresas & Proprietários
               </div>
               <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                Ativação do Portal para Usuários do Sistema (Ex: Essenza Studio di Bellezza)
+                Ativação do Portal para Empresas e Proprietários (Ex: Essenza Studio di Bellezza)
               </h3>
               <p className="text-xs text-[#8FAEA2] leading-relaxed">
-                Seus clientes de marketing e Google Meu Negócio que já possuem cadastro no LumièreOS podem ter o Portal do Cliente ativado diretamente aqui. Ao ativar, eles passam a visualizar gráficos de desempenho, histórico comparativo de meses, aprovações de posts e suporte diretamente em suas contas.
+                Apenas a conta da empresa (proprietário do salão) tem acesso ao Portal do Cliente para acompanhar os dados de desempenho do Google Meu Negócio, comparativos mensais e aprovação de posts. Os profissionais da equipe não possuem acesso a esta área.
               </p>
             </div>
 
@@ -982,11 +982,11 @@ export default function ClientPortalManagementPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl shadow-sm">
               <div className="flex items-center justify-between text-[#8FAEA2] mb-1">
-                <span className="text-xs font-medium">Usuários do LumièreOS</span>
+                <span className="text-xs font-medium">Empresas / Proprietários</span>
                 <Users className="w-4 h-4 text-[#DFC498]" />
               </div>
               <p className="text-2xl font-bold text-white tracking-tight">{systemUsers.length}</p>
-              <span className="text-[10px] text-[#8FAEA2]">Contas cadastradas no ecossistema</span>
+              <span className="text-[10px] text-[#8FAEA2]">Contas de proprietários elegíveis</span>
             </div>
 
             <div className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl shadow-sm">
@@ -1017,7 +1017,7 @@ export default function ClientPortalManagementPage() {
             <div className="relative flex-1">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#8FAEA2]" />
               <Input
-                placeholder="Buscar por salão, empresa, responsável ou e-mail (ex: Essenza)..."
+                placeholder="Buscar por salão, empresa ou proprietário (ex: Essenza)..."
                 value={systemUserSearch}
                 onChange={e => setSystemUserSearch(e.target.value)}
                 className="pl-9 h-10 bg-black/30 border-white/10 text-white text-xs rounded-xl focus:border-[#DFC498]"
@@ -1120,6 +1120,10 @@ export default function ClientPortalManagementPage() {
                               </Badge>
                             )}
 
+                            <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 text-[10px] font-medium">
+                              Proprietário(a)
+                            </Badge>
+
                             {isEssenza && (
                               <Badge className="bg-[#DFC498]/20 text-[#DFC498] border-[#DFC498]/40 text-[10px] font-bold uppercase tracking-wider">
                                 Cliente GMN
@@ -1139,7 +1143,7 @@ export default function ClientPortalManagementPage() {
                               {userItem.salonName}
                             </CardTitle>
                             <CardDescription className="text-xs text-[#8FAEA2] mt-0.5">
-                              Responsável: <strong className="text-white">{userItem.name}</strong> • Função: {userItem.role === 'owner' ? 'Dono(a) do Salão' : userItem.role}
+                              Responsável: <strong className="text-white">{userItem.name}</strong> • Conta da Empresa (Proprietário)
                             </CardDescription>
                           </div>
                         </div>

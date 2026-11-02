@@ -147,6 +147,29 @@ export default function ClientPortalPage() {
     window.open(`https://wa.me/55${cleanPhone}?text=${message}`, '_blank');
   };
 
+  const isProfessionalOrStaff = userData?.role === 'professional' || userData?.role === 'receptionist' || userData?.role === 'attendant';
+
+  if (!loading && isProfessionalOrStaff) {
+    return (
+      <div className="min-h-screen bg-[#061A14] text-white flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-[#0A261E] border border-amber-500/30 p-8 rounded-2xl text-center space-y-4 shadow-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto">
+            <Building2 className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-bold">Acesso Restrito ao Proprietário</h2>
+          <p className="text-sm text-[#8FAEA2] leading-relaxed">
+            O Portal do Cliente (GMN, relatórios e métricas da empresa) é de acesso exclusivo para o(a) proprietário(a) do salão. Como profissional, acesse seu painel de atendimentos, agenda e metas semanais.
+          </p>
+          <div className="pt-2">
+            <Button onClick={() => navigate('/dashboard')} className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs h-10 rounded-xl cursor-pointer">
+              Ir para Meu Painel
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#061A14] flex flex-col items-center justify-center p-4">

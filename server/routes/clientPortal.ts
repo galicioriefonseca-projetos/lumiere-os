@@ -482,7 +482,7 @@ clientPortalRoutes.get("/system-users", async (req, res) => {
       }
     });
 
-    // 4. Buscar usuários do sistema
+    // 4. Buscar usuários do sistema (apenas contas de proprietários/empresas)
     const usersSnap = await adminDb.collection("users").get();
     const users: any[] = [];
     const seenEmails = new Set<string>();
@@ -491,10 +491,26 @@ clientPortalRoutes.get("/system-users", async (req, res) => {
       const uData = doc.data();
       const uEmail = String(uData.email || "").toLowerCase().trim();
       if (!uEmail || seenEmails.has(uEmail)) return;
-      seenEmails.add(uEmail);
 
       // Não mostrar a própria conta da agência como cliente a ser ativado
       if (uEmail === 'galicioriefonseca31@gmail.com' || uEmail === 'galicioriefonseca@gmail.com') return;
+
+      const role = String(uData.role || "").toLowerCase().trim();
+
+      // REGRA: Apenas contas de proprietários/empresas podem ser ativadas. Profissionais/colaboradores NÃO têm acesso ao portal.
+      const isStaffOrProfessional = 
+        role === "staff" || 
+        role === "professional" || 
+        role === "receptionist" || 
+        role === "employee" || 
+        role === "colaborador" ||
+        role === "client"; // Clientes puros já pertencem à gestão de convites da agência
+
+      if (isStaffOrProfessional) {
+        return; // Exclui profissionais e colaboradores da listagem de ativação do portal
+      }
+
+      seenEmails.add(uEmail);
 
       const userSalon = uData.salonId ? salonsMap.get(uData.salonId) : null;
       const linkedClient = agencyClientsByUserId.get(doc.id) || agencyClientsByEmail.get(uEmail) || (uData.salonId ? agencyClientsBySalonId.get(uData.salonId) : null);
@@ -503,10 +519,10 @@ clientPortalRoutes.get("/system-users", async (req, res) => {
 
       users.push({
         userId: doc.id,
-        name: uData.fullName || uData.name || userSalon?.ownerName || "Usuário Lumière",
+        name: uData.fullName || uData.name || userSalon?.ownerName || "Proprietário Lumière",
         email: uEmail,
         phone: uData.phone || userSalon?.phone || "",
-        role: uData.role || "owner",
+        role: "owner", // Exclusivamente proprietário/dono da empresa
         salonId: uData.salonId || "",
         salonName: userSalon?.name || uData.companyName || uData.salonName || "Salão LumièreOS",
         city: userSalon?.city || "",
@@ -606,6 +622,15 @@ clientPortalRoutes.post("/system-users/:userId/toggle-portal", async (req, res) 
     }
 
     const userData = userSnap.data() || {};
+    const userRole = String(userData.role || "").toLowerCase().trim();
+
+    // Apenas contas de proprietários da empresa podem ser ativadas
+    if (userRole === "staff" || userRole === "professional" || userRole === "receptionist" || userRole === "employee" || userRole === "colaborador") {
+      return res.status(400).json({ 
+        error: "Apenas a conta da empresa (proprietário) pode ter o Portal do Cliente ativado. Profissionais e colaboradores não possuem acesso à área do cliente." 
+      });
+    }
+
     const userSalonId = userData.salonId;
     let userSalonData: any = null;
     if (userSalonId) {
@@ -886,6 +911,15 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
   try {
     const { salonId: authenticatedSalonId, user, userData, isAgency } = await getAuthenticatedUserAndSalon(req, false);
     
+    // REGRA MANDATÓRIA: Apenas proprietários da empresa têm acesso ao portal do cliente. Profissionais/staff não têm acesso.
+    const userRole = String(userData?.role || "").toLowerCase().trim();
+    const isStaffOrProfessional = userRole === "staff" || userRole === "professional" || userRole === "receptionist" || userRole === "employee" || userRole === "colaborador";
+    if (isStaffOrProfessional && !isAgency) {
+      return res.status(403).json({ 
+        error: "Acesso restrito ao proprietário da empresa. Profissionais e colaboradores não possuem acesso ao Portal do Cliente (GMN)." 
+      });
+    }
+
     let finalSalonId = authenticatedSalonId;
     let finalClientId = userData?.clientId;
     let isPreview = false;
