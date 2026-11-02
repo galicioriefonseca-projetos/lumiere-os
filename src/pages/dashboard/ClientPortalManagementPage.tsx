@@ -47,13 +47,16 @@ import {
   Layers,
   BarChart3,
   FileSearch,
-  AlertCircle
+  AlertCircle,
+  Search,
+  Power,
+  ShieldCheck
 } from 'lucide-react';
-import { ClientReport, ClientContract, ClientPortalInvite, ClientApproval, ClientTicket, ClientDeliverable, ClientServiceRequest } from '../../types';
+import { ClientReport, ClientContract, ClientPortalInvite, ClientApproval, ClientTicket, ClientDeliverable, ClientServiceRequest, LumiereSystemUser } from '../../types';
 
 export default function ClientPortalManagementPage() {
   const { currentUser, salonData } = useAuth();
-  const [activeTab, setActiveTab] = useState<'invites' | 'reports' | 'comparison' | 'contracts' | 'approvals' | 'deliverables' | 'tickets' | 'serviceRequests'>('invites');
+  const [activeTab, setActiveTab] = useState<'systemUsers' | 'invites' | 'reports' | 'comparison' | 'contracts' | 'approvals' | 'deliverables' | 'tickets' | 'serviceRequests'>('systemUsers');
 
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -62,6 +65,11 @@ export default function ClientPortalManagementPage() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   // Data states
+  const [systemUsers, setSystemUsers] = useState<LumiereSystemUser[]>([]);
+  const [systemUserSearch, setSystemUserSearch] = useState('');
+  const [systemUserFilter, setSystemUserFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
+  const [userToActivate, setUserToActivate] = useState<LumiereSystemUser | null>(null);
   const [invites, setInvites] = useState<ClientPortalInvite[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [reports, setReports] = useState<ClientReport[]>([]);
@@ -80,9 +88,11 @@ export default function ClientPortalManagementPage() {
     link: string;
   } | null>(null);
 
-  // Upload e Parsing de PDF com IA Gemini
+  // Upload e Parsing de PDF ou Texto do Google Meu Negócio com IA Gemini
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfInputMode, setPdfInputMode] = useState<'file' | 'text'>('file');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [rawGmbText, setRawGmbText] = useState<string>('');
   const [pdfParsing, setPdfParsing] = useState(false);
   const [pdfParsedResult, setPdfParsedResult] = useState<any | null>(null);
   const [pdfComparison, setPdfComparison] = useState<any | null>(null);
@@ -185,7 +195,7 @@ export default function ClientPortalManagementPage() {
       const idToken = await currentUser.getIdToken();
       const headers = { Authorization: `Bearer ${idToken}` };
 
-      const [invitesRes, clientsRes, reportsRes, contractsRes, approvalsRes, deliverablesRes, ticketsRes, serviceRequestsRes] = await Promise.all([
+      const [invitesRes, clientsRes, reportsRes, contractsRes, approvalsRes, deliverablesRes, ticketsRes, serviceRequestsRes, systemUsersRes] = await Promise.all([
         fetch('/api/client-portal/invites', { headers }),
         fetch('/api/client-portal/clients', { headers }),
         fetch('/api/client-portal/reports', { headers }),
@@ -193,10 +203,11 @@ export default function ClientPortalManagementPage() {
         fetch('/api/client-portal/approvals', { headers }),
         fetch('/api/client-portal/deliverables', { headers }),
         fetch('/api/client-portal/tickets', { headers }),
-        fetch('/api/client-portal/service-requests', { headers })
+        fetch('/api/client-portal/service-requests', { headers }),
+        fetch('/api/client-portal/system-users', { headers })
       ]);
 
-      const [invitesData, clientsData, reportsData, contractsData, approvalsData, deliverablesData, ticketsData, serviceRequestsData] = await Promise.all([
+      const [invitesData, clientsData, reportsData, contractsData, approvalsData, deliverablesData, ticketsData, serviceRequestsData, systemUsersData] = await Promise.all([
         invitesRes.json(),
         clientsRes.json(),
         reportsRes.json(),
@@ -204,7 +215,8 @@ export default function ClientPortalManagementPage() {
         approvalsRes.json(),
         deliverablesRes.json(),
         ticketsRes.json(),
-        serviceRequestsRes.json()
+        serviceRequestsRes.json(),
+        systemUsersRes.json()
       ]);
 
       setInvites(invitesData.invites || []);
@@ -215,11 +227,47 @@ export default function ClientPortalManagementPage() {
       setDeliverables(deliverablesData.data || []);
       setTickets(ticketsData.data || []);
       setServiceRequests(serviceRequestsData.data || []);
+      setSystemUsers(systemUsersData.users || []);
     } catch (err: any) {
       console.error('Erro ao buscar dados do portal:', err);
       toast.error('Erro ao sincronizar informações do portal.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTogglePortal = async (userId: string, enable: boolean, salonName?: string) => {
+    if (!currentUser) return;
+    try {
+      setTogglingUserId(userId);
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch(`/api/client-portal/system-users/${userId}/toggle-portal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          enable,
+          companyName: salonName
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao alterar ativação do portal.');
+
+      if (enable) {
+        toast.success(`Portal do Cliente ativado para ${salonName || 'o usuário'}! Agora eles podem acessar relatórios de desempenho, aprovar posts e acompanhar métricas diretamente na conta deles.`);
+      } else {
+        toast.success(`Portal do Cliente desativado para ${salonName || 'o usuário'}.`);
+      }
+
+      setUserToActivate(null);
+      await fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao atualizar ativação do portal.');
+    } finally {
+      setTogglingUserId(null);
     }
   };
 
@@ -795,6 +843,18 @@ export default function ClientPortalManagementPage() {
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-[#17473A] pb-1 overflow-x-auto">
         <button
+          onClick={() => setActiveTab('systemUsers')}
+          className={`px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-all flex items-center gap-2 border-b-2 shrink-0 ${
+            activeTab === 'systemUsers'
+              ? 'border-[#DFC498] text-[#DFC498] bg-[#0A261E]'
+              : 'border-transparent text-[#8FAEA2] hover:text-white'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-[#DFC498]" />
+          Clientes LumièreOS (GMN) ({systemUsers.length})
+        </button>
+
+        <button
           onClick={() => setActiveTab('invites')}
           className={`px-4 py-2.5 text-xs font-semibold rounded-t-xl transition-all flex items-center gap-2 border-b-2 shrink-0 ${
             activeTab === 'invites'
@@ -878,6 +938,307 @@ export default function ClientPortalManagementPage() {
           Pedidos de Serviços ({serviceRequests.length})
         </button>
       </div>
+
+      {/* TAB 0: SYSTEM USERS / CLIENTES LUMIÈRE (GMN) */}
+      {activeTab === 'systemUsers' && (
+        <div className="space-y-6">
+          {/* Top Info Banner */}
+          <div className="bg-gradient-to-r from-[#0A261E] via-[#0E352A] to-[#0A261E] border border-[#DFC498]/30 p-5 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5 max-w-3xl">
+              <div className="inline-flex items-center gap-1.5 text-xs text-[#DFC498] font-bold uppercase tracking-wider bg-[#DFC498]/10 px-2.5 py-0.5 rounded-full border border-[#DFC498]/20">
+                <Sparkles className="w-3.5 h-3.5" /> Integração de Clientes LumièreOS com o Portal
+              </div>
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                Ativação do Portal para Usuários do Sistema (Ex: Essenza Studio di Bellezza)
+              </h3>
+              <p className="text-xs text-[#8FAEA2] leading-relaxed">
+                Seus clientes de marketing e Google Meu Negócio que já possuem cadastro no LumièreOS podem ter o Portal do Cliente ativado diretamente aqui. Ao ativar, eles passam a visualizar gráficos de desempenho, histórico comparativo de meses, aprovações de posts e suporte diretamente em suas contas.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                onClick={() => {
+                  const essenza = systemUsers.find(u => u.salonName.toLowerCase().includes('essenza') || u.name.toLowerCase().includes('essenza'));
+                  if (essenza && !essenza.portalAccessEnabled) {
+                    handleTogglePortal(essenza.userId, true, essenza.salonName);
+                  } else if (essenza && essenza.portalAccessEnabled) {
+                    window.open(`/portal?previewClient=${essenza.linkedClientId || ''}&previewSalon=${salonData?.id || ''}`, '_blank');
+                  } else {
+                    toast.info('Buscando Essenza Studio di Bellezza...');
+                  }
+                }}
+                className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 px-4 rounded-xl shadow-lg gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                {systemUsers.some(u => u.salonName.toLowerCase().includes('essenza') && u.portalAccessEnabled)
+                  ? 'Ver Portal da Essenza'
+                  : 'Ativar Portal da Essenza'}
+              </Button>
+            </div>
+          </div>
+
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between text-[#8FAEA2] mb-1">
+                <span className="text-xs font-medium">Usuários do LumièreOS</span>
+                <Users className="w-4 h-4 text-[#DFC498]" />
+              </div>
+              <p className="text-2xl font-bold text-white tracking-tight">{systemUsers.length}</p>
+              <span className="text-[10px] text-[#8FAEA2]">Contas cadastradas no ecossistema</span>
+            </div>
+
+            <div className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between text-[#8FAEA2] mb-1">
+                <span className="text-xs font-medium">Portais Ativos (Clientes GMN)</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              </div>
+              <p className="text-2xl font-bold text-emerald-400 tracking-tight">
+                {systemUsers.filter(u => u.portalAccessEnabled).length}
+              </p>
+              <span className="text-[10px] text-[#8FAEA2]">Acesso liberado a gráficos & aprovações</span>
+            </div>
+
+            <div className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between text-[#8FAEA2] mb-1">
+                <span className="text-xs font-medium">Disponíveis para Ativação</span>
+                <Power className="w-4 h-4 text-[#8FAEA2]" />
+              </div>
+              <p className="text-2xl font-bold text-white tracking-tight">
+                {systemUsers.filter(u => !u.portalAccessEnabled).length}
+              </p>
+              <span className="text-[10px] text-[#8FAEA2]">Clique em Ativar para liberar</span>
+            </div>
+          </div>
+
+          {/* Search & Filters */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0A261E]/80 border border-[#17473A] p-3 rounded-2xl">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#8FAEA2]" />
+              <Input
+                placeholder="Buscar por salão, empresa, responsável ou e-mail (ex: Essenza)..."
+                value={systemUserSearch}
+                onChange={e => setSystemUserSearch(e.target.value)}
+                className="pl-9 h-10 bg-black/30 border-white/10 text-white text-xs rounded-xl focus:border-[#DFC498]"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-xl border border-white/5 shrink-0">
+              <button
+                onClick={() => setSystemUserFilter('all')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  systemUserFilter === 'all'
+                    ? 'bg-[#DFC498] text-[#04140F]'
+                    : 'text-[#8FAEA2] hover:text-white'
+                }`}
+              >
+                Todos ({systemUsers.length})
+              </button>
+              <button
+                onClick={() => setSystemUserFilter('active')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  systemUserFilter === 'active'
+                    ? 'bg-emerald-500 text-black'
+                    : 'text-[#8FAEA2] hover:text-white'
+                }`}
+              >
+                Ativos ({systemUsers.filter(u => u.portalAccessEnabled).length})
+              </button>
+              <button
+                onClick={() => setSystemUserFilter('inactive')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  systemUserFilter === 'inactive'
+                    ? 'bg-zinc-700 text-white'
+                    : 'text-[#8FAEA2] hover:text-white'
+                }`}
+              >
+                Inativos ({systemUsers.filter(u => !u.portalAccessEnabled).length})
+              </button>
+            </div>
+          </div>
+
+          {/* Users List */}
+          {loading ? (
+            <div className="p-12 text-center text-[#8FAEA2]">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#DFC498]" />
+              Carregando usuários do sistema...
+            </div>
+          ) : systemUsers.length === 0 ? (
+            <Card className="bg-[#0A261E]/60 border-[#17473A] text-center py-12">
+              <CardContent className="space-y-3">
+                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto text-[#8FAEA2]">
+                  <Users className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-white">Nenhum usuário encontrado</h4>
+                <p className="text-xs text-[#8FAEA2] max-w-sm mx-auto">
+                  Os salões e clientes cadastrados no LumièreOS aparecerão aqui para ativação do portal.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {systemUsers
+                .filter(u => {
+                  const query = systemUserSearch.toLowerCase().trim();
+                  const matchesSearch = !query ||
+                    u.name.toLowerCase().includes(query) ||
+                    u.salonName.toLowerCase().includes(query) ||
+                    u.email.toLowerCase().includes(query) ||
+                    (u.city && u.city.toLowerCase().includes(query));
+
+                  if (!matchesSearch) return false;
+                  if (systemUserFilter === 'active') return u.portalAccessEnabled;
+                  if (systemUserFilter === 'inactive') return !u.portalAccessEnabled;
+                  return true;
+                })
+                .map(userItem => {
+                  const isEssenza = userItem.salonName.toLowerCase().includes('essenza') || userItem.name.toLowerCase().includes('essenza') || userItem.email.includes('essenza');
+                  const isToggling = togglingUserId === userItem.userId;
+
+                  return (
+                    <Card
+                      key={userItem.userId}
+                      className={`bg-[#0A261E] border transition-all ${
+                        isEssenza 
+                          ? 'border-[#DFC498] shadow-lg shadow-[#DFC498]/5' 
+                          : userItem.portalAccessEnabled 
+                          ? 'border-emerald-500/40' 
+                          : 'border-[#17473A] hover:border-white/20'
+                      }`}
+                    >
+                      <CardHeader className="pb-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {userItem.portalAccessEnabled ? (
+                              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px] font-semibold gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Portal Ativo (Acesso Liberado)
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-zinc-800 text-zinc-400 border-zinc-700 text-[10px] font-semibold">
+                                Portal Inativo
+                              </Badge>
+                            )}
+
+                            {isEssenza && (
+                              <Badge className="bg-[#DFC498]/20 text-[#DFC498] border-[#DFC498]/40 text-[10px] font-bold uppercase tracking-wider">
+                                Cliente GMN
+                              </Badge>
+                            )}
+                          </div>
+
+                          <span className="text-[10px] text-[#8FAEA2]">
+                            {userItem.reportsCount > 0 ? `${userItem.reportsCount} relatório(s)` : 'Sem relatórios'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                              <Building2 className="w-4 h-4 text-[#DFC498]" />
+                              {userItem.salonName}
+                            </CardTitle>
+                            <CardDescription className="text-xs text-[#8FAEA2] mt-0.5">
+                              Responsável: <strong className="text-white">{userItem.name}</strong> • Função: {userItem.role === 'owner' ? 'Dono(a) do Salão' : userItem.role}
+                            </CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+
+                      <CardContent className="space-y-4 pt-1">
+                        <div className="grid grid-cols-2 gap-2 text-xs bg-black/25 p-3 rounded-xl border border-white/5">
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block uppercase tracking-wider">E-mail de Acesso</span>
+                            <span className="text-white font-mono text-[11px] truncate block select-all">
+                              {userItem.email}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-[#8FAEA2] block uppercase tracking-wider">Telefone / WhatsApp</span>
+                            <span className="text-white text-[11px] block">
+                              {userItem.phone || 'Não informado'}
+                            </span>
+                          </div>
+                          {userItem.city && (
+                            <div className="col-span-2 pt-1 border-t border-white/5 flex items-center gap-1.5 text-[#8FAEA2] text-[11px]">
+                              <MapPin className="w-3.5 h-3.5 text-[#DFC498]" />
+                              <span>{userItem.city}{userItem.state ? ` - ${userItem.state}` : ''}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {userItem.portalAccessEnabled ? (
+                            <>
+                              <Button
+                                onClick={() => {
+                                  const url = `/portal?previewClient=${userItem.linkedClientId || ''}&previewSalon=${salonData?.id || ''}`;
+                                  window.open(url, '_blank');
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className="border-[#DFC498]/40 hover:bg-[#DFC498]/10 text-[#DFC498] text-xs h-9 rounded-xl font-semibold gap-1.5"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> Ver Portal como Cliente
+                              </Button>
+
+                              <Button
+                                onClick={() => {
+                                  // Pre-seleciona o cliente e abre o modal de relatório
+                                  if (userItem.linkedClientId) {
+                                    setReportForm(prev => ({
+                                      ...prev,
+                                      clientId: userItem.linkedClientId!,
+                                      clientName: userItem.salonName,
+                                      clientEmail: userItem.email,
+                                      title: `Desempenho Google Meu Negócio - ${userItem.salonName}`
+                                    }));
+                                  }
+                                  setIsReportModalOpen(true);
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className="border-white/10 hover:bg-white/5 text-white text-xs h-9 rounded-xl gap-1.5"
+                              >
+                                <Plus className="w-3.5 h-3.5 text-[#DFC498]" /> Criar Relatório GMN
+                              </Button>
+
+                              <Button
+                                onClick={() => handleTogglePortal(userItem.userId, false, userItem.salonName)}
+                                disabled={isToggling}
+                                size="sm"
+                                variant="outline"
+                                className="border-red-500/20 hover:bg-red-500/10 text-red-400 text-xs h-9 rounded-xl gap-1.5 ml-auto"
+                              >
+                                {isToggling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                                Desativar Portal
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              onClick={() => handleTogglePortal(userItem.userId, true, userItem.salonName)}
+                              disabled={isToggling}
+                              size="sm"
+                              className="w-full bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-9 rounded-xl shadow-md gap-2"
+                            >
+                              {isToggling ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-3.5 h-3.5" />
+                              )}
+                              Ativar Portal do Cliente
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* TAB 1: INVITES */}
       {activeTab === 'invites' && (
@@ -2660,67 +3021,121 @@ export default function ClientPortalManagementPage() {
               )}
             </div>
 
-            {/* PASSO 2: UPLOAD DO PDF (Bloqueado até a escolha do cliente) */}
+            {/* PASSO 2: ENTRADA DOS DADOS DO GOOGLE MEU NEGÓCIO (Bloqueado até a escolha do cliente) */}
             {!pdfParsedResult && (
-              <div className={`space-y-3 transition-all ${!selectedClientIdForPdf ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+              <div className={`space-y-4 transition-all ${!selectedClientIdForPdf ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
                 <div className="flex items-center justify-between pt-1">
                   <Label className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5 uppercase tracking-wider">
-                    <FileUp className="w-4 h-4 text-[#DFC498]" /> Passo 2: Arquivo PDF de Desempenho do Google *
+                    <FileUp className="w-4 h-4 text-[#DFC498]" /> Passo 2: Dados de Desempenho do Google Meu Negócio *
                   </Label>
-                  <span className="text-[10px] text-[#8FAEA2]">Google Business Profile</span>
+                  <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/10 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setPdfInputMode('file')}
+                      className={`px-2 py-1 rounded-md transition ${pdfInputMode === 'file' ? 'bg-[#DFC498] text-[#04140F] font-bold' : 'text-zinc-400 hover:text-white'}`}
+                    >
+                      Arquivo PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPdfInputMode('text')}
+                      className={`px-2 py-1 rounded-md transition ${pdfInputMode === 'text' ? 'bg-[#DFC498] text-[#04140F] font-bold' : 'text-zinc-400 hover:text-white'}`}
+                    >
+                      Colar Texto do GMN
+                    </button>
+                  </div>
                 </div>
 
-                <div
-                  className="border-2 border-dashed border-[#17473A] hover:border-[#DFC498]/50 bg-black/30 rounded-2xl p-7 flex flex-col items-center justify-center gap-3 transition cursor-pointer text-center"
-                  onClick={() => {
-                    if (!selectedClientIdForPdf) {
-                      toast.error('Selecione primeiramente o cliente antes de escolher o PDF.');
-                      return;
-                    }
-                    document.getElementById('gmb-pdf-input')?.click();
-                  }}
-                >
-                  <FileUp className="w-10 h-10 text-[#DFC498]" />
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {pdfFile ? pdfFile.name : 'Clique para selecionar o PDF do Google Meu Negócio'}
-                    </p>
-                    <p className="text-xs text-[#8FAEA2] mt-1">
-                      {selectedClientIdForPdf 
-                        ? `O relatório será vinculado especificamente para ${clients.find(c => c.id === selectedClientIdForPdf)?.name}`
-                        : 'Selecione o cliente no Passo 1 para habilitar'}
-                    </p>
-                  </div>
-                  <input
-                    id="gmb-pdf-input"
-                    type="file"
-                    accept="application/pdf"
-                    disabled={!selectedClientIdForPdf}
-                    className="hidden"
-                    onChange={e => {
-                      if (e.target.files && e.target.files[0]) {
-                        setPdfFile(e.target.files[0]);
+                {pdfInputMode === 'file' ? (
+                  <div
+                    className="border-2 border-dashed border-[#17473A] hover:border-[#DFC498]/50 bg-black/30 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition cursor-pointer text-center"
+                    onClick={() => {
+                      if (!selectedClientIdForPdf) {
+                        toast.error('Selecione primeiramente o cliente antes de escolher o PDF.');
+                        return;
                       }
+                      document.getElementById('gmb-pdf-input')?.click();
                     }}
-                  />
-                </div>
+                  >
+                    <FileUp className="w-10 h-10 text-[#DFC498]" />
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {pdfFile ? pdfFile.name : 'Clique para selecionar o PDF do Google Meu Negócio'}
+                      </p>
+                      <p className="text-xs text-[#8FAEA2] mt-1">
+                        {selectedClientIdForPdf 
+                          ? `O relatório será vinculado especificamente para ${clients.find(c => c.id === selectedClientIdForPdf)?.name}`
+                          : 'Selecione o cliente no Passo 1 para habilitar'}
+                      </p>
+                    </div>
+                    <input
+                      id="gmb-pdf-input"
+                      type="file"
+                      accept="application/pdf"
+                      disabled={!selectedClientIdForPdf}
+                      className="hidden"
+                      onChange={e => {
+                        if (e.target.files && e.target.files[0]) {
+                          setPdfFile(e.target.files[0]);
+                        }
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] text-[#8FAEA2]">
+                      Copie e cole os textos ou tabela de desempenho direto da tela do Google Meu Negócio (Visão Geral, Interações, Chamadas, Rotas, Pessoas que visualizaram, etc.):
+                    </p>
+                    <textarea
+                      value={rawGmbText}
+                      onChange={e => setRawGmbText(e.target.value)}
+                      placeholder="Exemplo: Cole aqui o texto do relatório do Google Meu Negócio contendo as interações, chamadas, rotas, pesquisas móveis, etc..."
+                      rows={6}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white placeholder-zinc-500 font-mono focus:border-[#DFC498] outline-none"
+                    />
+                  </div>
+                )}
 
                 <Button
-                  disabled={!selectedClientIdForPdf || !pdfFile || pdfParsing}
+                  disabled={!selectedClientIdForPdf || (pdfInputMode === 'file' ? !pdfFile : !rawGmbText.trim()) || pdfParsing}
                   onClick={async () => {
                     if (!selectedClientIdForPdf) {
                       toast.error('Selecione primeiramente qual é o cliente ao qual este relatório pertence.');
                       return;
                     }
-                    if (!pdfFile || !currentUser) return;
+                    if (!currentUser) return;
 
                     try {
                       setPdfParsing(true);
-                      const reader = new FileReader();
-                      reader.readAsDataURL(pdfFile);
-                      reader.onload = async () => {
-                        const base64 = reader.result as string;
-                        const idToken = await currentUser.getIdToken();
+                      const idToken = await currentUser.getIdToken();
+
+                      if (pdfInputMode === 'file') {
+                        if (!pdfFile) return;
+                        const reader = new FileReader();
+                        reader.readAsDataURL(pdfFile);
+                        reader.onload = async () => {
+                          const base64 = reader.result as string;
+                          const res = await fetch('/api/client-portal/reports/parse-pdf', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              Authorization: `Bearer ${idToken}`
+                            },
+                            body: JSON.stringify({
+                              pdfBase64: base64,
+                              fileName: pdfFile.name,
+                              clientId: selectedClientIdForPdf
+                            })
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || 'Erro ao processar PDF.');
+
+                          setPdfParsedResult(data.parsedData);
+                          setPdfComparison(data.comparison);
+                          toast.success('Relatório extraído e analisado pela IA com sucesso!');
+                          setPdfParsing(false);
+                        };
+                      } else {
                         const res = await fetch('/api/client-portal/reports/parse-pdf', {
                           method: 'POST',
                           headers: {
@@ -2728,22 +3143,21 @@ export default function ClientPortalManagementPage() {
                             Authorization: `Bearer ${idToken}`
                           },
                           body: JSON.stringify({
-                            pdfBase64: base64,
-                            fileName: pdfFile.name,
+                            rawText: rawGmbText,
                             clientId: selectedClientIdForPdf
                           })
                         });
                         const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Erro ao processar PDF.');
+                        if (!res.ok) throw new Error(data.error || 'Erro ao processar dados do Google.');
 
                         setPdfParsedResult(data.parsedData);
                         setPdfComparison(data.comparison);
-                        toast.success('Relatório extraído e analisado pela IA com sucesso!');
+                        toast.success('Dados do Google Meu Negócio organizados pela IA com sucesso!');
                         setPdfParsing(false);
-                      };
+                      }
                     } catch (err: any) {
                       console.error(err);
-                      toast.error(err.message || 'Erro ao analisar PDF com IA.');
+                      toast.error(err.message || 'Erro ao analisar dados com IA.');
                       setPdfParsing(false);
                     }
                   }}
@@ -2751,11 +3165,11 @@ export default function ClientPortalManagementPage() {
                 >
                   {pdfParsing ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Analisando PDF com Inteligência Artificial...
+                      <Loader2 className="w-4 h-4 animate-spin" /> Analisando e Organizando Métricas com IA...
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" /> Processar Relatório com IA para Este Cliente
+                      <Sparkles className="w-4 h-4" /> Processar Relatório do Google para Este Cliente
                     </>
                   )}
                 </Button>
@@ -2764,7 +3178,7 @@ export default function ClientPortalManagementPage() {
 
             {/* Parsed Preview & Comparison Results */}
             {pdfParsedResult && (
-              <div className="space-y-4 bg-black/40 p-4 rounded-2xl border border-white/10 max-h-[60vh] overflow-y-auto">
+              <div className="space-y-4 bg-black/40 p-4 rounded-2xl border border-white/10 max-h-[65vh] overflow-y-auto">
                 <div className="flex items-center justify-between border-b border-white/10 pb-3">
                   <div>
                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2778,37 +3192,82 @@ export default function ClientPortalManagementPage() {
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="bg-[#0A261E] p-2.5 rounded-xl border border-[#17473A]">
-                    <span className="text-[10px] text-[#8FAEA2] block">Pesquisa</span>
-                    <span className="font-bold text-white text-sm">{pdfParsedResult.searchImpressions?.toLocaleString('pt-BR')}</span>
+                {/* 1. INTERAÇÕES NO PERFIL DA EMPRESA */}
+                <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Zap className="w-4 h-4 text-[#DFC498]" /> Interações no Perfil da Empresa
+                    </span>
+                    <span className="text-base font-bold text-[#DFC498] font-mono">
+                      {pdfParsedResult.totalInteractions || (Number(pdfParsedResult.calls || 0) + Number(pdfParsedResult.directionRequests || 0) + Number(pdfParsedResult.websiteClicks || 0) + Number(pdfParsedResult.chatClicks || 0) + Number(pdfParsedResult.bookings || 0))}
+                    </span>
                   </div>
-                  <div className="bg-[#0A261E] p-2.5 rounded-xl border border-[#17473A]">
-                    <span className="text-[10px] text-[#8FAEA2] block">Google Maps</span>
-                    <span className="font-bold text-white text-sm">{pdfParsedResult.mapsImpressions?.toLocaleString('pt-BR')}</span>
-                  </div>
-                  <div className="bg-[#0A261E] p-2.5 rounded-xl border border-[#17473A]">
-                    <span className="text-[10px] text-[#8FAEA2] block">Total Visualizações</span>
-                    <span className="font-bold text-[#DFC498] text-sm">{pdfParsedResult.totalImpressions?.toLocaleString('pt-BR')}</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
+                    <div className="bg-black/30 p-2 rounded-lg">
+                      <span className="text-[10px] text-[#8FAEA2] block">Chamadas</span>
+                      <span className="font-bold text-white text-xs">{pdfParsedResult.calls || 0}</span>
+                    </div>
+                    <div className="bg-black/30 p-2 rounded-lg">
+                      <span className="text-[10px] text-[#8FAEA2] block">Cliques no Chat</span>
+                      <span className="font-bold text-white text-xs">{pdfParsedResult.chatClicks || 0}</span>
+                    </div>
+                    <div className="bg-black/30 p-2 rounded-lg">
+                      <span className="text-[10px] text-[#8FAEA2] block">Agendamentos</span>
+                      <span className="font-bold text-white text-xs">{pdfParsedResult.bookings || 0}</span>
+                    </div>
+                    <div className="bg-black/30 p-2 rounded-lg">
+                      <span className="text-[10px] text-[#8FAEA2] block">Orientações (Rotas)</span>
+                      <span className="font-bold text-emerald-400 text-xs">{pdfParsedResult.directionRequests || 0}</span>
+                    </div>
+                    <div className="bg-black/30 p-2 rounded-lg">
+                      <span className="text-[10px] text-[#8FAEA2] block">Cliques no Site</span>
+                      <span className="font-bold text-blue-400 text-xs">{pdfParsedResult.websiteClicks || 0}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="bg-black/30 p-2 rounded-xl border border-white/5">
-                    <span className="text-[10px] text-[#8FAEA2] block">Cliques no Site</span>
-                    <span className="font-bold text-blue-400">{pdfParsedResult.websiteClicks}</span>
+                {/* 2. COMO AS PESSOAS DESCOBRIRAM SUA EMPRESA */}
+                <div className="bg-[#061A14] p-3.5 rounded-xl border border-white/5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Eye className="w-4 h-4 text-blue-400" /> Pessoas que Visualizaram o Perfil
+                    </span>
+                    <span className="text-base font-bold text-white font-mono">
+                      {(pdfParsedResult.peopleViewedProfile || pdfParsedResult.totalImpressions || 0).toLocaleString('pt-BR')}
+                    </span>
                   </div>
-                  <div className="bg-black/30 p-2 rounded-xl border border-white/5">
-                    <span className="text-[10px] text-[#8FAEA2] block">Solicitações de Rotas</span>
-                    <span className="font-bold text-emerald-400">{pdfParsedResult.directionRequests}</span>
-                  </div>
-                  <div className="bg-black/30 p-2 rounded-xl border border-white/5">
-                    <span className="text-[10px] text-[#8FAEA2] block">Ligações Telefônicas</span>
-                    <span className="font-bold text-[#DFC498]">{pdfParsedResult.calls}</span>
-                  </div>
+
+                  {pdfParsedResult.platformBreakdown && (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
+                        <span className="text-[11px] text-[#8FAEA2]">📱 Pesquisa Google (Mobile)</span>
+                        <span className="font-bold text-white">
+                          {pdfParsedResult.platformBreakdown.searchMobile?.count || 0} ({pdfParsedResult.platformBreakdown.searchMobile?.percentage || 0}%)
+                        </span>
+                      </div>
+                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
+                        <span className="text-[11px] text-[#8FAEA2]">🗺️ Maps (Mobile)</span>
+                        <span className="font-bold text-white">
+                          {pdfParsedResult.platformBreakdown.mapsMobile?.count || 0} ({pdfParsedResult.platformBreakdown.mapsMobile?.percentage || 0}%)
+                        </span>
+                      </div>
+                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
+                        <span className="text-[11px] text-[#8FAEA2]">💻 Pesquisa Google (PC)</span>
+                        <span className="font-bold text-white">
+                          {pdfParsedResult.platformBreakdown.searchDesktop?.count || 0} ({pdfParsedResult.platformBreakdown.searchDesktop?.percentage || 0}%)
+                        </span>
+                      </div>
+                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
+                        <span className="text-[11px] text-[#8FAEA2]">🖥️ Maps (PC)</span>
+                        <span className="font-bold text-white">
+                          {pdfParsedResult.platformBreakdown.mapsDesktop?.count || 0} ({pdfParsedResult.platformBreakdown.mapsDesktop?.percentage || 0}%)
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Comparativo com Mês Anterior */}
+                {/* 3. COMPARATIVO COM MÊS ANTERIOR */}
                 {pdfComparison && (
                   <div className="bg-[#061A14] p-3 rounded-xl border border-emerald-500/20 space-y-2">
                     <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
@@ -2816,10 +3275,10 @@ export default function ClientPortalManagementPage() {
                     </span>
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
                       <div className="bg-black/20 p-2 rounded-lg">
-                        <span className="text-[10px] text-[#8FAEA2] block">Ligações</span>
-                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.callsDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {pdfComparison.callsDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {pdfComparison.callsDiffPct}%
+                        <span className="text-[10px] text-[#8FAEA2] block">Total Interações</span>
+                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.totalInteractionsDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {pdfComparison.totalInteractionsDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          {pdfComparison.totalInteractionsDiffPct}%
                         </span>
                       </div>
                       <div className="bg-black/20 p-2 rounded-lg">
@@ -2830,10 +3289,10 @@ export default function ClientPortalManagementPage() {
                         </span>
                       </div>
                       <div className="bg-black/20 p-2 rounded-lg">
-                        <span className="text-[10px] text-[#8FAEA2] block">Cliques Site</span>
-                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.websiteClicksDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {pdfComparison.websiteClicksDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {pdfComparison.websiteClicksDiffPct}%
+                        <span className="text-[10px] text-[#8FAEA2] block">Pessoas Visualizaram</span>
+                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.peopleViewedProfileDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {pdfComparison.peopleViewedProfileDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          {pdfComparison.peopleViewedProfileDiffPct}%
                         </span>
                       </div>
                     </div>
@@ -2841,75 +3300,96 @@ export default function ClientPortalManagementPage() {
                 )}
 
                 <div className="space-y-1">
-                  <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-semibold">Resumo Executivo Gerado por IA</span>
+                  <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-semibold">Resumo Analítico da IA</span>
                   <p className="text-xs text-[#E1EDE8] bg-white/5 p-3 rounded-xl leading-relaxed">
                     {pdfParsedResult.summary}
                   </p>
                 </div>
 
-                <Button
-                  onClick={async () => {
-                    if (!currentUser) return;
-                    if (!selectedClientIdForPdf) {
-                      toast.error('Erro: Nenhum cliente selecionado.');
-                      return;
-                    }
-                    const targetClient = clients.find(c => c.id === selectedClientIdForPdf);
-
-                    try {
-                      setActionLoading(true);
-                      const idToken = await currentUser.getIdToken();
-                      const res = await fetch('/api/client-portal/reports', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          Authorization: `Bearer ${idToken}`
-                        },
-                        body: JSON.stringify({
-                          title: `Desempenho Google Meu Negócio • ${pdfParsedResult.period}`,
-                          clientId: selectedClientIdForPdf,
-                          clientName: targetClient?.name || pdfParsedResult.businessName,
-                          clientEmail: targetClient?.email || '',
-                          period: pdfParsedResult.period,
-                          startDate: pdfParsedResult.startDate,
-                          endDate: pdfParsedResult.endDate,
-                          month: pdfParsedResult.month,
-                          year: pdfParsedResult.year,
-                          summary: pdfParsedResult.summary,
-                          reportType: 'google_meu_negocio',
-                          gmbMetrics: {
-                            directionRequests: pdfParsedResult.directionRequests,
-                            calls: pdfParsedResult.calls,
-                            websiteClicks: pdfParsedResult.websiteClicks,
-                            mapsImpressions: pdfParsedResult.mapsImpressions,
-                            searchImpressions: pdfParsedResult.searchImpressions,
-                            rankingPosition: 1,
-                            targetKeyword: pdfParsedResult.targetKeyword,
-                            topKeywords: pdfParsedResult.topKeywords,
-                            rating: pdfParsedResult.rating,
-                            reviewsCount: pdfParsedResult.reviewsCount
-                          },
-                          status: 'published'
-                        })
-                      });
-                      const data = await res.json();
-                      if (!res.ok) throw new Error(data.error || 'Erro ao publicar relatório.');
-
-                      toast.success(`Relatório publicado com sucesso! Exclusivo para o cliente ${targetClient?.name || ''}.`);
-                      setIsPdfModalOpen(false);
-                      setPdfFile(null);
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
                       setPdfParsedResult(null);
-                      await fetchData();
-                    } catch (err: any) {
-                      toast.error(err.message || 'Erro ao salvar relatório.');
-                    } finally {
-                      setActionLoading(false);
-                    }
-                  }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl text-xs gap-2 shadow-lg"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Publicar Relatório Exclusivo para Este Cliente
-                </Button>
+                      setPdfComparison(null);
+                      setPdfFile(null);
+                      setRawGmbText('');
+                    }}
+                    className="w-1/3 border-white/10 text-zinc-300 hover:text-white h-11 rounded-xl text-xs"
+                  >
+                    Novo Envio
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      if (!currentUser) return;
+                      if (!selectedClientIdForPdf) {
+                        toast.error('Erro: Nenhum cliente selecionado.');
+                        return;
+                      }
+                      const targetClient = clients.find(c => c.id === selectedClientIdForPdf);
+
+                      try {
+                        setActionLoading(true);
+                        const idToken = await currentUser.getIdToken();
+                        const res = await fetch('/api/client-portal/reports', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${idToken}`
+                          },
+                          body: JSON.stringify({
+                            title: `Desempenho Google Meu Negócio • ${pdfParsedResult.period}`,
+                            clientId: selectedClientIdForPdf,
+                            clientName: targetClient?.name || pdfParsedResult.businessName,
+                            clientEmail: targetClient?.email || '',
+                            period: pdfParsedResult.period,
+                            startDate: pdfParsedResult.startDate,
+                            endDate: pdfParsedResult.endDate,
+                            month: pdfParsedResult.month,
+                            year: pdfParsedResult.year,
+                            summary: pdfParsedResult.summary,
+                            reportType: 'google_meu_negocio',
+                            gmbMetrics: {
+                              totalInteractions: Number(pdfParsedResult.totalInteractions || 0),
+                              calls: Number(pdfParsedResult.calls || 0),
+                              chatClicks: Number(pdfParsedResult.chatClicks || 0),
+                              bookings: Number(pdfParsedResult.bookings || 0),
+                              directionRequests: Number(pdfParsedResult.directionRequests || 0),
+                              websiteClicks: Number(pdfParsedResult.websiteClicks || 0),
+                              peopleViewedProfile: Number(pdfParsedResult.peopleViewedProfile || pdfParsedResult.totalImpressions || 0),
+                              mapsImpressions: Number(pdfParsedResult.mapsImpressions || 0),
+                              searchImpressions: Number(pdfParsedResult.searchImpressions || 0),
+                              monthlyInteractions: pdfParsedResult.monthlyInteractions || [],
+                              platformBreakdown: pdfParsedResult.platformBreakdown || null,
+                              rankingPosition: 1,
+                              targetKeyword: pdfParsedResult.targetKeyword,
+                              topKeywords: pdfParsedResult.topKeywords,
+                              rating: pdfParsedResult.rating,
+                              reviewsCount: pdfParsedResult.reviewsCount
+                            },
+                            status: 'published'
+                          })
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Erro ao publicar relatório.');
+
+                        toast.success(`Relatório publicado com sucesso! Exclusivo para o cliente ${targetClient?.name || ''}.`);
+                        setIsPdfModalOpen(false);
+                        setPdfFile(null);
+                        setRawGmbText('');
+                        setPdfParsedResult(null);
+                        await fetchData();
+                      } catch (err: any) {
+                        toast.error(err.message || 'Erro ao salvar relatório.');
+                      } finally {
+                        setActionLoading(false);
+                      }
+                    }}
+                    className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl text-xs gap-2 shadow-lg"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Publicar Relatório para Este Cliente
+                  </Button>
+                </div>
               </div>
             )}
           </div>

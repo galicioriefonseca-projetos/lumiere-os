@@ -51,6 +51,8 @@ export interface User {
   role: Role;
   salonId: string;
   clientId?: string;
+  portalAccessEnabled?: boolean;
+  agencySalonId?: string;
   companyName?: string;
   professionalId?: string;
   specialty?: string;
@@ -557,11 +559,33 @@ export interface ClientReport {
     cpl?: number;
   };
   gmbMetrics?: {
-    directionRequests?: number; // Solicitações de rota (Waze / Google Maps)
+    // Interações no Perfil da Empresa
+    totalInteractions?: number; // Total de interações no perfil da empresa
     calls?: number; // Chamadas telefônicas diretas
-    websiteClicks?: number; // Cliques no site / WhatsApp
+    chatClicks?: number; // Cliques no chat / mensagens
+    bookings?: number; // Agendamentos iniciados pelo perfil
+    directionRequests?: number; // Orientações / Solicitações de rota (Waze / Google Maps)
+    websiteClicks?: number; // Cliques no website
+    
+    // Histórico de Interações Mês a Mês do GMN
+    monthlyInteractions?: Array<{
+      month: string; // ex: "junho de 2026"
+      interactions: number; // ex: 63
+    }>;
+
+    // Como as pessoas descobriram sua empresa (Visualizações do Perfil)
+    peopleViewedProfile?: number; // Número total de pessoas que visualizaram o Perfil da Empresa
     mapsImpressions?: number; // Impressões no Google Maps
     searchImpressions?: number; // Impressões no Google Search
+    
+    // Detalhes sobre a plataforma e o dispositivo
+    platformBreakdown?: {
+      searchMobile?: { count: number; percentage: number }; // Pesquisa Google - dispositivos móveis
+      mapsMobile?: { count: number; percentage: number }; // Google Maps - dispositivos móveis
+      searchDesktop?: { count: number; percentage: number }; // Pesquisa Google - computadores
+      mapsDesktop?: { count: number; percentage: number }; // Google Maps - computadores
+    };
+
     rankingPosition?: number; // Posição no Mapa local (ex: 1, 2, 3...)
     targetKeyword?: string; // Palavra-chave principal monitorada
     topKeywords?: Array<{ keyword: string; count?: number } | string>; // Consultas de busca
@@ -696,5 +720,22 @@ export interface ClientServiceRequest {
   createdAt: number;
   updatedAt?: number;
 }
+
+export interface LumiereSystemUser {
+  userId: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  salonId: string;
+  salonName: string;
+  city?: string;
+  state?: string;
+  portalAccessEnabled: boolean;
+  linkedClientId: string | null;
+  reportsCount: number;
+  createdAt: number;
+}
+
 
 

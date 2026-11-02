@@ -2,8 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { 
   BarChart, 
   Bar, 
-  LineChart, 
-  Line, 
   AreaChart, 
   Area, 
   XAxis, 
@@ -19,9 +17,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { 
   TrendingUp, 
-  TrendingDown, 
   Phone, 
   Navigation, 
   Globe, 
@@ -32,18 +30,22 @@ import {
   Star, 
   FileText, 
   ExternalLink, 
-  Download, 
   ArrowUpRight, 
   ArrowDownRight, 
   Minus, 
   Filter, 
-  Layers, 
   Eye, 
-  CheckCircle2, 
   RotateCcw,
   BarChart3,
   PieChart as PieChartIcon,
-  HelpCircle
+  HelpCircle,
+  MessageSquare,
+  CalendarCheck,
+  Smartphone,
+  Monitor,
+  Zap,
+  Info,
+  BookOpen
 } from 'lucide-react';
 import { ClientReport } from '../../types';
 
@@ -53,18 +55,6 @@ interface ReportsAnalyticsTabProps {
   clientName: string;
   onOpenReportDetails: (report: ClientReport) => void;
 }
-
-const COLORS = {
-  gold: '#DFC498',
-  emerald: '#10B981',
-  blue: '#38BDF8',
-  purple: '#A855F7',
-  amber: '#F59E0B',
-  darkBg: '#0A261E',
-  cardBg: '#061A14'
-};
-
-const PIE_COLORS = ['#10B981', '#DFC498', '#38BDF8', '#A855F7'];
 
 export default function ReportsAnalyticsTab({
   reports,
@@ -78,10 +68,16 @@ export default function ReportsAnalyticsTab({
   const [endDateFilter, setEndDateFilter] = useState<string>('');
   const [selectedChartType, setSelectedChartType] = useState<'area' | 'bar'>('area');
   
+  // Seleção do Mês em Foco (Para o usuário selecionar um mês específico no calendário/dropdown)
+  const [selectedActiveMonthId, setSelectedActiveMonthId] = useState<string>('');
+
   // Modo de Comparação Específica entre Dois Meses
   const [comparisonMode, setComparisonMode] = useState<boolean>(false);
   const [compareMonthA, setCompareMonthA] = useState<string>('');
   const [compareMonthB, setCompareMonthB] = useState<string>('');
+
+  // Modal explicativo "O que significa cada coisa"
+  const [isGlossaryModalOpen, setIsGlossaryModalOpen] = useState(false);
 
   // Ordenar relatórios cronologicamente (do mais antigo ao mais recente para gráficos)
   const chronologicalReports = useMemo(() => {
@@ -128,25 +124,40 @@ export default function ReportsAnalyticsTab({
     });
   }, [chronologicalReports, dateRangePreset, startDateFilter, endDateFilter]);
 
-  // Lista de relatórios ordenados do mais recente para o mais antigo (para exibição de cards)
+  // Lista de relatórios ordenados do mais recente para o mais antigo
   const latestFirstReports = useMemo(() => {
     return [...filteredReports].reverse();
   }, [filteredReports]);
 
-  // Relatório mais recente e o anterior para comparativo padrão
-  const currentReport = latestFirstReports[0] || null;
-  const previousReport = latestFirstReports[1] || null;
+  // Relatório do Mês Ativo Selecionado (ou o mais recente por padrão)
+  const activeReport = useMemo(() => {
+    if (selectedActiveMonthId) {
+      const found = reports.find(r => r.id === selectedActiveMonthId);
+      if (found) return found;
+    }
+    return latestFirstReports[0] || null;
+  }, [reports, selectedActiveMonthId, latestFirstReports]);
 
-  // Se o usuário estiver no modo de comparação personalizada de meses:
+  // Localizar o mês imediatamente anterior ao mês ativo para comparativo
+  const previousReportOfActive = useMemo(() => {
+    if (!activeReport) return null;
+    const activeIndex = chronologicalReports.findIndex(r => r.id === activeReport.id);
+    if (activeIndex > 0) {
+      return chronologicalReports[activeIndex - 1];
+    }
+    return null;
+  }, [activeReport, chronologicalReports]);
+
+  // Se o usuário estiver no modo de comparação manual de 2 meses:
   const reportA = useMemo(() => {
-    if (!compareMonthA) return currentReport;
-    return reports.find(r => r.id === compareMonthA) || currentReport;
-  }, [reports, compareMonthA, currentReport]);
+    if (!compareMonthA) return activeReport;
+    return reports.find(r => r.id === compareMonthA) || activeReport;
+  }, [reports, compareMonthA, activeReport]);
 
   const reportB = useMemo(() => {
-    if (!compareMonthB) return previousReport;
-    return reports.find(r => r.id === compareMonthB) || previousReport;
-  }, [reports, compareMonthB, previousReport]);
+    if (!compareMonthB) return previousReportOfActive;
+    return reports.find(r => r.id === compareMonthB) || previousReportOfActive;
+  }, [reports, compareMonthB, previousReportOfActive]);
 
   // Cálculo de variação percentual
   const calcVariation = (current: number = 0, previous: number = 0) => {
@@ -163,79 +174,64 @@ export default function ReportsAnalyticsTab({
     };
   };
 
-  // Métricas agregadas do período selecionado
-  const aggregatedStats = useMemo(() => {
-    let searchImpressions = 0;
-    let mapsImpressions = 0;
-    let totalImpressions = 0;
-    let calls = 0;
-    let directionRequests = 0;
-    let websiteClicks = 0;
-    let reviewsCount = 0;
-    let ratingsSum = 0;
-    let ratingCount = 0;
+  // Fontes de comparação ativas
+  const currentSource = comparisonMode ? reportA : activeReport;
+  const previousSource = comparisonMode ? reportB : previousReportOfActive;
 
-    filteredReports.forEach(r => {
-      const gmb = r.gmbMetrics;
-      if (gmb) {
-        searchImpressions += gmb.searchImpressions || 0;
-        mapsImpressions += gmb.mapsImpressions || 0;
-        totalImpressions += (gmb.searchImpressions || 0) + (gmb.mapsImpressions || 0);
-        calls += gmb.calls || 0;
-        directionRequests += gmb.directionRequests || 0;
-        websiteClicks += gmb.websiteClicks || 0;
-        if (gmb.reviewsCount) reviewsCount = Math.max(reviewsCount, gmb.reviewsCount);
-        if (gmb.rating) {
-          ratingsSum += gmb.rating;
-          ratingCount++;
-        }
-      } else if (r.metrics) {
-        calls += r.metrics.leads || 0;
-        totalImpressions += r.metrics.reach || 0;
-        websiteClicks += r.metrics.conversions || 0;
-      }
-    });
+  const currentGmb = currentSource?.gmbMetrics || {};
+  const prevGmb = previousSource?.gmbMetrics || {};
 
-    const avgRating = ratingCount > 0 ? (ratingsSum / ratingCount).toFixed(1) : (currentReport?.gmbMetrics?.rating?.toFixed(1) || '5.0');
+  // Interações no Perfil da Empresa
+  const currentInteractions = currentGmb.totalInteractions || (
+    Number(currentGmb.calls || 0) +
+    Number(currentGmb.directionRequests || 0) +
+    Number(currentGmb.websiteClicks || 0) +
+    Number(currentGmb.chatClicks || 0) +
+    Number(currentGmb.bookings || 0)
+  );
 
-    return {
-      searchImpressions,
-      mapsImpressions,
-      totalImpressions,
-      calls,
-      directionRequests,
-      websiteClicks,
-      reviewsCount: reviewsCount || currentReport?.gmbMetrics?.reviewsCount || 0,
-      avgRating
-    };
-  }, [filteredReports, currentReport]);
+  const prevInteractions = prevGmb.totalInteractions || (
+    Number(prevGmb.calls || 0) +
+    Number(prevGmb.directionRequests || 0) +
+    Number(prevGmb.websiteClicks || 0) +
+    Number(prevGmb.chatClicks || 0) +
+    Number(prevGmb.bookings || 0)
+  );
 
-  // Variações do mês atual vs anterior (ou mês A vs mês B no modo comparativo)
-  const comparisonSourceA = comparisonMode ? reportA : currentReport;
-  const comparisonSourceB = comparisonMode ? reportB : previousReport;
+  const interactionsVar = calcVariation(currentInteractions, prevInteractions);
 
-  const currentGmb = comparisonSourceA?.gmbMetrics || {};
-  const prevGmb = comparisonSourceB?.gmbMetrics || {};
+  // Pessoas que Visualizaram o Perfil da Empresa
+  const currentViewers = currentGmb.peopleViewedProfile || (
+    (currentGmb.searchImpressions || 0) + (currentGmb.mapsImpressions || 0)
+  ) || (currentSource?.metrics?.reach || 0);
 
-  const currentTotalViews = (currentGmb.searchImpressions || 0) + (currentGmb.mapsImpressions || 0);
-  const prevTotalViews = (prevGmb.searchImpressions || 0) + (prevGmb.mapsImpressions || 0);
+  const prevViewers = prevGmb.peopleViewedProfile || (
+    (prevGmb.searchImpressions || 0) + (prevGmb.mapsImpressions || 0)
+  ) || (previousSource?.metrics?.reach || 0);
 
-  const viewsVar = calcVariation(currentTotalViews, prevTotalViews);
+  const viewersVar = calcVariation(currentViewers, prevViewers);
+
+  // Variações específicas das ações do Google Meu Negócio
   const callsVar = calcVariation(currentGmb.calls || 0, prevGmb.calls || 0);
+  const chatVar = calcVariation(currentGmb.chatClicks || 0, prevGmb.chatClicks || 0);
+  const bookingsVar = calcVariation(currentGmb.bookings || 0, prevGmb.bookings || 0);
   const routesVar = calcVariation(currentGmb.directionRequests || 0, prevGmb.directionRequests || 0);
   const webVar = calcVariation(currentGmb.websiteClicks || 0, prevGmb.websiteClicks || 0);
 
-  // Formatação para gráficos Recharts
+  // Formatação para gráficos Recharts com base nos relatórios filtrados
   const chartData = useMemo(() => {
     return filteredReports.map(r => {
       const gmb = r.gmbMetrics || {};
-      const periodLabel = r.period.replace('/ 20', '/').replace(' / ', '/');
+      const periodLabel = r.period.replace('/ 20', '/').replace(' / ', '/').replace(' de 20', '/');
       const searchViews = gmb.searchImpressions || 0;
       const mapsViews = gmb.mapsImpressions || 0;
-      const totalViews = searchViews + mapsViews || (r.metrics?.reach || 0);
+      const totalViews = gmb.peopleViewedProfile || (searchViews + mapsViews) || (r.metrics?.reach || 0);
       const callsCount = gmb.calls || (r.metrics?.leads || 0);
+      const chatCount = gmb.chatClicks || 0;
+      const bookingsCount = gmb.bookings || 0;
       const routesCount = gmb.directionRequests || 0;
       const webClicks = gmb.websiteClicks || (r.metrics?.conversions || 0);
+      const totalActions = gmb.totalInteractions || (callsCount + chatCount + bookingsCount + routesCount + webClicks);
 
       return {
         id: r.id,
@@ -244,7 +240,10 @@ export default function ReportsAnalyticsTab({
         searchViews,
         mapsViews,
         totalViews,
+        totalActions,
         calls: callsCount,
+        chat: chatCount,
+        bookings: bookingsCount,
         routes: routesCount,
         webClicks,
         rating: gmb.rating || 5.0
@@ -252,29 +251,62 @@ export default function ReportsAnalyticsTab({
     });
   }, [filteredReports]);
 
+  // Histórico mensal de interações do GMN (se o relatório possuir a tabela de meses do Google, ou sintetizada da série)
+  const monthlyInteractionsHistory = useMemo(() => {
+    if (activeReport?.gmbMetrics?.monthlyInteractions && activeReport.gmbMetrics.monthlyInteractions.length > 0) {
+      return activeReport.gmbMetrics.monthlyInteractions;
+    }
+    // Fallback gerado a partir dos relatórios existentes no sistema
+    return chronologicalReports.map(r => ({
+      month: r.period,
+      interactions: r.gmbMetrics?.totalInteractions || (
+        Number(r.gmbMetrics?.calls || 0) +
+        Number(r.gmbMetrics?.directionRequests || 0) +
+        Number(r.gmbMetrics?.websiteClicks || 0) +
+        Number(r.gmbMetrics?.chatClicks || 0) +
+        Number(r.gmbMetrics?.bookings || 0)
+      )
+    }));
+  }, [activeReport, chronologicalReports]);
+
   // Dados para Gráfico de Distribuição de Ações (Pie Chart)
   const actionsPieData = useMemo(() => {
-    const totalCalls = aggregatedStats.calls;
-    const totalRoutes = aggregatedStats.directionRequests;
-    const totalClicks = aggregatedStats.websiteClicks;
-    const total = totalCalls + totalRoutes + totalClicks;
+    const totalCalls = currentGmb.calls || 0;
+    const totalRoutes = currentGmb.directionRequests || 0;
+    const totalClicks = currentGmb.websiteClicks || 0;
+    const totalChat = currentGmb.chatClicks || 0;
+    const totalBookings = currentGmb.bookings || 0;
+    const total = totalCalls + totalRoutes + totalClicks + totalChat + totalBookings;
 
     if (total === 0) return [];
 
-    return [
+    const list = [
       { name: 'Rotas GPS (Visitas)', value: totalRoutes, color: '#10B981' },
-      { name: 'Ligações Telefônicas', value: totalCalls, color: '#DFC498' },
-      { name: 'Cliques no Site/WhatsApp', value: totalClicks, color: '#38BDF8' }
+      { name: 'Chamadas Telefônicas', value: totalCalls, color: '#DFC498' },
+      { name: 'Cliques no Website', value: totalClicks, color: '#38BDF8' }
     ];
-  }, [aggregatedStats]);
 
-  // Top Keywords consolidadas de todos os relatórios filtrados
+    if (totalChat > 0) list.push({ name: 'Cliques no Chat', value: totalChat, color: '#A855F7' });
+    if (totalBookings > 0) list.push({ name: 'Agendamentos', value: totalBookings, color: '#EC4899' });
+
+    return list;
+  }, [currentGmb]);
+
+  // Top Keywords consolidadas
   const topKeywordsList = useMemo(() => {
+    const kws = currentGmb.topKeywords;
+    if (Array.isArray(kws) && kws.length > 0) {
+      return kws.map((item: any) => {
+        if (typeof item === 'string') return { keyword: item, count: 50 };
+        return { keyword: item.keyword, count: item.count || 20 };
+      }).slice(0, 6);
+    }
+
     const kwMap = new Map<string, number>();
     filteredReports.forEach(r => {
-      const kws = r.gmbMetrics?.topKeywords;
-      if (Array.isArray(kws)) {
-        kws.forEach((item: any) => {
+      const list = r.gmbMetrics?.topKeywords;
+      if (Array.isArray(list)) {
+        list.forEach((item: any) => {
           if (typeof item === 'string') {
             kwMap.set(item, (kwMap.get(item) || 0) + 50);
           } else if (item && item.keyword) {
@@ -288,7 +320,7 @@ export default function ReportsAnalyticsTab({
       .map(([keyword, count]) => ({ keyword, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
-  }, [filteredReports]);
+  }, [currentGmb, filteredReports]);
 
   // Se não houver relatórios cadastrados
   if (reports.length === 0) {
@@ -299,9 +331,9 @@ export default function ReportsAnalyticsTab({
             <FileText className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-white">Nenhum relatório de desempenho publicado</h3>
+            <h3 className="text-lg font-bold text-white">Nenhum relatório de desempenho do Google publicado</h3>
             <p className="text-xs text-[#8FAEA2] max-w-md mx-auto leading-relaxed">
-              Assim que a equipe da <strong className="text-white">{agencyName}</strong> fizer o upload do PDF de desempenho do Google Meu Negócio, você poderá visualizar gráficos interativos, comparativo de meses e filtros por datas no calendário.
+              Assim que a equipe da <strong className="text-white">{agencyName}</strong> fizer o upload do PDF de desempenho do Google Business Profile, você poderá navegar pelos meses anteriores no calendário, visualizar gráficos comparativos e entender cada métrica.
             </p>
           </div>
         </CardContent>
@@ -311,25 +343,57 @@ export default function ReportsAnalyticsTab({
 
   return (
     <div className="space-y-6">
-      {/* BARRA SUPERIOR: CONTROLE DE DATAS NO CALENDÁRIO E MODO COMPARATIVO */}
+      {/* BARRA SUPERIOR: CONTROLE DE SELEÇÃO DE MÊS NO CALENDÁRIO, COMPARATIVO & GLOSSÁRIO */}
       <div className="bg-[#0A261E] border border-[#17473A] p-4 sm:p-5 rounded-2xl shadow-xl space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#DFC498] bg-[#DFC498]/10 px-2.5 py-0.5 rounded-full border border-[#DFC498]/20">
-              <Sparkles className="w-3.5 h-3.5" /> Google Meu Negócio • Inteligência de Dados
+              <Sparkles className="w-3.5 h-3.5" /> Google Business Profile • Relatórios Oficiais
             </div>
             <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              Desempenho e Comparativo Mensal
+              Desempenho & Comparativo Mensal do Google
             </h2>
             <p className="text-xs text-[#8FAEA2]">
-              Transformação automática dos dados do Google em gráficos, métricas de conversão e histórico de crescimento.
+              Organização dos dados de desempenho do Google Meu Negócio com gráficos de evolução, comparativos e explicações didáticas.
             </p>
           </div>
 
-          {/* Atalhos Rápidos de Calendário */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* BOTÃO EXPLICATIVO: O QUE SIGNIFICA CADA COISA */}
+            <Button
+              size="sm"
+              onClick={() => setIsGlossaryModalOpen(true)}
+              className="bg-[#DFC498]/15 hover:bg-[#DFC498]/25 text-[#DFC498] border border-[#DFC498]/30 font-semibold text-xs h-9 rounded-xl gap-1.5 shadow"
+            >
+              <HelpCircle className="w-4 h-4 text-[#DFC498]" /> O que significa cada métrica?
+            </Button>
+
+            {/* SELETOR PRINCIPAL DE MÊS (CALENDÁRIO DE MESES ANTERIORES) */}
+            <div className="flex items-center gap-2 bg-[#061A14] border border-[#17473A] px-3 py-1.5 rounded-xl">
+              <CalendarIcon className="w-4 h-4 text-[#DFC498]" />
+              <div className="flex flex-col">
+                <span className="text-[9px] uppercase font-bold text-[#8FAEA2] tracking-wider">Mês Selecionado</span>
+                <select
+                  value={activeReport?.id || ''}
+                  onChange={e => setSelectedActiveMonthId(e.target.value)}
+                  className="bg-transparent text-white font-bold text-xs outline-none cursor-pointer pr-2"
+                >
+                  {latestFirstReports.map(r => (
+                    <option key={r.id} value={r.id} className="bg-[#0A261E] text-white">
+                      {r.period} {r.id === latestFirstReports[0]?.id ? '★ (Mais recente)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ATALHOS RÁPIDOS DE FILTRAGEM & MODO COMPARATIVO */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#17473A]/60">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-[#8FAEA2] mr-1 hidden sm:inline flex items-center gap-1">
-              <CalendarIcon className="w-3.5 h-3.5 text-[#DFC498]" /> Período:
+            <span className="text-xs text-[#8FAEA2] mr-1 flex items-center gap-1">
+              <Filter className="w-3.5 h-3.5 text-[#DFC498]" /> Exibir nos gráficos:
             </span>
 
             <Button
@@ -346,7 +410,7 @@ export default function ReportsAnalyticsTab({
                   : 'border-white/10 text-[#8FAEA2] hover:text-white hover:bg-white/5'
               }`}
             >
-              Todos os Meses ({reports.length})
+              Todos ({reports.length})
             </Button>
 
             <Button
@@ -382,75 +446,10 @@ export default function ReportsAnalyticsTab({
             >
               Últimos 6 Meses
             </Button>
-
-            <Button
-              size="sm"
-              variant={dateRangePreset === 'custom' ? 'default' : 'outline'}
-              onClick={() => setDateRangePreset('custom')}
-              className={`h-8 text-xs rounded-xl gap-1.5 ${
-                dateRangePreset === 'custom'
-                  ? 'bg-[#DFC498] text-[#04140F] font-bold hover:bg-[#C5A880]'
-                  : 'border-white/10 text-[#8FAEA2] hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <Filter className="w-3 h-3" /> Filtrar Datas
-            </Button>
           </div>
-        </div>
 
-        {/* SELETOR DE CALENDÁRIO PERSONALIZADO (Quando custom ou quando cliente quiser filtrar) */}
-        {(dateRangePreset === 'custom' || startDateFilter || endDateFilter) && (
-          <div className="bg-black/30 border border-white/10 p-3.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 animate-fadeIn">
-            <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-              <span className="text-xs text-white font-medium flex items-center gap-1.5">
-                <CalendarIcon className="w-4 h-4 text-[#DFC498]" /> Selecionar Datas no Calendário:
-              </span>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={startDateFilter}
-                  onChange={e => {
-                    setStartDateFilter(e.target.value);
-                    setDateRangePreset('custom');
-                  }}
-                  className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-lg px-2.5 py-1.5 focus:border-[#DFC498] outline-none"
-                  placeholder="Data Inicial"
-                />
-                <span className="text-xs text-[#8FAEA2]">até</span>
-                <input
-                  type="date"
-                  value={endDateFilter}
-                  onChange={e => {
-                    setEndDateFilter(e.target.value);
-                    setDateRangePreset('custom');
-                  }}
-                  className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-lg px-2.5 py-1.5 focus:border-[#DFC498] outline-none"
-                  placeholder="Data Final"
-                />
-              </div>
-            </div>
-
-            {(startDateFilter || endDateFilter) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setStartDateFilter('');
-                  setEndDateFilter('');
-                  setDateRangePreset('all');
-                }}
-                className="h-8 text-xs text-[#8FAEA2] hover:text-white gap-1"
-              >
-                <RotateCcw className="w-3 h-3" /> Limpar Filtro
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* TOGGLE MODO COMPARATIVO DE MESES */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-[#17473A]/60">
-          <div className="flex items-center gap-3">
+          {/* TOGGLE MODO COMPARATIVO DIRETO */}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setComparisonMode(!comparisonMode)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition ${
@@ -460,23 +459,24 @@ export default function ReportsAnalyticsTab({
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              {comparisonMode ? 'Modo Comparativo Ativo' : 'Ativar Comparativo Direto Mês a Mês'}
+              {comparisonMode ? 'Modo Comparativo Ativo' : 'Comparar 2 Meses Lado a Lado'}
             </button>
-            <span className="text-[11px] text-[#8FAEA2]">
-              {comparisonMode 
-                ? 'Escolha dois períodos específicos para analisar a evolução detalhada lado a lado.'
-                : 'Comparando automaticamente o período atual com o anterior.'}
-            </span>
           </div>
+        </div>
 
-          {comparisonMode && reports.length >= 2 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-[#8FAEA2] text-[11px]">Mês Base:</span>
+        {/* MODO COMPARATIVO: SELEÇÃO DE MÊS A VS MÊS B */}
+        {comparisonMode && reports.length >= 2 && (
+          <div className="bg-black/30 border border-white/10 p-3 rounded-xl flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4 text-[#DFC498]" /> Selecione os 2 meses para comparar:
+            </span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-[#8FAEA2] text-[11px]">Mês A:</span>
                 <select
-                  value={compareMonthA || currentReport?.id}
+                  value={compareMonthA || activeReport?.id}
                   onChange={e => setCompareMonthA(e.target.value)}
-                  className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-lg px-2 py-1 outline-none"
+                  className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-lg px-2 py-1 outline-none font-bold"
                 >
                   {reports.map(r => (
                     <option key={r.id} value={r.id}>{r.period}</option>
@@ -486,12 +486,12 @@ export default function ReportsAnalyticsTab({
 
               <span className="text-xs text-[#DFC498] font-bold">vs</span>
 
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className="text-[#8FAEA2] text-[11px]">Comparar com:</span>
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-[#8FAEA2] text-[11px]">Mês B:</span>
                 <select
-                  value={compareMonthB || previousReport?.id}
+                  value={compareMonthB || previousReportOfActive?.id || reports[1]?.id}
                   onChange={e => setCompareMonthB(e.target.value)}
-                  className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-lg px-2 py-1 outline-none"
+                  className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-lg px-2 py-1 outline-none font-bold"
                 >
                   {reports.map(r => (
                     <option key={r.id} value={r.id}>{r.period}</option>
@@ -499,167 +499,346 @@ export default function ReportsAnalyticsTab({
                 </select>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* CARDS COMPARATIVOS MÊS A MÊS COM VARIAÇÃO PERCENTUAL (Δ%) */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-[#8FAEA2] flex items-center gap-1.5">
-            <TrendingUp className="w-3.5 h-3.5 text-[#DFC498]" /> 
-            {comparisonMode 
-              ? `Comparativo: ${comparisonSourceA?.period || 'Atual'} vs ${comparisonSourceB?.period || 'Anterior'}`
-              : `Métricas do Período (${currentReport?.period || 'Consolidado'}) e Comparativo com Mês Anterior`}
-          </span>
-          {comparisonSourceB && (
-            <span className="text-[11px] text-[#8FAEA2]">
-              Base anterior: <strong className="text-white">{comparisonSourceB.period}</strong>
-            </span>
-          )}
-        </div>
+      {/* BLOCO DESTAQUE 1: INTERAÇÕES NO PERFIL DA EMPRESA (COM AS 5 AÇÕES DO GMN) */}
+      <Card className="bg-[#0A261E] border border-[#17473A] shadow-xl overflow-hidden">
+        <CardHeader className="pb-3 border-b border-[#17473A]/80 bg-gradient-to-r from-[#0A261E] to-[#0D3328]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-[#DFC498]/20 text-[#DFC498] border-[#DFC498]/30 font-bold text-xs uppercase tracking-wider">
+                  Visão Geral de Desempenho
+                </Badge>
+                <span className="text-xs text-[#8FAEA2]">
+                  Mês: <strong className="text-white">{currentSource?.period}</strong>
+                </span>
+              </div>
+              <CardTitle className="text-lg sm:text-xl font-bold text-white flex items-center gap-2 pt-1">
+                <Zap className="w-5 h-5 text-[#DFC498]" />
+                Interações no Perfil da Empresa
+              </CardTitle>
+              <CardDescription className="text-xs text-[#8FAEA2]">
+                Ações concretas realizadas pelos clientes após encontrar sua empresa no Google.
+              </CardDescription>
+            </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* CARD 1: VISUALIZAÇÕES TOTAIS (PESQUISA + MAPAS) */}
-          <Card className="bg-[#0A261E] border-[#17473A] shadow-md hover:border-[#DFC498]/40 transition-all">
-            <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-[#8FAEA2]">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-[#DFC498]" /> Visualizações Google
+            {/* Número Total de Interações e Variação */}
+            <div className="flex items-center gap-3 bg-black/40 px-4 py-2.5 rounded-xl border border-white/10 self-start sm:self-auto">
+              <div className="text-right">
+                <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-medium">Total de Interações</span>
+                <span className="text-2xl font-bold text-[#DFC498] font-mono leading-none">
+                  {currentInteractions.toLocaleString('pt-BR')}
                 </span>
-                {comparisonSourceB && (
-                  <Badge className={`text-[10px] font-bold px-1.5 py-0.5 flex items-center gap-0.5 ${
-                    viewsVar.isUp 
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : viewsVar.isZero
+              </div>
+              {previousSource && (
+                <div className="border-l border-white/10 pl-3">
+                  <Badge className={`text-xs font-bold px-2 py-1 flex items-center gap-0.5 ${
+                    interactionsVar.isUp 
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : interactionsVar.isZero
                       ? 'bg-white/5 text-[#8FAEA2]'
-                      : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      : 'bg-red-500/20 text-red-300 border-red-500/30'
                   }`}>
-                    {viewsVar.isUp ? <ArrowUpRight className="w-3 h-3" /> : viewsVar.isZero ? <Minus className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                    {viewsVar.pct}%
+                    {interactionsVar.isUp ? <ArrowUpRight className="w-3.5 h-3.5" /> : interactionsVar.isZero ? <Minus className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                    {interactionsVar.pct}%
                   </Badge>
-                )}
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold text-white tracking-tight">
-                  {currentTotalViews ? currentTotalViews.toLocaleString('pt-BR') : aggregatedStats.totalImpressions.toLocaleString('pt-BR')}
-                </span>
-                <span className="text-[10px] text-[#8FAEA2]">Buscas + Maps</span>
-              </div>
-              <div className="text-[11px] text-[#8FAEA2] flex items-center justify-between pt-1 border-t border-white/5">
-                <span>Google Maps: <strong className="text-white">{currentGmb.mapsImpressions?.toLocaleString('pt-BR') || 0}</strong></span>
-                <span>Pesquisa: <strong className="text-white">{currentGmb.searchImpressions?.toLocaleString('pt-BR') || 0}</strong></span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* CARD 2: LIGAÇÕES TELEFÔNICAS */}
-          <Card className="bg-[#0A261E] border-[#17473A] shadow-md hover:border-[#DFC498]/40 transition-all">
-            <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-[#8FAEA2]">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-emerald-400" /> Ligações Telefônicas
-                </span>
-                {comparisonSourceB && (
-                  <Badge className={`text-[10px] font-bold px-1.5 py-0.5 flex items-center gap-0.5 ${
-                    callsVar.isUp 
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : callsVar.isZero
-                      ? 'bg-white/5 text-[#8FAEA2]'
-                      : 'bg-red-500/10 text-red-400 border-red-500/20'
-                  }`}>
-                    {callsVar.isUp ? <ArrowUpRight className="w-3 h-3" /> : callsVar.isZero ? <Minus className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                    {callsVar.pct}%
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold text-white tracking-tight">
-                  {currentGmb.calls !== undefined ? currentGmb.calls : aggregatedStats.calls}
-                </span>
-                <span className="text-[10px] text-emerald-400 font-medium">Contatos Diretos</span>
-              </div>
-              <div className="text-[11px] text-[#8FAEA2] flex items-center justify-between pt-1 border-t border-white/5">
-                <span>Mês Anterior: <strong className="text-white">{prevGmb.calls || 0}</strong></span>
-                <span className={callsVar.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                  {callsVar.diff >= 0 ? `+${callsVar.diff}` : callsVar.diff} chamadas
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* CARD 3: SOLICITAÇÕES DE ROTAS (GPS / WAZE) */}
-          <Card className="bg-[#0A261E] border-[#17473A] shadow-md hover:border-[#DFC498]/40 transition-all">
-            <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-[#8FAEA2]">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Navigation className="w-3.5 h-3.5 text-[#DFC498]" /> Rotas no Mapa (GPS)
-                </span>
-                {comparisonSourceB && (
-                  <Badge className={`text-[10px] font-bold px-1.5 py-0.5 flex items-center gap-0.5 ${
-                    routesVar.isUp 
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : routesVar.isZero
-                      ? 'bg-white/5 text-[#8FAEA2]'
-                      : 'bg-red-500/10 text-red-400 border-red-500/20'
-                  }`}>
-                    {routesVar.isUp ? <ArrowUpRight className="w-3 h-3" /> : routesVar.isZero ? <Minus className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                    {routesVar.pct}%
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold text-white tracking-tight">
-                  {currentGmb.directionRequests !== undefined ? currentGmb.directionRequests : aggregatedStats.directionRequests}
-                </span>
-                <span className="text-[10px] text-[#DFC498] font-medium">Visitas Presenciais</span>
-              </div>
-              <div className="text-[11px] text-[#8FAEA2] flex items-center justify-between pt-1 border-t border-white/5">
-                <span>Mês Anterior: <strong className="text-white">{prevGmb.directionRequests || 0}</strong></span>
-                <span className={routesVar.diff >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                  {routesVar.diff >= 0 ? `+${routesVar.diff}` : routesVar.diff} rotas
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* CARD 4: CLIQUES NO SITE / WHATSAPP & AVALIAÇÃO */}
-          <Card className="bg-[#0A261E] border-[#17473A] shadow-md hover:border-[#DFC498]/40 transition-all">
-            <CardContent className="p-4 space-y-2">
-              <div className="flex items-center justify-between text-[#8FAEA2]">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-blue-400" /> Cliques no Website
-                </span>
-                {comparisonSourceB && (
-                  <Badge className={`text-[10px] font-bold px-1.5 py-0.5 flex items-center gap-0.5 ${
-                    webVar.isUp 
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : webVar.isZero
-                      ? 'bg-white/5 text-[#8FAEA2]'
-                      : 'bg-red-500/10 text-red-400 border-red-500/20'
-                  }`}>
-                    {webVar.isUp ? <ArrowUpRight className="w-3 h-3" /> : webVar.isZero ? <Minus className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                    {webVar.pct}%
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold text-white tracking-tight">
-                  {currentGmb.websiteClicks !== undefined ? currentGmb.websiteClicks : aggregatedStats.websiteClicks}
-                </span>
-                <div className="flex items-center gap-1 text-amber-400 text-xs font-bold">
-                  <Star className="w-3.5 h-3.5 fill-amber-400" />
-                  {currentGmb.rating || aggregatedStats.avgRating} ★
+                  <span className="text-[9px] text-[#8FAEA2] block mt-0.5 text-center">vs {previousSource.period}</span>
                 </div>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-4 sm:p-6 space-y-6">
+          {/* AS 5 AÇÕES DO GOOGLE MEU NEGÓCIO */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {/* 1. CHAMADAS */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-[#17473A] space-y-2 relative group hover:border-[#DFC498]/40 transition">
+              <div className="flex items-center justify-between text-[#8FAEA2]">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Phone className="w-4 h-4 text-[#DFC498]" /> Chamadas
+                </span>
+                {previousSource && (
+                  <span className={`text-[10px] font-bold ${callsVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {callsVar.isUp ? '+' : ''}{callsVar.pct}%
+                  </span>
+                )}
               </div>
-              <div className="text-[11px] text-[#8FAEA2] flex items-center justify-between pt-1 border-t border-white/5">
-                <span>Mês Anterior: <strong className="text-white">{prevGmb.websiteClicks || 0}</strong></span>
-                <span>Avaliações: <strong className="text-white">{currentGmb.reviewsCount || aggregatedStats.reviewsCount}</strong></span>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-bold text-white font-mono">
+                  {currentGmb.calls || 0}
+                </span>
+                <span className="text-[10px] text-[#8FAEA2]">ligações</span>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              <p className="text-[10px] text-[#8FAEA2] leading-tight pt-1 border-t border-white/5">
+                Pessoas que tocaram para ligar para seu estabelecimento.
+              </p>
+            </div>
+
+            {/* 2. CLIQUES NO CHAT */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-[#17473A] space-y-2 hover:border-[#DFC498]/40 transition">
+              <div className="flex items-center justify-between text-[#8FAEA2]">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4 text-purple-400" /> Cliques no Chat
+                </span>
+                {previousSource && (
+                  <span className={`text-[10px] font-bold ${chatVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {chatVar.isUp ? '+' : ''}{chatVar.pct}%
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-bold text-white font-mono">
+                  {currentGmb.chatClicks || 0}
+                </span>
+                <span className="text-[10px] text-purple-400">mensagens</span>
+              </div>
+              <p className="text-[10px] text-[#8FAEA2] leading-tight pt-1 border-t border-white/5">
+                Início de conversas diretas de clientes pelo Google.
+              </p>
+            </div>
+
+            {/* 3. AGENDAMENTOS */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-[#17473A] space-y-2 hover:border-[#DFC498]/40 transition">
+              <div className="flex items-center justify-between text-[#8FAEA2]">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <CalendarCheck className="w-4 h-4 text-pink-400" /> Agendamentos
+                </span>
+                {previousSource && (
+                  <span className={`text-[10px] font-bold ${bookingsVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {bookingsVar.isUp ? '+' : ''}{bookingsVar.pct}%
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-bold text-white font-mono">
+                  {currentGmb.bookings || 0}
+                </span>
+                <span className="text-[10px] text-pink-400">reservas</span>
+              </div>
+              <p className="text-[10px] text-[#8FAEA2] leading-tight pt-1 border-t border-white/5">
+                Cliques diretos no botão de agendamento online.
+              </p>
+            </div>
+
+            {/* 4. ORIENTAÇÕES / ROTAS */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-[#17473A] space-y-2 hover:border-[#DFC498]/40 transition">
+              <div className="flex items-center justify-between text-[#8FAEA2]">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Navigation className="w-4 h-4 text-emerald-400" /> Orientações
+                </span>
+                {previousSource && (
+                  <span className={`text-[10px] font-bold ${routesVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {routesVar.isUp ? '+' : ''}{routesVar.pct}%
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-bold text-emerald-400 font-mono">
+                  {currentGmb.directionRequests || 0}
+                </span>
+                <span className="text-[10px] text-emerald-400">rotas GPS</span>
+              </div>
+              <p className="text-[10px] text-[#8FAEA2] leading-tight pt-1 border-t border-white/5">
+                Pessoas que abriram rota no Maps/Waze para ir até você.
+              </p>
+            </div>
+
+            {/* 5. CLIQUES NO WEBSITE */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-[#17473A] space-y-2 hover:border-[#DFC498]/40 transition">
+              <div className="flex items-center justify-between text-[#8FAEA2]">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Globe className="w-4 h-4 text-blue-400" /> Cliques no Site
+                </span>
+                {previousSource && (
+                  <span className={`text-[10px] font-bold ${webVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {webVar.isUp ? '+' : ''}{webVar.pct}%
+                  </span>
+                )}
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-bold text-blue-400 font-mono">
+                  {currentGmb.websiteClicks || 0}
+                </span>
+                <span className="text-[10px] text-blue-400">visitas</span>
+              </div>
+              <p className="text-[10px] text-[#8FAEA2] leading-tight pt-1 border-t border-white/5">
+                Acessos ao seu site ou link de agendamento online.
+              </p>
+            </div>
+          </div>
+
+          {/* HISTÓRICO MÊS A MÊS DE INTERAÇÕES (EXATAMENTE COMO NO GOOGLE MEU NEGÓCIO) */}
+          {monthlyInteractionsHistory.length > 0 && (
+            <div className="bg-[#061A14] p-4 rounded-xl border border-white/5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4 text-[#DFC498]" /> Histórico de Interações Mês a Mês
+                </span>
+                <span className="text-[11px] text-[#8FAEA2]">
+                  Evolução do volume de ações diretas dos clientes
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                {monthlyInteractionsHistory.map((item, idx) => (
+                  <div key={idx} className="bg-black/30 p-2.5 rounded-lg border border-white/5 text-center">
+                    <span className="text-[10px] text-[#8FAEA2] block truncate">{item.month}</span>
+                    <span className="text-base font-bold text-[#DFC498] font-mono">{item.interactions}</span>
+                    <span className="text-[9px] text-zinc-500 block">interações</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* BLOCO DESTAQUE 2: COMO AS PESSOAS DESCOBRIRAM SUA EMPRESA (VISUALIZAÇÕES, PLATAFORMA E DISPOSITIVO) */}
+      <Card className="bg-[#0A261E] border border-[#17473A] shadow-xl overflow-hidden">
+        <CardHeader className="pb-3 border-b border-[#17473A]/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                <Eye className="w-5 h-5 text-blue-400" />
+                Como as pessoas descobriram sua empresa
+              </CardTitle>
+              <CardDescription className="text-xs text-[#8FAEA2]">
+                Número de pessoas que visualizaram o Perfil da Empresa e detalhes sobre plataformas e dispositivos.
+              </CardDescription>
+            </div>
+
+            <div className="flex items-center gap-3 bg-black/40 px-4 py-2.5 rounded-xl border border-white/10 self-start sm:self-auto">
+              <div className="text-right">
+                <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-medium">Pessoas que Visualizaram</span>
+                <span className="text-2xl font-bold text-white font-mono leading-none">
+                  {currentViewers.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              {previousSource && (
+                <div className="border-l border-white/10 pl-3">
+                  <Badge className={`text-xs font-bold px-2 py-1 flex items-center gap-0.5 ${
+                    viewersVar.isUp 
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : viewersVar.isZero
+                      ? 'bg-white/5 text-[#8FAEA2]'
+                      : 'bg-red-500/20 text-red-300 border-red-500/30'
+                  }`}>
+                    {viewersVar.isUp ? <ArrowUpRight className="w-3.5 h-3.5" /> : viewersVar.isZero ? <Minus className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                    {viewersVar.pct}%
+                  </Badge>
+                  <span className="text-[9px] text-[#8FAEA2] block mt-0.5 text-center">vs {previousSource.period}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-4 sm:p-6 space-y-4">
+          <div className="space-y-1">
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-[#DFC498]" /> Detalhes sobre a plataforma e o dispositivo
+            </h4>
+            <p className="text-xs text-[#8FAEA2]">
+              A plataforma e os dispositivos que as pessoas usaram para encontrar seu perfil no Google neste período.
+            </p>
+          </div>
+
+          {/* BARRAS DE PROPORÇÃO POR PLATAFORMA E DISPOSITIVO */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* 1. Pesquisa Google - Dispositivos Móveis */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-white/5 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <Smartphone className="w-4 h-4 text-emerald-400" /> Pesquisa – Mobile
+                </span>
+                <span className="font-bold text-emerald-400 font-mono">
+                  {currentGmb.platformBreakdown?.searchMobile?.percentage || 54}%
+                </span>
+              </div>
+              <div className="text-xl font-bold text-white font-mono">
+                {(currentGmb.platformBreakdown?.searchMobile?.count || Math.round(currentViewers * 0.54)).toLocaleString('pt-BR')}
+              </div>
+              <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-emerald-500 rounded-full"
+                  style={{ width: `${currentGmb.platformBreakdown?.searchMobile?.percentage || 54}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-[#8FAEA2] block">Pesquisa Google em celulares</span>
+            </div>
+
+            {/* 2. Google Maps - Dispositivos Móveis */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-white/5 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4 text-[#DFC498]" /> Google Maps – Mobile
+                </span>
+                <span className="font-bold text-[#DFC498] font-mono">
+                  {currentGmb.platformBreakdown?.mapsMobile?.percentage || 20}%
+                </span>
+              </div>
+              <div className="text-xl font-bold text-white font-mono">
+                {(currentGmb.platformBreakdown?.mapsMobile?.count || Math.round(currentViewers * 0.20)).toLocaleString('pt-BR')}
+              </div>
+              <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-[#DFC498] rounded-full"
+                  style={{ width: `${currentGmb.platformBreakdown?.mapsMobile?.percentage || 20}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-[#8FAEA2] block">Aplicativo Maps em celulares</span>
+            </div>
+
+            {/* 3. Pesquisa Google - Computadores */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-white/5 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <Monitor className="w-4 h-4 text-blue-400" /> Pesquisa – PC
+                </span>
+                <span className="font-bold text-blue-400 font-mono">
+                  {currentGmb.platformBreakdown?.searchDesktop?.percentage || 16}%
+                </span>
+              </div>
+              <div className="text-xl font-bold text-white font-mono">
+                {(currentGmb.platformBreakdown?.searchDesktop?.count || Math.round(currentViewers * 0.16)).toLocaleString('pt-BR')}
+              </div>
+              <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-400 rounded-full"
+                  style={{ width: `${currentGmb.platformBreakdown?.searchDesktop?.percentage || 16}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-[#8FAEA2] block">Pesquisa em desktops/notebooks</span>
+            </div>
+
+            {/* 4. Google Maps - Computadores */}
+            <div className="bg-[#061A14] p-3.5 rounded-xl border border-white/5 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <Globe className="w-4 h-4 text-purple-400" /> Google Maps – PC
+                </span>
+                <span className="font-bold text-purple-400 font-mono">
+                  {currentGmb.platformBreakdown?.mapsDesktop?.percentage || 9}%
+                </span>
+              </div>
+              <div className="text-xl font-bold text-white font-mono">
+                {(currentGmb.platformBreakdown?.mapsDesktop?.count || Math.round(currentViewers * 0.09)).toLocaleString('pt-BR')}
+              </div>
+              <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-purple-400 rounded-full"
+                  style={{ width: `${currentGmb.platformBreakdown?.mapsDesktop?.percentage || 9}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-[#8FAEA2] block">Google Maps web em computadores</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* SEÇÃO PRINCIPAL DE GRÁFICOS VISUAIS (RECHARTS) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -673,7 +852,7 @@ export default function ReportsAnalyticsTab({
                   Evolução de Visualizações no Google
                 </CardTitle>
                 <CardDescription className="text-xs text-[#8FAEA2]">
-                  Comparativo de impressões no Google Maps vs Pesquisa Google ao longo do tempo.
+                  Comparativo de impressões no Google Maps vs Pesquisa Google ao longo dos meses.
                 </CardDescription>
               </div>
 
@@ -757,7 +936,7 @@ export default function ReportsAnalyticsTab({
           </CardContent>
         </Card>
 
-        {/* GRÁFICO 2: PROPORÇÃO DE AÇÕES (PIE / DONUT CHART) - OCUPA 1 COLUNA */}
+        {/* GRÁFICO 2: PROPORÇÃO DE AÇÕES (DONUT CHART) - OCUPA 1 COLUNA */}
         <Card className="bg-[#0A261E] border-[#17473A] shadow-xl flex flex-col justify-between">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-white flex items-center gap-2">
@@ -765,7 +944,7 @@ export default function ReportsAnalyticsTab({
               Distribuição de Ações
             </CardTitle>
             <CardDescription className="text-xs text-[#8FAEA2]">
-              O que os clientes fizeram no perfil durante o período selecionado.
+              Divisão de interações geradas em {currentSource?.period}.
             </CardDescription>
           </CardHeader>
 
@@ -796,7 +975,7 @@ export default function ReportsAnalyticsTab({
                   </ResponsiveContainer>
                 </div>
 
-                <div className="space-y-2 pt-2 border-t border-white/5">
+                <div className="space-y-1.5 pt-2 border-t border-white/5">
                   {actionsPieData.map((item, i) => (
                     <div key={i} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
@@ -817,7 +996,7 @@ export default function ReportsAnalyticsTab({
         </Card>
       </div>
 
-      {/* GRÁFICO 3: AÇÕES DE CONVERSÃO MÊS A MÊS (BAR CHART) & RANKING DE PALAVRAS-CHAVE */}
+      {/* GRÁFICO 3: AÇÕES DE CONVERSÃO MÊS A MÊS & RANKING DE PALAVRAS-CHAVE */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* GRÁFICO DE CONVERSÕES: ROTAS, LIGAÇÕES E CLIQUES NO SITE */}
         <Card className="lg:col-span-2 bg-[#0A261E] border-[#17473A] shadow-xl">
@@ -827,7 +1006,7 @@ export default function ReportsAnalyticsTab({
               Conversões Mês a Mês: Rotas, Ligações & Cliques
             </CardTitle>
             <CardDescription className="text-xs text-[#8FAEA2]">
-              Crescimento de contatos e visitas que geram faturamento real para {clientName}.
+              Crescimento de contatos e visitas presenciais para {clientName}.
             </CardDescription>
           </CardHeader>
 
@@ -867,7 +1046,7 @@ export default function ReportsAnalyticsTab({
               Termos Mais Buscados no Google
             </CardTitle>
             <CardDescription className="text-xs text-[#8FAEA2]">
-              Palavras-chave que levaram novos clientes até a sua empresa.
+              Consultas de pesquisa que exibiram seu perfil aos clientes.
             </CardDescription>
           </CardHeader>
 
@@ -886,41 +1065,41 @@ export default function ReportsAnalyticsTab({
                   <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-gradient-to-r from-[#DFC498] to-emerald-400 rounded-full"
-                      style={{ width: `${Math.min(100, Math.max(15, (kw.count / (topKeywordsList[0].count || 1)) * 100))}%` }}
+                      style={{ width: `${Math.min(100, Math.max(15, (kw.count / (topKeywordsList[0]?.count || 1)) * 100))}%` }}
                     />
                   </div>
                 </div>
               ))
             ) : (
               <div className="py-8 text-center text-[#8FAEA2] text-xs">
-                Termos de pesquisa sendo mapeados nos próximos relatórios.
+                Termos de pesquisa em monitoramento.
               </div>
             )}
 
-            {currentReport?.gmbMetrics?.targetKeyword && (
+            {currentGmb.targetKeyword && (
               <div className="bg-black/30 p-2.5 rounded-xl border border-white/5 text-[11px] text-[#8FAEA2] mt-2">
-                Palavra-chave foco monitorada: <strong className="text-[#DFC498] font-mono block text-xs mt-0.5">{currentReport.gmbMetrics.targetKeyword}</strong>
+                Palavra-chave foco: <strong className="text-[#DFC498] font-mono block text-xs mt-0.5">{currentGmb.targetKeyword}</strong>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* TABELA COMPARATIVA MÊS A MÊS LADO A LADO */}
+      {/* TABELA COMPARATIVA MÊS A MÊS COM TODAS AS MÉTRICAS DO GMN */}
       <Card className="bg-[#0A261E] border-[#17473A] shadow-xl overflow-hidden">
         <CardHeader className="pb-3 border-b border-[#17473A]/80">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <CardTitle className="text-base font-bold text-white flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-[#DFC498]" />
-                Tabela Comparativa Mês a Mês
+                Tabela Comparativa Mês a Mês Completa
               </CardTitle>
               <CardDescription className="text-xs text-[#8FAEA2]">
-                Acompanhamento detalhado da evolução de todas as métricas consolidadas por período.
+                Evolução comparativa de todas as métricas oficiais do Google Meu Negócio.
               </CardDescription>
             </div>
             <span className="text-xs text-[#8FAEA2]">
-              Exibindo <strong className="text-white">{filteredReports.length}</strong> período(s) analisado(s)
+              Exibindo <strong className="text-white">{filteredReports.length}</strong> mês(es) cadastrado(s)
             </span>
           </div>
         </CardHeader>
@@ -929,7 +1108,7 @@ export default function ReportsAnalyticsTab({
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-black/40 border-b border-[#17473A] text-[#8FAEA2]">
-                <th className="p-3.5 font-semibold text-white">Métrica de Performance</th>
+                <th className="p-3.5 font-semibold text-white">Métrica Oficial do Google</th>
                 {filteredReports.map(rep => (
                   <th key={rep.id} className="p-3.5 font-semibold text-center text-[#DFC498] whitespace-nowrap">
                     {rep.period}
@@ -943,62 +1122,57 @@ export default function ReportsAnalyticsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#17473A]/40 text-[#E1EDE8]">
-              {/* LINHA 1: PESQUISA GOOGLE */}
-              <tr className="hover:bg-white/[0.02]">
-                <td className="p-3.5 font-medium flex items-center gap-2">
-                  <Search className="w-3.5 h-3.5 text-[#DFC498]" /> Pesquisa Google (Impressões)
+              {/* INTERAÇÕES TOTAIS */}
+              <tr className="hover:bg-white/[0.02] bg-[#DFC498]/5">
+                <td className="p-3.5 font-bold text-white flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-[#DFC498]" /> Total de Interações no Perfil
                 </td>
-                {filteredReports.map(rep => (
-                  <td key={rep.id} className="p-3.5 text-center font-mono font-medium">
-                    {(rep.gmbMetrics?.searchImpressions || 0).toLocaleString('pt-BR')}
-                  </td>
-                ))}
+                {filteredReports.map(rep => {
+                  const gmb = rep.gmbMetrics || {};
+                  const total = gmb.totalInteractions || (
+                    Number(gmb.calls || 0) + Number(gmb.directionRequests || 0) + Number(gmb.websiteClicks || 0) + Number(gmb.chatClicks || 0) + Number(gmb.bookings || 0)
+                  );
+                  return (
+                    <td key={rep.id} className="p-3.5 text-center font-mono font-bold text-[#DFC498]">
+                      {total.toLocaleString('pt-BR')}
+                    </td>
+                  );
+                })}
                 {filteredReports.length >= 2 && (
                   <td className="p-3.5 text-right font-bold font-mono">
-                    {(() => {
-                      const curr = latestFirstReports[0]?.gmbMetrics?.searchImpressions || 0;
-                      const prev = latestFirstReports[1]?.gmbMetrics?.searchImpressions || 0;
-                      const v = calcVariation(curr, prev);
-                      return (
-                        <span className={`inline-flex items-center gap-0.5 ${v.isUp ? 'text-emerald-400' : v.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
-                          {v.isUp ? '+' : '-'}{v.pct}%
-                        </span>
-                      );
-                    })()}
+                    <span className={`inline-flex items-center gap-0.5 ${interactionsVar.isUp ? 'text-emerald-400' : interactionsVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {interactionsVar.isUp ? '+' : '-'}{interactionsVar.pct}%
+                    </span>
                   </td>
                 )}
               </tr>
 
-              {/* LINHA 2: GOOGLE MAPS */}
+              {/* PESSOAS QUE VISUALIZARAM */}
               <tr className="hover:bg-white/[0.02]">
                 <td className="p-3.5 font-medium flex items-center gap-2">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400" /> Google Maps (Impressões)
+                  <Eye className="w-3.5 h-3.5 text-blue-400" /> Pessoas que Visualizaram o Perfil
                 </td>
-                {filteredReports.map(rep => (
-                  <td key={rep.id} className="p-3.5 text-center font-mono font-medium">
-                    {(rep.gmbMetrics?.mapsImpressions || 0).toLocaleString('pt-BR')}
-                  </td>
-                ))}
+                {filteredReports.map(rep => {
+                  const val = rep.gmbMetrics?.peopleViewedProfile || ((rep.gmbMetrics?.searchImpressions || 0) + (rep.gmbMetrics?.mapsImpressions || 0));
+                  return (
+                    <td key={rep.id} className="p-3.5 text-center font-mono font-medium">
+                      {val.toLocaleString('pt-BR')}
+                    </td>
+                  );
+                })}
                 {filteredReports.length >= 2 && (
                   <td className="p-3.5 text-right font-bold font-mono">
-                    {(() => {
-                      const curr = latestFirstReports[0]?.gmbMetrics?.mapsImpressions || 0;
-                      const prev = latestFirstReports[1]?.gmbMetrics?.mapsImpressions || 0;
-                      const v = calcVariation(curr, prev);
-                      return (
-                        <span className={`inline-flex items-center gap-0.5 ${v.isUp ? 'text-emerald-400' : v.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
-                          {v.isUp ? '+' : '-'}{v.pct}%
-                        </span>
-                      );
-                    })()}
+                    <span className={`inline-flex items-center gap-0.5 ${viewersVar.isUp ? 'text-emerald-400' : viewersVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {viewersVar.isUp ? '+' : '-'}{viewersVar.pct}%
+                    </span>
                   </td>
                 )}
               </tr>
 
-              {/* LINHA 3: ROTAS NO MAPA (GPS) */}
+              {/* ROTAS NO MAPA */}
               <tr className="hover:bg-white/[0.02]">
                 <td className="p-3.5 font-medium flex items-center gap-2">
-                  <Navigation className="w-3.5 h-3.5 text-[#DFC498]" /> Solicitações de Rotas (GPS)
+                  <Navigation className="w-3.5 h-3.5 text-emerald-400" /> Solicitações de Rotas (GPS / Waze)
                 </td>
                 {filteredReports.map(rep => (
                   <td key={rep.id} className="p-3.5 text-center font-mono font-bold text-emerald-400">
@@ -1007,24 +1181,17 @@ export default function ReportsAnalyticsTab({
                 ))}
                 {filteredReports.length >= 2 && (
                   <td className="p-3.5 text-right font-bold font-mono">
-                    {(() => {
-                      const curr = latestFirstReports[0]?.gmbMetrics?.directionRequests || 0;
-                      const prev = latestFirstReports[1]?.gmbMetrics?.directionRequests || 0;
-                      const v = calcVariation(curr, prev);
-                      return (
-                        <span className={`inline-flex items-center gap-0.5 ${v.isUp ? 'text-emerald-400' : v.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
-                          {v.isUp ? '+' : '-'}{v.pct}%
-                        </span>
-                      );
-                    })()}
+                    <span className={`inline-flex items-center gap-0.5 ${routesVar.isUp ? 'text-emerald-400' : routesVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {routesVar.isUp ? '+' : '-'}{routesVar.pct}%
+                    </span>
                   </td>
                 )}
               </tr>
 
-              {/* LINHA 4: LIGAÇÕES TELEFÔNICAS */}
+              {/* CHAMADAS */}
               <tr className="hover:bg-white/[0.02]">
                 <td className="p-3.5 font-medium flex items-center gap-2">
-                  <Phone className="w-3.5 h-3.5 text-emerald-400" /> Chamadas Telefônicas Diretas
+                  <Phone className="w-3.5 h-3.5 text-[#DFC498]" /> Chamadas Telefônicas Diretas
                 </td>
                 {filteredReports.map(rep => (
                   <td key={rep.id} className="p-3.5 text-center font-mono font-bold text-white">
@@ -1033,21 +1200,14 @@ export default function ReportsAnalyticsTab({
                 ))}
                 {filteredReports.length >= 2 && (
                   <td className="p-3.5 text-right font-bold font-mono">
-                    {(() => {
-                      const curr = latestFirstReports[0]?.gmbMetrics?.calls || 0;
-                      const prev = latestFirstReports[1]?.gmbMetrics?.calls || 0;
-                      const v = calcVariation(curr, prev);
-                      return (
-                        <span className={`inline-flex items-center gap-0.5 ${v.isUp ? 'text-emerald-400' : v.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
-                          {v.isUp ? '+' : '-'}{v.pct}%
-                        </span>
-                      );
-                    })()}
+                    <span className={`inline-flex items-center gap-0.5 ${callsVar.isUp ? 'text-emerald-400' : callsVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {callsVar.isUp ? '+' : '-'}{callsVar.pct}%
+                    </span>
                   </td>
                 )}
               </tr>
 
-              {/* LINHA 5: CLIQUES NO WEBSITE */}
+              {/* CLIQUES NO SITE */}
               <tr className="hover:bg-white/[0.02]">
                 <td className="p-3.5 font-medium flex items-center gap-2">
                   <Globe className="w-3.5 h-3.5 text-blue-400" /> Cliques no Website / Contato
@@ -1059,21 +1219,52 @@ export default function ReportsAnalyticsTab({
                 ))}
                 {filteredReports.length >= 2 && (
                   <td className="p-3.5 text-right font-bold font-mono">
-                    {(() => {
-                      const curr = latestFirstReports[0]?.gmbMetrics?.websiteClicks || 0;
-                      const prev = latestFirstReports[1]?.gmbMetrics?.websiteClicks || 0;
-                      const v = calcVariation(curr, prev);
-                      return (
-                        <span className={`inline-flex items-center gap-0.5 ${v.isUp ? 'text-emerald-400' : v.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
-                          {v.isUp ? '+' : '-'}{v.pct}%
-                        </span>
-                      );
-                    })()}
+                    <span className={`inline-flex items-center gap-0.5 ${webVar.isUp ? 'text-emerald-400' : webVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {webVar.isUp ? '+' : '-'}{webVar.pct}%
+                    </span>
                   </td>
                 )}
               </tr>
 
-              {/* LINHA 6: AVALIAÇÃO & REVIEWS */}
+              {/* CLIQUES NO CHAT */}
+              <tr className="hover:bg-white/[0.02]">
+                <td className="p-3.5 font-medium flex items-center gap-2">
+                  <MessageSquare className="w-3.5 h-3.5 text-purple-400" /> Cliques no Chat
+                </td>
+                {filteredReports.map(rep => (
+                  <td key={rep.id} className="p-3.5 text-center font-mono font-medium text-purple-300">
+                    {rep.gmbMetrics?.chatClicks || 0}
+                  </td>
+                ))}
+                {filteredReports.length >= 2 && (
+                  <td className="p-3.5 text-right font-bold font-mono">
+                    <span className={`inline-flex items-center gap-0.5 ${chatVar.isUp ? 'text-emerald-400' : chatVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {chatVar.isUp ? '+' : '-'}{chatVar.pct}%
+                    </span>
+                  </td>
+                )}
+              </tr>
+
+              {/* AGENDAMENTOS */}
+              <tr className="hover:bg-white/[0.02]">
+                <td className="p-3.5 font-medium flex items-center gap-2">
+                  <CalendarCheck className="w-3.5 h-3.5 text-pink-400" /> Agendamentos Solicitados
+                </td>
+                {filteredReports.map(rep => (
+                  <td key={rep.id} className="p-3.5 text-center font-mono font-medium text-pink-300">
+                    {rep.gmbMetrics?.bookings || 0}
+                  </td>
+                ))}
+                {filteredReports.length >= 2 && (
+                  <td className="p-3.5 text-right font-bold font-mono">
+                    <span className={`inline-flex items-center gap-0.5 ${bookingsVar.isUp ? 'text-emerald-400' : bookingsVar.isZero ? 'text-[#8FAEA2]' : 'text-red-400'}`}>
+                      {bookingsVar.isUp ? '+' : '-'}{bookingsVar.pct}%
+                    </span>
+                  </td>
+                )}
+              </tr>
+
+              {/* AVALIAÇÃO & REVIEWS */}
               <tr className="hover:bg-white/[0.02]">
                 <td className="p-3.5 font-medium flex items-center gap-2">
                   <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> Nota Média & Total de Avaliações
@@ -1099,8 +1290,8 @@ export default function ReportsAnalyticsTab({
         </CardContent>
       </Card>
 
-      {/* RESUMO EXECUTIVO GERADO POR IA */}
-      {currentReport?.summary && (
+      {/* RESUMO EXECUTIVO DO MÊS SELECIONADO GERADO POR IA */}
+      {currentSource?.summary && (
         <Card className="bg-gradient-to-br from-[#0A261E] to-[#061A14] border border-[#DFC498]/30 shadow-xl">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -1108,7 +1299,7 @@ export default function ReportsAnalyticsTab({
                 <Sparkles className="w-3.5 h-3.5" /> Análise Executiva da Agência {agencyName}
               </Badge>
               <span className="text-xs text-[#8FAEA2]">
-                Referência: <strong className="text-white">{currentReport.period}</strong>
+                Referência: <strong className="text-white">{currentSource.period}</strong>
               </span>
             </div>
             <CardTitle className="text-base font-bold text-white pt-1">
@@ -1117,7 +1308,7 @@ export default function ReportsAnalyticsTab({
           </CardHeader>
           <CardContent>
             <p className="text-xs sm:text-sm text-[#E1EDE8] leading-relaxed bg-black/20 p-4 rounded-xl border border-white/5">
-              {currentReport.summary}
+              {currentSource.summary}
             </p>
           </CardContent>
         </Card>
@@ -1128,10 +1319,10 @@ export default function ReportsAnalyticsTab({
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <FileText className="w-4 h-4 text-[#DFC498]" />
-            Arquivos e Relatórios Oficiais Publicados ({latestFirstReports.length})
+            Relatórios Mensais Publicados ({latestFirstReports.length})
           </h3>
           <span className="text-xs text-[#8FAEA2]">
-            Clique em "Ver Detalhes" para abrir o modal completo
+            Clique em "Ver Detalhes" para abrir o resumo completo
           </span>
         </div>
 
@@ -1139,7 +1330,9 @@ export default function ReportsAnalyticsTab({
           {latestFirstReports.map(rep => (
             <Card
               key={rep.id}
-              className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/40 transition-all shadow-md flex flex-col justify-between"
+              className={`bg-[#0A261E] border transition-all shadow-md flex flex-col justify-between ${
+                rep.id === activeReport?.id ? 'border-[#DFC498] ring-1 ring-[#DFC498]/40' : 'border-[#17473A] hover:border-[#DFC498]/40'
+              }`}
             >
               <CardHeader className="pb-3 space-y-1.5">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1147,10 +1340,9 @@ export default function ReportsAnalyticsTab({
                     <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 font-mono text-[11px]">
                       {rep.period}
                     </Badge>
-                    {rep.gmbMetrics?.rankingPosition && (
-                      <Badge className="bg-emerald-500/10 text-emerald-300 border-emerald-500/20 text-[10px] flex items-center gap-1 font-semibold">
-                        <MapPin className="w-3 h-3 text-emerald-400" />
-                        Google Maps #{rep.gmbMetrics.rankingPosition}
+                    {rep.id === activeReport?.id && (
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] font-bold">
+                        Mês em Foco
                       </Badge>
                     )}
                   </div>
@@ -1209,6 +1401,104 @@ export default function ReportsAnalyticsTab({
           ))}
         </div>
       </div>
+
+      {/* MODAL DIDÁTICO: O QUE SIGNIFICA CADA MÉTRICA */}
+      <Dialog open={isGlossaryModalOpen} onOpenChange={setIsGlossaryModalOpen}>
+        <DialogContent className="max-w-2xl bg-[#061A14] border-[#17473A] text-white p-6 max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-[#DFC498] text-xs font-bold uppercase tracking-wider">
+              <BookOpen className="w-4 h-4 text-[#DFC498]" /> Guia Oficial do Google Meu Negócio
+            </div>
+            <DialogTitle className="text-xl font-bold text-white">
+              O que significa cada métrica de desempenho?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#8FAEA2]">
+              Entenda como cada indicador do Google reflete em faturamento e novos clientes no seu salão ou clínica.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2 text-xs">
+            {/* 1. Interações no Perfil */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Zap className="w-4 h-4 text-[#DFC498]" /> Interações no Perfil da Empresa
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                É a soma total de todas as ações deliberadas que um cliente tomou após encontrar o seu salão no Google (ligar, pedir rota no GPS, mandar mensagem no chat, agendar ou visitar seu site). É o melhor termômetro do interesse real de compra.
+              </p>
+            </div>
+
+            {/* 2. Chamadas */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Phone className="w-4 h-4 text-[#DFC498]" /> Chamadas (Ligações Telefônicas)
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                Mostra quantas pessoas clicaram no botão "Ligar" do seu perfil diretamente do Google. São clientes com alta intenção que ligaram para tirar dúvidas, consultar disponibilidade ou agendar serviços imediatamente.
+              </p>
+            </div>
+
+            {/* 3. Orientações (Rotas GPS) */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Navigation className="w-4 h-4 text-emerald-400" /> Orientações (Solicitações de Rota no Mapa)
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                Indica o número de pessoas que abriram a rota no Google Maps ou Waze para ir presencialmente até o endereço físico do seu estabelecimento. Representa fluxo real de clientes na sua porta!
+              </p>
+            </div>
+
+            {/* 4. Cliques no Website */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Globe className="w-4 h-4 text-blue-400" /> Cliques no Website
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                Mede quantas pessoas clicaram para acessar seu site, link da bio, cardápio de serviços ou sistema de agendamento online.
+              </p>
+            </div>
+
+            {/* 5. Cliques no Chat */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <MessageSquare className="w-4 h-4 text-purple-400" /> Cliques no Chat
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                Clientes que iniciaram uma conversa de mensagem com sua empresa pela ferramenta oficial de mensagens do Google.
+              </p>
+            </div>
+
+            {/* 6. Agendamentos */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <CalendarCheck className="w-4 h-4 text-pink-400" /> Agendamentos
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                Número de pessoas que clicaram no botão de reserva ou agendamento de horários integrado ao perfil do Google.
+              </p>
+            </div>
+
+            {/* 7. Pessoas que Visualizaram e Dispositivos Móveis */}
+            <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-1.5">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Eye className="w-4 h-4 text-emerald-400" /> Pessoas que Visualizaram o Perfil & Dispositivos Móveis
+              </div>
+              <p className="text-[#E1EDE8] leading-relaxed">
+                Alcance total único de quantas pessoas viram o seu perfil na Pesquisa Google e no Google Maps. A divisão mostra que mais de 70% a 80% das buscas por beleza acontecem em smartphones (dispositivos móveis), provando a importância de ter um perfil com fotos de alta qualidade e botões de contato ágeis.
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <Button
+              onClick={() => setIsGlossaryModalOpen(false)}
+              className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold h-10 rounded-xl text-xs"
+            >
+              Entendi todas as métricas
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

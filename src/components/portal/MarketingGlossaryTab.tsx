@@ -25,7 +25,42 @@ interface GlossaryItem {
 }
 
 const GLOSSARY_DATA: GlossaryItem[] = [
-  // Google Meu Negócio
+  // Google Meu Negócio / Google Business Profile
+  {
+    term: "Interações no Perfil da Empresa",
+    category: "google_meu_negocio",
+    shortDefinition: "A soma total de ações concretas de interesse tomadas pelos clientes no Google.",
+    detailedExplanation: "Consolida todas as chamadas realizadas, solicitações de rota no GPS, cliques no site, cliques no chat e agendamentos feitos a partir do perfil do Google. É o principal termômetro de faturamento gerado pelo Google.",
+    whyItMatters: "Mostra exatamente quantos clientes tomaram a iniciativa de entrar em contato ou ir até seu salão."
+  },
+  {
+    term: "Pessoas que Visualizaram o Perfil",
+    category: "google_meu_negocio",
+    shortDefinition: "Alcance único de potenciais clientes que viram seu estabelecimento na Pesquisa ou no Google Maps.",
+    detailedExplanation: "Número de indivíduos distintos que tiveram contato visual com a sua empresa ao pesquisar por serviços de beleza na sua cidade ou bairro.",
+    whyItMatters: "Mede a força de reconhecimento da sua marca na sua região geográfica."
+  },
+  {
+    term: "Orientações (Rotas no Maps/Waze)",
+    category: "google_meu_negocio",
+    shortDefinition: "Clientes que clicaram no botão de rota para navegar de carro ou a pé até seu endereço.",
+    detailedExplanation: "Quando um cliente decide ir ao salão, ele aciona o GPS no Google Maps ou Waze diretamente do perfil. É a métrica mais próxima de uma visita presencial física à sua recepção.",
+    whyItMatters: "Representa clientes reais se deslocando até sua porta."
+  },
+  {
+    term: "Chamadas Telefônicas",
+    category: "google_meu_negocio",
+    shortDefinition: "Ligações telefônicas diretas iniciadas com um clique no perfil.",
+    detailedExplanation: "Pessoas que clicaram no botão 'Ligar' para falar diretamente com a recepção do salão, tirar dúvidas sobre serviços, valores ou agendar horários de urgência.",
+    whyItMatters: "Clientes que ligam têm altíssima taxa de conversão e intenção de compra imediata."
+  },
+  {
+    term: "Dispositivos Móveis vs Computador",
+    category: "google_meu_negocio",
+    shortDefinition: "Proporção de buscas e mapas realizadas em smartphones (celulares) comparadas a computadores.",
+    detailedExplanation: "Geralmente mais de 70% a 80% das pessoas procuram serviços de beleza através do smartphone enquanto estão na rua ou planejando o dia. Por isso, botões de ação rápidos como WhatsApp e rotas no GPS são vitais.",
+    whyItMatters: "Confirma a necessidade de perfis impecavelmente otimizados para telas de celular."
+  },
   {
     term: "SEO Local & Google Maps",
     category: "google_meu_negocio",
@@ -37,22 +72,8 @@ const GLOSSARY_DATA: GlossaryItem[] = [
     term: "Local 3-Pack",
     category: "google_meu_negocio",
     shortDefinition: "O bloco de destaque com mapa e apenas 3 empresas que o Google exibe no topo da busca.",
-    detailedExplanation: "Quando um usuário busca por 'dentista perto de mim' ou 'clínica estética em São Paulo', o Google exibe um mapa com 3 empresas em evidência antes de qualquer link comum. Estar nesse top 3 gera até 70% dos cliques locais.",
+    detailedExplanation: "Quando um usuário busca por 'salão de beleza perto de mim' ou 'loira especialista', o Google exibe um mapa com 3 empresas em evidência antes de qualquer link comum. Estar nesse top 3 gera até 70% dos cliques locais.",
     whyItMatters: "É a posição mais cobiçada do Google sem pagar por anúncio por clique."
-  },
-  {
-    term: "Ações do Perfil (GMN)",
-    category: "google_meu_negocio",
-    shortDefinition: "Cliques no site, ligações diretas e pedidos de rotas feitos pelos clientes dentro do Google.",
-    detailedExplanation: "Métricas reais de interesse: quantas pessoas clicaram para ligar para a recepção, quantas abriram o Waze/Google Maps para ir até o endereço e quantas visitaram sua Landing Page.",
-    whyItMatters: "Mostra o impacto direto do Google no fluxo de clientes físicos e contatos."
-  },
-  {
-    term: "Avaliações 5 Estrelas & NAP",
-    category: "google_meu_negocio",
-    shortDefinition: "Nota média de depoimentos e consistência do Nome, Endereço e Telefone da empresa em toda a internet.",
-    detailedExplanation: "O Google prioriza perfis que recebem avaliações com frequência e cujos dados (Nome, Endereço, Telefone) estão 100% idênticos no site, Instagram e guias comerciais.",
-    whyItMatters: "Aumenta a confiança do paciente e alavanca o posicionamento orgânico."
   },
 
   // Site & Landing Page

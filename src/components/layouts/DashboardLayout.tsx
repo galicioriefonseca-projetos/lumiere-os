@@ -33,7 +33,7 @@ export default function DashboardLayout() {
     }
   }, []);
 
-  const navigation = getNavigationByRole(userData?.role, salonData, currentUser?.email || userData?.email);
+  const navigation = getNavigationByRole(userData?.role, salonData, currentUser?.email || userData?.email, userData);
 
   return (
     <DashboardShell

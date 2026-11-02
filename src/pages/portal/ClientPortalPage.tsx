@@ -32,7 +32,11 @@ import {
   MapPin,
   Navigation,
   Search,
-  Star
+  Star,
+  Zap,
+  CalendarCheck,
+  Globe,
+  Home
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ClientReport, ClientContract, ClientApproval, ClientTicket, ClientDeliverable } from '../../types';
@@ -209,7 +213,19 @@ export default function ClientPortalPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {userData?.role && userData.role !== 'client' && (
+            <Button
+              onClick={() => navigate('/dashboard')}
+              variant="outline"
+              size="sm"
+              className="border-[#DFC498]/30 bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] text-xs font-semibold rounded-xl h-9 gap-1.5"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Meu Salão LumièreOS</span>
+            </Button>
+          )}
+
           <Button
             onClick={handleWhatsAppSupport}
             variant="outline"
@@ -724,55 +740,102 @@ export default function ClientPortalPage() {
                     </div>
                   )}
 
-                  {/* Actions Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                        <Navigation className="w-3 h-3 text-emerald-400" /> Rotas
+                  {/* Interações no Perfil da Empresa */}
+                  <div className="bg-[#0A261E] p-3 rounded-xl border border-[#17473A] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-[#DFC498]" /> Interações no Perfil da Empresa
                       </span>
-                      <span className="text-base font-bold text-white">
-                        {selectedReport.gmbMetrics.directionRequests?.toLocaleString('pt-BR') || 0}
-                      </span>
-                    </div>
-                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                        <Phone className="w-3 h-3 text-emerald-400" /> Ligações
-                      </span>
-                      <span className="text-base font-bold text-white">
-                        {selectedReport.gmbMetrics.calls?.toLocaleString('pt-BR') || 0}
+                      <span className="text-base font-bold text-[#DFC498] font-mono">
+                        {selectedReport.gmbMetrics.totalInteractions || (
+                          Number(selectedReport.gmbMetrics.calls || 0) +
+                          Number(selectedReport.gmbMetrics.directionRequests || 0) +
+                          Number(selectedReport.gmbMetrics.websiteClicks || 0) +
+                          Number(selectedReport.gmbMetrics.chatClicks || 0) +
+                          Number(selectedReport.gmbMetrics.bookings || 0)
+                        )}
                       </span>
                     </div>
-                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                        <ExternalLink className="w-3 h-3 text-emerald-400" /> Cliques Site/Wpp
-                      </span>
-                      <span className="text-base font-bold text-white">
-                        {selectedReport.gmbMetrics.websiteClicks?.toLocaleString('pt-BR') || 0}
-                      </span>
-                    </div>
-                    <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
-                        <Star className="w-3 h-3 text-amber-400" /> Avaliações
-                      </span>
-                      <span className="text-base font-bold text-amber-400">
-                        {selectedReport.gmbMetrics.rating || 5.0} ★ <span className="text-[10px] text-[#8FAEA2] font-normal">({selectedReport.gmbMetrics.reviewsCount || 0})</span>
-                      </span>
+
+                    {/* Actions Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                      <div className="bg-black/30 p-2 rounded-lg border border-white/5">
+                        <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                          <Phone className="w-3 h-3 text-[#DFC498]" /> Chamadas
+                        </span>
+                        <span className="text-sm font-bold text-white">
+                          {selectedReport.gmbMetrics.calls?.toLocaleString('pt-BR') || 0}
+                        </span>
+                      </div>
+                      <div className="bg-black/30 p-2 rounded-lg border border-white/5">
+                        <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-purple-400" /> Chat
+                        </span>
+                        <span className="text-sm font-bold text-white">
+                          {selectedReport.gmbMetrics.chatClicks?.toLocaleString('pt-BR') || 0}
+                        </span>
+                      </div>
+                      <div className="bg-black/30 p-2 rounded-lg border border-white/5">
+                        <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                          <CalendarCheck className="w-3 h-3 text-pink-400" /> Agendar
+                        </span>
+                        <span className="text-sm font-bold text-white">
+                          {selectedReport.gmbMetrics.bookings?.toLocaleString('pt-BR') || 0}
+                        </span>
+                      </div>
+                      <div className="bg-black/30 p-2 rounded-lg border border-white/5">
+                        <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                          <Navigation className="w-3 h-3 text-emerald-400" /> Rotas
+                        </span>
+                        <span className="text-sm font-bold text-emerald-400">
+                          {selectedReport.gmbMetrics.directionRequests?.toLocaleString('pt-BR') || 0}
+                        </span>
+                      </div>
+                      <div className="bg-black/30 p-2 rounded-lg border border-white/5">
+                        <span className="text-[10px] text-[#8FAEA2] block flex items-center justify-center gap-1">
+                          <Globe className="w-3 h-3 text-blue-400" /> Website
+                        </span>
+                        <span className="text-sm font-bold text-blue-400">
+                          {selectedReport.gmbMetrics.websiteClicks?.toLocaleString('pt-BR') || 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Impressions Breakdown */}
-                  {(selectedReport.gmbMetrics.mapsImpressions || selectedReport.gmbMetrics.searchImpressions) && (
-                    <div className="grid grid-cols-2 gap-2 text-xs bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <div className="flex justify-between items-center px-1">
-                        <span className="text-[#8FAEA2]">Impressões no Maps:</span>
-                        <span className="font-semibold text-white">{selectedReport.gmbMetrics.mapsImpressions?.toLocaleString('pt-BR') || 0}</span>
-                      </div>
-                      <div className="flex justify-between items-center px-1">
-                        <span className="text-[#8FAEA2]">Impressões na Busca:</span>
-                        <span className="font-semibold text-white">{selectedReport.gmbMetrics.searchImpressions?.toLocaleString('pt-BR') || 0}</span>
-                      </div>
+                  {/* Pessoas que Visualizaram e Plataformas */}
+                  <div className="bg-black/30 p-3 rounded-xl border border-white/5 space-y-2 text-xs">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[#8FAEA2] flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-blue-400" /> Pessoas que Visualizaram o Perfil:
+                      </span>
+                      <span className="font-bold text-white font-mono text-sm">
+                        {(selectedReport.gmbMetrics.peopleViewedProfile || (
+                          (selectedReport.gmbMetrics.mapsImpressions || 0) + (selectedReport.gmbMetrics.searchImpressions || 0)
+                        )).toLocaleString('pt-BR')}
+                      </span>
                     </div>
-                  )}
+
+                    {selectedReport.gmbMetrics.platformBreakdown && (
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5 text-[11px]">
+                        <div className="flex justify-between text-[#8FAEA2]">
+                          <span>📱 Busca Mobile:</span>
+                          <span className="font-bold text-white">{selectedReport.gmbMetrics.platformBreakdown.searchMobile?.count || 0} ({selectedReport.gmbMetrics.platformBreakdown.searchMobile?.percentage || 0}%)</span>
+                        </div>
+                        <div className="flex justify-between text-[#8FAEA2]">
+                          <span>🗺️ Maps Mobile:</span>
+                          <span className="font-bold text-white">{selectedReport.gmbMetrics.platformBreakdown.mapsMobile?.count || 0} ({selectedReport.gmbMetrics.platformBreakdown.mapsMobile?.percentage || 0}%)</span>
+                        </div>
+                        <div className="flex justify-between text-[#8FAEA2]">
+                          <span>💻 Busca PC:</span>
+                          <span className="font-bold text-white">{selectedReport.gmbMetrics.platformBreakdown.searchDesktop?.count || 0} ({selectedReport.gmbMetrics.platformBreakdown.searchDesktop?.percentage || 0}%)</span>
+                        </div>
+                        <div className="flex justify-between text-[#8FAEA2]">
+                          <span>🖥️ Maps PC:</span>
+                          <span className="font-bold text-white">{selectedReport.gmbMetrics.platformBreakdown.mapsDesktop?.count || 0} ({selectedReport.gmbMetrics.platformBreakdown.mapsDesktop?.percentage || 0}%)</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Search Queries Pills */}
                   {selectedReport.gmbMetrics.topKeywords && selectedReport.gmbMetrics.topKeywords.length > 0 && (

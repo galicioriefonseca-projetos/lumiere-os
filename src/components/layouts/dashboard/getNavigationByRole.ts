@@ -34,17 +34,25 @@ export interface NavigationCategory {
   items: NavigationItem[];
 }
 
-export const getNavigationByRole = (role: string | undefined, salonData?: any, userEmail?: string): NavigationCategory[] => {
+export const getNavigationByRole = (role: string | undefined, salonData?: any, userEmail?: string, userData?: any): NavigationCategory[] => {
   const segment = detectBusinessSegment(salonData);
   const cfg = SEGMENTS[segment] || SEGMENTS.beauty;
   const lex = cfg.lexicon;
 
-  const emailCandidate = String(salonData?.ownerEmail || userEmail || '').toLowerCase();
+  const emailCandidate = String(salonData?.ownerEmail || userEmail || userData?.email || '').toLowerCase();
   const isAgencyAccount = 
     emailCandidate.includes('galicioriefonseca31@gmail.com') ||
+    emailCandidate.includes('galicioriefonseca@gmail.com') ||
     segment === 'agency' || 
     salonData?.segment === 'agency' || 
     salonData?.businessType === 'agency';
+
+  const hasPortalActiveAsClient = Boolean(
+    salonData?.clientPortalActive || 
+    userData?.portalAccessEnabled || 
+    userData?.agencySalonId ||
+    userData?.clientId
+  );
 
   const isModuleEnabled = (modKey: string): boolean => {
     if (modKey === 'clientPortal') {
@@ -160,6 +168,8 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
     { name: lex.clients, href: '/dashboard/clientes', icon: Users, moduleId: 'clients' },
     ...(isAgencyAccount ? [
       { name: 'Área do Cliente (Portal)', href: '/dashboard/area-do-cliente', icon: Globe, moduleId: 'clientPortal' }
+    ] : hasPortalActiveAsClient ? [
+      { name: 'Portal da Agência (GMN)', href: '/portal', icon: Globe }
     ] : []),
   ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId!));
 
