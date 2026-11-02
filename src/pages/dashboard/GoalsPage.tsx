@@ -16,8 +16,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { normalizeGoal, calculateGoalProgress, GoalProgress, getDaysCount } from "../../lib/goals";
+import { normalizeGoal, calculateGoalProgress, GoalProgress, getDaysCount, generateDefaultWeeklySplits, calculateRevenueForDateRange, NormalizedGoal } from "../../lib/goals";
+import { WeeklyGoalSplit } from "../../types";
 import { canManageGoals } from "../../lib/permissions";
 import { applyXPGain } from "../../lib/gamification";
 import {
@@ -45,7 +47,7 @@ import {
   ChevronRight,
   ArrowUpRight,
 } from "lucide-react";
-import { formatBRL } from "@/lib/utils";
+import { formatBRL, cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
 export default function GoalsPage() {
@@ -86,9 +88,10 @@ export default function GoalsPage() {
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [formData, setFormData] = useState({
     title: "",
-    month: new Date().toISOString().substring(0, 7), // YYYY-MM
+    month: new Date().toISOString().substring(0, 7),
     targetAmount: "",
     currentAmount: "0",
+    periodType: "mensal",
   });
 
   // States for professional goals
@@ -99,6 +102,15 @@ export default function GoalsPage() {
   const [selectedProf, setSelectedProf] = useState<Professional | null>(null);
   const [profGoalTargetAmount, setProfGoalTargetAmount] = useState("");
   const [isProfGoalDialogOpen, setIsProfGoalDialogOpen] = useState(false);
+
+  // States for weekly goals modal
+  const [isWeeklyConfigOpen, setIsWeeklyConfigOpen] = useState(false);
+  const [weeklyConfigType, setWeeklyConfigType] = useState<'salon' | 'professional'>('salon');
+  const [weeklyConfigMonth, setWeeklyConfigMonth] = useState('');
+  const [weeklyConfigTargetTotal, setWeeklyConfigTargetTotal] = useState(0);
+  const [weeklyConfigEntityName, setWeeklyConfigEntityName] = useState('');
+  const [weeklyConfigTargetId, setWeeklyConfigTargetId] = useState('');
+  const [editingWeeklySplits, setEditingWeeklySplits] = useState<WeeklyGoalSplit[]>([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -205,6 +217,8 @@ export default function GoalsPage() {
         month: formData.month,
         targetAmount: target,
         currentAmount: current,
+        periodType: formData.periodType,
+        weeklyGoals: editingGoal?.weeklyGoals || generateDefaultWeeklySplits(formData.month, target),
         updatedAt: Date.now(),
       };
 
@@ -271,6 +285,7 @@ export default function GoalsPage() {
       month: new Date().toISOString().substring(0, 7),
       targetAmount: "",
       currentAmount: "0",
+      periodType: "mensal",
     });
   };
 
@@ -281,6 +296,7 @@ export default function GoalsPage() {
       month: g.month,
       targetAmount: g.targetAmount.toString(),
       currentAmount: g.currentAmount.toString(),
+      periodType: g.periodType || "mensal",
     });
     setIsDialogOpen(true);
   };
@@ -321,6 +337,7 @@ export default function GoalsPage() {
         professionalName: selectedProf.name,
         month: selectedMonth,
         targetAmount: target,
+        weeklyGoals: existingGoal?.weeklyGoals || generateDefaultWeeklySplits(selectedMonth, target),
         updatedAt: Date.now(),
         createdAt: existingGoal?.createdAt || Date.now(),
       };
@@ -335,6 +352,93 @@ export default function GoalsPage() {
     } catch (err) {
       console.error("Error setting professional goal:", err);
       toast.error("Erro ao salvar meta para o profissional.");
+    }
+  };
+
+  // Weekly Goals Configuration Handlers
+  const openSalonWeeklyConfig = (goal: Goal) => {
+    setWeeklyConfigType('salon');
+    setWeeklyConfigMonth(goal.month);
+    setWeeklyConfigTargetTotal(goal.targetAmount);
+    setWeeklyConfigEntityName(goal.title || 'Metas Gerais do Salão');
+    setWeeklyConfigTargetId(goal.id);
+    const splits = goal.weeklyGoals && goal.weeklyGoals.length > 0
+      ? goal.weeklyGoals
+      : generateDefaultWeeklySplits(goal.month, goal.targetAmount);
+    setEditingWeeklySplits(splits.map(s => ({ ...s })));
+    setIsWeeklyConfigOpen(true);
+  };
+
+  const openProfWeeklyConfig = (prof: Professional, targetOverride?: number) => {
+    const existingGoal = professionalGoals.find(
+      (g) => g.professionalId === prof.id && g.month === selectedMonth
+    );
+    const target = targetOverride !== undefined && targetOverride > 0
+      ? targetOverride
+      : (existingGoal?.targetAmount || 0);
+
+    setWeeklyConfigType('professional');
+    setWeeklyConfigMonth(selectedMonth);
+    setWeeklyConfigTargetTotal(target);
+    setWeeklyConfigEntityName(prof.name);
+    setWeeklyConfigTargetId(`${prof.id}_${selectedMonth}`);
+    const splits = existingGoal?.weeklyGoals && existingGoal.weeklyGoals.length > 0
+      ? existingGoal.weeklyGoals
+      : generateDefaultWeeklySplits(selectedMonth, target);
+    setEditingWeeklySplits(splits.map(s => ({ ...s })));
+    setIsWeeklyConfigOpen(true);
+  };
+
+  const handleDistributeEqually = () => {
+    const splits = generateDefaultWeeklySplits(weeklyConfigMonth, weeklyConfigTargetTotal);
+    setEditingWeeklySplits(splits);
+    toast.success("Meta distribuída igualmente em 4 semanas!");
+  };
+
+  const handleUpdateWeeklySplitValue = (idx: number, valStr: string) => {
+    const num = parseFloat(valStr.replace(',', '.')) || 0;
+    setEditingWeeklySplits(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], targetAmount: Math.max(0, num) };
+      return copy;
+    });
+  };
+
+  const handleSaveWeeklyConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!salonData) return;
+
+    try {
+      if (weeklyConfigType === 'salon') {
+        const ref = doc(db, `salons/${salonData.id}/goals`, weeklyConfigTargetId);
+        await updateDoc(ref, {
+          weeklyGoals: editingWeeklySplits,
+          weeklyDistributionMode: 'custom',
+          updatedAt: Date.now(),
+        });
+        toast.success("Metas semanais do salão atualizadas com sucesso!");
+      } else {
+        const ref = doc(db, `salons/${salonData.id}/professionalGoals`, weeklyConfigTargetId);
+        const existingGoal = professionalGoals.find(g => g.id === weeklyConfigTargetId);
+
+        await setDoc(ref, {
+          id: weeklyConfigTargetId,
+          professionalId: weeklyConfigTargetId.split('_')[0],
+          professionalName: weeklyConfigEntityName,
+          month: weeklyConfigMonth,
+          targetAmount: weeklyConfigTargetTotal,
+          weeklyGoals: editingWeeklySplits,
+          weeklyDistributionMode: 'custom',
+          updatedAt: Date.now(),
+          createdAt: existingGoal?.createdAt || Date.now(),
+        }, { merge: true });
+
+        toast.success(`Metas semanais para ${weeklyConfigEntityName} salvas com sucesso!`);
+      }
+      setIsWeeklyConfigOpen(false);
+    } catch (err) {
+      console.error("Erro ao salvar metas semanais:", err);
+      toast.error("Erro ao salvar metas semanais.");
     }
   };
 
@@ -464,13 +568,18 @@ export default function GoalsPage() {
       (g) => g.professionalId === p.id && g.month === selectedMonth
     );
     const autoRevenue = calculateRevenue(p.id);
-    const goalObj = rawGoal ? normalizeGoal(rawGoal, autoRevenue) : {
+    const goalObj: NormalizedGoal = rawGoal ? normalizeGoal(rawGoal, autoRevenue) : {
       id: `${p.id}_${selectedMonth}`,
       professionalId: p.id,
       professionalName: p.name,
       month: selectedMonth,
-      targetAmount: 0,
+      period: "mensal",
+      targetValue: 0,
       currentValue: autoRevenue,
+      startDate: new Date(selectedMonth + "-01"),
+      endDate: new Date(new Date(selectedMonth + "-01").getFullYear(), new Date(selectedMonth + "-01").getMonth() + 1, 0),
+      weeklyGoals: generateDefaultWeeklySplits(selectedMonth, 0),
+      weeklyDistributionMode: 'equal',
       lastProgressUpdateAt: 0,
       lastProgressUpdatedBy: "",
     };
@@ -650,6 +759,21 @@ export default function GoalsPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Tipo de Meta</Label>
+                    <Select
+                      value={formData.periodType}
+                      onValueChange={(val) => setFormData((p) => ({ ...p, periodType: val as 'mensal' | 'semanal' }))}
+                    >
+                      <SelectTrigger className="bg-card border-border">
+                        <SelectValue placeholder="Selecione o período" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mensal">Mensal</SelectItem>
+                        <SelectItem value="semanal">Semanal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Mês Referência</Label>
                     <Input
                       required
@@ -777,6 +901,34 @@ export default function GoalsPage() {
                           )}
                         </div>
                         <Progress value={pct} className="h-2 bg-secondary" />
+                      </div>
+
+                      {/* Weekly Breakdown Panel & Action */}
+                      <div className="pt-3 border-t border-border/70 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-mono flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-primary" />
+                            Metas por Semana (4 Semanas)
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openSalonWeeklyConfig(g)}
+                            className="text-[10px] h-7 px-2.5 rounded-lg border-primary/30 text-primary hover:bg-primary/10 font-semibold"
+                          >
+                            📅 Definir por Semana
+                          </Button>
+                        </div>
+
+                        {/* 4 Weeks pills */}
+                        <div className="grid grid-cols-4 gap-1.5 text-center">
+                          {(g.weeklyGoals && g.weeklyGoals.length > 0 ? g.weeklyGoals : generateDefaultWeeklySplits(g.month, g.targetAmount)).map((w) => (
+                            <div key={w.weekNumber} className="bg-secondary/70 p-1.5 rounded-lg border border-border/80">
+                              <span className="text-[9px] text-muted-foreground font-semibold block">Sem {w.weekNumber}</span>
+                              <span className="text-[10px] font-bold font-mono text-foreground">{formatBRL(w.targetAmount)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -920,7 +1072,7 @@ export default function GoalsPage() {
                   : "text-muted-foreground hover:text-foreground hover:bg-secondary"
               }`}
             >
-              <TrendingUp className="w-3.5 h-3.5" /> Ref. Semanais Derivadas
+              <Calendar className="w-3.5 h-3.5 text-primary" /> Metas Semanais (4 Semanas)
             </button>
             <button
               onClick={() => setSubTab("daily")}
@@ -1188,6 +1340,15 @@ export default function GoalsPage() {
                                   {/* Actions */}
                                   <td className="p-3.5 pr-5 text-center">
                                     <div className="flex items-center justify-center gap-1.5">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => openProfWeeklyConfig(p, progress.targetValue)}
+                                        className="text-[10px] h-7 px-2 rounded-lg border-primary/30 text-primary hover:bg-primary/10 font-semibold"
+                                        title="Definir metas semanais deste profissional"
+                                      >
+                                        <Calendar className="w-3 h-3 mr-1" /> Semanas
+                                      </Button>
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -1848,59 +2009,102 @@ export default function GoalsPage() {
 
               {/* SUBTAB: WEEKLY */}
               {subTab === "weekly" && (
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="bg-[#121217] border border-white/5 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
-                      <h4 className="text-sm font-semibold text-white font-heading">Referências Semanais Derivadas</h4>
+                      <h4 className="text-sm font-semibold text-white font-heading flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        Metas Semanais por Profissional • {selectedMonth}
+                      </h4>
                       <p className="text-xs text-muted-foreground">
-                        Metas sugeridas semanais baseadas estritamente na meta mensal do profissional calculadas proporcionalmente de maneira segura.
+                        Cada mês é organizado em 4 semanas. Você pode ajustar a meta de cada semana individualmente para que os profissionais vejam um objetivo leve e próximo de atingir.
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {normalizedProfGoals.map(({ professional: p, progress }) => {
-                      if (progress.targetValue === 0) return null;
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {normalizedProfGoals.map(({ professional: p, goalObj, progress }) => {
+                      if (progress.targetValue === 0) {
+                        return (
+                          <Card key={p.id} className="border-white/5 bg-[#15151b] p-5 rounded-2xl flex flex-col items-center justify-center text-center py-8">
+                            <Target className="w-8 h-8 text-muted-foreground opacity-30 mb-2" />
+                            <p className="text-xs font-bold text-white mb-1">{p.name}</p>
+                            <p className="text-[11px] text-zinc-400 mb-3">Nenhuma meta definida para {selectedMonth}.</p>
+                            <Button
+                              size="sm"
+                              onClick={() => openProfWeeklyConfig(p, 2000)}
+                              className="text-xs bg-primary text-black font-bold h-8 rounded-xl"
+                            >
+                              + Definir Meta & Semanas
+                            </Button>
+                          </Card>
+                        );
+                      }
 
-                      // Derived weekly is roughly proportional to the total count of days, considering a 7 day span
-                      const weekRatio = 7 / progress.totalDays;
-                      const weeklyRefTarget = progress.targetValue * weekRatio;
-                      const weeklyRefRealized = progress.currentValue * weekRatio;
-                      
+                      const splits = (goalObj?.weeklyGoals && goalObj.weeklyGoals.length > 0)
+                        ? goalObj.weeklyGoals
+                        : generateDefaultWeeklySplits(selectedMonth, progress.targetValue);
+
                       return (
                         <Card key={p.id} className="border-white/5 bg-[#15151b] p-5 rounded-2xl space-y-4 flex flex-col justify-between">
-                          <div className="space-y-4">
+                          <div className="space-y-3">
                             <div className="flex justify-between items-start border-b border-white/5 pb-2.5">
                               <div>
-                                <p className="text-xs font-bold text-white">{p.name}</p>
-                                <p className="text-[10px] text-muted-foreground">Faturamento contratual: {formatBRL(progress.targetValue)}</p>
+                                <p className="text-sm font-bold text-white">{p.name}</p>
+                                <p className="text-[10px] text-muted-foreground">{p.role || "Especialista"} • Meta Total do Mês: <b className="text-[#D4AF37] font-mono">{formatBRL(progress.targetValue)}</b></p>
                               </div>
-                              <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full font-mono">
-                                7 Dias Estimado
-                              </span>
+                              <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() => openProfWeeklyConfig(p, progress.targetValue)}
+                                className="text-[10px] h-7 px-2.5 rounded-lg border-primary/30 text-primary hover:bg-primary/10 font-semibold"
+                              >
+                                ⚙️ Ajustar Semanas
+                              </Button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                              <div className="space-y-1">
-                                <span className="text-zinc-400 font-sans block">Realizado Semanal (Pacing):</span>
-                                <p className="text-sm font-bold text-zinc-200 font-mono">{formatBRL(weeklyRefRealized)}</p>
-                              </div>
-                              <div className="space-y-1 text-right">
-                                <span className="text-primary font-bold font-sans block">Ref. Semanal Sugerida:</span>
-                                <p className="text-sm font-bold text-primary font-mono">{formatBRL(weeklyRefTarget)}</p>
-                              </div>
+                            {/* 4 Semanas Detalhadas */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                              {splits.map((w) => {
+                                const wRev = calculateRevenueForDateRange(appointments, services, p.id, w.startDate, w.endDate);
+                                const isHit = w.targetAmount > 0 && wRev >= w.targetAmount;
+                                const wPct = w.targetAmount > 0 ? Math.min(Math.round((wRev / w.targetAmount) * 100), 100) : 0;
+                                const wRem = Math.max(0, w.targetAmount - wRev);
+
+                                return (
+                                  <div key={w.weekNumber} className="bg-black/30 p-3 rounded-xl border border-white/5 space-y-1.5">
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="font-semibold text-white text-[11px]">Semana {w.weekNumber}</span>
+                                      <span className={cn(
+                                        "text-[9px] font-bold px-1.5 py-0.2 rounded font-mono",
+                                        isHit ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "text-zinc-400"
+                                      )}>
+                                        {isHit ? "✓ Batida!" : `${wPct}%`}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex justify-between text-[10px] font-mono">
+                                      <span className="text-zinc-300 font-bold">{formatBRL(wRev)}</span>
+                                      <span className="text-zinc-500">Alvo: {formatBRL(w.targetAmount)}</span>
+                                    </div>
+
+                                    <Progress value={wPct} className="h-1 bg-zinc-800" />
+
+                                    <span className="text-[9px] text-zinc-400 block pt-0.5 truncate font-mono">
+                                      {isHit ? `+${formatBRL(wRev - w.targetAmount)} superávit` : `Faltam ${formatBRL(wRem)}`}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
 
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              toast.success(`Referência semanal de ${formatBRL(weeklyRefTarget)} simulada! Nenhuma alteração foi gravada em banco.`);
-                            }}
-                            className="w-full bg-white/5 border-white/10 hover:bg-white/10 text-xs h-9 rounded-xl font-medium text-white transition-all/all mt-4"
-                          >
-                            Criar meta semanal a partir da mensal (Simular)
-                          </Button>
+                          <div className="pt-2 border-t border-white/5 flex justify-between items-center text-[10px] text-zinc-400">
+                            <span>Soma das semanas: <b className="text-white font-mono">{formatBRL(splits.reduce((acc, s) => acc + s.targetAmount, 0))}</b></span>
+                            <span className="text-[#D4AF37] font-medium cursor-pointer hover:underline" onClick={() => openProfWeeklyConfig(p, progress.targetValue)}>
+                              Editar Distribuição ➔
+                            </span>
+                          </div>
                         </Card>
                       );
                     })}
@@ -2273,6 +2477,131 @@ export default function GoalsPage() {
               </Button>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog for setting weekly goals (Salon or Professional) */}
+      <Dialog
+        open={isWeeklyConfigOpen}
+        onOpenChange={(open) => {
+          setIsWeeklyConfigOpen(open);
+          if (!open) {
+            setEditingWeeklySplits([]);
+            setWeeklyConfigTargetTotal(0);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px] bg-card border border-border rounded-3xl p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary" />
+              {weeklyConfigType === 'salon' ? 'Metas Semanais do Salão' : `Metas Semanais • ${weeklyConfigEntityName}`}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveWeeklyConfig} className="space-y-5 pt-3">
+            {/* Summary banner */}
+            <div className="bg-secondary/70 p-4 rounded-2xl border border-border space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground uppercase tracking-wider font-semibold font-mono">
+                  {weeklyConfigType === 'salon' ? 'Meta Geral do Salão' : `Profissional: ${weeklyConfigEntityName}`}
+                </span>
+                <span className="text-primary font-mono font-bold">{weeklyConfigMonth}</span>
+              </div>
+              <div className="flex justify-between items-baseline pt-1">
+                <span className="text-xs text-muted-foreground">Meta Mensal Total:</span>
+                <span className="text-lg font-bold text-foreground font-mono">{formatBRL(weeklyConfigTargetTotal)}</span>
+              </div>
+            </div>
+
+            {/* Quick Action: Distribute equally */}
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-muted-foreground font-medium">Definição das 4 Semanas:</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDistributeEqually}
+                className="text-[11px] h-7 px-3 rounded-lg border-primary/30 text-primary hover:bg-primary/10 font-semibold"
+              >
+                ⚡ Distribuir Igualmente (25%)
+              </Button>
+            </div>
+
+            {/* Inputs for each of the 4 weeks */}
+            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+              {editingWeeklySplits.map((week, idx) => (
+                <div key={week.weekNumber} className="bg-secondary/50 p-3 rounded-xl border border-border space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-bold text-[10px] flex items-center justify-center">
+                        {week.weekNumber}
+                      </span>
+                      {week.label}
+                    </Label>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {week.startDate.slice(8, 10)}/{week.startDate.slice(5, 7)} a {week.endDate.slice(8, 10)}/{week.endDate.slice(5, 7)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-mono">R$</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={week.targetAmount || ''}
+                      onChange={(e) => handleUpdateWeeklySplitValue(idx, e.target.value)}
+                      className="bg-background border-border text-xs h-9 rounded-xl font-mono text-foreground"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Sum validation indicator */}
+            {(() => {
+              const currentSum = editingWeeklySplits.reduce((acc, s) => acc + (Number(s.targetAmount) || 0), 0);
+              const diff = Math.round((currentSum - weeklyConfigTargetTotal) * 100) / 100;
+              const isMatch = Math.abs(diff) < 0.05;
+
+              return (
+                <div className={cn(
+                  "p-3 rounded-xl border text-xs flex justify-between items-center",
+                  isMatch 
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-700"
+                )}>
+                  <span>Soma das Semanas: <strong className="font-mono">{formatBRL(currentSum)}</strong></span>
+                  {isMatch ? (
+                    <span className="font-bold">✓ Bate 100% da Meta Mensal</span>
+                  ) : (
+                    <span className="font-medium font-mono">
+                      {diff > 0 ? `+${formatBRL(diff)} acima da meta` : `${formatBRL(diff)} abaixo da meta`}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-2 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsWeeklyConfigOpen(false)}
+                className="flex-1 text-xs h-10 rounded-xl"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 bg-primary hover:bg-[#2B2B2B] text-black font-semibold text-xs h-10 rounded-xl shadow-md"
+              >
+                Salvar Metas Semanais
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

@@ -24,6 +24,9 @@ interface LumiCollaboratorCoachingProps {
   salonName?: string;
   todayGoal?: number;
   todayAchieved?: number;
+  weekGoal?: number;
+  weekAchieved?: number;
+  weekLabel?: string;
   monthlyGoal?: number;
   monthlyAchieved?: number;
   commissionRate?: number;
@@ -37,6 +40,9 @@ export function LumiCollaboratorCoaching({
   salonName = 'Lumière',
   todayGoal = 400,
   todayAchieved = 0,
+  weekGoal,
+  weekAchieved = 0,
+  weekLabel = 'Desta Semana',
   monthlyGoal = 8000,
   monthlyAchieved = 0,
   commissionRate = 50,
@@ -46,25 +52,36 @@ export function LumiCollaboratorCoaching({
 }: LumiCollaboratorCoachingProps) {
   const navigate = useNavigate();
   const [isConsultingModalOpen, setIsConsultingModalOpen] = useState(false);
+  const [metricViewMode, setMetricViewMode] = useState<'week' | 'day'>(weekGoal && weekGoal > 0 ? 'week' : 'day');
 
   const firstName = professionalName.split(' ')[0];
   const todayProgressPct = todayGoal > 0 ? Math.min(Math.round((todayAchieved / todayGoal) * 100), 200) : 0;
+  
+  const hasWeekGoal = weekGoal !== undefined && weekGoal > 0;
+  const activeWeekTarget = hasWeekGoal ? weekGoal : (monthlyGoal > 0 ? Math.round(monthlyGoal / 4) : 2000);
+  const activeWeekAchieved = hasWeekGoal ? weekAchieved : (todayAchieved * 4);
+  const weekProgressPct = activeWeekTarget > 0 ? Math.min(Math.round((activeWeekAchieved / activeWeekTarget) * 100), 200) : 0;
+
   const monthlyProgressPct = monthlyGoal > 0 ? Math.min(Math.round((monthlyAchieved / monthlyGoal) * 100), 200) : 0;
   const estimatedCommissionToday = (todayAchieved * commissionRate) / 100;
+  const estimatedCommissionWeek = (activeWeekAchieved * commissionRate) / 100;
   const estimatedCommissionMonth = (monthlyAchieved * commissionRate) / 100;
 
-  const mascotMood = todayProgressPct >= 100 ? 'celebrating' : todayProgressPct >= 50 ? 'happy' : 'strategic';
+  const mascotMood = weekProgressPct >= 100 || todayProgressPct >= 100 ? 'celebrating' : (weekProgressPct >= 50 || todayProgressPct >= 50) ? 'happy' : 'strategic';
 
-  // Dicas dinâmicas da Lumi para o profissional
+  // Dicas dinâmicas da Lumi para o profissional com foco em metas semanais acessíveis
   const getCollaboratorTip = () => {
-    if (todayProgressPct >= 100) {
-      return `Sensacional, ${firstName}! Você já superou sua cota de hoje! Que tal convidar seu último cliente a levar um kit de manutenção home care para turbinar ainda mais seus ganhos?`;
+    if (weekProgressPct >= 100) {
+      return `Sensacional, ${firstName}! Você já superou sua meta semanal de ${formatBRL(activeWeekTarget)}! Cada novo atendimento agora é lucro e comissão pura no seu bolso! 🚀`;
+    }
+    const remainingWeek = Math.max(0, activeWeekTarget - activeWeekAchieved);
+    if (remainingWeek > 0 && remainingWeek <= activeWeekTarget * 0.3) {
+      return `Falta muito pouco, ${firstName}! Apenas ${formatBRL(remainingWeek)} para bater sua meta semanal. Um ou dois serviços extras hoje garantem a sua vitória na semana!`;
     }
     if (scheduledTodayCount > 0) {
-      const remaining = Math.max(0, todayGoal - todayAchieved);
-      return `Você tem ${scheduledTodayCount} atendimento(s) na sua agenda hoje. Oferecendo um tratamento express (R$ 40 a R$ 60) em cada cadeira, você bate sua meta de ${formatBRL(todayGoal)} e garante ${formatBRL((todayGoal * commissionRate) / 100)} de comissão!`;
+      return `Você tem ${scheduledTodayCount} atendimento(s) agendados hoje. Oferecendo um tratamento express (R$ 40 a R$ 60) em cada cadeira, você encurta o caminho para a meta semanal e garante ${formatBRL((activeWeekTarget * commissionRate) / 100)} de comissão!`;
     }
-    return `Mantenha sua bancada impecável e aproveite o momento do atendimento para garantir o retorno do seu cliente já agendado para daqui a 3 ou 4 semanas.`;
+    return `Mantenha o foco na sua meta semanal de ${formatBRL(activeWeekTarget)}. Dividir o mês em semanas torna cada passo muito mais leve e rápido de alcançar!`;
   };
 
   return (
@@ -120,25 +137,54 @@ export function LumiCollaboratorCoaching({
 
       {/* Grid de 3 Indicadores Chave do Profissional */}
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Card 1: Meta do Dia */}
+        {/* Card 1: Meta da Semana (Foco Principal Mais Fácil e Visual) */}
         <div className="p-4 rounded-2xl bg-zinc-950/50 border border-white/10 space-y-2.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-primary flex items-center gap-1.5">
               <Target className="w-3.5 h-3.5 text-primary" />
-              Sua Meta de Hoje
+              {metricViewMode === 'week' ? `Sua Meta ${weekLabel}` : 'Sua Meta de Hoje'}
             </span>
-            <span className="text-[11px] font-mono font-bold text-primary">
-              {todayProgressPct}%
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setMetricViewMode(m => m === 'week' ? 'day' : 'week')}
+                className="text-[9px] text-zinc-400 hover:text-white underline decoration-dotted font-mono cursor-pointer"
+              >
+                {metricViewMode === 'week' ? 'Ver dia' : 'Ver semana'}
+              </button>
+              <span className="text-[11px] font-mono font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                {metricViewMode === 'week' ? `${weekProgressPct}%` : `${todayProgressPct}%`}
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between text-xs text-white font-bold">
-            <span>{formatBRL(todayAchieved)}</span>
-            <span className="text-zinc-500 font-normal">Alvo: {formatBRL(todayGoal)}</span>
-          </div>
-          <Progress value={Math.min(todayProgressPct, 100)} className="h-1.5 bg-zinc-800" />
-          <span className="text-[10px] text-zinc-400 block pt-0.5">
-            {todayAchieved >= todayGoal ? 'Meta batida com sucesso! 🎉' : `Faltam ${formatBRL(todayGoal - todayAchieved)} para fechar o dia.`}
-          </span>
+          
+          {metricViewMode === 'week' ? (
+            <>
+              <div className="flex justify-between text-xs text-white font-bold">
+                <span className="text-sm font-mono text-white">{formatBRL(activeWeekAchieved)}</span>
+                <span className="text-zinc-400 font-normal text-[11px]">Meta: {formatBRL(activeWeekTarget)}</span>
+              </div>
+              <Progress value={Math.min(weekProgressPct, 100)} className="h-1.5 bg-zinc-800" />
+              <span className="text-[10px] text-zinc-300 block pt-0.5">
+                {activeWeekAchieved >= activeWeekTarget ? (
+                  <span className="text-emerald-400 font-semibold">Meta semanal batida com sucesso! 🎉</span>
+                ) : (
+                  <span>Faltam apenas <strong className="text-white font-mono">{formatBRL(activeWeekTarget - activeWeekAchieved)}</strong> para fechar a semana!</span>
+                )}
+              </span>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between text-xs text-white font-bold">
+                <span className="text-sm font-mono text-white">{formatBRL(todayAchieved)}</span>
+                <span className="text-zinc-400 font-normal text-[11px]">Meta: {formatBRL(todayGoal)}</span>
+              </div>
+              <Progress value={Math.min(todayProgressPct, 100)} className="h-1.5 bg-zinc-800" />
+              <span className="text-[10px] text-zinc-400 block pt-0.5">
+                {todayAchieved >= todayGoal ? 'Meta do dia batida! 🎉' : `Faltam ${formatBRL(todayGoal - todayAchieved)} para fechar o dia.`}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Card 2: Projeção de Comissão */}
@@ -153,12 +199,12 @@ export function LumiCollaboratorCoaching({
             </span>
           </div>
           <div className="flex justify-between text-xs text-white font-bold">
-            <span className="text-emerald-400">{formatBRL(estimatedCommissionToday)}</span>
-            <span className="text-zinc-400 font-normal text-[11px]">Hoje</span>
+            <span className="text-emerald-400 font-mono text-sm">{formatBRL(estimatedCommissionWeek)}</span>
+            <span className="text-zinc-400 font-normal text-[11px]">Nesta Semana</span>
           </div>
           <div className="text-[11px] text-zinc-400 flex justify-between pt-1 border-t border-white/5">
-            <span>Acumulado no Mês:</span>
-            <span className="text-white font-semibold">{formatBRL(estimatedCommissionMonth)}</span>
+            <span>Hoje: <b className="text-zinc-200">{formatBRL(estimatedCommissionToday)}</b></span>
+            <span>Mês: <b className="text-white">{formatBRL(estimatedCommissionMonth)}</b></span>
           </div>
         </div>
 

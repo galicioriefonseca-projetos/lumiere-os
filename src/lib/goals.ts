@@ -1,3 +1,5 @@
+import { WeeklyGoalSplit } from '../types';
+
 export interface NormalizedGoal {
   id: string;
   professionalId?: string;
@@ -8,12 +10,98 @@ export interface NormalizedGoal {
   month: string;  // "YYYY-MM"
   startDate: Date;
   endDate: Date;
+  weeklyGoals?: WeeklyGoalSplit[];
+  weeklyDistributionMode?: 'equal' | 'custom';
   createdAt?: any;
   updatedAt?: any;
   title?: string;
   scope?: string;
   lastProgressUpdateAt?: any;
   lastProgressUpdatedBy?: string;
+}
+
+export function generateDefaultWeeklySplits(monthStr: string, totalTarget: number): WeeklyGoalSplit[] {
+  let cleanMonth = monthStr || new Date().toISOString().substring(0, 7);
+  if (cleanMonth.length > 7) cleanMonth = cleanMonth.substring(0, 7);
+
+  const parts = cleanMonth.split('-');
+  const year = parseInt(parts[0]) || new Date().getFullYear();
+  const monthIdx = (parseInt(parts[1]) || (new Date().getMonth() + 1)) - 1;
+  const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+
+  const total = Number(totalTarget) || 0;
+  const splitAmount = total > 0 ? Math.round((total / 4) * 100) / 100 : 0;
+  const lastWeekAmount = total > 0 ? Math.max(0, Math.round((total - (splitAmount * 3)) * 100) / 100) : 0;
+
+  const mStr = String(monthIdx + 1).padStart(2, '0');
+
+  return [
+    {
+      weekNumber: 1,
+      label: `Semana 1 (01/${mStr} a 07/${mStr})`,
+      startDate: `${year}-${mStr}-01`,
+      endDate: `${year}-${mStr}-07`,
+      targetAmount: splitAmount,
+    },
+    {
+      weekNumber: 2,
+      label: `Semana 2 (08/${mStr} a 14/${mStr})`,
+      startDate: `${year}-${mStr}-08`,
+      endDate: `${year}-${mStr}-14`,
+      targetAmount: splitAmount,
+    },
+    {
+      weekNumber: 3,
+      label: `Semana 3 (15/${mStr} a 21/${mStr})`,
+      startDate: `${year}-${mStr}-15`,
+      endDate: `${year}-${mStr}-21`,
+      targetAmount: splitAmount,
+    },
+    {
+      weekNumber: 4,
+      label: `Semana 4 (22/${mStr} a ${String(lastDay).padStart(2, '0')}/${mStr})`,
+      startDate: `${year}-${mStr}-22`,
+      endDate: `${year}-${mStr}-${String(lastDay).padStart(2, '0')}`,
+      targetAmount: lastWeekAmount,
+    },
+  ];
+}
+
+export function getCurrentWeekIndex(weeks: WeeklyGoalSplit[], refDate: Date = new Date()): number {
+  if (!weeks || weeks.length === 0) return 0;
+  const todayStr = refDate.toISOString().substring(0, 10);
+
+  const matchIdx = weeks.findIndex(w => todayStr >= w.startDate && todayStr <= w.endDate);
+  if (matchIdx !== -1) return matchIdx;
+
+  if (todayStr < weeks[0].startDate) return 0;
+  return weeks.length - 1;
+}
+
+export function calculateRevenueForDateRange(
+  appointments: any[],
+  services: any[],
+  profId: string | null,
+  startDate: string,
+  endDate: string
+): number {
+  if (!appointments || appointments.length === 0) return 0;
+
+  return appointments
+    .filter((app) => {
+      const matchProf = !profId || app.professionalId === profId;
+      const isCompleted = app.status === 'completed';
+      const appDate = app.date ? String(app.date).substring(0, 10) : '';
+      const inRange = appDate >= startDate && appDate <= endDate;
+      return matchProf && isCompleted && inRange;
+    })
+    .reduce((sum, app) => {
+      if (app.price !== undefined && app.price !== null) {
+        return sum + Number(app.price);
+      }
+      const srv = services.find((s) => s.id === app.serviceId);
+      return sum + (srv?.price || 0);
+    }, 0);
 }
 
 export function normalizeGoal(goal: any, fallbackCurrentValue?: number): NormalizedGoal {
@@ -81,6 +169,10 @@ export function normalizeGoal(goal: any, fallbackCurrentValue?: number): Normali
     endDate = new Date();
   }
 
+  const weeklyGoals = Array.isArray(goal.weeklyGoals) && goal.weeklyGoals.length > 0
+    ? goal.weeklyGoals
+    : (targetValue > 0 ? generateDefaultWeeklySplits(month, targetValue) : []);
+
   return {
     id: goal.id || "",
     professionalId: goal.professionalId,
@@ -91,6 +183,8 @@ export function normalizeGoal(goal: any, fallbackCurrentValue?: number): Normali
     month,
     startDate,
     endDate,
+    weeklyGoals,
+    weeklyDistributionMode: goal.weeklyDistributionMode || 'equal',
     createdAt: goal.createdAt,
     updatedAt: goal.updatedAt,
     title: goal.title || "",

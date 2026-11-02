@@ -40,7 +40,7 @@ import {
   BellOff,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
-import { calculateGoalProgress, normalizeGoal } from "../../lib/goals";
+import { calculateGoalProgress, normalizeGoal, getCurrentWeekIndex, calculateRevenueForDateRange } from "../../lib/goals";
 import { requestAndRegisterNotificationPermission } from "../../lib/pushNotifications";
 import { LumiCollaboratorCoaching } from "../../components/lumi/LumiCollaboratorCoaching";
 
@@ -436,12 +436,44 @@ export default function ProfessionalDashboard() {
   const todayAppointments = myAppointments.filter(a => a.date === todayStr);
   const displayAppointments = agendaTab === "today" ? todayAppointments : myAppointments;
 
+  // State for weekly goal navigation
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0);
+  const [showMonthlyDetails, setShowMonthlyDetails] = useState<boolean>(false);
+
   // Active Goal for current month
   const currentGoalRaw = myGoals.find(g => g.month === currentMonthStr);
   const currentGoal = currentGoalRaw ? normalizeGoal(currentGoalRaw, currentMonthEarnings) : undefined;
   
+  const weeklySplits = currentGoal?.weeklyGoals || [];
+  const currentWeekIdx = getCurrentWeekIndex(weeklySplits);
+
+  useEffect(() => {
+    if (weeklySplits.length > 0) {
+      setSelectedWeekIndex(currentWeekIdx);
+    }
+  }, [weeklySplits.length, currentWeekIdx]);
+
+  const selectedWeek = weeklySplits[selectedWeekIndex] || weeklySplits[0];
+  const selectedWeekRevenue = (selectedWeek && myProfile)
+    ? calculateRevenueForDateRange(myAppointments, services, myProfile.id, selectedWeek.startDate, selectedWeek.endDate)
+    : 0;
+  const selectedWeekTarget = selectedWeek?.targetAmount || 0;
+  const selectedWeekRemaining = Math.max(0, selectedWeekTarget - selectedWeekRevenue);
+  const selectedWeekPct = selectedWeekTarget > 0 ? Math.min(Math.round((selectedWeekRevenue / selectedWeekTarget) * 100), 200) : 0;
+  const isSelectedWeekHit = selectedWeekTarget > 0 && selectedWeekRevenue >= selectedWeekTarget;
+
+  // Active current week metrics (for Lumi Coaching and header)
+  const activeCurrentWeek = weeklySplits[currentWeekIdx] || selectedWeek;
+  const activeCurrentWeekRevenue = (activeCurrentWeek && myProfile)
+    ? calculateRevenueForDateRange(myAppointments, services, myProfile.id, activeCurrentWeek.startDate, activeCurrentWeek.endDate)
+    : 0;
+  const activeCurrentWeekTarget = activeCurrentWeek?.targetAmount || 0;
+
   const goalProgress = currentGoal ? calculateGoalProgress(currentGoal, { useBusinessDays }) : null;
+  const isWeeklyGoal = currentGoalRaw?.periodType === 'semanal';
   const goalProgressPct = goalProgress ? goalProgress.progressPercent : 0;
+  const goalLabel = isWeeklyGoal ? "Meta Semanal" : "Meta Mensal";
+  const goalRemainingLabel = isWeeklyGoal ? "Falta para a semana" : "Falta para o mês";
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -585,6 +617,9 @@ export default function ProfessionalDashboard() {
             }
             return sum;
           }, 0)}
+          weekGoal={activeCurrentWeekTarget}
+          weekAchieved={activeCurrentWeekRevenue}
+          weekLabel={activeCurrentWeek?.label || 'Desta Semana'}
           monthlyGoal={currentGoal?.targetValue || 6000}
           monthlyAchieved={currentGoal?.currentValue || currentMonthEarnings}
           commissionRate={myProfile.commissionRate || 50}
@@ -1475,113 +1510,207 @@ export default function ProfessionalDashboard() {
             ) : (
               <div className="max-w-2xl mx-auto space-y-6">
                 
-                {/* Alerta Motivacional de Sprint Final (<10% restante) */}
-                {(() => {
-                  const myPerf = performanceData.find(p => p.prof.id === userData?.id);
-                  if (myPerf?.isNearGoal) {
-                    return (
-                      <div className="bg-gradient-to-r from-amber-500/20 to-yellow-500/5 border-2 border-amber-500/30 rounded-3xl p-6 text-center space-y-3 shadow-xl relative overflow-hidden animate-pulse">
-                        <div className="absolute -top-3 -right-3 text-4xl opacity-10 select-none">🎯</div>
-                        <p className="text-sm font-bold uppercase tracking-wider font-heading text-amber-300">🎯 Quase lá! Sprint Final para a Vitória!</p>
-                        <p className="text-zinc-200 text-xs font-light max-w-lg mx-auto leading-relaxed">
-                          Seu faturamento de <span className="font-bold text-white">R$ {Math.round(myPerf.totalProduction)}</span> representa <span className="font-extrabold text-amber-300 text-sm font-mono">{Math.round(myPerf.goalProgressPct)}%</span> do seu alvo. Falta apenas <span className="font-bold text-white font-mono">R$ {Math.round(myPerf.targetAmount - myPerf.totalProduction)}</span> adicionais! Você está a um passo de bater a meta mensal e ativar o seu bônus de produção! 🚀
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                {/* Header status block */}
-                <div className="bg-[#121217] p-6 rounded-3xl border border-white/5 space-y-4 text-center">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] bg-primary/10 text-primary uppercase font-extrabold tracking-widest px-3 py-1 rounded-full">
-                      Objetivo Individual • {currentGoal.month}
+                {/* Seletor Visual de Semanas do Mês */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                      <Calendar className="w-3 h-3 text-primary" />
+                      Escolha a Semana de Acompanhamento
                     </span>
-
-                    <span className={`text-[10px] font-bold tracking-wider rounded-md px-2.5 py-1 ${
-                      goalProgress.status === "completed" 
-                        ? "bg-green-500/10 text-green-400 border border-green-500/20" 
-                        : goalProgress.status === "on_track"
-                        ? "bg-amber-400/10 text-amber-300 border border-amber-400/20"
-                        : goalProgress.status === "attention"
-                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                        : "bg-red-500/10 text-red-400 border border-red-500/20"
-                    }`}>
-                      {goalProgress.status === "completed" 
-                        ? "META BATIDA" 
-                        : goalProgress.status === "on_track"
-                        ? "EM DIA"
-                        : goalProgress.status === "attention"
-                        ? "ATENÇÃO"
-                        : "ATRASADO"}
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      Mês: {currentGoal.month}
                     </span>
                   </div>
 
-                  <div className="pt-2">
-                    <p className="text-muted-foreground text-xs font-light">Seu Faturamento Realizado</p>
-                    <p className="text-4xl font-heading font-bold text-white tracking-tight font-mono select-all mt-1">{formatBRL(goalProgress.currentValue)}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {weeklySplits.map((week, idx) => {
+                      const isSelected = selectedWeekIndex === idx;
+                      const isCurrent = currentWeekIdx === idx;
+                      const weekRev = calculateRevenueForDateRange(myAppointments, services, myProfile.id, week.startDate, week.endDate);
+                      const isHit = week.targetAmount > 0 && weekRev >= week.targetAmount;
+                      const weekPct = week.targetAmount > 0 ? Math.min(Math.round((weekRev / week.targetAmount) * 100), 100) : 0;
+
+                      return (
+                        <button
+                          key={week.weekNumber}
+                          type="button"
+                          onClick={() => setSelectedWeekIndex(idx)}
+                          className={cn(
+                            "p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
+                            isSelected
+                              ? "bg-[#D4AF37]/15 border-[#D4AF37] ring-1 ring-[#D4AF37]/50 shadow-lg"
+                              : "bg-[#121217] border-white/5 hover:border-white/20 hover:bg-white/5"
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className={cn(
+                              "text-xs font-bold font-heading",
+                              isSelected ? "text-[#D4AF37]" : "text-white"
+                            )}>
+                              Semana {week.weekNumber}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-[8px] bg-primary text-black font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider font-mono">
+                                Atual 📍
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-[9px] text-zinc-400 font-mono mb-2 truncate">
+                            {week.startDate.slice(8, 10)}/{week.startDate.slice(5, 7)} a {week.endDate.slice(8, 10)}/{week.endDate.slice(5, 7)}
+                          </p>
+
+                          <div className="space-y-1 w-full pt-1 border-t border-white/5">
+                            <div className="flex justify-between items-center text-[10px] font-mono">
+                              <span className={cn("font-bold", isHit ? "text-emerald-400" : "text-zinc-200")}>
+                                {formatBRL(weekRev)}
+                              </span>
+                              <span className="text-zinc-500">{weekPct}%</span>
+                            </div>
+                            <Progress value={weekPct} className="h-1 bg-black/40" />
+                          </div>
+
+                          {isHit && (
+                            <span className="text-[8px] text-emerald-400 font-bold font-mono mt-1 flex items-center gap-0.5">
+                              ✓ Batida!
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Card Principal de Destaque: META SEMANAL (Foco e Leveza Visual) */}
+                <div className="bg-gradient-to-b from-[#15141b] to-[#0c0c10] p-6 rounded-3xl border border-[#D4AF37]/30 shadow-2xl space-y-5 text-center relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
+
+                  <div className="flex justify-between items-center relative z-10 flex-wrap gap-2">
+                    <span className="text-[10px] bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 uppercase font-extrabold tracking-widest px-3 py-1 rounded-full font-mono flex items-center gap-1">
+                      <Target className="w-3 h-3 text-[#D4AF37]" />
+                      {selectedWeek?.label || `Semana ${selectedWeekIndex + 1}`}
+                      {currentWeekIdx === selectedWeekIndex && " • SEMANA ATUAL"}
+                    </span>
+
+                    <span className={cn(
+                      "text-[10px] font-bold tracking-wider rounded-md px-2.5 py-1 font-mono border",
+                      isSelectedWeekHit
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        : selectedWeekPct >= 75
+                        ? "bg-amber-400/10 text-amber-300 border-amber-400/20"
+                        : selectedWeekPct >= 40
+                        ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                        : "bg-zinc-800 text-zinc-300 border-zinc-700"
+                    )}>
+                      {isSelectedWeekHit
+                        ? "META DA SEMANA BATIDA! 🏆"
+                        : selectedWeekPct >= 75
+                        ? "RETA FINAL DA SEMANA 🔥"
+                        : selectedWeekPct >= 40
+                        ? "EM ANDAMENTO 👍"
+                        : "VAMOS ACELERAR ⚡"}
+                    </span>
+                  </div>
+
+                  {/* Valor Principal Realizado na Semana */}
+                  <div className="pt-2 relative z-10">
+                    <p className="text-zinc-400 text-xs font-light uppercase tracking-wider">
+                      Seu Faturamento Realizado Nesta Semana
+                    </p>
+                    <p className="text-4xl md:text-5xl font-heading font-extrabold text-white tracking-tight font-mono select-all mt-1">
+                      {formatBRL(selectedWeekRevenue)}
+                    </p>
                     
-                    <p className="text-xs text-muted-foreground mt-2">
-                      De um alvo contratado de <span className="text-[#D4AF37] font-semibold font-mono">{formatBRL(goalProgress.targetValue)}</span>
+                    <p className="text-xs text-zinc-400 mt-2 font-mono">
+                      Meta desta semana: <span className="text-[#D4AF37] font-semibold">{formatBRL(selectedWeekTarget)}</span>
                     </p>
                   </div>
-                </div>
 
-                {/* Progress Visualizer */}
-                <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/5">
-                  <div className="flex justify-between text-xs font-medium">
-                    <span className="text-primary font-bold">{goalProgress.progressPercent}% Concluído</span>
-                    {goalProgress.remainingValue > 0 ? (
-                      <span className="text-zinc-300">
-                        Falta faturar <span className="font-bold text-white font-mono">{formatBRL(goalProgress.remainingValue)}</span>
+                  {/* Barra de Progresso Semanal com "Quanto Falta" em Destaque */}
+                  <div className="space-y-3 bg-black/40 p-4 rounded-2xl border border-white/10 relative z-10">
+                    <div className="flex justify-between items-center text-xs font-medium">
+                      <span className="text-[#D4AF37] font-bold font-mono text-sm">
+                        {selectedWeekPct}% Atingido
                       </span>
-                    ) : (
-                      <span className="text-semibold text-green-400 flex items-center">
-                        <Award className="w-3.5 h-3.5 mr-1" /> Você ultrapassou a meta em {formatBRL(Math.abs(goalProgress.remainingValue))}!
+                      {selectedWeekRemaining > 0 ? (
+                        <span className="text-zinc-200 font-sans text-xs">
+                          Faltam apenas <strong className="text-white font-mono font-bold text-sm bg-white/10 px-2 py-0.5 rounded">{formatBRL(selectedWeekRemaining)}</strong> para bater a semana!
+                        </span>
+                      ) : (
+                        <span className="text-emerald-400 font-semibold flex items-center text-xs">
+                          <Award className="w-4 h-4 mr-1 text-emerald-400" />
+                          Você superou a meta semanal em {formatBRL(Math.abs(selectedWeekRemaining))}! 🎉
+                        </span>
+                      )}
+                    </div>
+                    <Progress value={Math.min(selectedWeekPct, 100)} className="h-3 rounded-xl bg-zinc-900" />
+                  </div>
+
+                  {/* Cards de Apoio da Semana */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left relative z-10">
+                    <div className="bg-black/30 p-3.5 rounded-2xl border border-white/5 space-y-1">
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-mono">
+                        Período da Semana
                       </span>
-                    )}
-                  </div>
-                  <Progress value={goalProgress.progressPercent} className="h-3 rounded-xl bg-black/60" />
-                </div>
+                      <p className="text-sm font-semibold text-white font-mono">
+                        {selectedWeek?.startDate} até {selectedWeek?.endDate}
+                      </p>
+                      <p className="text-[10px] text-zinc-500">
+                        Total de 7 dias de produção na semana.
+                      </p>
+                    </div>
 
-                {/* Grid stats */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-1">
-                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-sans">Média Diária Necessária</span>
-                    <p className="text-xl font-bold font-mono text-primary pt-1">
-                      {goalProgress.remainingValue > 0 ? formatBRL(goalProgress.dailyAverageRequired) : "R$ 0,00"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">Meta diária para os próximos {goalProgress.totalDays - goalProgress.elapsedDays} dias.</p>
-                  </div>
-
-                  <div className="bg-black/30 p-4 rounded-2xl border border-white/5 space-y-1">
-                    <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-sans">Calendário do Período</span>
-                    <p className="text-xl font-bold text-white pt-1">
-                      {goalProgress.totalDays - goalProgress.elapsedDays} dias restantes
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">De um ciclo de {goalProgress.totalDays} dias ({useBusinessDays ? "Dias Úteis" : "Corridos"}).</p>
-                  </div>
-                </div>
-
-                {/* Guidance Tip of progress */}
-                {goalProgress.status === "completed" ? (
-                  <div className="flex gap-3 bg-green-500/10 border border-green-500/20 p-4 rounded-2xl items-center text-xs text-green-400">
-                    <Award className="w-6 h-6 text-green-400 shrink-0" />
-                    <div>
-                      <p className="font-bold">Espetacular! Você bateu seu objetivo!</p>
-                      <p className="opacity-80">Seu desempenho faturado estipulado para {currentGoal.month} foi atingido com sucesso. Parabéns!</p>
+                    <div className="bg-black/30 p-3.5 rounded-2xl border border-white/5 space-y-1">
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-mono">
+                        {selectedWeekRemaining > 0 ? "Ritmo da Semana" : "Status de Conquista"}
+                      </span>
+                      <p className="text-sm font-semibold text-[#D4AF37] font-mono">
+                        {selectedWeekRemaining > 0 ? `Falta ${formatBRL(selectedWeekRemaining)}` : "Meta Concluída!"}
+                      </p>
+                      <p className="text-[10px] text-zinc-500">
+                        {selectedWeekRemaining > 0 
+                          ? "Foco nesta semana para manter seu bônus de produção em dia!"
+                          : "Excelente! Desfrute do seu bônus e continue avançando!"}
+                      </p>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex gap-2.5 bg-yellow-500/5 border border-yellow-500/10 p-4.5 rounded-2xl text-xs text-zinc-350 leading-relaxed font-sans">
-                    <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                    <p>
-                      O cálculo de dias baseia-se em <strong>{useBusinessDays ? "dias de semana normais de faturamento (Seg à Sex)" : "dias corridos normais da folha mensal"}</strong>. 
-                      Defina o método preferencial acima para monitorar e projetar os faturamentos de agendamentos diários adequadamente!
-                    </p>
-                  </div>
-                )}
+                </div>
+
+                {/* Seção Opcional: Acumulado Mensal Retrátil */}
+                <div className="border border-white/5 bg-[#121217] rounded-2xl p-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowMonthlyDetails(prev => !prev)}
+                    className="w-full flex items-center justify-between text-xs font-semibold text-zinc-300 hover:text-white transition-all cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Info className="w-4 h-4 text-primary" />
+                      Deseja ver a meta mensal consolidada ({currentGoal.month})?
+                    </span>
+                    <span className="text-[11px] text-[#D4AF37] underline decoration-dotted font-mono">
+                      {showMonthlyDetails ? "Ocultar Mensal ▲" : "Visualizar Mensal ▼"}
+                    </span>
+                  </button>
+
+                  {showMonthlyDetails && (
+                    <div className="pt-4 mt-3 border-t border-white/5 space-y-3 text-xs">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-black/30 p-3 rounded-xl border border-white/5">
+                          <span className="text-[10px] text-zinc-500 uppercase font-mono block">Meta Total do Mês</span>
+                          <span className="text-base font-bold text-white font-mono">{formatBRL(currentGoal.targetValue)}</span>
+                        </div>
+                        <div className="bg-black/30 p-3 rounded-xl border border-white/5 text-right">
+                          <span className="text-[10px] text-zinc-500 uppercase font-mono block">Realizado no Mês</span>
+                          <span className="text-base font-bold text-emerald-400 font-mono">{formatBRL(currentGoal.currentValue)}</span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 leading-relaxed font-light">
+                        A meta mensal foi dividida em 4 semanas para que você acompanhe passo a passo seu crescimento, sem o peso de ver o montante total distante. Cada semana concluída garante o sucesso do seu mês!
+                      </p>
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
           </CardContent>

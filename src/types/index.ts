@@ -292,12 +292,24 @@ export interface Appointment {
   updatedAt: number;
 }
 
+export interface WeeklyGoalSplit {
+  weekNumber: number; // 1, 2, 3, 4
+  label: string;      // "Semana 1 (01 a 07)", etc.
+  startDate: string;  // YYYY-MM-DD
+  endDate: string;    // YYYY-MM-DD
+  targetAmount: number;
+  currentAmount?: number;
+}
+
 export interface Goal {
   id: string;
   title?: string;
   month: string; // YYYY-MM
+  periodType?: 'mensal' | 'semanal';
   targetAmount: number;
   currentAmount: number;
+  weeklyGoals?: WeeklyGoalSplit[];
+  weeklyDistributionMode?: 'equal' | 'custom';
   createdAt: number;
   updatedAt: number;
 }
@@ -307,8 +319,11 @@ export interface ProfessionalGoal {
   professionalId: string;
   professionalName: string;
   month: string; // YYYY-MM
+  periodType?: 'mensal' | 'semanal';
   targetAmount: number;
   currentValue?: number;
+  weeklyGoals?: WeeklyGoalSplit[];
+  weeklyDistributionMode?: 'equal' | 'custom';
   lastProgressUpdateAt?: number;
   lastProgressUpdatedBy?: string;
   createdAt: number;
