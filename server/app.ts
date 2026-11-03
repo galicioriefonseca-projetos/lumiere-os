@@ -43,8 +43,9 @@ app.set("trust proxy", 1);
 
 export default app;
 
-// Middleware básico JSON
-app.use(express.json());
+// Middleware básico JSON com limite expandido para 25mb para suportar PDFs em base64
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
 
 // Habilitar CORS de forma nativa e segura
 app.use((req, res, next) => {

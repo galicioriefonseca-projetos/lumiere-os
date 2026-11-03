@@ -45,7 +45,8 @@ import {
   Monitor,
   Zap,
   Info,
-  BookOpen
+  BookOpen,
+  Download
 } from 'lucide-react';
 import { ClientReport } from '../../types';
 
@@ -376,6 +377,14 @@ export default function ReportsAnalyticsTab({
               className="bg-[#DFC498]/15 hover:bg-[#DFC498]/25 text-[#DFC498] border border-[#DFC498]/30 font-semibold text-xs h-9 rounded-xl gap-1.5 shadow"
             >
               <HelpCircle className="w-4 h-4 text-[#DFC498]" /> O que significa cada métrica?
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => window.print()}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 rounded-xl gap-1.5 shadow"
+            >
+              <Download className="w-4 h-4" /> Baixar Relatório em PDF
             </Button>
 
             {/* SELETOR PRINCIPAL DE MÊS (CALENDÁRIO DE MESES ANTERIORES) */}

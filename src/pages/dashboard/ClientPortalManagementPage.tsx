@@ -1373,19 +1373,7 @@ export default function ClientPortalManagementPage() {
               <p className="text-xs text-[#8FAEA2]">Publique números consolidados de campanhas, tráfego e relatórios Looker Studio.</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                onClick={() => {
-                  setPdfFile(null);
-                  setPdfParsedResult(null);
-                  setPdfComparison(null);
-                  setIsPdfModalOpen(true);
-                }}
-                size="sm"
-                variant="outline"
-                className="border-[#DFC498]/40 bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] font-semibold text-xs rounded-xl h-9 gap-1.5"
-              >
-                <Upload className="w-3.5 h-3.5" /> Ler PDF do GBP (IA)
-              </Button>
+
 
               <Button
                 onClick={() => {
