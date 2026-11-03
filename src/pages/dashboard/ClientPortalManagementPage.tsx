@@ -2131,9 +2131,10 @@ export default function ClientPortalManagementPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-[#8FAEA2]">E-mail do Cliente</Label>
+                <Label className="text-xs text-[#8FAEA2]">E-mail do Cliente *</Label>
                 <Input
                   type="email"
+                  required
                   value={inviteForm.clientEmail}
                   onChange={e => setInviteForm(prev => ({ ...prev, clientEmail: e.target.value }))}
                   placeholder="cliente@empresa.com"
@@ -2142,8 +2143,9 @@ export default function ClientPortalManagementPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-[#8FAEA2]">WhatsApp do Cliente</Label>
+                <Label className="text-xs text-[#8FAEA2]">WhatsApp do Cliente *</Label>
                 <Input
+                  required
                   value={inviteForm.clientPhone}
                   onChange={e => setInviteForm(prev => ({ ...prev, clientPhone: e.target.value }))}
                   placeholder="(11) 98765-4321"
