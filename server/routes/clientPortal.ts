@@ -534,65 +534,11 @@ clientPortalRoutes.get("/system-users", async (req, res) => {
       });
     });
 
-    // 5. Garantir que se "Essenza Studio di Bellezza" não existir no banco, criamos o cadastro inicial
-    const hasEssenza = users.some(u => 
-      u.email.includes("essenza") || 
-      u.salonName.toLowerCase().includes("essenza") || 
-      u.name.toLowerCase().includes("essenza")
-    );
-
-    if (!hasEssenza) {
-      const essenzaSalonId = "salon_essenza_fernandopolis";
-      const essenzaUserId = "user_essenza_owner";
-      const essenzaEmail = "contato@essenzastudiodibellezza.com.br";
-      const now = Date.now();
-
-      // Salva salão
-      await adminDb.collection("salons").doc(essenzaSalonId).set({
-        id: essenzaSalonId,
-        name: "Essenza Studio di Bellezza",
-        ownerName: "Essenza Studio",
-        ownerEmail: essenzaEmail,
-        phone: "(17) 99765-4321",
-        city: "Fernandópolis",
-        state: "SP",
-        segment: "beauty",
-        businessType: "salon",
-        clientPortalActive: false,
-        createdAt: now - 30 * 86400000,
-        updatedAt: now
-      }, { merge: true });
-
-      // Salva usuário
-      await adminDb.collection("users").doc(essenzaUserId).set({
-        id: essenzaUserId,
-        fullName: "Essenza Studio di Bellezza",
-        email: essenzaEmail,
-        phone: "(17) 99765-4321",
-        role: "owner",
-        salonId: essenzaSalonId,
-        companyName: "Essenza Studio di Bellezza",
-        portalAccessEnabled: false,
-        createdAt: now - 30 * 86400000,
-        updatedAt: now
-      }, { merge: true });
-
-      users.unshift({
-        userId: essenzaUserId,
-        name: "Essenza Studio di Bellezza",
-        email: essenzaEmail,
-        phone: "(17) 99765-4321",
-        role: "owner",
-        salonId: essenzaSalonId,
-        salonName: "Essenza Studio di Bellezza",
-        city: "Fernandópolis",
-        state: "SP",
-        portalAccessEnabled: false,
-        linkedClientId: null,
-        reportsCount: 0,
-        createdAt: now - 30 * 86400000
-      });
-    }
+    // Limpa quaisquer registros fictícios de testes anteriores se existirem no banco
+    try {
+      await adminDb.collection("users").doc("user_essenza_owner").delete().catch(() => {});
+      await adminDb.collection("salons").doc("salon_essenza_fernandopolis").delete().catch(() => {});
+    } catch (e) {}
 
     return res.json({ users });
   } catch (error: any) {
@@ -730,75 +676,24 @@ clientPortalRoutes.post("/system-users/:userId/toggle-portal", async (req, res) 
         await batch.commit();
       }
 
-      // Se for Essenza (ou se o cliente não tiver nenhum relatório ainda), criar relatório inicial com dados reais do GMN de exemplo fornecidos pelo usuário!
-      const clientReportsSnap = await adminDb.collection(`salons/${agencySalonId}/reports`).where("clientId", "==", clientId).get();
-      if (clientReportsSnap.empty) {
-        const initialReportRef = adminDb.collection(`salons/${agencySalonId}/reports`).doc();
-        await initialReportRef.set({
-          id: initialReportRef.id,
-          salonId: agencySalonId,
-          clientId,
-          clientName: finalCompanyName,
-          clientEmail: finalEmail,
-          title: `Desempenho Google Meu Negócio - Outubro/2026 - ${finalCompanyName}`,
-          period: "Outubro / 2026",
-          startDate: "2026-10-01",
-          endDate: "2026-10-31",
-          month: 10,
-          year: 2026,
-          summary: `Excelente desempenho no Perfil da Empresa (Google Meu Negócio). Foram registradas 275 interações diretas, 1.034 pessoas visualizaram o perfil e grande tração em dispositivos móveis (54% Pesquisa Móvel e 20% Google Maps Móvel).`,
-          reportType: "google_meu_negocio",
-          metrics: {
-            leads: 96,
-            reach: 1034,
-            conversions: 42,
-            investment: 0,
-            revenue: 14500,
-            roas: 0,
-            cpc: 0,
-            cpl: 0
-          },
-          gmbMetrics: {
-            totalInteractions: 275,
-            calls: 48,
-            chatClicks: 32,
-            bookings: 42,
-            directionRequests: 89,
-            websiteClicks: 64,
-            peopleViewedProfile: 1034,
-            mapsImpressions: 1480,
-            searchImpressions: 2150,
-            monthlyInteractions: [
-              { month: 'Junho/2026', count: 63 },
-              { month: 'Julho/2026', count: 32 },
-              { month: 'Agosto/2026', count: 72 },
-              { month: 'Setembro/2026', count: 52 },
-              { month: 'Outubro/2026', count: 56 },
-              { month: 'Novembro/2026', count: 0 }
-            ],
-            platformBreakdown: {
-              searchMobile: { count: 562, percentage: 54 },
-              mapsMobile: { count: 208, percentage: 20 },
-              searchDesktop: { count: 168, percentage: 16 },
-              mapsDesktop: { count: 96, percentage: 9 }
-            },
-            rankingPosition: 1,
-            targetKeyword: "Salão de Beleza em Fernandópolis",
-            topKeywords: [
-              { keyword: "salao de beleza em fernandopolis", count: 245 },
-              { keyword: "corte e coloracao fernandopolis", count: 128 },
-              { keyword: "estilistas experientes fernandopolis", count: 94 },
-              { keyword: "salao de beleza perto de mim", count: 86 }
-            ],
-            rating: 5.0,
-            reviewsCount: 78
-          },
-          status: "published",
-          publishedAt: now,
-          createdAt: now,
-          updatedAt: now
+      // Limpa qualquer relatório de exemplo anterior criado automaticamente com dados de teste
+      try {
+        const testReportsSnap = await adminDb.collection(`salons/${agencySalonId}/reports`)
+          .where("clientId", "==", clientId)
+          .get();
+        const deleteBatch = adminDb.batch();
+        let deletedCount = 0;
+        testReportsSnap.forEach(doc => {
+          const r = doc.data();
+          if (r.summary && String(r.summary).includes("275 interações diretas, 1.034 pessoas")) {
+            deleteBatch.delete(doc.ref);
+            deletedCount++;
+          }
         });
-      }
+        if (deletedCount > 0) {
+          await deleteBatch.commit();
+        }
+      } catch (e) {}
 
       return res.json({
         success: true,
@@ -1005,7 +900,12 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
         }
       }
     });
-    reports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    reports.sort((a, b) => {
+      const timeA = a.startDate ? new Date(a.startDate).getTime() : (a.year && a.month ? new Date(a.year, a.month - 1, 1).getTime() : (a.createdAt || 0));
+      const timeB = b.startDate ? new Date(b.startDate).getTime() : (b.year && b.month ? new Date(b.year, b.month - 1, 1).getTime() : (b.createdAt || 0));
+      return timeB - timeA;
+    });
 
     // Busca contratos
     const contractsSnap = await adminDb.collection(`salons/${finalSalonId}/contracts`).get();
@@ -1099,8 +999,19 @@ clientPortalRoutes.get("/reports", async (req, res) => {
     const adminDb = getAdminDb();
     const snap = await adminDb.collection(`salons/${salonId}/reports`).get();
     const reports: any[] = [];
-    snap.forEach(doc => reports.push({ id: doc.id, ...doc.data() }));
-    reports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    snap.forEach(doc => {
+      const r = doc.data();
+      if (r.summary && String(r.summary).includes("275 interações diretas, 1.034 pessoas")) {
+        doc.ref.delete().catch(() => {});
+        return;
+      }
+      reports.push({ id: doc.id, ...r });
+    });
+    reports.sort((a, b) => {
+      const timeA = a.startDate ? new Date(a.startDate).getTime() : (a.year && a.month ? new Date(a.year, a.month - 1, 1).getTime() : (a.createdAt || 0));
+      const timeB = b.startDate ? new Date(b.startDate).getTime() : (b.year && b.month ? new Date(b.year, b.month - 1, 1).getTime() : (b.createdAt || 0));
+      return timeB - timeA;
+    });
 
     return res.json({ reports });
   } catch (error: any) {
@@ -1152,8 +1063,6 @@ clientPortalRoutes.post("/reports", async (req, res) => {
     const clientDocData = clientSnap.data() || {};
     const finalClientName = clientDocData.name || clientDocData.companyName || clientName || "Cliente";
     const finalClientEmail = String(clientDocData.email || clientEmail || "").toLowerCase().trim();
-
-    const reportRef = adminDb.collection(`salons/${salonId}/reports`).doc();
     const now = Date.now();
 
     // Inferir startDate e endDate se não fornecidos
@@ -1162,11 +1071,12 @@ clientPortalRoutes.post("/reports", async (req, res) => {
     let finalMonth = month ? Number(month) : null;
     let finalYear = year ? Number(year) : null;
 
-    if (!finalStartDate || !finalEndDate) {
-      const match = period.match(/(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro).*?(\d{4})/i);
+    if (!finalStartDate || !finalEndDate || !finalMonth || !finalYear) {
+      const match = period.match(/(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro).*?(\d{4})/i);
       if (match) {
         const monthNames = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-        const mIndex = monthNames.indexOf(match[1].toLowerCase()) + 1;
+        const matchedName = match[1].toLowerCase().replace('marco', 'março');
+        const mIndex = monthNames.indexOf(matchedName) + 1;
         const yr = parseInt(match[2], 10);
         finalMonth = finalMonth || mIndex;
         finalYear = finalYear || yr;
@@ -1181,6 +1091,28 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       }
     }
 
+    // Chave única para o mês e ano do relatório (ex: "2026-06", "2026-07")
+    // Isso garante que meses anteriores ou futuros fiquem perfeitamente isolados e não se misturem
+    const periodKey = finalYear && finalMonth ? `${finalYear}-${String(finalMonth).padStart(2, '0')}` : null;
+
+    // Se já existir relatório para esse mesmo cliente e mesmo mês/ano, atualiza o documento existente para não duplicar
+    let reportRef: any = null;
+    if (periodKey) {
+      const existingReportSnap = await adminDb.collection(`salons/${salonId}/reports`)
+        .where("clientId", "==", cleanClientId)
+        .where("periodKey", "==", periodKey)
+        .limit(1)
+        .get();
+
+      if (!existingReportSnap.empty) {
+        reportRef = existingReportSnap.docs[0].ref;
+      }
+    }
+
+    if (!reportRef) {
+      reportRef = adminDb.collection(`salons/${salonId}/reports`).doc();
+    }
+
     const reportData = {
       id: reportRef.id,
       salonId,
@@ -1189,6 +1121,7 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       clientEmail: finalClientEmail,
       title: title.trim(),
       period: period.trim(),
+      periodKey: periodKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
       startDate: finalStartDate,
       endDate: finalEndDate,
       month: finalMonth,
@@ -1459,10 +1392,23 @@ Regras:
       existingReports.push({ id: doc.id, ...doc.data() });
     });
 
-    existingReports.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const getReportTimeKey = (r: any): number => {
+      if (r.startDate) return new Date(r.startDate).getTime();
+      if (r.year && r.month) return new Date(r.year, r.month - 1, 1).getTime();
+      return r.createdAt || 0;
+    };
 
-    if (existingReports.length > 0) {
-      const prev = existingReports[0];
+    existingReports.sort((a, b) => getReportTimeKey(b) - getReportTimeKey(a));
+
+    const currentReportTime = parsedData.startDate 
+      ? new Date(parsedData.startDate).getTime() 
+      : (parsedData.year && parsedData.month ? new Date(parsedData.year, parsedData.month - 1, 1).getTime() : Date.now());
+
+    // Encontra estritamente o mês que antecede cronologicamente o mês do relatório que está sendo inserido
+    const priorMonthReport = existingReports.find(r => getReportTimeKey(r) < currentReportTime);
+
+    if (priorMonthReport) {
+      const prev = priorMonthReport;
       const prevGmb = prev.gmbMetrics || {};
       const prevInteractions = prevGmb.totalInteractions || 0;
       const prevCalls = prevGmb.calls || prev.metrics?.leads || 0;

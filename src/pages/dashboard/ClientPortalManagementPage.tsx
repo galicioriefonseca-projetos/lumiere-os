@@ -949,31 +949,25 @@ export default function ClientPortalManagementPage() {
                 <Sparkles className="w-3.5 h-3.5" /> Exclusivo para Contas de Empresas & Proprietários
               </div>
               <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                Ativação do Portal para Empresas e Proprietários (Ex: Essenza Studio di Bellezza)
+                Ativação do Portal para Empresas e Proprietários (Google Meu Negócio)
               </h3>
               <p className="text-xs text-[#8FAEA2] leading-relaxed">
-                Apenas a conta da empresa (proprietário do salão) tem acesso ao Portal do Cliente para acompanhar os dados de desempenho do Google Meu Negócio, comparativos mensais e aprovação de posts. Os profissionais da equipe não possuem acesso a esta área.
+                Apenas a conta da empresa (proprietário do salão) tem acesso ao Portal do Cliente para acompanhar os dados reais de desempenho do Google Meu Negócio, comparativos mensais e aprovação de posts. Os profissionais da equipe não possuem acesso a esta área.
               </p>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
               <Button
                 onClick={() => {
-                  const essenza = systemUsers.find(u => u.salonName.toLowerCase().includes('essenza') || u.name.toLowerCase().includes('essenza'));
-                  if (essenza && !essenza.portalAccessEnabled) {
-                    handleTogglePortal(essenza.userId, true, essenza.salonName);
-                  } else if (essenza && essenza.portalAccessEnabled) {
-                    window.open(`/portal?previewClient=${essenza.linkedClientId || ''}&previewSalon=${salonData?.id || ''}`, '_blank');
-                  } else {
-                    toast.info('Buscando Essenza Studio di Bellezza...');
-                  }
+                  setPdfFile(null);
+                  setPdfParsedResult(null);
+                  setPdfComparison(null);
+                  setIsPdfModalOpen(true);
                 }}
-                className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 px-4 rounded-xl shadow-lg gap-2"
+                className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 px-4 rounded-xl shadow-lg gap-2 cursor-pointer"
               >
-                <Sparkles className="w-4 h-4" />
-                {systemUsers.some(u => u.salonName.toLowerCase().includes('essenza') && u.portalAccessEnabled)
-                  ? 'Ver Portal da Essenza'
-                  : 'Ativar Portal da Essenza'}
+                <Upload className="w-4 h-4" />
+                Subir PDF do Google Meu Negócio (IA)
               </Button>
             </div>
           </div>
@@ -1093,17 +1087,14 @@ export default function ClientPortalManagementPage() {
                   return true;
                 })
                 .map(userItem => {
-                  const isEssenza = userItem.salonName.toLowerCase().includes('essenza') || userItem.name.toLowerCase().includes('essenza') || userItem.email.includes('essenza');
                   const isToggling = togglingUserId === userItem.userId;
 
                   return (
                     <Card
                       key={userItem.userId}
                       className={`bg-[#0A261E] border transition-all ${
-                        isEssenza 
-                          ? 'border-[#DFC498] shadow-lg shadow-[#DFC498]/5' 
-                          : userItem.portalAccessEnabled 
-                          ? 'border-emerald-500/40' 
+                        userItem.portalAccessEnabled 
+                          ? 'border-emerald-500/40 shadow-sm' 
                           : 'border-[#17473A] hover:border-white/20'
                       }`}
                     >
@@ -1123,12 +1114,6 @@ export default function ClientPortalManagementPage() {
                             <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 text-[10px] font-medium">
                               Proprietário(a)
                             </Badge>
-
-                            {isEssenza && (
-                              <Badge className="bg-[#DFC498]/20 text-[#DFC498] border-[#DFC498]/40 text-[10px] font-bold uppercase tracking-wider">
-                                Cliente GMN
-                              </Badge>
-                            )}
                           </div>
 
                           <span className="text-[10px] text-[#8FAEA2]">
@@ -1189,6 +1174,23 @@ export default function ClientPortalManagementPage() {
 
                               <Button
                                 onClick={() => {
+                                  if (userItem.linkedClientId) {
+                                    setSelectedClientIdForPdf(userItem.linkedClientId);
+                                  }
+                                  setPdfFile(null);
+                                  setPdfParsedResult(null);
+                                  setPdfComparison(null);
+                                  setIsPdfModalOpen(true);
+                                }}
+                                size="sm"
+                                variant="outline"
+                                className="border-[#DFC498]/40 bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] text-xs h-9 rounded-xl font-semibold gap-1.5"
+                              >
+                                <Upload className="w-3.5 h-3.5" /> Subir PDF GMN
+                              </Button>
+
+                              <Button
+                                onClick={() => {
                                   // Pre-seleciona o cliente e abre o modal de relatório
                                   if (userItem.linkedClientId) {
                                     setReportForm(prev => ({
@@ -1205,7 +1207,7 @@ export default function ClientPortalManagementPage() {
                                 variant="outline"
                                 className="border-white/10 hover:bg-white/5 text-white text-xs h-9 rounded-xl gap-1.5"
                               >
-                                <Plus className="w-3.5 h-3.5 text-[#DFC498]" /> Criar Relatório GMN
+                                <Plus className="w-3.5 h-3.5 text-[#DFC498]" /> Criar Manual
                               </Button>
 
                               <Button
@@ -3086,14 +3088,65 @@ export default function ClientPortalManagementPage() {
                     />
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] text-[#8FAEA2]">
-                      Copie e cole os textos ou tabela de desempenho direto da tela do Google Meu Negócio (Visão Geral, Interações, Chamadas, Rotas, Pessoas que visualizaram, etc.):
-                    </p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-[#8FAEA2]">
+                      <span>Copie dados da tela do Google ou use uma IA:</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const template = `Relatório de Desempenho - Google Meu Negócio
+Empresa: ${clients.find(c => c.id === selectedClientIdForPdf)?.name || 'Nome do Salão'}
+Período: Outubro de 2026
+
+1. Visão Geral de Interações
+- Interações no Perfil da Empresa: 250
+- Chamadas telefônicas: 45
+- Cliques no chat: 28
+- Agendamentos: 35
+- Orientações / Rotas no mapa: 80
+- Cliques no website: 62
+
+2. Histórico Mensal de Interações
+- Junho de 2026: 55
+- Julho de 2026: 40
+- Agosto de 2026: 68
+- Setembro de 2026: 50
+- Outubro de 2026: 62
+
+3. Como as Pessoas Descobriram sua Empresa (Total: 980)
+- Pesquisa Google – dispositivos móveis: 520 (53%)
+- Google Maps – dispositivos móveis: 210 (21%)
+- Pesquisa Google – computadores: 160 (16%)
+- Google Maps – computadores: 90 (10%)
+
+4. Reputação & Palavras-chave
+- Avaliação média: 5.0 estrelas (75 avaliações)
+- Palavras-chave: salao de beleza, corte e coloracao, escova`;
+                            navigator.clipboard.writeText(template);
+                            toast.success('Modelo de estrutura copiado!');
+                          }}
+                          className="text-[#DFC498] hover:underline text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3" /> Copiar Modelo p/ IA
+                        </button>
+                        <span className="text-zinc-600">•</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const clientName = clients.find(c => c.id === selectedClientIdForPdf)?.name || 'Nome da Empresa';
+                            setRawGmbText(`Relatório de Desempenho - Google Meu Negócio\nEmpresa: ${clientName}\nPeríodo: Outubro de 2026\n\n1. Visão Geral de Interações\n- Interações no Perfil da Empresa: 250\n- Chamadas telefônicas: 45\n- Cliques no chat: 28\n- Agendamentos: 35\n- Orientações / Rotas no mapa: 80\n- Cliques no website: 62\n\n2. Histórico Mensal de Interações\n- Junho de 2026: 55\n- Julho de 2026: 40\n- Agosto de 2026: 68\n- Setembro de 2026: 50\n- Outubro de 2026: 62\n\n3. Como as Pessoas Descobriram sua Empresa (Total: 980)\n- Pesquisa Google – dispositivos móveis: 520 (53%)\n- Google Maps – dispositivos móveis: 210 (21%)\n- Pesquisa Google – computadores: 160 (16%)\n- Google Maps – computadores: 90 (10%)\n\n4. Reputação & Palavras-chave\n- Avaliação média: 5.0 estrelas (75 avaliações)\n- Palavras-chave: salao de beleza, corte, coloracao`);
+                          }}
+                          className="text-[#8FAEA2] hover:text-white text-[10px] cursor-pointer"
+                        >
+                          Preencher Exemplo
+                        </button>
+                      </div>
+                    </div>
                     <textarea
                       value={rawGmbText}
                       onChange={e => setRawGmbText(e.target.value)}
-                      placeholder="Exemplo: Cole aqui o texto do relatório do Google Meu Negócio contendo as interações, chamadas, rotas, pesquisas móveis, etc..."
+                      placeholder="Cole aqui o texto do relatório do Google Meu Negócio contendo as interações, chamadas, rotas, pesquisas móveis, etc..."
                       rows={6}
                       className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white placeholder-zinc-500 font-mono focus:border-[#DFC498] outline-none"
                     />

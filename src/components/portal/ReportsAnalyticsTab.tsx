@@ -81,11 +81,21 @@ export default function ReportsAnalyticsTab({
 
   // Ordenar relatórios cronologicamente (do mais antigo ao mais recente para gráficos)
   const chronologicalReports = useMemo(() => {
-    return [...reports].sort((a, b) => {
-      const dateA = a.startDate ? new Date(a.startDate).getTime() : a.createdAt;
-      const dateB = b.startDate ? new Date(b.startDate).getTime() : b.createdAt;
-      return dateA - dateB;
-    });
+    const getReportTime = (r: ClientReport): number => {
+      if (r.startDate) {
+        const parts = r.startDate.split('-');
+        if (parts.length === 3) {
+          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+        }
+        return new Date(r.startDate).getTime();
+      }
+      if (r.year && r.month) {
+        return new Date(r.year, r.month - 1, 1).getTime();
+      }
+      return r.createdAt || 0;
+    };
+
+    return [...reports].sort((a, b) => getReportTime(a) - getReportTime(b));
   }, [reports]);
 
   // Aplicar filtros de data (Preset ou Calendário Customizado)
