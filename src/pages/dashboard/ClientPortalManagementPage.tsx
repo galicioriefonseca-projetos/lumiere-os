@@ -101,6 +101,50 @@ export default function ClientPortalManagementPage() {
   // Seleção de cliente para a aba de Comparativo Mensal
   const [selectedComparisonClient, setSelectedComparisonClient] = useState<string>('all');
 
+  // Seletor Global de Empresa para evitar portais misturados na Agência
+  const [selectedAgencyCompanyId, setSelectedAgencyCompanyId] = useState<string>('all');
+
+  // Filtered lists based on selectedAgencyCompanyId
+  const filteredSystemUsers = systemUsers.filter(u => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return u.userId === selectedAgencyCompanyId || u.linkedClientId === selectedAgencyCompanyId;
+  });
+
+  const filteredInvites = invites.filter(i => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return i.clientId === selectedAgencyCompanyId;
+  });
+
+  const filteredReports = reports.filter(r => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return r.clientId === selectedAgencyCompanyId;
+  });
+
+  const filteredContracts = contracts.filter(c => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return c.clientId === selectedAgencyCompanyId;
+  });
+
+  const filteredApprovals = approvals.filter(a => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return a.clientId === selectedAgencyCompanyId;
+  });
+
+  const filteredDeliverables = deliverables.filter(d => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return d.clientId === selectedAgencyCompanyId;
+  });
+
+  const filteredTickets = tickets.filter(t => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return t.clientId === selectedAgencyCompanyId;
+  });
+
+  const filteredServiceRequests = serviceRequests.filter(s => {
+    if (selectedAgencyCompanyId === 'all') return true;
+    return s.clientId === selectedAgencyCompanyId;
+  });
+
   // Modals state
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -843,6 +887,52 @@ export default function ClientPortalManagementPage() {
         </div>
       </div>
 
+      {/* Seletor Global de Empresa para Evitar Portais Misturados */}
+      <div className="bg-[#0A261E] border border-[#DFC498]/30 p-4 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-[#DFC498]/10 border border-[#DFC498]/20 flex items-center justify-center text-[#DFC498] shrink-0">
+            <Building2 className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-[10px] uppercase tracking-wider text-[#8FAEA2] font-bold block">Empresa Ativa no Gerenciamento</span>
+            <span className="text-xs text-white font-semibold">
+              {selectedAgencyCompanyId === 'all' ? 'Todas as Empresas (Visão Consolidada)' : clients.find(c => c.id === selectedAgencyCompanyId)?.name || systemUsers.find(u => u.userId === selectedAgencyCompanyId || u.linkedClientId === selectedAgencyCompanyId)?.salonName || 'Empresa Selecionada'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedAgencyCompanyId}
+            onChange={e => setSelectedAgencyCompanyId(e.target.value)}
+            className="bg-[#061A14] border border-[#17473A] text-white rounded-xl h-10 px-3 text-xs focus:border-[#DFC498] min-w-[260px]"
+          >
+            <option value="all">🔍 Todas as Empresas (Visão Consolidada)</option>
+            {clients.map(c => (
+              <option key={c.id} value={c.id}>
+                🏢 {c.name} {c.contactName ? `(${c.contactName})` : ''}
+              </option>
+            ))}
+            {systemUsers.map(u => (
+              <option key={u.userId} value={u.userId}>
+                👤 {u.salonName} ({u.name})
+              </option>
+            ))}
+          </select>
+
+          {selectedAgencyCompanyId !== 'all' && (
+            <Button
+              onClick={() => setSelectedAgencyCompanyId('all')}
+              variant="outline"
+              size="sm"
+              className="border-white/10 hover:bg-white/5 text-[#8FAEA2] hover:text-white text-xs h-10 rounded-xl"
+            >
+              Limpar Filtro
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-[#17473A] pb-1 overflow-x-auto">
         <button
@@ -854,7 +944,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <Sparkles className="w-4 h-4 text-[#DFC498]" />
-          Empresas & Proprietários ({systemUsers.length})
+          Empresas & Proprietários ({filteredSystemUsers.length})
         </button>
 
         <button
@@ -866,7 +956,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <Link2 className="w-4 h-4" />
-          Convites ({invites.length})
+          Convites ({filteredInvites.length})
         </button>
 
         <button
@@ -878,7 +968,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <FileText className="w-4 h-4" />
-          Relatórios ({reports.length})
+          Relatórios ({filteredReports.length})
         </button>
 
         <button
@@ -890,7 +980,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <Briefcase className="w-4 h-4" />
-          Contratos ({contracts.length})
+          Contratos ({filteredContracts.length})
         </button>
 
         <button
@@ -902,7 +992,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <CheckCircle2 className="w-4 h-4" />
-          Aprovações ({approvals.length})
+          Aprovações ({filteredApprovals.length})
         </button>
 
         <button
@@ -914,7 +1004,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <Calendar className="w-4 h-4" />
-          Cronograma ({deliverables.length})
+          Cronograma ({filteredDeliverables.length})
         </button>
 
         <button
@@ -926,7 +1016,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <MessageCircle className="w-4 h-4" />
-          Chamados & Suporte ({tickets.length})
+          Chamados & Suporte ({filteredTickets.length})
         </button>
 
         <button
@@ -938,7 +1028,7 @@ export default function ClientPortalManagementPage() {
           }`}
         >
           <Zap className="w-4 h-4" />
-          Pedidos de Serviços ({serviceRequests.length})
+          Pedidos de Serviços ({filteredServiceRequests.length})
         </button>
       </div>
 
@@ -1075,7 +1165,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {systemUsers
+              {filteredSystemUsers
                 .filter(u => {
                   const query = systemUserSearch.toLowerCase().trim();
                   const matchesSearch = !query ||
@@ -1291,7 +1381,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {invites.map(inv => {
+              {filteredInvites.map(inv => {
                 const isAccepted = inv.status === 'accepted';
                 const isCanceled = inv.status === 'canceled';
                 const isExpired = inv.expiresAt && Date.now() > inv.expiresAt;
@@ -1445,7 +1535,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {reports.map(rep => (
+              {filteredReports.map(rep => (
                 <Card key={rep.id} className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/30 transition-all">
                   <CardHeader className="pb-3 space-y-1">
                     <div className="flex items-center justify-between">
@@ -1657,7 +1747,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {contracts.map(cont => (
+              {filteredContracts.map(cont => (
                 <Card key={cont.id} className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/30 transition-all">
                   <CardHeader className="pb-3 space-y-1">
                     <div className="flex items-center justify-between">
@@ -1787,7 +1877,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {approvals.map(item => (
+              {filteredApprovals.map(item => (
                 <Card key={item.id} className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/30 transition-all">
                   <CardHeader className="pb-3 space-y-1">
                     <div className="flex items-center justify-between">
@@ -1892,7 +1982,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {deliverables.map(deliv => (
+              {filteredDeliverables.map(deliv => (
                 <div
                   key={deliv.id}
                   className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3"
@@ -1968,7 +2058,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {tickets.map(ticket => (
+              {filteredTickets.map(ticket => (
                 <Card
                   key={ticket.id}
                   className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/30 transition-all flex flex-col justify-between"
@@ -2055,7 +2145,7 @@ export default function ClientPortalManagementPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {serviceRequests.map(req => (
+              {filteredServiceRequests.map(req => (
                 <div
                   key={req.id}
                   className="bg-[#0A261E] border border-[#17473A] p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4"
