@@ -467,6 +467,44 @@ export default function ReportsAnalyticsTab({
             </Button>
           </div>
 
+          {/* SELETOR DE INTERVALO DE DATAS (DATERANGEPICKER CUSTOMIZADO) */}
+          <div className="flex items-center gap-2 pt-2 sm:pt-0 flex-wrap bg-black/20 p-2 rounded-xl border border-white/5">
+            <span className="text-xs text-[#8FAEA2] flex items-center gap-1 font-medium">
+              <CalendarIcon className="w-3.5 h-3.5 text-[#DFC498]" /> Período Personalizado:
+            </span>
+            <input
+              type="date"
+              value={startDateFilter}
+              onChange={e => {
+                setDateRangePreset('custom');
+                setStartDateFilter(e.target.value);
+              }}
+              className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-xl px-2.5 py-1.5 outline-none font-medium focus:border-[#DFC498]"
+            />
+            <span className="text-xs text-[#8FAEA2]">até</span>
+            <input
+              type="date"
+              value={endDateFilter}
+              onChange={e => {
+                setDateRangePreset('custom');
+                setEndDateFilter(e.target.value);
+              }}
+              className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-xl px-2.5 py-1.5 outline-none font-medium focus:border-[#DFC498]"
+            />
+            {(startDateFilter || endDateFilter) && (
+              <button
+                onClick={() => {
+                  setDateRangePreset('all');
+                  setStartDateFilter('');
+                  setEndDateFilter('');
+                }}
+                className="text-[10px] text-[#DFC498] hover:underline px-1 font-semibold"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+
           {/* TOGGLE MODO COMPARATIVO DIRETO */}
           <div className="flex items-center gap-2">
             <button
@@ -581,9 +619,12 @@ export default function ReportsAnalyticsTab({
                   <Phone className="w-4 h-4 text-[#DFC498]" /> Chamadas
                 </span>
                 {previousSource && (
-                  <span className={`text-[10px] font-bold ${callsVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {callsVar.isUp ? '+' : ''}{callsVar.pct}%
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-[10px] font-bold block ${callsVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {callsVar.isUp ? '+' : ''}{callsVar.pct}%
+                    </span>
+                    <span className="text-[8px] text-[#8FAEA2] block">vs. período anterior</span>
+                  </div>
                 )}
               </div>
               <div className="flex items-baseline justify-between">
@@ -604,9 +645,12 @@ export default function ReportsAnalyticsTab({
                   <MessageSquare className="w-4 h-4 text-purple-400" /> Cliques no Chat
                 </span>
                 {previousSource && (
-                  <span className={`text-[10px] font-bold ${chatVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {chatVar.isUp ? '+' : ''}{chatVar.pct}%
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-[10px] font-bold block ${chatVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {chatVar.isUp ? '+' : ''}{chatVar.pct}%
+                    </span>
+                    <span className="text-[8px] text-[#8FAEA2] block">vs. período anterior</span>
+                  </div>
                 )}
               </div>
               <div className="flex items-baseline justify-between">
@@ -627,9 +671,12 @@ export default function ReportsAnalyticsTab({
                   <CalendarCheck className="w-4 h-4 text-pink-400" /> Agendamentos
                 </span>
                 {previousSource && (
-                  <span className={`text-[10px] font-bold ${bookingsVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {bookingsVar.isUp ? '+' : ''}{bookingsVar.pct}%
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-[10px] font-bold block ${bookingsVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {bookingsVar.isUp ? '+' : ''}{bookingsVar.pct}%
+                    </span>
+                    <span className="text-[8px] text-[#8FAEA2] block">vs. período anterior</span>
+                  </div>
                 )}
               </div>
               <div className="flex items-baseline justify-between">
@@ -650,9 +697,12 @@ export default function ReportsAnalyticsTab({
                   <Navigation className="w-4 h-4 text-emerald-400" /> Orientações
                 </span>
                 {previousSource && (
-                  <span className={`text-[10px] font-bold ${routesVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {routesVar.isUp ? '+' : ''}{routesVar.pct}%
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-[10px] font-bold block ${routesVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {routesVar.isUp ? '+' : ''}{routesVar.pct}%
+                    </span>
+                    <span className="text-[8px] text-[#8FAEA2] block">vs. período anterior</span>
+                  </div>
                 )}
               </div>
               <div className="flex items-baseline justify-between">
@@ -673,9 +723,12 @@ export default function ReportsAnalyticsTab({
                   <Globe className="w-4 h-4 text-blue-400" /> Cliques no Site
                 </span>
                 {previousSource && (
-                  <span className={`text-[10px] font-bold ${webVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {webVar.isUp ? '+' : ''}{webVar.pct}%
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-[10px] font-bold block ${webVar.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {webVar.isUp ? '+' : ''}{webVar.pct}%
+                    </span>
+                    <span className="text-[8px] text-[#8FAEA2] block">vs. período anterior</span>
+                  </div>
                 )}
               </div>
               <div className="flex items-baseline justify-between">

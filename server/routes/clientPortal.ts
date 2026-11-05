@@ -7,6 +7,22 @@ import crypto from "crypto";
 
 export const clientPortalRoutes = Router();
 
+function removeUndefinedProperties(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(removeUndefinedProperties);
+  }
+  const cleanObj: any = {};
+  for (const key of Object.keys(obj)) {
+    if (obj[key] !== undefined) {
+      cleanObj[key] = removeUndefinedProperties(obj[key]);
+    }
+  }
+  return cleanObj;
+}
+
 // Helper para validar acesso do usuário ao tenant (salonId)
 // Apenas a conta galicioriefonseca31@gmail.com e contas de agência têm acesso à gestão do portal
 async function getAuthenticatedUserAndSalon(req: any, requireAgency: boolean = true) {
@@ -1182,7 +1198,7 @@ clientPortalRoutes.post("/reports", async (req, res) => {
       updatedAt: now
     };
 
-    await reportRef.set(reportData);
+    await reportRef.set(removeUndefinedProperties(reportData));
     return res.json({ success: true, report: reportData });
   } catch (error: any) {
     console.error("[ClientPortal create-report]", error);
@@ -1208,7 +1224,7 @@ clientPortalRoutes.put("/reports/:id", async (req, res) => {
     delete updatePayload.id;
     delete updatePayload.salonId;
 
-    await reportRef.update(updatePayload);
+    await reportRef.update(removeUndefinedProperties(updatePayload));
     return res.json({ success: true });
   } catch (error: any) {
     console.error("[ClientPortal update-report]", error);

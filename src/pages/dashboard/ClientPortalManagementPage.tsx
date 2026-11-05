@@ -129,6 +129,7 @@ export default function ClientPortalManagementPage() {
     clientName: '',
     clientEmail: '',
     period: 'Outubro / 2026',
+    periodInput: '2026-10',
     summary: '',
     reportType: 'google_meu_negocio' as 'google_meu_negocio' | 'general' | 'meta_ads',
     leads: 0,
@@ -141,6 +142,7 @@ export default function ClientPortalManagementPage() {
     directionRequests: 0,
     calls: 0,
     websiteClicks: 0,
+    chatClicks: 0,
     mapsImpressions: 0,
     searchImpressions: 0,
     rankingPosition: 1,
@@ -428,6 +430,7 @@ export default function ClientPortalManagementPage() {
           directionRequests: Number(reportForm.directionRequests || 0),
           calls: Number(reportForm.calls || 0),
           websiteClicks: Number(reportForm.websiteClicks || 0),
+          chatClicks: Number(reportForm.chatClicks || 0),
           mapsImpressions: Number(reportForm.mapsImpressions || 0),
           searchImpressions: Number(reportForm.searchImpressions || 0),
           rankingPosition: reportForm.rankingPosition ? Number(reportForm.rankingPosition) : 1,
@@ -1384,6 +1387,7 @@ export default function ClientPortalManagementPage() {
                     clientName: '',
                     clientEmail: '',
                     period: 'Outubro / 2026',
+                    periodInput: '2026-10',
                     summary: '',
                     reportType: 'google_meu_negocio',
                     leads: 0,
@@ -1395,6 +1399,7 @@ export default function ClientPortalManagementPage() {
                     directionRequests: 0,
                     calls: 0,
                     websiteClicks: 0,
+                    chatClicks: 0,
                     mapsImpressions: 0,
                     searchImpressions: 0,
                     rankingPosition: 1,
@@ -1545,6 +1550,7 @@ export default function ClientPortalManagementPage() {
                               clientName: rep.clientName,
                               clientEmail: rep.clientEmail || '',
                               period: rep.period,
+                              periodInput: '2026-10',
                               summary: rep.summary,
                               reportType: (rep.reportType as any) || (rep.gmbMetrics ? 'google_meu_negocio' : 'general'),
                               leads: rep.metrics?.leads || 0,
@@ -1556,6 +1562,7 @@ export default function ClientPortalManagementPage() {
                               directionRequests: rep.gmbMetrics?.directionRequests || 0,
                               calls: rep.gmbMetrics?.calls || 0,
                               websiteClicks: rep.gmbMetrics?.websiteClicks || 0,
+                              chatClicks: rep.gmbMetrics?.chatClicks || 0,
                               mapsImpressions: rep.gmbMetrics?.mapsImpressions || 0,
                               searchImpressions: rep.gmbMetrics?.searchImpressions || 0,
                               rankingPosition: rep.gmbMetrics?.rankingPosition || 1,
@@ -2293,14 +2300,27 @@ export default function ClientPortalManagementPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-[#8FAEA2]">Mês / Período do Relatório *</Label>
+              <Label className="text-xs text-[#8FAEA2] flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-[#DFC498]" /> Mês / Período do Relatório (Calendário) *
+              </Label>
               <Input
+                type="month"
                 required
-                value={reportForm.period}
-                onChange={e => setReportForm(prev => ({ ...prev, period: e.target.value }))}
-                placeholder="Ex: Outubro / 2026"
+                value={reportForm.periodInput}
+                onChange={e => {
+                  const val = e.target.value;
+                  const parts = val.split('-');
+                  let formatted = val;
+                  if (parts.length === 2) {
+                    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                    const mName = months[Number(parts[1]) - 1] || 'Outubro';
+                    formatted = `${mName} / ${parts[0]}`;
+                  }
+                  setReportForm(prev => ({ ...prev, periodInput: val, period: formatted }));
+                }}
                 className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
               />
+              <span className="text-[10px] text-[#DFC498] block">Período formatado: <strong>{reportForm.period}</strong></span>
             </div>
 
             {/* SEÇÃO GOOGLE MEU NEGÓCIO & RANQUEAMENTO */}
@@ -2346,7 +2366,7 @@ export default function ClientPortalManagementPage() {
               </div>
 
               {/* Conversões Diretas (Performance API) */}
-              <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                 <div className="space-y-1">
                   <Label className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
                     <MapPin className="w-3 h-3 text-[#DFC498]" /> Rotas no Mapa
@@ -2373,12 +2393,24 @@ export default function ClientPortalManagementPage() {
 
                 <div className="space-y-1">
                   <Label className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
-                    <Globe className="w-3 h-3 text-blue-400" /> Cliques Site/Zap
+                    <Globe className="w-3 h-3 text-blue-400" /> Cliques no Site
                   </Label>
                   <Input
                     type="number"
                     value={reportForm.websiteClicks}
                     onChange={e => setReportForm(prev => ({ ...prev, websiteClicks: Number(e.target.value) }))}
+                    className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-[#8FAEA2] flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3 text-purple-400" /> Cliques Chat WhatsApp
+                  </Label>
+                  <Input
+                    type="number"
+                    value={reportForm.chatClicks}
+                    onChange={e => setReportForm(prev => ({ ...prev, chatClicks: Number(e.target.value) }))}
                     className="bg-black/40 border-white/10 text-white rounded-xl h-9 text-xs"
                   />
                 </div>
@@ -2455,52 +2487,7 @@ export default function ClientPortalManagementPage() {
               />
             </div>
 
-            {/* Metrics Grid (Tráfego / Mídia Paga) */}
-            <div className="p-3 rounded-xl bg-black/20 border border-white/5 space-y-2">
-              <span className="text-[11px] font-semibold text-[#8FAEA2] uppercase tracking-wider block">
-                Métricas Financeiras & Mídia Paga (Opcional)
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-[#8FAEA2]">Leads Gerados</Label>
-                  <Input
-                    type="number"
-                    value={reportForm.leads}
-                    onChange={e => setReportForm(prev => ({ ...prev, leads: Number(e.target.value) }))}
-                    className="bg-black/30 border-white/10 text-white rounded-xl h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-[#8FAEA2]">Investimento (R$)</Label>
-                  <Input
-                    type="number"
-                    value={reportForm.investment}
-                    onChange={e => setReportForm(prev => ({ ...prev, investment: Number(e.target.value) }))}
-                    className="bg-black/30 border-white/10 text-white rounded-xl h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] text-[#8FAEA2]">ROAS (x)</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={reportForm.roas}
-                    onChange={e => setReportForm(prev => ({ ...prev, roas: Number(e.target.value) }))}
-                    className="bg-black/30 border-white/10 text-white rounded-xl h-8 text-xs"
-                  />
-                </div>
-              </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs text-[#8FAEA2]">Link do Painel Looker Studio / Apresentação (Opcional)</Label>
-              <Input
-                value={reportForm.externalUrl}
-                onChange={e => setReportForm(prev => ({ ...prev, externalUrl: e.target.value }))}
-                placeholder="https://lookerstudio.google.com/reporting/..."
-                className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
-              />
-            </div>
 
             <Button
               type="submit"
