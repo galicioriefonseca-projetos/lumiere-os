@@ -53,7 +53,10 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
 
   if (!currentUser) {
     const searchParams = new URLSearchParams(location.search);
-    if (location.pathname === '/dashboard/configurar-empresa' && searchParams.get('token')) {
+    if (
+      (location.pathname === '/dashboard/configurar-empresa' && searchParams.get('token')) ||
+      ((location.pathname === '/portal' || location.pathname === '/area-do-cliente') && (searchParams.get('token') || searchParams.get('invite') || searchParams.get('previewClient')))
+    ) {
       return <>{children}</>;
     }
     return <Navigate to="/login" state={{ from: location }} replace />;

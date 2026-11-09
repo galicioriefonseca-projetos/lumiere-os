@@ -16,6 +16,7 @@ import {
   Copy, 
   Check, 
   Phone, 
+  Mail,
   Plus, 
   Trash2, 
   Edit3, 
@@ -88,21 +89,79 @@ export default function ClientPortalManagementPage() {
     link: string;
   } | null>(null);
 
-  // Upload e Parsing de PDF ou Texto do Google Meu Negócio com IA Gemini
-  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
-  const [pdfInputMode, setPdfInputMode] = useState<'file' | 'text'>('file');
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [rawGmbText, setRawGmbText] = useState<string>('');
-  const [pdfParsing, setPdfParsing] = useState(false);
-  const [pdfParsedResult, setPdfParsedResult] = useState<any | null>(null);
-  const [pdfComparison, setPdfComparison] = useState<any | null>(null);
-  const [selectedClientIdForPdf, setSelectedClientIdForPdf] = useState<string>('');
-
   // Seleção de cliente para a aba de Comparativo Mensal
   const [selectedComparisonClient, setSelectedComparisonClient] = useState<string>('all');
 
   // Seletor Global de Empresa para evitar portais misturados na Agência
   const [selectedAgencyCompanyId, setSelectedAgencyCompanyId] = useState<string>('all');
+
+  // Lista única consolidada de empresas para a agência gerenciar
+  const availableCompanies = React.useMemo(() => {
+    const list: Array<{
+      id: string;
+      name: string;
+      contactName?: string;
+      email?: string;
+      phone?: string;
+      reportsCount: number;
+      inviteToken?: string;
+      source: 'client' | 'systemUser';
+    }> = [];
+
+    // Clientes cadastrados na agência
+    clients.forEach(c => {
+      const invite = invites.find(i => i.clientId === c.id || (i.clientEmail && c.email && i.clientEmail.toLowerCase() === c.email.toLowerCase()));
+      const repCount = reports.filter(r => 
+        r.clientId === c.id || 
+        (c.name && r.clientName && r.clientName.toLowerCase().includes(c.name.toLowerCase())) ||
+        (c.email && r.clientEmail && r.clientEmail.toLowerCase() === c.email.toLowerCase())
+      ).length;
+
+      list.push({
+        id: c.id,
+        name: c.name || c.contactName || 'Empresa sem nome',
+        contactName: c.contactName,
+        email: c.email,
+        phone: c.phone,
+        reportsCount: repCount,
+        inviteToken: invite?.token || c.lastInviteToken,
+        source: 'client'
+      });
+    });
+
+    // Usuários do sistema (proprietários de salão)
+    systemUsers.forEach(u => {
+      const alreadyInList = list.some(item => 
+        item.id === u.userId || 
+        item.id === u.linkedClientId || 
+        (u.email && item.email && item.email.toLowerCase() === u.email.toLowerCase())
+      );
+      if (!alreadyInList) {
+        const invite = invites.find(i => i.clientId === u.linkedClientId || i.clientId === u.userId || (i.clientEmail && u.email && i.clientEmail.toLowerCase() === u.email.toLowerCase()));
+        const repCount = reports.filter(r => 
+          r.clientId === u.userId || 
+          r.clientId === u.linkedClientId ||
+          (u.salonName && r.clientName && r.clientName.toLowerCase().includes(u.salonName.toLowerCase())) ||
+          (u.email && r.clientEmail && r.clientEmail.toLowerCase() === u.email.toLowerCase())
+        ).length;
+
+        list.push({
+          id: u.linkedClientId || u.userId,
+          name: u.salonName || u.name,
+          contactName: u.name,
+          email: u.email,
+          phone: u.phone,
+          reportsCount: repCount,
+          inviteToken: invite?.token,
+          source: 'systemUser'
+        });
+      }
+    });
+
+    return list;
+  }, [clients, systemUsers, invites, reports]);
+
+  const selectedCompanyObj = availableCompanies.find(c => c.id === selectedAgencyCompanyId);
 
   // Filtered lists based on selectedAgencyCompanyId
   const filteredSystemUsers = systemUsers.filter(u => {
@@ -115,9 +174,21 @@ export default function ClientPortalManagementPage() {
     return i.clientId === selectedAgencyCompanyId;
   });
 
+  // CRÍTICO: Quando nenhuma empresa está selecionada (selectedAgencyCompanyId === 'all'),
+  // os relatórios NÃO devem ficar misturados nem aparecer soltos na tela.
+  // O usuário deve selecionar a empresa primeiro para desbloquear a visualização!
   const filteredReports = reports.filter(r => {
-    if (selectedAgencyCompanyId === 'all') return true;
-    return r.clientId === selectedAgencyCompanyId;
+    if (selectedAgencyCompanyId === 'all') return false;
+    return (
+      r.clientId === selectedAgencyCompanyId ||
+      (selectedCompanyObj && (
+        (r.clientName && selectedCompanyObj.name && (
+          r.clientName.toLowerCase().includes(selectedCompanyObj.name.toLowerCase()) ||
+          selectedCompanyObj.name.toLowerCase().includes(r.clientName.toLowerCase())
+        )) ||
+        (r.clientEmail && selectedCompanyObj.email && r.clientEmail.toLowerCase() === selectedCompanyObj.email.toLowerCase())
+      ))
+    );
   });
 
   const filteredContracts = contracts.filter(c => {
@@ -371,16 +442,21 @@ export default function ClientPortalManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao cadastrar cliente e gerar convite.');
 
-      const fullLink = `${window.location.origin}/portal/convite?token=${data.inviteToken}`;
+      const directPortalLink = `${window.location.origin}/portal?token=${data.inviteToken}`;
       setCreatedInviteModal({
         clientName: inviteForm.clientName || inviteForm.companyName,
         companyName: inviteForm.companyName || inviteForm.clientName,
         clientPhone: inviteForm.clientPhone,
         token: data.inviteToken,
-        link: fullLink
+        link: directPortalLink
       });
 
-      toast.success('Cliente cadastrado e link de convite gerado com sucesso!');
+      // Auto-seleciona a nova empresa cadastrada para a agência já começar a lançar relatórios
+      if (data.client?.id) {
+        setSelectedAgencyCompanyId(data.client.id);
+      }
+
+      toast.success('Empresa cadastrada no Firestore com sucesso!');
       setIsInviteModalOpen(false);
       setInviteForm({
         clientName: '',
@@ -397,25 +473,56 @@ export default function ClientPortalManagementPage() {
     }
   };
 
+  // Copy Direct Client Portal Link (Sem necessidade de cadastro do cliente)
+  const handleCopyPortalLink = (companyId: string, companyName?: string) => {
+    const comp = availableCompanies.find(c => c.id === companyId);
+    let link = '';
+    if (comp?.inviteToken) {
+      link = `${window.location.origin}/portal?token=${comp.inviteToken}`;
+    } else {
+      link = `${window.location.origin}/portal?previewClient=${companyId}&previewSalon=${salonData?.id || ''}`;
+    }
+    navigator.clipboard.writeText(link);
+    setCopiedToken(companyId);
+    toast.success(`Link do portal de ${comp?.name || companyName || 'empresa'} copiado com sucesso!`);
+    setTimeout(() => setCopiedToken(null), 3000);
+  };
+
+  // Send Direct Portal Link via WhatsApp
+  const handleSendPortalWhatsApp = (company: { name: string; phone?: string; inviteToken?: string; id: string }) => {
+    let link = '';
+    if (company.inviteToken) {
+      link = `${window.location.origin}/portal?token=${company.inviteToken}`;
+    } else {
+      link = `${window.location.origin}/portal?previewClient=${company.id}&previewSalon=${salonData?.id || ''}`;
+    }
+    const agencyName = salonData?.name || 'nossa agência';
+    const message = encodeURIComponent(
+      `Olá! Segue o link de acesso exclusivo ao Portal da ${company.name} na ${agencyName}:\n\n${link}\n\nVocê pode acompanhar todos os relatórios de desempenho, métricas do Google Meu Negócio e campanhas em tempo real.`
+    );
+    const cleanPhone = (company.phone || '').replace(/\D/g, '');
+    const url = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${message}` : `https://wa.me/?text=${message}`;
+    window.open(url, '_blank');
+  };
+
   // Copy Link to Clipboard
   const handleCopyInviteLink = (token: string) => {
-    const fullLink = `${window.location.origin}/portal/convite?token=${token}`;
+    const fullLink = `${window.location.origin}/portal?token=${token}`;
     navigator.clipboard.writeText(fullLink);
     setCopiedToken(token);
-    toast.success('Link copiado para a área de transferência!');
+    toast.success('Link do portal copiado para a área de transferência!');
     setTimeout(() => setCopiedToken(null), 3000);
   };
 
   // Send via WhatsApp
   const handleSendWhatsApp = (invite: ClientPortalInvite) => {
-    const fullLink = `${window.location.origin}/portal/convite?token=${invite.token}`;
+    const fullLink = `${window.location.origin}/portal?token=${invite.token}`;
     const agencyName = salonData?.name || 'nossa agência';
     const message = encodeURIComponent(
       `Olá ${invite.clientName || 'Cliente'}! Segue o link de acesso exclusivo à sua Área do Cliente da ${agencyName}:\n\n${fullLink}\n\nAli você encontrará seus relatórios de desempenho, métricas de campanhas e contratos de serviços.`
     );
     const cleanPhone = (invite.clientPhone || '').replace(/\D/g, '');
     const url = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${message}` : `https://wa.me/?text=${message}`;
-    window.open(url, '_blank');
   };
 
   // Delete / Cancel Invite
@@ -879,57 +986,81 @@ export default function ClientPortalManagementPage() {
 
           <Button
             onClick={() => setIsInviteModalOpen(true)}
-            className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 rounded-xl shadow-lg gap-2"
+            className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 rounded-xl shadow-lg gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            Gerar Link de Convite
+            Cadastrar Empresa (Firestore)
           </Button>
         </div>
       </div>
 
       {/* Seletor Global de Empresa para Evitar Portais Misturados */}
-      <div className="bg-[#0A261E] border border-[#DFC498]/30 p-4 rounded-2xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-[#0A261E] border border-[#DFC498]/30 p-4 rounded-2xl shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-[#DFC498]/10 border border-[#DFC498]/20 flex items-center justify-center text-[#DFC498] shrink-0">
             <Building2 className="w-4 h-4" />
           </div>
           <div>
             <span className="text-[10px] uppercase tracking-wider text-[#8FAEA2] font-bold block">Empresa Ativa no Gerenciamento</span>
-            <span className="text-xs text-white font-semibold">
-              {selectedAgencyCompanyId === 'all' ? 'Todas as Empresas (Visão Consolidada)' : clients.find(c => c.id === selectedAgencyCompanyId)?.name || systemUsers.find(u => u.userId === selectedAgencyCompanyId || u.linkedClientId === selectedAgencyCompanyId)?.salonName || 'Empresa Selecionada'}
+            <span className="text-xs text-white font-semibold flex items-center gap-2">
+              {selectedCompanyObj ? (
+                <>
+                  <span className="text-[#DFC498] font-bold">{selectedCompanyObj.name}</span>
+                  <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-[10px] py-0 px-1.5">
+                    Empresa Selecionada
+                  </Badge>
+                </>
+              ) : (
+                <span className="text-[#8FAEA2]">Nenhuma empresa selecionada (Selecione para destravar relatórios)</span>
+              )}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={selectedAgencyCompanyId}
             onChange={e => setSelectedAgencyCompanyId(e.target.value)}
             className="bg-[#061A14] border border-[#17473A] text-white rounded-xl h-10 px-3 text-xs focus:border-[#DFC498] min-w-[260px]"
           >
-            <option value="all">🔍 Todas as Empresas (Visão Consolidada)</option>
-            {clients.map(c => (
-              <option key={c.id} value={c.id}>
-                🏢 {c.name} {c.contactName ? `(${c.contactName})` : ''}
-              </option>
-            ))}
-            {systemUsers.map(u => (
-              <option key={u.userId} value={u.userId}>
-                👤 {u.salonName} ({u.name})
+            <option value="all">🔍 Selecionar Empresa na Lista...</option>
+            {availableCompanies.map(comp => (
+              <option key={comp.id} value={comp.id}>
+                🏢 {comp.name} {comp.contactName ? `(${comp.contactName})` : ''} • {comp.reportsCount} relatório(s)
               </option>
             ))}
           </select>
 
           {selectedAgencyCompanyId !== 'all' && (
-            <Button
-              onClick={() => setSelectedAgencyCompanyId('all')}
-              variant="outline"
-              size="sm"
-              className="border-white/10 hover:bg-white/5 text-[#8FAEA2] hover:text-white text-xs h-10 rounded-xl"
-            >
-              Limpar Filtro
-            </Button>
+            <>
+              <Button
+                onClick={() => handleCopyPortalLink(selectedAgencyCompanyId, selectedCompanyObj?.name)}
+                variant="outline"
+                size="sm"
+                className="border-[#DFC498]/40 bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] text-xs h-10 rounded-xl gap-1.5 font-semibold"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                Copiar Link do Portal
+              </Button>
+
+              <Button
+                onClick={() => setSelectedAgencyCompanyId('all')}
+                variant="outline"
+                size="sm"
+                className="border-white/10 hover:bg-white/5 text-[#8FAEA2] hover:text-white text-xs h-10 rounded-xl"
+              >
+                Trocar Empresa
+              </Button>
+            </>
           )}
+
+          <Button
+            onClick={() => setIsInviteModalOpen(true)}
+            size="sm"
+            className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs h-10 rounded-xl gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> Nova Empresa
+          </Button>
         </div>
       </div>
 
@@ -1051,16 +1182,11 @@ export default function ClientPortalManagementPage() {
 
             <div className="flex items-center gap-2 shrink-0">
               <Button
-                onClick={() => {
-                  setPdfFile(null);
-                  setPdfParsedResult(null);
-                  setPdfComparison(null);
-                  setIsPdfModalOpen(true);
-                }}
+                onClick={() => setIsInviteModalOpen(true)}
                 className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 px-4 rounded-xl shadow-lg gap-2 cursor-pointer"
               >
-                <Upload className="w-4 h-4" />
-                Subir PDF do Google Meu Negócio (IA)
+                <Plus className="w-4 h-4" />
+                Cadastrar Empresa no Firestore
               </Button>
             </div>
           </div>
@@ -1267,19 +1393,14 @@ export default function ClientPortalManagementPage() {
 
                               <Button
                                 onClick={() => {
-                                  if (userItem.linkedClientId) {
-                                    setSelectedClientIdForPdf(userItem.linkedClientId);
-                                  }
-                                  setPdfFile(null);
-                                  setPdfParsedResult(null);
-                                  setPdfComparison(null);
-                                  setIsPdfModalOpen(true);
+                                  const targetId = userItem.linkedClientId || userItem.userId;
+                                  handleCopyPortalLink(targetId, userItem.salonName);
                                 }}
                                 size="sm"
                                 variant="outline"
                                 className="border-[#DFC498]/40 bg-[#DFC498]/10 hover:bg-[#DFC498]/20 text-[#DFC498] text-xs h-9 rounded-xl font-semibold gap-1.5"
                               >
-                                <Upload className="w-3.5 h-3.5" /> Subir PDF GMN
+                                <Copy className="w-3.5 h-3.5" /> Copiar Link do Portal
                               </Button>
 
                               <Button
@@ -1459,83 +1580,319 @@ export default function ClientPortalManagementPage() {
 
       {/* TAB 2: REPORTS */}
       {activeTab === 'reports' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-white">Relatórios de Marketing & Campanhas</h3>
-              <p className="text-xs text-[#8FAEA2]">Publique números consolidados de campanhas, tráfego e relatórios Looker Studio.</p>
-            </div>
-            <div className="flex items-center gap-2">
+        <div className="space-y-6">
+          {/* CASO 1: NENHUMA EMPRESA SELECIONADA -> TELA DE SELEÇÃO EXCLUSIVA DE EMPRESA */}
+          {selectedAgencyCompanyId === 'all' ? (
+            <div className="space-y-6">
+              {/* Card Orientador de Seleção Obrigatória de Empresa */}
+              <div className="bg-gradient-to-r from-[#0A261E] via-[#0E352A] to-[#0A261E] border border-[#DFC498]/30 p-6 rounded-2xl shadow-xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="inline-flex items-center gap-1.5 text-xs text-[#DFC498] font-bold uppercase tracking-wider bg-[#DFC498]/10 px-2.5 py-0.5 rounded-full border border-[#DFC498]/20">
+                      <Building2 className="w-3.5 h-3.5" /> Isolamento Total Entre Portais de Clientes
+                    </div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      Selecione uma Empresa para Acessar seus Relatórios e Portal
+                    </h3>
+                    <p className="text-xs text-[#8FAEA2] max-w-2xl leading-relaxed">
+                      Para garantir que os relatórios e métricas de desempenho nunca fiquem misturados entre clientes, selecione a empresa abaixo para abrir o painel exclusivo, visualizar o histórico de métricas, cadastrar novos períodos e copiar o link de acesso direto do cliente.
+                    </p>
+                  </div>
 
-
-              <Button
-                onClick={() => {
-                  setEditingReport(null);
-                  setReportForm({
-                    title: '',
-                    clientId: '',
-                    clientName: '',
-                    clientEmail: '',
-                    period: 'Outubro / 2026',
-                    periodInput: '2026-10',
-                    summary: '',
-                    reportType: 'google_meu_negocio',
-                    leads: 0,
-                    reach: 0,
-                    conversions: 0,
-                    investment: 0,
-                    revenue: 0,
-                    roas: 0,
-                    directionRequests: 0,
-                    calls: 0,
-                    websiteClicks: 0,
-                    chatClicks: 0,
-                    mapsImpressions: 0,
-                    searchImpressions: 0,
-                    rankingPosition: 1,
-                    targetKeyword: '',
-                    topKeywordsStr: '',
-                    rating: 5.0,
-                    reviewsCount: 0,
-                    externalUrl: '',
-                    status: 'published'
-                  });
-                  setIsReportModalOpen(true);
-                }}
-                size="sm"
-                className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs rounded-xl h-9 gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" /> Novo Relatório
-              </Button>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="p-12 text-center text-[#8FAEA2]">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#DFC498]" />
-              Carregando relatórios...
-            </div>
-          ) : reports.length === 0 ? (
-            <Card className="bg-[#0A261E]/60 border-[#17473A] text-center py-12">
-              <CardContent className="space-y-3">
-                <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto text-[#8FAEA2]">
-                  <FileText className="w-6 h-6" />
+                  <Button
+                    onClick={() => setIsInviteModalOpen(true)}
+                    className="bg-gradient-to-r from-[#DFC498] to-[#C5A880] hover:from-[#C5A880] hover:to-[#B0926A] text-[#04140F] font-bold text-xs h-10 px-4 rounded-xl shadow-lg gap-2 cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-4 h-4" /> Cadastrar Empresa
+                  </Button>
                 </div>
-                <h4 className="text-sm font-bold text-white">Nenhum relatório publicado</h4>
-                <p className="text-xs text-[#8FAEA2] max-w-sm mx-auto">
-                  Crie relatórios com métricas de leads, alcance e links do Looker Studio para que seus clientes visualizem na Área do Cliente.
-                </p>
-                <Button
-                  onClick={() => setIsReportModalOpen(true)}
-                  className="bg-[#DFC498] text-[#04140F] font-bold text-xs h-9 rounded-xl"
-                >
-                  Criar Primeiro Relatório
-                </Button>
-              </CardContent>
-            </Card>
+              </div>
+
+              {/* Grade de Empresas Disponíveis */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#8FAEA2] flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-[#DFC498]" />
+                    Empresas Disponíveis para Gestão ({availableCompanies.length})
+                  </h4>
+                  <span className="text-xs text-[#8FAEA2]">
+                    Clique em <strong>"Acessar Relatórios"</strong> para desbloquear a empresa
+                  </span>
+                </div>
+
+                {loading ? (
+                  <div className="p-12 text-center text-[#8FAEA2]">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#DFC498]" />
+                    Carregando empresas...
+                  </div>
+                ) : availableCompanies.length === 0 ? (
+                  <Card className="bg-[#0A261E]/60 border-[#17473A] text-center py-12">
+                    <CardContent className="space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto text-[#8FAEA2]">
+                        <Building2 className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-sm font-bold text-white">Nenhuma empresa cadastrada ainda</h4>
+                      <p className="text-xs text-[#8FAEA2] max-w-sm mx-auto">
+                        Cadastre o primeiro cliente da agência com Nome da Empresa, Email e WhatsApp para começar a lançar os relatórios.
+                      </p>
+                      <Button
+                        onClick={() => setIsInviteModalOpen(true)}
+                        className="bg-[#DFC498] text-[#04140F] font-bold text-xs h-9 rounded-xl"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" /> Cadastrar Primeira Empresa
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {availableCompanies.map(comp => (
+                      <Card
+                        key={comp.id}
+                        className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/40 transition-all flex flex-col justify-between"
+                      >
+                        <CardHeader className="pb-3 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="w-10 h-10 rounded-xl bg-[#DFC498]/10 border border-[#DFC498]/20 flex items-center justify-center text-[#DFC498] shrink-0">
+                              <Building2 className="w-5 h-5" />
+                            </div>
+                            <Badge className="bg-[#DFC498]/10 text-[#DFC498] border-[#DFC498]/20 text-[10px] font-mono">
+                              {comp.reportsCount} relatório(s)
+                            </Badge>
+                          </div>
+                          <div>
+                            <CardTitle className="text-sm font-bold text-white group-hover:text-[#DFC498] transition-colors">
+                              {comp.name}
+                            </CardTitle>
+                            {comp.contactName && comp.contactName !== comp.name && (
+                              <CardDescription className="text-xs text-[#8FAEA2]">
+                                Contato: {comp.contactName}
+                              </CardDescription>
+                            )}
+                          </div>
+                        </CardHeader>
+
+                        <CardContent className="space-y-3 pt-0">
+                          <div className="space-y-1.5 text-xs bg-black/25 p-2.5 rounded-xl border border-white/5">
+                            <div className="flex items-center gap-2 text-[#8FAEA2] truncate">
+                              <Mail className="w-3.5 h-3.5 text-[#DFC498] shrink-0" />
+                              <span className="truncate">{comp.email || 'E-mail não informado'}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[#8FAEA2]">
+                              <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>{comp.phone || 'WhatsApp não informado'}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-2 pt-1">
+                            <Button
+                              onClick={() => setSelectedAgencyCompanyId(comp.id)}
+                              className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs h-9 rounded-xl gap-2 cursor-pointer shadow-md"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              Acessar Relatórios & Portal
+                            </Button>
+
+                            <div className="flex items-center gap-2">
+                              <Button
+                                onClick={() => handleCopyPortalLink(comp.id, comp.name)}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 border-white/10 hover:bg-white/5 text-[#8FAEA2] hover:text-white text-xs h-8 rounded-xl gap-1.5"
+                              >
+                                <Copy className="w-3 h-3 text-[#DFC498]" /> Copiar Link
+                              </Button>
+
+                              {comp.phone && (
+                                <Button
+                                  onClick={() => handleSendPortalWhatsApp(comp)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs h-8 rounded-xl gap-1.5"
+                                >
+                                  <Phone className="w-3 h-3" /> WhatsApp
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredReports.map(rep => (
+            /* CASO 2: EMPRESA ESPECÍFICA SELECIONADA -> EXIBE RELATÓRIOS EXCLUSIVOS DA EMPRESA */
+            <div className="space-y-4">
+              {/* Banner da Empresa Ativa */}
+              <div className="bg-[#0A261E] border border-[#DFC498]/40 p-4 rounded-2xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs py-0.5 px-2">
+                      Empresa Selecionada (Acesso Isolado)
+                    </Badge>
+                    <span className="text-xs text-[#8FAEA2]">
+                      {filteredReports.length} relatório(s) publicado(s)
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-[#DFC498]" />
+                    {selectedCompanyObj?.name || 'Empresa'}
+                  </h3>
+                  <div className="flex items-center gap-3 text-xs text-[#8FAEA2] flex-wrap">
+                    {selectedCompanyObj?.email && (
+                      <span className="flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-[#DFC498]" /> {selectedCompanyObj.email}
+                      </span>
+                    )}
+                    {selectedCompanyObj?.phone && (
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-emerald-400" /> {selectedCompanyObj.phone}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <Button
+                    onClick={() => handleCopyPortalLink(selectedAgencyCompanyId, selectedCompanyObj?.name)}
+                    className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 shadow-md"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copiar Link do Portal
+                  </Button>
+
+                  {selectedCompanyObj?.phone && (
+                    <Button
+                      onClick={() => selectedCompanyObj && handleSendPortalWhatsApp(selectedCompanyObj)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-9 px-3 rounded-xl gap-1.5"
+                    >
+                      <Phone className="w-3.5 h-3.5" /> Enviar WhatsApp
+                    </Button>
+                  )}
+
+                  <Button
+                    onClick={() => {
+                      const token = selectedCompanyObj?.inviteToken;
+                      const url = token ? `/portal?token=${token}` : `/portal?previewClient=${selectedAgencyCompanyId}&previewSalon=${salonData?.id || ''}`;
+                      window.open(url, '_blank');
+                    }}
+                    variant="outline"
+                    className="border-white/10 hover:bg-white/5 text-white text-xs h-9 rounded-xl gap-1.5"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-[#DFC498]" /> Ver Portal
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      setEditingReport(null);
+                      setReportForm({
+                        title: `Desempenho Google Meu Negócio - ${selectedCompanyObj?.name || ''}`,
+                        clientId: selectedAgencyCompanyId,
+                        clientName: selectedCompanyObj?.name || '',
+                        clientEmail: selectedCompanyObj?.email || '',
+                        period: 'Outubro / 2026',
+                        periodInput: '2026-10',
+                        summary: '',
+                        reportType: 'google_meu_negocio',
+                        leads: 0,
+                        reach: 0,
+                        conversions: 0,
+                        investment: 0,
+                        revenue: 0,
+                        roas: 0,
+                        directionRequests: 0,
+                        calls: 0,
+                        websiteClicks: 0,
+                        chatClicks: 0,
+                        mapsImpressions: 0,
+                        searchImpressions: 0,
+                        rankingPosition: 1,
+                        targetKeyword: '',
+                        topKeywordsStr: '',
+                        rating: 5.0,
+                        reviewsCount: 0,
+                        externalUrl: '',
+                        status: 'published'
+                      });
+                      setIsReportModalOpen(true);
+                    }}
+                    className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs h-9 px-3.5 rounded-xl gap-1.5 shadow-md"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Novo Relatório
+                  </Button>
+
+                  <Button
+                    onClick={() => setSelectedAgencyCompanyId('all')}
+                    variant="outline"
+                    className="border-white/10 hover:bg-white/5 text-[#8FAEA2] hover:text-white text-xs h-9 rounded-xl"
+                  >
+                    Trocar Empresa
+                  </Button>
+                </div>
+              </div>
+
+              {/* Lista de relatórios da empresa */}
+              {loading ? (
+                <div className="p-12 text-center text-[#8FAEA2]">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#DFC498]" />
+                  Carregando relatórios...
+                </div>
+              ) : filteredReports.length === 0 ? (
+                <Card className="bg-[#0A261E]/60 border-[#17473A] text-center py-12">
+                  <CardContent className="space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto text-[#8FAEA2]">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      Nenhum relatório cadastrado para {selectedCompanyObj?.name || 'esta empresa'}
+                    </h4>
+                    <p className="text-xs text-[#8FAEA2] max-w-sm mx-auto">
+                      Clique no botão abaixo para lançar manualmente as métricas do primeiro período (rotas, ligações, cliques no site, cliques no chat WhatsApp).
+                    </p>
+                    <Button
+                      onClick={() => {
+                        setEditingReport(null);
+                        setReportForm({
+                          title: `Desempenho Google Meu Negócio - ${selectedCompanyObj?.name || ''}`,
+                          clientId: selectedAgencyCompanyId,
+                          clientName: selectedCompanyObj?.name || '',
+                          clientEmail: selectedCompanyObj?.email || '',
+                          period: 'Outubro / 2026',
+                          periodInput: '2026-10',
+                          summary: '',
+                          reportType: 'google_meu_negocio',
+                          leads: 0,
+                          reach: 0,
+                          conversions: 0,
+                          investment: 0,
+                          revenue: 0,
+                          roas: 0,
+                          directionRequests: 0,
+                          calls: 0,
+                          websiteClicks: 0,
+                          chatClicks: 0,
+                          mapsImpressions: 0,
+                          searchImpressions: 0,
+                          rankingPosition: 1,
+                          targetKeyword: '',
+                          topKeywordsStr: '',
+                          rating: 5.0,
+                          reviewsCount: 0,
+                          externalUrl: '',
+                          status: 'published'
+                        });
+                        setIsReportModalOpen(true);
+                      }}
+                      className="bg-[#DFC498] text-[#04140F] font-bold text-xs h-9 rounded-xl"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Cadastrar Primeiro Relatório
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredReports.map(rep => (
                 <Card key={rep.id} className="bg-[#0A261E] border-[#17473A] hover:border-[#DFC498]/30 transition-all">
                   <CardHeader className="pb-3 space-y-1">
                     <div className="flex items-center justify-between">
@@ -1684,6 +2041,8 @@ export default function ClientPortalManagementPage() {
                   </CardContent>
                 </Card>
               ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2191,72 +2550,85 @@ export default function ClientPortalManagementPage() {
         </div>
       )}
 
-      {/* MODAL: GERAR CONVITE */}
+      {/* MODAL: CADASTRO DE EMPRESA NO FIRESTORE */}
       <Dialog open={isInviteModalOpen} onOpenChange={setIsInviteModalOpen}>
         <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
-              <Link2 className="w-5 h-5 text-[#DFC498]" />
-              Gerar Link de Convite para o Cliente
+              <Building2 className="w-5 h-5 text-[#DFC498]" />
+              Cadastrar Nova Empresa no Firestore
             </DialogTitle>
             <DialogDescription className="text-xs text-[#8FAEA2]">
-              Crie um link exclusivo para seu cliente cadastrar a senha e acessar o portal.
+              Cadastre a empresa cliente no Firestore. O portal exclusivo é gerado instantaneamente com link direto para você copiar e enviar via WhatsApp sem que o cliente precise se cadastrar.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleCreateInvite} className="space-y-3.5 pt-2">
             <div className="space-y-1.5">
-              <Label className="text-xs text-[#8FAEA2]">Nome da Empresa / Marca do Cliente *</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-white font-bold">
+                  Nome da Empresa / Salão <span className="text-[#DFC498]">*</span>
+                </Label>
+                <span className="text-[10px] text-[#DFC498] font-mono">Obrigatório</span>
+              </div>
               <Input
                 required
                 value={inviteForm.companyName}
                 onChange={e => setInviteForm(prev => ({ ...prev, companyName: e.target.value }))}
-                placeholder="Ex: Acme Odontologia Integrada"
+                placeholder="Ex: Essenza Studio di Bellezza"
                 className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-[#8FAEA2]">Nome do Responsável / Contato</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-white font-bold">
+                  Email de Contato <span className="text-[#DFC498]">*</span>
+                </Label>
+                <span className="text-[10px] text-[#DFC498] font-mono">Obrigatório</span>
+              </div>
+              <Input
+                type="email"
+                required
+                value={inviteForm.clientEmail}
+                onChange={e => setInviteForm(prev => ({ ...prev, clientEmail: e.target.value }))}
+                placeholder="contato@essenzastudio.com"
+                className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-white font-bold">
+                  Número de WhatsApp <span className="text-[#DFC498]">*</span>
+                </Label>
+                <span className="text-[10px] text-[#DFC498] font-mono">Obrigatório</span>
+              </div>
+              <Input
+                required
+                value={inviteForm.clientPhone}
+                onChange={e => setInviteForm(prev => ({ ...prev, clientPhone: e.target.value }))}
+                placeholder="(11) 98765-4321"
+                className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-[#8FAEA2]">Nome do Responsável / Proprietário (Opcional)</Label>
               <Input
                 value={inviteForm.clientName}
                 onChange={e => setInviteForm(prev => ({ ...prev, clientName: e.target.value }))}
-                placeholder="Ex: Dra. Carolina Mendes"
+                placeholder="Ex: Mariana Silva"
                 className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[#8FAEA2]">E-mail do Cliente *</Label>
-                <Input
-                  type="email"
-                  required
-                  value={inviteForm.clientEmail}
-                  onChange={e => setInviteForm(prev => ({ ...prev, clientEmail: e.target.value }))}
-                  placeholder="cliente@empresa.com"
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-[#8FAEA2]">WhatsApp do Cliente *</Label>
-                <Input
-                  required
-                  value={inviteForm.clientPhone}
-                  onChange={e => setInviteForm(prev => ({ ...prev, clientPhone: e.target.value }))}
-                  placeholder="(11) 98765-4321"
-                  className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
-                />
-              </div>
-            </div>
-
             <div className="space-y-1.5">
-              <Label className="text-xs text-[#8FAEA2]">Observações / Notas Internas</Label>
+              <Label className="text-xs text-[#8FAEA2]">Observações / Segmento do Cliente</Label>
               <Input
                 value={inviteForm.notes}
                 onChange={e => setInviteForm(prev => ({ ...prev, notes: e.target.value }))}
-                placeholder="Ex: Cliente de tráfego pago iniciado em Outubro"
+                placeholder="Ex: Gestão de Google Meu Negócio e Tráfego Local"
                 className="bg-black/30 border-white/10 text-white rounded-xl h-10 text-sm focus:border-[#DFC498]"
               />
             </div>
@@ -2264,9 +2636,19 @@ export default function ClientPortalManagementPage() {
             <Button
               type="submit"
               disabled={actionLoading}
-              className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold h-10 rounded-xl mt-2"
+              className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold h-11 rounded-xl mt-3 text-xs gap-2 shadow-lg cursor-pointer"
             >
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Gerar Link de Convite'}
+              {actionLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Cadastrando no Firestore...
+                </>
+              ) : (
+                <>
+                  <Building2 className="w-4 h-4" />
+                  Salvar Empresa no Firestore & Criar Portal
+                </>
+              )}
             </Button>
           </form>
         </DialogContent>
@@ -2959,7 +3341,7 @@ export default function ClientPortalManagementPage() {
           )}
         </DialogContent>
       </Dialog>
-      {/* MODAL: SUCESSO DE CONVITE CRIADO & LINK PRONTO PARA WHATSAPP */}
+      {/* MODAL: SUCESSO DE EMPRESA CADASTRADA NO FIRESTORE & LINK PRONTO */}
       <Dialog open={!!createdInviteModal} onOpenChange={open => !open && setCreatedInviteModal(null)}>
         <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-md">
           <DialogHeader>
@@ -2967,27 +3349,27 @@ export default function ClientPortalManagementPage() {
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <DialogTitle className="text-center text-lg font-bold text-white">
-              Cliente Cadastrado com Sucesso!
+              Empresa Cadastrada no Firestore!
             </DialogTitle>
             <DialogDescription className="text-center text-xs text-[#8FAEA2]">
-              O cliente <strong className="text-white">{createdInviteModal?.clientName}</strong> foi cadastrado no CRM e o link exclusivo de acesso à Área do Cliente foi gerado.
+              A empresa <strong className="text-white">{createdInviteModal?.companyName || createdInviteModal?.clientName}</strong> foi cadastrada com sucesso e seu portal exclusivo está configurado e pronto para acesso.
             </DialogDescription>
           </DialogHeader>
 
           {createdInviteModal && (
             <div className="space-y-4 pt-3">
               <div className="bg-black/40 p-3 rounded-xl border border-white/5 space-y-1">
-                <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-medium">Link de Acesso Exclusivo</span>
+                <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-medium">Link de Acesso Direto ao Portal do Cliente</span>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-mono text-[#DFC498] truncate">{createdInviteModal.link}</span>
+                  <span className="text-xs font-mono text-[#DFC498] truncate select-all">{createdInviteModal.link}</span>
                   <Button
                     size="sm"
                     onClick={() => {
                       navigator.clipboard.writeText(createdInviteModal.link);
-                      toast.success('Link copiado para a área de transferência!');
+                      toast.success('Link do portal copiado com sucesso!');
                     }}
                     variant="ghost"
-                    className="h-7 px-2 text-white hover:bg-white/5"
+                    className="h-7 px-2 text-[#DFC498] hover:bg-white/5"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </Button>
@@ -2997,24 +3379,67 @@ export default function ClientPortalManagementPage() {
               <div className="flex flex-col gap-2 pt-1">
                 <Button
                   onClick={() => {
+                    const agencyName = salonData?.name || 'nossa agência';
                     const message = encodeURIComponent(
-                      `Olá ${createdInviteModal.clientName}! Segue o link de acesso exclusivo à sua Área do Cliente no LumièreOS:\n\n${createdInviteModal.link}\n\nAli você encontrará seus relatórios de desempenho e contratos.`
+                      `Olá! Segue o link de acesso exclusivo ao Portal da ${createdInviteModal.companyName} na ${agencyName}:\n\n${createdInviteModal.link}\n\nVocê pode acompanhar todos os relatórios de desempenho, métricas do Google Meu Negócio e campanhas em tempo real sem precisar de cadastro prévio!`
                     );
                     const cleanPhone = (createdInviteModal.clientPhone || '').replace(/\D/g, '');
                     const url = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${message}` : `https://wa.me/?text=${message}`;
                     window.open(url, '_blank');
                   }}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 rounded-xl gap-2 text-xs"
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 rounded-xl gap-2 text-xs cursor-pointer shadow-md"
                 >
-                  <Phone className="w-4 h-4" /> Enviar Convite via WhatsApp
+                  <Phone className="w-4 h-4" /> Enviar Link via WhatsApp
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    const cId = selectedAgencyCompanyId;
+                    setCreatedInviteModal(null);
+                    setEditingReport(null);
+                    setReportForm({
+                      title: `Desempenho Google Meu Negócio - ${createdInviteModal.companyName}`,
+                      clientId: cId !== 'all' ? cId : '',
+                      clientName: createdInviteModal.companyName,
+                      clientEmail: '',
+                      period: 'Outubro / 2026',
+                      periodInput: '2026-10',
+                      summary: '',
+                      reportType: 'google_meu_negocio',
+                      leads: 0,
+                      reach: 0,
+                      conversions: 0,
+                      investment: 0,
+                      revenue: 0,
+                      roas: 0,
+                      directionRequests: 0,
+                      calls: 0,
+                      websiteClicks: 0,
+                      chatClicks: 0,
+                      mapsImpressions: 0,
+                      searchImpressions: 0,
+                      rankingPosition: 1,
+                      targetKeyword: '',
+                      topKeywordsStr: '',
+                      rating: 5.0,
+                      reviewsCount: 0,
+                      externalUrl: '',
+                      status: 'published'
+                    });
+                    setActiveTab('reports');
+                    setIsReportModalOpen(true);
+                  }}
+                  className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold h-10 rounded-xl gap-2 text-xs cursor-pointer shadow-md"
+                >
+                  <Plus className="w-4 h-4" /> Cadastrar Primeiro Relatório Desta Empresa
                 </Button>
                 
                 <Button
                   onClick={() => setCreatedInviteModal(null)}
                   variant="outline"
-                  className="w-full border-white/10 hover:bg-white/5 text-white h-10 rounded-xl text-xs"
+                  className="w-full border-white/10 hover:bg-white/5 text-[#8FAEA2] hover:text-white h-10 rounded-xl text-xs"
                 >
-                  Fechar
+                  Concluir
                 </Button>
               </div>
             </div>
@@ -3022,504 +3447,6 @@ export default function ClientPortalManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: UPLOAD DE PDF E LEITURA INTELIGENTE COM IA GEMINI */}
-      <Dialog open={isPdfModalOpen} onOpenChange={open => !open && setIsPdfModalOpen(false)}>
-        <DialogContent className="bg-[#0A261E] border-[#17473A] text-white max-w-xl">
-          <DialogHeader>
-            <div className="w-12 h-12 rounded-2xl bg-[#DFC498]/10 border border-[#DFC498]/20 flex items-center justify-center text-[#DFC498] mx-auto mb-2">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <DialogTitle className="text-center text-lg font-bold text-white">
-              Leitura Inteligente de Relatório em PDF (IA)
-            </DialogTitle>
-            <DialogDescription className="text-center text-xs text-[#8FAEA2]">
-              Envie o PDF de desempenho do Google Meu Negócio / Google Maps. O LumièreOS extrai automaticamente as métricas, gera o resumo executivo e calcula o comparativo mês a mês.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 pt-2">
-            {/* PASSO 1: SELEÇÃO MANDATÓRIA DO CLIENTE DESTINATÁRIO */}
-            <div className="space-y-2 bg-black/40 p-4 rounded-2xl border border-white/10">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5 uppercase tracking-wider">
-                  <Building2 className="w-4 h-4 text-[#DFC498]" /> Passo 1: Selecione o Cliente Destinatário *
-                </Label>
-                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  Acesso Restrito & Isolado
-                </span>
-              </div>
-              <p className="text-xs text-[#8FAEA2] leading-relaxed">
-                Para que você possa subir o relatório, primeiramente selecione qual é o cliente. Outros clientes da agência não terão acesso aos relatórios dele.
-              </p>
-              
-              <select
-                value={selectedClientIdForPdf}
-                onChange={e => {
-                  setSelectedClientIdForPdf(e.target.value);
-                  setPdfParsedResult(null);
-                  setPdfComparison(null);
-                }}
-                className="w-full bg-[#061A14] border border-[#17473A] rounded-xl text-white px-3 h-11 text-xs focus:border-[#DFC498] font-medium"
-              >
-                <option value="">-- Selecione o cliente da agência (Obrigatório) --</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.email ? `(${c.email})` : ''}
-                  </option>
-                ))}
-              </select>
-
-              {selectedClientIdForPdf ? (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-xs text-emerald-300 flex items-center justify-between mt-2">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <div>
-                      <span className="font-bold text-white block">
-                        Cliente Selecionado: {clients.find(c => c.id === selectedClientIdForPdf)?.name}
-                      </span>
-                      <span className="text-[11px] text-[#8FAEA2]">
-                        E-mail de acesso: <strong className="text-white">{clients.find(c => c.id === selectedClientIdForPdf)?.email || 'Não informado'}</strong>
-                      </span>
-                    </div>
-                  </div>
-                  <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">
-                    Acesso Exclusivo
-                  </Badge>
-                </div>
-              ) : (
-                <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl text-xs text-amber-300 flex items-center gap-2.5 mt-2">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Selecione primeiramente o cliente acima para liberar o envio do arquivo PDF do Google Meu Negócio.</span>
-                </div>
-              )}
-            </div>
-
-            {/* PASSO 2: ENTRADA DOS DADOS DO GOOGLE MEU NEGÓCIO (Bloqueado até a escolha do cliente) */}
-            {!pdfParsedResult && (
-              <div className={`space-y-4 transition-all ${!selectedClientIdForPdf ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
-                <div className="flex items-center justify-between pt-1">
-                  <Label className="text-xs text-[#DFC498] font-bold flex items-center gap-1.5 uppercase tracking-wider">
-                    <FileUp className="w-4 h-4 text-[#DFC498]" /> Passo 2: Dados de Desempenho do Google Meu Negócio *
-                  </Label>
-                  <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/10 text-[10px]">
-                    <button
-                      type="button"
-                      onClick={() => setPdfInputMode('file')}
-                      className={`px-2 py-1 rounded-md transition ${pdfInputMode === 'file' ? 'bg-[#DFC498] text-[#04140F] font-bold' : 'text-zinc-400 hover:text-white'}`}
-                    >
-                      Arquivo PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPdfInputMode('text')}
-                      className={`px-2 py-1 rounded-md transition ${pdfInputMode === 'text' ? 'bg-[#DFC498] text-[#04140F] font-bold' : 'text-zinc-400 hover:text-white'}`}
-                    >
-                      Colar Texto do GMN
-                    </button>
-                  </div>
-                </div>
-
-                {pdfInputMode === 'file' ? (
-                  <div
-                    className="border-2 border-dashed border-[#17473A] hover:border-[#DFC498]/50 bg-black/30 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition cursor-pointer text-center"
-                    onClick={() => {
-                      if (!selectedClientIdForPdf) {
-                        toast.error('Selecione primeiramente o cliente antes de escolher o PDF.');
-                        return;
-                      }
-                      document.getElementById('gmb-pdf-input')?.click();
-                    }}
-                  >
-                    <FileUp className="w-10 h-10 text-[#DFC498]" />
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {pdfFile ? pdfFile.name : 'Clique para selecionar o PDF do Google Meu Negócio'}
-                      </p>
-                      <p className="text-xs text-[#8FAEA2] mt-1">
-                        {selectedClientIdForPdf 
-                          ? `O relatório será vinculado especificamente para ${clients.find(c => c.id === selectedClientIdForPdf)?.name}`
-                          : 'Selecione o cliente no Passo 1 para habilitar'}
-                      </p>
-                    </div>
-                    <input
-                      id="gmb-pdf-input"
-                      type="file"
-                      accept="application/pdf"
-                      disabled={!selectedClientIdForPdf}
-                      className="hidden"
-                      onChange={e => {
-                        if (e.target.files && e.target.files[0]) {
-                          setPdfFile(e.target.files[0]);
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-[11px] text-[#8FAEA2]">
-                      <span>Copie dados da tela do Google ou use uma IA:</span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const template = `Relatório de Desempenho - Google Meu Negócio
-Empresa: ${clients.find(c => c.id === selectedClientIdForPdf)?.name || 'Nome do Salão'}
-Período: Outubro de 2026
-
-1. Visão Geral de Interações
-- Interações no Perfil da Empresa: 250
-- Chamadas telefônicas: 45
-- Cliques no chat: 28
-- Agendamentos: 35
-- Orientações / Rotas no mapa: 80
-- Cliques no website: 62
-
-2. Histórico Mensal de Interações
-- Junho de 2026: 55
-- Julho de 2026: 40
-- Agosto de 2026: 68
-- Setembro de 2026: 50
-- Outubro de 2026: 62
-
-3. Como as Pessoas Descobriram sua Empresa (Total: 980)
-- Pesquisa Google – dispositivos móveis: 520 (53%)
-- Google Maps – dispositivos móveis: 210 (21%)
-- Pesquisa Google – computadores: 160 (16%)
-- Google Maps – computadores: 90 (10%)
-
-4. Reputação & Palavras-chave
-- Avaliação média: 5.0 estrelas (75 avaliações)
-- Palavras-chave: salao de beleza, corte e coloracao, escova`;
-                            navigator.clipboard.writeText(template);
-                            toast.success('Modelo de estrutura copiado!');
-                          }}
-                          className="text-[#DFC498] hover:underline text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
-                        >
-                          <Sparkles className="w-3 h-3" /> Copiar Modelo p/ IA
-                        </button>
-                        <span className="text-zinc-600">•</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const clientName = clients.find(c => c.id === selectedClientIdForPdf)?.name || 'Nome da Empresa';
-                            setRawGmbText(`Relatório de Desempenho - Google Meu Negócio\nEmpresa: ${clientName}\nPeríodo: Outubro de 2026\n\n1. Visão Geral de Interações\n- Interações no Perfil da Empresa: 250\n- Chamadas telefônicas: 45\n- Cliques no chat: 28\n- Agendamentos: 35\n- Orientações / Rotas no mapa: 80\n- Cliques no website: 62\n\n2. Histórico Mensal de Interações\n- Junho de 2026: 55\n- Julho de 2026: 40\n- Agosto de 2026: 68\n- Setembro de 2026: 50\n- Outubro de 2026: 62\n\n3. Como as Pessoas Descobriram sua Empresa (Total: 980)\n- Pesquisa Google – dispositivos móveis: 520 (53%)\n- Google Maps – dispositivos móveis: 210 (21%)\n- Pesquisa Google – computadores: 160 (16%)\n- Google Maps – computadores: 90 (10%)\n\n4. Reputação & Palavras-chave\n- Avaliação média: 5.0 estrelas (75 avaliações)\n- Palavras-chave: salao de beleza, corte, coloracao`);
-                          }}
-                          className="text-[#8FAEA2] hover:text-white text-[10px] cursor-pointer"
-                        >
-                          Preencher Exemplo
-                        </button>
-                      </div>
-                    </div>
-                    <textarea
-                      value={rawGmbText}
-                      onChange={e => setRawGmbText(e.target.value)}
-                      placeholder="Cole aqui o texto do relatório do Google Meu Negócio contendo as interações, chamadas, rotas, pesquisas móveis, etc..."
-                      rows={6}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white placeholder-zinc-500 font-mono focus:border-[#DFC498] outline-none"
-                    />
-                  </div>
-                )}
-
-                <Button
-                  disabled={!selectedClientIdForPdf || (pdfInputMode === 'file' ? !pdfFile : !rawGmbText.trim()) || pdfParsing}
-                  onClick={async () => {
-                    if (!selectedClientIdForPdf) {
-                      toast.error('Selecione primeiramente qual é o cliente ao qual este relatório pertence.');
-                      return;
-                    }
-                    if (!currentUser) return;
-
-                    try {
-                      setPdfParsing(true);
-                      const idToken = await currentUser.getIdToken();
-
-                      if (pdfInputMode === 'file') {
-                        if (!pdfFile) return;
-                        const reader = new FileReader();
-                        reader.readAsDataURL(pdfFile);
-                        reader.onload = async () => {
-                          const base64 = reader.result as string;
-                          const res = await fetch('/api/client-portal/reports/parse-pdf', {
-                            method: 'POST',
-                            headers: {
-                              'Content-Type': 'application/json',
-                              Authorization: `Bearer ${idToken}`
-                            },
-                            body: JSON.stringify({
-                              pdfBase64: base64,
-                              fileName: pdfFile.name,
-                              clientId: selectedClientIdForPdf
-                            })
-                          });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error || 'Erro ao processar PDF.');
-
-                          setPdfParsedResult(data.parsedData);
-                          setPdfComparison(data.comparison);
-                          toast.success('Relatório extraído e analisado pela IA com sucesso!');
-                          setPdfParsing(false);
-                        };
-                      } else {
-                        const res = await fetch('/api/client-portal/reports/parse-pdf', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${idToken}`
-                          },
-                          body: JSON.stringify({
-                            rawText: rawGmbText,
-                            clientId: selectedClientIdForPdf
-                          })
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Erro ao processar dados do Google.');
-
-                        setPdfParsedResult(data.parsedData);
-                        setPdfComparison(data.comparison);
-                        toast.success('Dados do Google Meu Negócio organizados pela IA com sucesso!');
-                        setPdfParsing(false);
-                      }
-                    } catch (err: any) {
-                      console.error(err);
-                      toast.error(err.message || 'Erro ao analisar dados com IA.');
-                      setPdfParsing(false);
-                    }
-                  }}
-                  className="w-full bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-bold h-11 rounded-xl text-xs gap-2"
-                >
-                  {pdfParsing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Analisando e Organizando Métricas com IA...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" /> Processar Relatório do Google para Este Cliente
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
-
-            {/* Parsed Preview & Comparison Results */}
-            {pdfParsedResult && (
-              <div className="space-y-4 bg-black/40 p-4 rounded-2xl border border-white/10 max-h-[65vh] overflow-y-auto">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <div>
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-[#DFC498]" />
-                      {clients.find(c => c.id === selectedClientIdForPdf)?.name || pdfParsedResult.businessName}
-                    </h4>
-                    <span className="text-xs text-[#DFC498] font-mono">{pdfParsedResult.period}</span>
-                  </div>
-                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs font-semibold">
-                    ✓ Vinculado a este Cliente
-                  </Badge>
-                </div>
-
-                {/* 1. INTERAÇÕES NO PERFIL DA EMPRESA */}
-                <div className="bg-[#0A261E] p-3.5 rounded-xl border border-[#17473A] space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Zap className="w-4 h-4 text-[#DFC498]" /> Interações no Perfil da Empresa
-                    </span>
-                    <span className="text-base font-bold text-[#DFC498] font-mono">
-                      {pdfParsedResult.totalInteractions || (Number(pdfParsedResult.calls || 0) + Number(pdfParsedResult.directionRequests || 0) + Number(pdfParsedResult.websiteClicks || 0) + Number(pdfParsedResult.chatClicks || 0) + Number(pdfParsedResult.bookings || 0))}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
-                    <div className="bg-black/30 p-2 rounded-lg">
-                      <span className="text-[10px] text-[#8FAEA2] block">Chamadas</span>
-                      <span className="font-bold text-white text-xs">{pdfParsedResult.calls || 0}</span>
-                    </div>
-                    <div className="bg-black/30 p-2 rounded-lg">
-                      <span className="text-[10px] text-[#8FAEA2] block">Cliques no Chat</span>
-                      <span className="font-bold text-white text-xs">{pdfParsedResult.chatClicks || 0}</span>
-                    </div>
-                    <div className="bg-black/30 p-2 rounded-lg">
-                      <span className="text-[10px] text-[#8FAEA2] block">Agendamentos</span>
-                      <span className="font-bold text-white text-xs">{pdfParsedResult.bookings || 0}</span>
-                    </div>
-                    <div className="bg-black/30 p-2 rounded-lg">
-                      <span className="text-[10px] text-[#8FAEA2] block">Orientações (Rotas)</span>
-                      <span className="font-bold text-emerald-400 text-xs">{pdfParsedResult.directionRequests || 0}</span>
-                    </div>
-                    <div className="bg-black/30 p-2 rounded-lg">
-                      <span className="text-[10px] text-[#8FAEA2] block">Cliques no Site</span>
-                      <span className="font-bold text-blue-400 text-xs">{pdfParsedResult.websiteClicks || 0}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. COMO AS PESSOAS DESCOBRIRAM SUA EMPRESA */}
-                <div className="bg-[#061A14] p-3.5 rounded-xl border border-white/5 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Eye className="w-4 h-4 text-blue-400" /> Pessoas que Visualizaram o Perfil
-                    </span>
-                    <span className="text-base font-bold text-white font-mono">
-                      {(pdfParsedResult.peopleViewedProfile || pdfParsedResult.totalImpressions || 0).toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-
-                  {pdfParsedResult.platformBreakdown && (
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
-                        <span className="text-[11px] text-[#8FAEA2]">📱 Pesquisa Google (Mobile)</span>
-                        <span className="font-bold text-white">
-                          {pdfParsedResult.platformBreakdown.searchMobile?.count || 0} ({pdfParsedResult.platformBreakdown.searchMobile?.percentage || 0}%)
-                        </span>
-                      </div>
-                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
-                        <span className="text-[11px] text-[#8FAEA2]">🗺️ Maps (Mobile)</span>
-                        <span className="font-bold text-white">
-                          {pdfParsedResult.platformBreakdown.mapsMobile?.count || 0} ({pdfParsedResult.platformBreakdown.mapsMobile?.percentage || 0}%)
-                        </span>
-                      </div>
-                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
-                        <span className="text-[11px] text-[#8FAEA2]">💻 Pesquisa Google (PC)</span>
-                        <span className="font-bold text-white">
-                          {pdfParsedResult.platformBreakdown.searchDesktop?.count || 0} ({pdfParsedResult.platformBreakdown.searchDesktop?.percentage || 0}%)
-                        </span>
-                      </div>
-                      <div className="bg-black/25 p-2 rounded-lg flex items-center justify-between">
-                        <span className="text-[11px] text-[#8FAEA2]">🖥️ Maps (PC)</span>
-                        <span className="font-bold text-white">
-                          {pdfParsedResult.platformBreakdown.mapsDesktop?.count || 0} ({pdfParsedResult.platformBreakdown.mapsDesktop?.percentage || 0}%)
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. COMPARATIVO COM MÊS ANTERIOR */}
-                {pdfComparison && (
-                  <div className="bg-[#061A14] p-3 rounded-xl border border-emerald-500/20 space-y-2">
-                    <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1.5">
-                      <BarChart3 className="w-3.5 h-3.5" /> Comparativo com o Mês Anterior ({pdfComparison.previousPeriod})
-                    </span>
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="bg-black/20 p-2 rounded-lg">
-                        <span className="text-[10px] text-[#8FAEA2] block">Total Interações</span>
-                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.totalInteractionsDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {pdfComparison.totalInteractionsDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {pdfComparison.totalInteractionsDiffPct}%
-                        </span>
-                      </div>
-                      <div className="bg-black/20 p-2 rounded-lg">
-                        <span className="text-[10px] text-[#8FAEA2] block">Rotas (GPS)</span>
-                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.directionRequestsDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {pdfComparison.directionRequestsDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {pdfComparison.directionRequestsDiffPct}%
-                        </span>
-                      </div>
-                      <div className="bg-black/20 p-2 rounded-lg">
-                        <span className="text-[10px] text-[#8FAEA2] block">Pessoas Visualizaram</span>
-                        <span className={`font-bold flex items-center justify-center gap-0.5 ${pdfComparison.peopleViewedProfileDiffPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {pdfComparison.peopleViewedProfileDiffPct >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                          {pdfComparison.peopleViewedProfileDiffPct}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <span className="text-[10px] text-[#8FAEA2] uppercase tracking-wider block font-semibold">Resumo Analítico da IA</span>
-                  <p className="text-xs text-[#E1EDE8] bg-white/5 p-3 rounded-xl leading-relaxed">
-                    {pdfParsedResult.summary}
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setPdfParsedResult(null);
-                      setPdfComparison(null);
-                      setPdfFile(null);
-                      setRawGmbText('');
-                    }}
-                    className="w-1/3 border-white/10 text-zinc-300 hover:text-white h-11 rounded-xl text-xs"
-                  >
-                    Novo Envio
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      if (!currentUser) return;
-                      if (!selectedClientIdForPdf) {
-                        toast.error('Erro: Nenhum cliente selecionado.');
-                        return;
-                      }
-                      const targetClient = clients.find(c => c.id === selectedClientIdForPdf);
-
-                      try {
-                        setActionLoading(true);
-                        const idToken = await currentUser.getIdToken();
-                        const res = await fetch('/api/client-portal/reports', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${idToken}`
-                          },
-                          body: JSON.stringify({
-                            title: `Desempenho Google Meu Negócio • ${pdfParsedResult.period}`,
-                            clientId: selectedClientIdForPdf,
-                            clientName: targetClient?.name || pdfParsedResult.businessName,
-                            clientEmail: targetClient?.email || '',
-                            period: pdfParsedResult.period,
-                            startDate: pdfParsedResult.startDate,
-                            endDate: pdfParsedResult.endDate,
-                            month: pdfParsedResult.month,
-                            year: pdfParsedResult.year,
-                            summary: pdfParsedResult.summary,
-                            reportType: 'google_meu_negocio',
-                            gmbMetrics: {
-                              totalInteractions: Number(pdfParsedResult.totalInteractions || 0),
-                              calls: Number(pdfParsedResult.calls || 0),
-                              chatClicks: Number(pdfParsedResult.chatClicks || 0),
-                              bookings: Number(pdfParsedResult.bookings || 0),
-                              directionRequests: Number(pdfParsedResult.directionRequests || 0),
-                              websiteClicks: Number(pdfParsedResult.websiteClicks || 0),
-                              peopleViewedProfile: Number(pdfParsedResult.peopleViewedProfile || pdfParsedResult.totalImpressions || 0),
-                              mapsImpressions: Number(pdfParsedResult.mapsImpressions || 0),
-                              searchImpressions: Number(pdfParsedResult.searchImpressions || 0),
-                              monthlyInteractions: pdfParsedResult.monthlyInteractions || [],
-                              platformBreakdown: pdfParsedResult.platformBreakdown || null,
-                              rankingPosition: 1,
-                              targetKeyword: pdfParsedResult.targetKeyword,
-                              topKeywords: pdfParsedResult.topKeywords,
-                              rating: pdfParsedResult.rating,
-                              reviewsCount: pdfParsedResult.reviewsCount
-                            },
-                            status: 'published'
-                          })
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Erro ao publicar relatório.');
-
-                        toast.success(`Relatório publicado com sucesso! Exclusivo para o cliente ${targetClient?.name || ''}.`);
-                        setIsPdfModalOpen(false);
-                        setPdfFile(null);
-                        setRawGmbText('');
-                        setPdfParsedResult(null);
-                        await fetchData();
-                      } catch (err: any) {
-                        toast.error(err.message || 'Erro ao salvar relatório.');
-                      } finally {
-                        setActionLoading(false);
-                      }
-                    }}
-                    className="w-2/3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl text-xs gap-2 shadow-lg"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> Publicar Relatório para Este Cliente
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
-

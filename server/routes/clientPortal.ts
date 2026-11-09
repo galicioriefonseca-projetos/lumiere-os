@@ -820,6 +820,120 @@ clientPortalRoutes.delete("/invites/:token", async (req, res) => {
 // ----------------------------------------------------
 clientPortalRoutes.get("/client-view", async (req, res) => {
   try {
+    const adminDb = getAdminDb();
+    const guestToken = String(req.query.token || "").trim();
+
+    // SUPORTE A ACESSO DIRETO POR TOKEN (Sem exigência de senha/cadastro prévio do cliente)
+    if (guestToken) {
+      const inviteRef = adminDb.collection("invites").doc(guestToken);
+      const inviteSnap = await inviteRef.get();
+      if (inviteSnap.exists) {
+        const inviteData = inviteSnap.data() || {};
+        const finalSalonId = inviteData.salonId;
+        const finalClientId = inviteData.clientId;
+
+        if (finalSalonId) {
+          const salonSnap = await adminDb.collection("salons").doc(finalSalonId).get();
+          const salonData = salonSnap.exists ? salonSnap.data() || {} : {};
+
+          let clientInfo: any = null;
+          if (finalClientId) {
+            const clientSnap = await adminDb.collection(`salons/${finalSalonId}/clients`).doc(finalClientId).get();
+            if (clientSnap.exists) clientInfo = clientSnap.data();
+          }
+
+          // Busca relatórios publicados daquele cliente
+          const reportsSnap = await adminDb.collection(`salons/${finalSalonId}/reports`).get();
+          const reports: any[] = [];
+          reportsSnap.forEach(doc => {
+            const data = doc.data();
+            const matchesClientId = Boolean(finalClientId && data.clientId === finalClientId);
+            const matchesClientEmail = Boolean(inviteData.clientEmail && data.clientEmail && String(data.clientEmail).toLowerCase().trim() === String(inviteData.clientEmail).toLowerCase().trim());
+            const matchesClientName = Boolean((inviteData.companyName || inviteData.clientName) && data.clientName && (
+              String(data.clientName).toLowerCase().includes(String(inviteData.companyName || "").toLowerCase()) ||
+              String(inviteData.companyName || "").toLowerCase().includes(String(data.clientName).toLowerCase())
+            ));
+
+            if (data.status === "published" && (matchesClientId || matchesClientEmail || matchesClientName || (!data.clientId && !data.clientEmail))) {
+              reports.push({ id: doc.id, ...data });
+            }
+          });
+
+          reports.sort((a, b) => {
+            const timeA = a.startDate ? new Date(a.startDate).getTime() : (a.year && a.month ? new Date(a.year, a.month - 1, 1).getTime() : (a.createdAt || 0));
+            const timeB = b.startDate ? new Date(b.startDate).getTime() : (b.year && b.month ? new Date(b.year, b.month - 1, 1).getTime() : (b.createdAt || 0));
+            return timeB - timeA;
+          });
+
+          // Contratos
+          const contractsSnap = await adminDb.collection(`salons/${finalSalonId}/contracts`).get();
+          const contracts: any[] = [];
+          contractsSnap.forEach(doc => {
+            const data = doc.data();
+            if (!finalClientId || data.clientId === finalClientId || (data.clientEmail && String(data.clientEmail).toLowerCase() === String(inviteData.clientEmail).toLowerCase())) {
+              contracts.push({ id: doc.id, ...data });
+            }
+          });
+
+          // Aprovações
+          const approvalsSnap = await adminDb.collection(`salons/${finalSalonId}/approvals`).get();
+          const approvals: any[] = [];
+          approvalsSnap.forEach(doc => {
+            const data = doc.data();
+            if (!finalClientId || data.clientId === finalClientId) {
+              approvals.push({ id: doc.id, ...data });
+            }
+          });
+
+          // Tickets
+          const ticketsSnap = await adminDb.collection(`salons/${finalSalonId}/tickets`).get();
+          const tickets: any[] = [];
+          ticketsSnap.forEach(doc => {
+            const data = doc.data();
+            if (!finalClientId || data.clientId === finalClientId) {
+              tickets.push({ id: doc.id, ...data });
+            }
+          });
+
+          // Entregáveis
+          const deliverablesSnap = await adminDb.collection(`salons/${finalSalonId}/deliverables`).get();
+          const deliverables: any[] = [];
+          deliverablesSnap.forEach(doc => {
+            const data = doc.data();
+            if (!finalClientId || data.clientId === finalClientId) {
+              deliverables.push({ id: doc.id, ...data });
+            }
+          });
+
+          return res.json({
+            agency: {
+              id: finalSalonId,
+              name: salonData.name || "Agência de Marketing",
+              ownerName: salonData.ownerName || "",
+              phone: salonData.phone || "",
+              email: salonData.ownerEmail || salonData.email || "",
+              city: salonData.city || "",
+              state: salonData.state || ""
+            },
+            client: {
+              id: finalClientId || inviteData.clientId || "client_guest",
+              name: inviteData.companyName || clientInfo?.name || inviteData.clientName || "Cliente",
+              contactName: inviteData.clientName || clientInfo?.contactName || "",
+              email: inviteData.clientEmail || "",
+              phone: inviteData.clientPhone || clientInfo?.phone || ""
+            },
+            reports,
+            contracts,
+            approvals,
+            tickets,
+            deliverables,
+            isPreview: false,
+            isGuestTokenAccess: true
+          });
+        }
+      }
+    }
+
     const { salonId: authenticatedSalonId, user, userData, isAgency } = await getAuthenticatedUserAndSalon(req, false);
     
     // REGRA MANDATÓRIA: Apenas proprietários da empresa têm acesso ao portal do cliente. Profissionais/staff não têm acesso.
@@ -834,8 +948,6 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
     let finalSalonId = authenticatedSalonId;
     let finalClientId = userData?.clientId;
     let isPreview = false;
-
-    const adminDb = getAdminDb();
 
     // Se for o dono da agência ou admin visualizando em modo preview:
     if (userData?.role === "owner" || userData?.role === "manager" || userData?.role === "platform_admin" || await resolvePlatformAdmin(user, adminDb) || isAgency) {

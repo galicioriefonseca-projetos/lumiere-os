@@ -92,19 +92,24 @@ export default function ClientPortalPage() {
 
   const loadPortal = async () => {
     try {
-      if (!currentUser) return;
-      const idToken = await currentUser.getIdToken();
+      const token = searchParams.get('token') || searchParams.get('invite') || '';
+      if (!currentUser && !token) return;
 
+      const idToken = currentUser ? await currentUser.getIdToken() : '';
       const previewClientId = searchParams.get('previewClient') || '';
       const previewSalonId = searchParams.get('previewSalon') || '';
       const queryParams = new URLSearchParams();
+      if (token) queryParams.set('token', token);
       if (previewClientId) queryParams.set('clientId', previewClientId);
       if (previewSalonId) queryParams.set('salonId', previewSalonId);
 
+      const headers: Record<string, string> = {};
+      if (idToken) {
+        headers['Authorization'] = `Bearer ${idToken}`;
+      }
+
       const res = await fetch(`/api/client-portal/client-view?${queryParams.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${idToken}`
-        }
+        headers
       });
 
       const data = await res.json();
