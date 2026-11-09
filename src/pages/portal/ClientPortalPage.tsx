@@ -130,14 +130,6 @@ export default function ClientPortalPage() {
     loadPortal();
   }, [currentUser, searchParams]);
 
-  // Aggregate metrics
-  const totalLeads = portalData?.reports?.reduce((acc, r) => acc + (r.metrics?.leads || 0), 0) || 0;
-  const totalReach = portalData?.reports?.reduce((acc, r) => acc + (r.metrics?.reach || 0), 0) || 0;
-  const totalConversions = portalData?.reports?.reduce((acc, r) => acc + (r.metrics?.conversions || 0), 0) || 0;
-  const avgRoas = portalData?.reports?.length 
-    ? (portalData.reports.reduce((acc, r) => acc + (r.metrics?.roas || 0), 0) / portalData.reports.length).toFixed(1)
-    : '0.0';
-
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
   };
@@ -277,80 +269,19 @@ export default function ClientPortalPage() {
       </header>
 
       {/* Hero Welcome Bar */}
-      <div className="bg-gradient-to-b from-[#0A261E] to-[#061A14] border-b border-[#17473A]/40 px-6 py-8">
-        <div className="max-w-6xl mx-auto space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 text-xs text-[#DFC498] font-medium">
-                <Sparkles className="w-3.5 h-3.5" />
-                Espaço Exclusivo de Acompanhamento
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-                Bem-vindo(a), {client.contactName || client.name}
-              </h2>
-              <p className="text-sm text-[#8FAEA2]">
-                Acompanhe em tempo real os relatórios de campanhas, métricas de crescimento e contratos vigentes com a <strong className="text-white">{agency.name}</strong>.
-              </p>
+      <div className="bg-gradient-to-b from-[#0A261E] to-[#061A14] border-b border-[#17473A]/40 px-6 py-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-xs text-[#DFC498] font-medium">
+              <Sparkles className="w-3.5 h-3.5" />
+              Espaço Exclusivo de Acompanhamento
             </div>
-
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl bg-black/30 border border-white/5 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase tracking-wider text-[#8FAEA2] block">Status da Conta</span>
-                  <span className="text-xs font-bold text-emerald-400">Ativa & Em Operação</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 pt-2">
-            <div className="bg-[#0A261E]/90 border border-[#17473A] p-4 rounded-2xl shadow-sm">
-              <div className="flex items-center justify-between text-[#8FAEA2] mb-1.5">
-                <span className="text-xs font-medium">Leads Gerados</span>
-                <Users className="w-4 h-4 text-[#DFC498]" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                {totalLeads.toLocaleString('pt-BR')}
-              </p>
-              <span className="text-[10px] text-[#8FAEA2]">Consolidado em relatórios</span>
-            </div>
-
-            <div className="bg-[#0A261E]/90 border border-[#17473A] p-4 rounded-2xl shadow-sm">
-              <div className="flex items-center justify-between text-[#8FAEA2] mb-1.5">
-                <span className="text-xs font-medium">Alcance Total</span>
-                <TrendingUp className="w-4 h-4 text-[#DFC498]" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                {totalReach > 1000 ? `${(totalReach / 1000).toFixed(1)}k` : totalReach}
-              </p>
-              <span className="text-[10px] text-[#8FAEA2]">Impressões e visualizações</span>
-            </div>
-
-            <div className="bg-[#0A261E]/90 border border-[#17473A] p-4 rounded-2xl shadow-sm">
-              <div className="flex items-center justify-between text-[#8FAEA2] mb-1.5">
-                <span className="text-xs font-medium">Conversões</span>
-                <Target className="w-4 h-4 text-[#DFC498]" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                {totalConversions.toLocaleString('pt-BR')}
-              </p>
-              <span className="text-[10px] text-[#8FAEA2]">Contatos diretos e vendas</span>
-            </div>
-
-            <div className="bg-[#0A261E]/90 border border-[#17473A] p-4 rounded-2xl shadow-sm">
-              <div className="flex items-center justify-between text-[#8FAEA2] mb-1.5">
-                <span className="text-xs font-medium">ROAS Médio</span>
-                <DollarSign className="w-4 h-4 text-[#DFC498]" />
-              </div>
-              <p className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                {avgRoas}x
-              </p>
-              <span className="text-[10px] text-[#8FAEA2]">Retorno sobre investimento</span>
-            </div>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+              Bem-vindo(a), {client.contactName || client.name}
+            </h2>
+            <p className="text-xs sm:text-sm text-[#8FAEA2]">
+              Acompanhe em tempo real os relatórios de desempenho e contratos vigentes com a <strong className="text-white">{agency.name}</strong>.
+            </p>
           </div>
         </div>
       </div>
