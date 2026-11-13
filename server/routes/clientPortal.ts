@@ -96,13 +96,47 @@ async function getAuthenticatedUserAndSalon(req: any, requireAgency: boolean = t
     // Acesso liberado para a agência ou cliente convidado da agência ou usuário com portal liberado
     let isClient = userData?.role === 'client' || userData?.portalAccessEnabled === true || Boolean(userData?.agencySalonId) || Boolean(userData?.clientId);
     if (!isAgency && !isClient) {
-      // Verificar se o email do usuário está cadastrado em alguma coleção de clients com acesso ativo
-      const clientSnap = await adminDb.collectionGroup("clients")
-        .where("email", "==", userEmail)
-        .limit(1)
-        .get();
-      if (!clientSnap.empty && clientSnap.docs[0].data()?.portalAccessEnabled) {
+      // 1. Verificar em portal_clients_by_email (coleção raiz direta, rápida e sem necessidade de collectionGroup index)
+      const portalClientDoc = await adminDb.collection("portal_clients_by_email").doc(userEmail).get();
+      if (portalClientDoc.exists && portalClientDoc.data()?.portalAccessEnabled !== false) {
         isClient = true;
+      }
+
+      // 2. Verificar em invites raiz por clientEmail
+      if (!isClient) {
+        const inviteSnap = await adminDb.collection("invites")
+          .where("clientEmail", "==", userEmail)
+          .limit(1)
+          .get();
+        if (!inviteSnap.empty) {
+          isClient = true;
+        }
+      }
+
+      // 3. Se tiver salonId no perfil do usuário, buscar na subcoleção desse salão diretamente
+      if (!isClient && userData?.salonId) {
+        const directClientSnap = await adminDb.collection(`salons/${userData.salonId}/clients`)
+          .where("email", "==", userEmail)
+          .limit(1)
+          .get();
+        if (!directClientSnap.empty && directClientSnap.docs[0].data()?.portalAccessEnabled) {
+          isClient = true;
+        }
+      }
+
+      // 4. Fallback seguro com try-catch para collectionGroup (não quebra a aplicação caso o índice esteja pendente)
+      if (!isClient) {
+        try {
+          const clientSnap = await adminDb.collectionGroup("clients")
+            .where("email", "==", userEmail)
+            .limit(1)
+            .get();
+          if (!clientSnap.empty && clientSnap.docs[0].data()?.portalAccessEnabled) {
+            isClient = true;
+          }
+        } catch (cgErr: any) {
+          console.warn("[ClientPortal] collectionGroup clients check skipped/pending index:", cgErr?.message || cgErr);
+        }
       }
     }
     if (!isAgency && !isClient) {
@@ -423,6 +457,18 @@ clientPortalRoutes.post("/clients-with-invite", async (req, res) => {
 
     await adminDb.collection("invites").doc(token).set(invitePayload);
     await adminDb.collection(`salons/${salonId}/client_invites`).doc(token).set(invitePayload);
+
+    if (finalEmail) {
+      await adminDb.collection("portal_clients_by_email").doc(finalEmail).set({
+        salonId,
+        clientId: clientRef.id,
+        email: finalEmail,
+        companyName: finalName,
+        contactName: finalContact,
+        portalAccessEnabled: true,
+        updatedAt: now
+      }, { merge: true });
+    }
 
     return res.json({
       success: true,
@@ -964,16 +1010,58 @@ clientPortalRoutes.get("/client-view", async (req, res) => {
     if (!isPreview) {
       if (userData?.agencySalonId) {
         finalSalonId = userData.agencySalonId;
+      } else if (userData?.salonId && (userData?.role === 'client' || userData?.clientId)) {
+        finalSalonId = userData.salonId;
+        finalClientId = userData.clientId || finalClientId;
       } else {
-        // Tenta achar a agência na qual este cliente está registrado
-        const clientSnap = await adminDb.collectionGroup("clients")
-          .where("email", "==", userEmail)
-          .limit(1)
-          .get();
-        if (!clientSnap.empty) {
-          const cDoc = clientSnap.docs[0];
-          finalClientId = cDoc.id;
-          finalSalonId = cDoc.ref.parent.parent?.id || finalSalonId;
+        // 1. Tentar resolver por documento direto em portal_clients_by_email
+        const portalClientDoc = await adminDb.collection("portal_clients_by_email").doc(userEmail).get();
+        if (portalClientDoc.exists) {
+          const pData = portalClientDoc.data() || {};
+          finalSalonId = pData.salonId || finalSalonId;
+          finalClientId = pData.clientId || finalClientId;
+        }
+
+        // 2. Tentar resolver por convite na coleção raiz invites
+        if (!finalSalonId) {
+          const inviteSnap = await adminDb.collection("invites")
+            .where("clientEmail", "==", userEmail)
+            .limit(1)
+            .get();
+          if (!inviteSnap.empty) {
+            const iData = inviteSnap.docs[0].data() || {};
+            finalSalonId = iData.salonId || finalSalonId;
+            finalClientId = iData.clientId || finalClientId;
+          }
+        }
+
+        // 3. Se usuário tem salonId associado, buscar em salons/{salonId}/clients diretamente
+        if (!finalSalonId && userData?.salonId) {
+          const directClientSnap = await adminDb.collection(`salons/${userData.salonId}/clients`)
+            .where("email", "==", userEmail)
+            .limit(1)
+            .get();
+          if (!directClientSnap.empty) {
+            finalSalonId = userData.salonId;
+            finalClientId = directClientSnap.docs[0].id;
+          }
+        }
+
+        // 4. Fallback seguro com try-catch para collectionGroup
+        if (!finalSalonId) {
+          try {
+            const clientSnap = await adminDb.collectionGroup("clients")
+              .where("email", "==", userEmail)
+              .limit(1)
+              .get();
+            if (!clientSnap.empty) {
+              const cDoc = clientSnap.docs[0];
+              finalClientId = cDoc.id;
+              finalSalonId = cDoc.ref.parent.parent?.id || finalSalonId;
+            }
+          } catch (cgErr: any) {
+            console.warn("[ClientPortal client-view] collectionGroup query skipped/pending index:", cgErr?.message || cgErr);
+          }
         }
       }
     }

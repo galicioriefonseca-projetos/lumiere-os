@@ -8,6 +8,21 @@ import { checkAppVersionAndRefresh, forceFreshReload, clearLumiereCaches } from 
 // Run version check immediately at the very beginning of the bootstrap phase
 checkAppVersionAndRefresh();
 
+// Google Maps Platform Demo Key Quota Defense
+if (typeof window !== 'undefined') {
+  (window as any).gm_authFailure = () => {
+    window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+  };
+  const origError = console.error;
+  console.error = (...args: unknown[]) => {
+    origError.apply(console, args);
+    const msg = args.map((a) => String(a)).join(' ');
+    if (msg.includes('OverQuotaMapError') || msg.includes('QuotaExceededError')) {
+      window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+    }
+  };
+}
+
 // Robust check to identify if an error is a Chunk Loader or dynamic import failure
 const isChunkError = (error: any): boolean => {
   if (!error) return false;

@@ -61,6 +61,16 @@ export interface User {
   status?: string;
   isActive?: boolean;
   onboardingStatus?: 'pending_payment' | 'pending_setup' | 'completed';
+  photoURL?: string;
+  avatarUrl?: string;
+  bio?: string;
+  headline?: string;
+  instagram?: string;
+  linkedin?: string;
+  whatsapp?: string;
+  website?: string;
+  specialties?: string[];
+  bannerUrl?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -207,6 +217,8 @@ export interface Professional {
   additionalFunctions?: string[];
   specialties?: string[];
   commissionRate?: number;
+  photoURL?: string;
+  avatarUrl?: string;
 }
 
 export interface Category {

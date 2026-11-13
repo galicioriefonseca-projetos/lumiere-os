@@ -578,9 +578,17 @@ export default function BookingPage() {
                           }`}
                           id={`professional_item_${p.id}`}
                         >
-                          <div className="w-12 h-12 rounded-2xl bg-zinc-850 border border-zinc-800 text-white font-mono text-sm font-extrabold flex items-center justify-center shadow-inner group-hover:scale-105 transition">
-                            {avatarLetters}
-                          </div>
+                          {p.photoURL || p.avatarUrl ? (
+                            <img 
+                              src={p.photoURL || p.avatarUrl} 
+                              alt={p.name}
+                              className="w-12 h-12 rounded-2xl object-cover border border-[#D4AF37]/30 shadow-inner group-hover:scale-105 transition"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-2xl bg-zinc-850 border border-zinc-800 text-white font-mono text-sm font-extrabold flex items-center justify-center shadow-inner group-hover:scale-105 transition">
+                              {avatarLetters}
+                            </div>
+                          )}
                           <div className="flex-1">
                             <h4 className="font-bold text-sm text-white group-hover:text-zinc-200 transition">{p.name}</h4>
                             <p className="text-xs text-zinc-500 mt-0.5 font-mono">{p.professionalFunction || p.role || 'Especialista'}</p>

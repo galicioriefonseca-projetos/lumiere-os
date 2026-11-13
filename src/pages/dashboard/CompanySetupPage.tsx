@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Building2, ArrowRight, Loader2, ShieldCheck, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { Building2, ArrowRight, Loader2, ShieldCheck, AlertCircle, CheckCircle2, Sparkles, MapPin } from 'lucide-react';
+import GoogleBusinessMap from '@/components/maps/GoogleBusinessMap';
 
 export default function CompanySetupPage() {
   const { currentUser, userData, salonData, refreshUserData } = useAuth();
@@ -275,6 +276,23 @@ export default function CompanySetupPage() {
               <option value="Mais de 60">Mais de 60 colaboradores</option>
             </select>
           </label>
+
+          {/* Google Maps Visualizer */}
+          <div className="pt-2">
+            <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-[#44423E]">
+              <MapPin className="w-3.5 h-3.5 text-[#B89B5E]" />
+              Localização no Google Maps
+            </div>
+            <GoogleBusinessMap
+              businessName={formData.salonName || 'Seu Negócio / Salão'}
+              address={formData.city ? `${formData.city}, ${formData.state || 'BR'}` : 'Sua Cidade'}
+              city={formData.city || 'São Paulo'}
+              state={formData.state || 'SP'}
+              rankingPosition={1}
+              keyword={formData.businessSegment === 'agency' ? 'Agência de Marketing' : 'Salão de Beleza & Estética'}
+              heightClass="h-[260px]"
+            />
+          </div>
 
           <button 
             disabled={loading} 

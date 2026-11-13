@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
+import { updateProfile } from 'firebase/auth';
 import { collection, query, onSnapshot, getDocs, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 import { AuditLog } from '../../types';
 import { 
@@ -23,7 +24,21 @@ import {
   Activity,
   Trash2,
   Calendar,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Edit3,
+  Loader2,
+  Save,
+  Camera,
+  Instagram,
+  Linkedin,
+  Globe,
+  MessageCircle,
+  CheckCircle2,
+  Hash,
+  ExternalLink,
+  Plus,
+  X as XIcon,
+  Quote
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,10 +46,168 @@ import { formatBRL } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useLexicon } from '../../hooks/useLexicon';
 import { SEGMENTS, BusinessSegment } from '../../config/segments';
+import AvatarUpload from '@/components/ui/AvatarUpload';
+import PwaIconSettingsCard from '@/components/pwa/PwaIconSettingsCard';
 
 export default function AccountPage() {
-  const { salonData, userData, currentUser } = useAuth();
+  const { salonData, userData, currentUser, refreshUserData } = useAuth();
   const { segment, segmentConfig, lexicon, t } = useLexicon();
+
+  // User Profile Editing State (Rede Social & Bio)
+  const [isEditingUser, setIsEditingUser] = useState(false);
+  const [savingUser, setSavingUser] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+  const [userForm, setUserForm] = useState({
+    fullName: '',
+    phone: '',
+    photoURL: '',
+    bio: '',
+    headline: '',
+    instagram: '',
+    linkedin: '',
+    whatsapp: '',
+    website: '',
+    specialties: [] as string[]
+  });
+
+  const SUGGESTED_SPECIALTIES = [
+    'Mechas & Loiros',
+    'Colorimetria',
+    'Cortes & Visagismo',
+    'Mega Hair',
+    'Tratamentos & Terapia',
+    'Barba & Navalha',
+    'Estética Facial',
+    'Unhas & Nail Art',
+    'Gestão & Negócios',
+    'Atendimento VIP'
+  ];
+
+  useEffect(() => {
+    if (userData || currentUser) {
+      setUserForm({
+        fullName: userData?.fullName || currentUser?.displayName || '',
+        phone: userData?.phone || '',
+        photoURL: userData?.photoURL || (userData as any)?.avatarUrl || currentUser?.photoURL || '',
+        bio: (userData as any)?.bio || '',
+        headline: (userData as any)?.headline || '',
+        instagram: (userData as any)?.instagram || '',
+        linkedin: (userData as any)?.linkedin || '',
+        whatsapp: (userData as any)?.whatsapp || userData?.phone || '',
+        website: (userData as any)?.website || '',
+        specialties: Array.isArray((userData as any)?.specialties) ? (userData as any).specialties : []
+      });
+    }
+  }, [userData, currentUser]);
+
+  const handleAddTag = (tag: string) => {
+    const clean = tag.trim().replace(/^#/, '');
+    if (!clean) return;
+    if (userForm.specialties.includes(clean)) return;
+    setUserForm(prev => ({ ...prev, specialties: [...prev.specialties, clean] }));
+    setTagInput('');
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setUserForm(prev => ({
+      ...prev,
+      specialties: prev.specialties.filter(t => t !== tagToRemove)
+    }));
+  };
+
+  const handleSaveUserProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (!userForm.fullName.trim()) {
+      toast.error('O nome completo é obrigatório.');
+      return;
+    }
+
+    try {
+      setSavingUser(true);
+      const cleanName = userForm.fullName.trim();
+      const cleanPhone = userForm.phone.trim();
+      const cleanPhoto = userForm.photoURL || '';
+      const cleanBio = (userForm.bio || '').trim();
+      const cleanHeadline = (userForm.headline || '').trim();
+      const cleanInstagram = (userForm.instagram || '').trim().replace(/^@/, '');
+      const cleanLinkedin = (userForm.linkedin || '').trim();
+      const cleanWhatsapp = (userForm.whatsapp || '').trim();
+      const cleanWebsite = (userForm.website || '').trim();
+
+      // 1. Atualizar documento do usuário no Firestore
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, {
+        fullName: cleanName,
+        phone: cleanPhone,
+        photoURL: cleanPhoto,
+        avatarUrl: cleanPhoto,
+        bio: cleanBio,
+        headline: cleanHeadline,
+        instagram: cleanInstagram,
+        linkedin: cleanLinkedin,
+        whatsapp: cleanWhatsapp,
+        website: cleanWebsite,
+        specialties: userForm.specialties || [],
+        updatedAt: Date.now()
+      });
+
+      // 2. Atualizar perfil no Firebase Auth
+      try {
+        if (auth?.currentUser) {
+          await updateProfile(auth.currentUser, {
+            displayName: cleanName,
+            photoURL: cleanPhoto || null
+          });
+        }
+      } catch (authErr) {
+        console.warn('Falha ao sincronizar auth profile:', authErr);
+      }
+
+      // 3. Se for proprietário, sincronizar ownerName na empresa
+      if (salonData?.id && (userData?.role === 'owner' || salonData.ownerId === currentUser.uid)) {
+        try {
+          const salonRef = doc(db, 'salons', salonData.id);
+          await updateDoc(salonRef, {
+            ownerName: cleanName,
+            updatedAt: Date.now()
+          });
+        } catch (salonErr) {
+          console.warn('Falha ao sincronizar ownerName na empresa:', salonErr);
+        }
+      }
+
+      // 4. Se o usuário estiver vinculado a um registro de profissional, sincronizar dados
+      if (salonData?.id && userData?.professionalId) {
+        try {
+          const profRef = doc(db, 'salons', salonData.id, 'professionals', userData.professionalId);
+          await updateDoc(profRef, {
+            name: cleanName,
+            phone: cleanPhone,
+            photoURL: cleanPhoto,
+            avatarUrl: cleanPhoto,
+            bio: cleanBio,
+            headline: cleanHeadline,
+            instagram: cleanInstagram,
+            specialties: userForm.specialties || [],
+            updatedAt: Date.now()
+          });
+        } catch (profErr) {
+          console.warn('Falha ao sincronizar profissional:', profErr);
+        }
+      }
+
+      // 5. Atualizar contexto da aplicação
+      await refreshUserData();
+      toast.success('Perfil e "Sobre" atualizados com sucesso!');
+      setIsEditingUser(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || 'Erro ao salvar alterações do perfil.');
+    } finally {
+      setSavingUser(false);
+    }
+  };
 
   // Company Profile Editing State
   const [isEditingSalon, setIsEditingSalon] = useState(false);
@@ -248,9 +421,9 @@ export default function AccountPage() {
         {/* Left column: Profile overview & salon information */}
         <div className="lg:col-span-2 space-y-6">
           
-          {/* Owner Profile Card */}
+          {/* Owner / User Profile Card */}
           <Card className="bg-zinc-950 border-zinc-900 overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-6 opacity-5 select-none">
+            <div className="absolute top-0 right-0 p-6 opacity-5 select-none pointer-events-none">
               <User className="w-32 h-32 text-white" />
             </div>
             
@@ -259,25 +432,374 @@ export default function AccountPage() {
                 <div>
                   <CardTitle className="text-lg font-heading font-light text-white flex items-center gap-2">
                     <User className="w-4 h-4 text-[#D4AF37]" />
-                    Perfil do Proprietário
+                    Meu Perfil Social & Identidade
                   </CardTitle>
-                  <CardDescription className="text-xs text-zinc-500">Credenciais básicas de acesso e nível de autoridade.</CardDescription>
+                  <CardDescription className="text-xs text-zinc-500">
+                    Sua biografia ("Sobre"), redes sociais, fotos e especialidades visíveis no LumièreOS.
+                  </CardDescription>
                 </div>
-                {getRoleBadge(userData?.role)}
+                <div className="flex items-center gap-2">
+                  {getRoleBadge(userData?.role)}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setIsEditingUser(!isEditingUser)}
+                    className="border-zinc-800 text-xs text-zinc-300 hover:text-white hover:bg-zinc-900 h-8 gap-1.5"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    {isEditingUser ? 'Cancelar' : 'Editar Perfil & Sobre'}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             
-            <CardContent className="p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1 bg-zinc-900/40 p-3 rounded-xl border border-zinc-900">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono font-bold">Nome Completo</span>
-                  <span className="text-xs font-semibold text-white block mt-0.5">{userData?.fullName || 'Proprietário Lumière'}</span>
+            <CardContent className="p-6">
+              {isEditingUser ? (
+                <form onSubmit={handleSaveUserProfile} className="space-y-5">
+                  <div className="bg-zinc-900/30 p-4 rounded-2xl border border-zinc-900">
+                    <AvatarUpload
+                      value={userForm.photoURL}
+                      onChange={url => setUserForm(prev => ({ ...prev, photoURL: url }))}
+                      name={userForm.fullName || userData?.fullName}
+                      size="xl"
+                      label="Foto de Perfil"
+                      description="Envie uma foto profissional. O sistema ajusta e compacta automaticamente."
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold">
+                        Nome Completo <span className="text-[#D4AF37]">*</span>
+                      </label>
+                      <input
+                        required
+                        value={userForm.fullName}
+                        onChange={e => setUserForm(prev => ({ ...prev, fullName: e.target.value }))}
+                        placeholder="Seu nome completo"
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3.5 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold">
+                        Headline / Cargo de Destaque
+                      </label>
+                      <input
+                        value={userForm.headline}
+                        onChange={e => setUserForm(prev => ({ ...prev, headline: e.target.value }))}
+                        placeholder="Ex: Master Hair Stylist & Educador"
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3.5 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Campo SOBRE / BIOGRAFIA */}
+                    <div className="space-y-1 sm:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold flex items-center gap-1.5">
+                          <Quote className="w-3 h-3 text-[#D4AF37]" /> Sobre Mim (Biografia no Perfil Social)
+                        </label>
+                        <span className="text-[10px] font-mono text-zinc-500">
+                          {userForm.bio.length} / 500 caracteres
+                        </span>
+                      </div>
+                      <textarea
+                        rows={4}
+                        maxLength={500}
+                        value={userForm.bio}
+                        onChange={e => setUserForm(prev => ({ ...prev, bio: e.target.value }))}
+                        placeholder="Conte um pouco sobre sua trajetória, seu estilo de trabalho, formações e o que seus clientes e colegas mais admiram em você..."
+                        className="w-full rounded-xl bg-zinc-900 border border-zinc-800 p-3.5 text-xs text-white outline-none focus:border-[#D4AF37] leading-relaxed resize-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold flex items-center gap-1">
+                        <Instagram className="w-3 h-3 text-pink-400" /> Instagram (@usuario)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-2.5 text-zinc-500 text-sm">@</span>
+                        <input
+                          value={userForm.instagram}
+                          onChange={e => setUserForm(prev => ({ ...prev, instagram: e.target.value.replace(/^@/, '') }))}
+                          placeholder="seuperfil"
+                          className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 pl-8 pr-3.5 text-sm text-white outline-none focus:border-[#D4AF37]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3 text-emerald-400" /> WhatsApp de Contato
+                      </label>
+                      <input
+                        value={userForm.whatsapp}
+                        onChange={e => setUserForm(prev => ({ ...prev, whatsapp: e.target.value }))}
+                        placeholder="(00) 00000-0000"
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3.5 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold flex items-center gap-1">
+                        <Linkedin className="w-3 h-3 text-sky-400" /> LinkedIn (Opcional)
+                      </label>
+                      <input
+                        value={userForm.linkedin}
+                        onChange={e => setUserForm(prev => ({ ...prev, linkedin: e.target.value }))}
+                        placeholder="linkedin.com/in/seuperfil"
+                        className="w-full h-10 rounded-xl bg-zinc-900 border border-zinc-800 px-3.5 text-sm text-white outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 uppercase font-mono font-bold">
+                        E-mail de Acesso (Não alterável)
+                      </label>
+                      <input
+                        disabled
+                        value={currentUser?.email || userData?.email || ''}
+                        className="w-full h-10 rounded-xl bg-zinc-950 border border-zinc-900 px-3.5 text-sm text-zinc-500 cursor-not-allowed outline-none"
+                      />
+                    </div>
+
+                    {/* Especialidades e Tags */}
+                    <div className="space-y-2 sm:col-span-2 pt-2 border-t border-zinc-900">
+                      <label className="text-[10px] text-zinc-400 uppercase font-mono font-bold flex items-center gap-1">
+                        <Hash className="w-3 h-3 text-[#D4AF37]" /> Especialidades & Tags de Destaque
+                      </label>
+                      
+                      {/* Tags selecionadas */}
+                      <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 bg-zinc-900/40 rounded-xl border border-zinc-900">
+                        {userForm.specialties.length === 0 ? (
+                          <span className="text-xs text-zinc-500 italic p-1">Nenhuma tag adicionada. Escolha as sugestões abaixo ou digite.</span>
+                        ) : (
+                          userForm.specialties.map(tag => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30"
+                            >
+                              #{tag}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveTag(tag)}
+                                className="hover:text-white ml-0.5"
+                              >
+                                <XIcon className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Input para adicionar nova tag */}
+                      <div className="flex gap-2">
+                        <input
+                          value={tagInput}
+                          onChange={e => setTagInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddTag(tagInput);
+                            }
+                          }}
+                          placeholder="Digite uma especialidade (ex: Colorimetria, Loiros, Gestão) e clique em Adicionar"
+                          className="flex-1 h-9 rounded-xl bg-zinc-900 border border-zinc-800 px-3 text-xs text-white outline-none focus:border-[#D4AF37]"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAddTag(tagInput)}
+                          className="h-9 text-xs border-zinc-800 text-zinc-300 hover:text-white"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1 text-[#D4AF37]" /> Adicionar
+                        </Button>
+                      </div>
+
+                      {/* Sugestões rápidas */}
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        <span className="text-[10px] text-zinc-500 mr-1 self-center">Sugestões:</span>
+                        {SUGGESTED_SPECIALTIES.map(s => {
+                          const isAdded = userForm.specialties.includes(s);
+                          return (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => isAdded ? handleRemoveTag(s) : handleAddTag(s)}
+                              className={`text-[10px] px-2 py-0.5 rounded-md border transition ${
+                                isAdded 
+                                  ? 'bg-[#D4AF37] text-black font-bold border-[#D4AF37]' 
+                                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-white'
+                              }`}
+                            >
+                              {isAdded ? `✓ ${s}` : `+ ${s}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t border-zinc-900">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setIsEditingUser(false)}
+                      className="text-xs text-zinc-400"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={savingUser}
+                      className="bg-[#D4AF37] hover:bg-[#c49f2c] text-black font-bold text-xs gap-1.5"
+                    >
+                      {savingUser ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      {savingUser ? 'Salvando...' : 'Salvar Perfil & Sobre'}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-5">
+                  {/* Banner Decorativo de Fundo Social */}
+                  <div className="relative h-28 w-full bg-gradient-to-r from-emerald-950/70 via-[#132c22] to-[#08120d] rounded-2xl overflow-hidden border border-zinc-800/80 shadow-inner">
+                    <div className="absolute top-0 right-0 p-4 opacity-15 pointer-events-none">
+                      <Crown className="w-24 h-24 text-[#D4AF37]" />
+                    </div>
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#D4AF37]/10 via-transparent to-transparent pointer-events-none" />
+                    <div className="absolute bottom-3 right-4 flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-black/60 backdrop-blur-md text-[#D4AF37] border border-[#D4AF37]/30 shadow-sm">
+                        <Sparkles className="w-3 h-3 text-[#D4AF37]" /> Membro Oficial
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Foto de Perfil Sobreposta e Informações Principais */}
+                  <div className="flex flex-col md:flex-row items-center md:items-start gap-5 px-1 -mt-16 md:-mt-14 relative z-10">
+                    <div className="relative shrink-0">
+                      <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[#D4AF37] bg-zinc-950 shadow-2xl flex items-center justify-center ring-4 ring-black">
+                        {userData?.photoURL || (userData as any)?.avatarUrl || currentUser?.photoURL ? (
+                          <img 
+                            src={userData?.photoURL || (userData as any)?.avatarUrl || currentUser?.photoURL || ''} 
+                            alt={userData?.fullName || 'Avatar'} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-zinc-900 to-black flex items-center justify-center text-[#D4AF37] font-bold text-2xl">
+                            {userData?.fullName?.charAt(0).toUpperCase() || 'U'}
+                          </div>
+                        )}
+                      </div>
+                      <span className="absolute bottom-1 right-1 w-4 h-4 bg-emerald-500 border-2 border-black rounded-full" title="Conta ativa" />
+                    </div>
+
+                    <div className="flex-1 w-full space-y-3 text-center md:text-left">
+                      <div>
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                          <h3 className="text-xl font-bold text-white tracking-tight">
+                            {userData?.fullName || currentUser?.displayName || 'Membro Lumière'}
+                          </h3>
+                          {getRoleBadge(userData?.role)}
+                        </div>
+                        <p className="text-sm text-[#D4AF37] font-medium mt-0.5">
+                          {(userData as any)?.headline || (userData?.role === 'owner' ? 'Proprietário & Gestor Executivo' : 'Profissional da Beleza')}
+                        </p>
+                      </div>
+
+                      {/* Box do "Sobre Mim" (Bio) */}
+                      <div className="bg-zinc-900/40 p-4 rounded-2xl border border-zinc-800/80 text-left">
+                        <div className="flex items-center gap-1.5 text-[10px] uppercase font-mono font-bold text-zinc-400 mb-1.5">
+                          <Quote className="w-3 h-3 text-[#D4AF37]" /> Sobre Mim
+                        </div>
+                        {(userData as any)?.bio ? (
+                          <p className="text-xs text-zinc-200 leading-relaxed whitespace-pre-line">
+                            {(userData as any).bio}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-zinc-500 italic">
+                            Nenhum "Sobre" adicionado ainda. Clique em "Editar Perfil & Sobre" para descrever sua assinatura de trabalho e encantar seus clientes e equipe!
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Redes Sociais Integradas */}
+                      <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1">
+                        {(userData as any)?.instagram && (
+                          <a
+                            href={`https://instagram.com/${(userData as any).instagram.replace(/^@/, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 border border-pink-500/25 text-xs font-semibold transition"
+                          >
+                            <Instagram className="w-3.5 h-3.5" />
+                            @{(userData as any).instagram.replace(/^@/, '')}
+                            <ExternalLink className="w-3 h-3 opacity-60" />
+                          </a>
+                        )}
+
+                        {((userData as any)?.whatsapp || userData?.phone) && (
+                          <a
+                            href={`https://wa.me/55${((userData as any)?.whatsapp || userData?.phone || '').replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/25 text-xs font-semibold transition"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            {((userData as any)?.whatsapp || userData?.phone)}
+                          </a>
+                        )}
+
+                        {(userData as any)?.linkedin && (
+                          <a
+                            href={(userData as any).linkedin.startsWith('http') ? (userData as any).linkedin : `https://${(userData as any).linkedin}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/25 text-xs font-semibold transition"
+                          >
+                            <Linkedin className="w-3.5 h-3.5" />
+                            LinkedIn
+                            <ExternalLink className="w-3 h-3 opacity-60" />
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Tags & Especialidades */}
+                      {Array.isArray((userData as any)?.specialties) && (userData as any).specialties.length > 0 && (
+                        <div className="space-y-1.5 text-left pt-1">
+                          <span className="text-[10px] uppercase font-mono font-bold text-zinc-500 block">
+                            Especialidades & Tags
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(userData as any).specialties.map((spec: string, i: number) => (
+                              <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25">
+                                <Hash className="w-3 h-3 opacity-60" /> {spec}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Dados Básicos de Registro */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-zinc-900 text-left">
+                        <div className="space-y-0.5 bg-zinc-900/30 p-2.5 rounded-xl border border-zinc-900">
+                          <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1">
+                            <Mail className="w-3 h-3" /> E-mail de Registro
+                          </span>
+                          <span className="text-xs font-medium text-white truncate block">{currentUser?.email || userData?.email}</span>
+                        </div>
+                        <div className="space-y-0.5 bg-zinc-900/30 p-2.5 rounded-xl border border-zinc-900">
+                          <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1">
+                            <Building className="w-3 h-3" /> Empresa Vinculada
+                          </span>
+                          <span className="text-xs font-medium text-white truncate block">{salonData?.name || 'LumièreOS'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1 bg-zinc-900/40 p-3 rounded-xl border border-zinc-900">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono font-bold flex items-center gap-1"><Mail className="w-3 h-3" /> E-mail de Registro</span>
-                  <span className="text-xs font-semibold text-white block mt-0.5">{currentUser?.email || userData?.email}</span>
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
@@ -630,6 +1152,9 @@ export default function AccountPage() {
               </form>
             </CardContent>
           </Card>
+
+          {/* Configuração & Customização do Ícone PWA */}
+          <PwaIconSettingsCard />
         </div>
 
         {/* Right column: Subscription Plan, seats, and database usage */}

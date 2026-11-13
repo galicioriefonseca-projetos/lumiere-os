@@ -37,11 +37,11 @@ export function DashboardUserMenu({ onOpenUpdates }: DashboardUserMenuProps) {
         onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
         className="flex items-center gap-2 px-2.5 py-1.5 bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 rounded-xl text-xs text-zinc-300 transition-all cursor-pointer select-none"
       >
-        {currentUser?.photoURL ? (
+        {(userData?.photoURL || (userData as any)?.avatarUrl || currentUser?.photoURL) ? (
           <img 
-            src={currentUser.photoURL} 
+            src={userData?.photoURL || (userData as any)?.avatarUrl || currentUser?.photoURL || ''} 
             alt="Avatar" 
-            className="w-6 h-6 rounded-lg object-cover border border-[#D4AF37]/30" 
+            className="w-6 h-6 rounded-lg object-cover border border-[#D4AF37]/40 shadow-sm" 
             referrerPolicy="no-referrer"
           />
         ) : (

@@ -49,6 +49,8 @@ import {
   Download
 } from 'lucide-react';
 import { ClientReport } from '../../types';
+import GoogleBusinessMap from '@/components/maps/GoogleBusinessMap';
+import MonthRangePicker, { MonthRange } from '@/components/ui/MonthRangePicker';
 
 interface ReportsAnalyticsTabProps {
   reports: ClientReport[];
@@ -63,10 +65,12 @@ export default function ReportsAnalyticsTab({
   clientName,
   onOpenReportDetails
 }: ReportsAnalyticsTabProps) {
-  // Estado de Filtro de Calendário
-  const [dateRangePreset, setDateRangePreset] = useState<'all' | 'last3' | 'last6' | 'year' | 'custom'>('all');
-  const [startDateFilter, setStartDateFilter] = useState<string>('');
-  const [endDateFilter, setEndDateFilter] = useState<string>('');
+  // Estado de Filtro de Calendário com Intervalo de Meses
+  const [monthRange, setMonthRange] = useState<MonthRange>({
+    startMonth: '',
+    endMonth: '',
+    preset: 'all'
+  });
   const [selectedChartType, setSelectedChartType] = useState<'area' | 'bar'>('area');
   
   // Seleção do Mês em Foco (Para o usuário selecionar um mês específico no calendário/dropdown)
@@ -80,18 +84,52 @@ export default function ReportsAnalyticsTab({
   // Modal explicativo "O que significa cada coisa"
   const [isGlossaryModalOpen, setIsGlossaryModalOpen] = useState(false);
 
+  // Helper para extrair chave canônica YYYY-MM de qualquer relatório
+  const getReportYearMonthKey = (r: ClientReport): string => {
+    if (r.year && r.month) {
+      return `${r.year}-${String(r.month).padStart(2, '0')}`;
+    }
+    if (r.startDate) {
+      const parts = r.startDate.split('-');
+      if (parts.length >= 2) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}`;
+      }
+    }
+    if (r.period) {
+      const matchYear = r.period.match(/(\d{4})/);
+      const year = matchYear ? Number(matchYear[1]) : new Date().getFullYear();
+      const monthNames = [
+        'janeiro', 'fevereiro', 'março', 'marco', 'abril', 'maio', 'junho',
+        'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+      ];
+      const pLower = r.period.toLowerCase();
+      let month = 1;
+      monthNames.forEach((name, idx) => {
+        if (pLower.includes(name)) month = idx + 1;
+      });
+      return `${year}-${String(month).padStart(2, '0')}`;
+    }
+    const d = new Date(r.createdAt || Date.now());
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  // Lista de meses que possuem relatórios cadastrados
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    reports.forEach(r => {
+      const ym = getReportYearMonthKey(r);
+      if (ym) set.add(ym);
+    });
+    return Array.from(set).sort();
+  }, [reports]);
+
   // Ordenar relatórios cronologicamente (do mais antigo ao mais recente para gráficos)
   const chronologicalReports = useMemo(() => {
     const getReportTime = (r: ClientReport): number => {
-      if (r.startDate) {
-        const parts = r.startDate.split('-');
-        if (parts.length === 3) {
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
-        }
-        return new Date(r.startDate).getTime();
-      }
-      if (r.year && r.month) {
-        return new Date(r.year, r.month - 1, 1).getTime();
+      const ym = getReportYearMonthKey(r);
+      const parts = ym.split('-');
+      if (parts.length === 2) {
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, 1).getTime();
       }
       return r.createdAt || 0;
     };
@@ -99,41 +137,41 @@ export default function ReportsAnalyticsTab({
     return [...reports].sort((a, b) => getReportTime(a) - getReportTime(b));
   }, [reports]);
 
-  // Aplicar filtros de data (Preset ou Calendário Customizado)
+  // Aplicar filtros de data (Preset ou Calendário de Meses Selecionados)
   const filteredReports = useMemo(() => {
     if (!chronologicalReports.length) return [];
 
-    if (dateRangePreset === 'all' && !startDateFilter && !endDateFilter) {
-      return chronologicalReports;
-    }
+    const { startMonth, endMonth, preset } = monthRange;
 
-    if (dateRangePreset === 'last3') {
+    if (preset === 'last3') {
       return chronologicalReports.slice(-3);
     }
 
-    if (dateRangePreset === 'last6') {
+    if (preset === 'last6') {
       return chronologicalReports.slice(-6);
     }
 
-    if (dateRangePreset === 'year') {
-      const currentYear = new Date().getFullYear();
+    if (preset === 'year') {
+      const currentYear = String(new Date().getFullYear());
       return chronologicalReports.filter(r => {
-        if (r.year) return r.year === currentYear;
-        const d = r.startDate ? new Date(r.startDate) : new Date(r.createdAt);
-        return d.getFullYear() === currentYear;
+        const ym = getReportYearMonthKey(r);
+        return ym.startsWith(currentYear);
       });
     }
 
-    // Filtro por Data Inicial e Final do Calendário
-    return chronologicalReports.filter(r => {
-      const reportDateStr = r.startDate || (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '');
-      if (!reportDateStr) return true;
+    // Se nenhum filtro estiver ativo, exibe todos cronologicamente
+    if (!startMonth && !endMonth) {
+      return chronologicalReports;
+    }
 
-      if (startDateFilter && reportDateStr < startDateFilter) return false;
-      if (endDateFilter && reportDateStr > endDateFilter) return false;
+    // Filtragem precisa por intervalo de meses
+    return chronologicalReports.filter(r => {
+      const ym = getReportYearMonthKey(r);
+      if (startMonth && ym < startMonth) return false;
+      if (endMonth && ym > endMonth) return false;
       return true;
     });
-  }, [chronologicalReports, dateRangePreset, startDateFilter, endDateFilter]);
+  }, [chronologicalReports, monthRange]);
 
   // Lista de relatórios ordenados do mais recente para o mais antigo
   const latestFirstReports = useMemo(() => {
@@ -409,22 +447,26 @@ export default function ReportsAnalyticsTab({
         </div>
 
         {/* ATALHOS RÁPIDOS DE FILTRAGEM & MODO COMPARATIVO */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#17473A]/60">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-[#8FAEA2] mr-1 flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5 text-[#DFC498]" /> Exibir nos gráficos:
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-[#17473A]/60">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-[#8FAEA2] mr-1 flex items-center gap-1 font-medium">
+              <Filter className="w-3.5 h-3.5 text-[#DFC498]" /> Período nos Gráficos:
             </span>
+
+            {/* SELETOR DE INTERVALO DE MESES / DATERANGEPICKER COM CALENDÁRIO */}
+            <MonthRangePicker
+              value={monthRange}
+              onChange={setMonthRange}
+              availableMonths={availableMonths}
+              theme="emerald"
+            />
 
             <Button
               size="sm"
-              variant={dateRangePreset === 'all' ? 'default' : 'outline'}
-              onClick={() => {
-                setDateRangePreset('all');
-                setStartDateFilter('');
-                setEndDateFilter('');
-              }}
+              variant={!monthRange.startMonth && !monthRange.endMonth && monthRange.preset === 'all' ? 'default' : 'outline'}
+              onClick={() => setMonthRange({ startMonth: '', endMonth: '', preset: 'all' })}
               className={`h-8 text-xs rounded-xl ${
-                dateRangePreset === 'all'
+                !monthRange.startMonth && !monthRange.endMonth && monthRange.preset === 'all'
                   ? 'bg-[#DFC498] text-[#04140F] font-bold hover:bg-[#C5A880]'
                   : 'border-white/10 text-[#8FAEA2] hover:text-white hover:bg-white/5'
               }`}
@@ -434,14 +476,10 @@ export default function ReportsAnalyticsTab({
 
             <Button
               size="sm"
-              variant={dateRangePreset === 'last3' ? 'default' : 'outline'}
-              onClick={() => {
-                setDateRangePreset('last3');
-                setStartDateFilter('');
-                setEndDateFilter('');
-              }}
+              variant={monthRange.preset === 'last3' ? 'default' : 'outline'}
+              onClick={() => setMonthRange({ startMonth: '', endMonth: '', preset: 'last3' })}
               className={`h-8 text-xs rounded-xl ${
-                dateRangePreset === 'last3'
+                monthRange.preset === 'last3'
                   ? 'bg-[#DFC498] text-[#04140F] font-bold hover:bg-[#C5A880]'
                   : 'border-white/10 text-[#8FAEA2] hover:text-white hover:bg-white/5'
               }`}
@@ -451,58 +489,16 @@ export default function ReportsAnalyticsTab({
 
             <Button
               size="sm"
-              variant={dateRangePreset === 'last6' ? 'default' : 'outline'}
-              onClick={() => {
-                setDateRangePreset('last6');
-                setStartDateFilter('');
-                setEndDateFilter('');
-              }}
+              variant={monthRange.preset === 'last6' ? 'default' : 'outline'}
+              onClick={() => setMonthRange({ startMonth: '', endMonth: '', preset: 'last6' })}
               className={`h-8 text-xs rounded-xl ${
-                dateRangePreset === 'last6'
+                monthRange.preset === 'last6'
                   ? 'bg-[#DFC498] text-[#04140F] font-bold hover:bg-[#C5A880]'
                   : 'border-white/10 text-[#8FAEA2] hover:text-white hover:bg-white/5'
               }`}
             >
               Últimos 6 Meses
             </Button>
-          </div>
-
-          {/* SELETOR DE INTERVALO DE DATAS (DATERANGEPICKER CUSTOMIZADO) */}
-          <div className="flex items-center gap-2 pt-2 sm:pt-0 flex-wrap bg-black/20 p-2 rounded-xl border border-white/5">
-            <span className="text-xs text-[#8FAEA2] flex items-center gap-1 font-medium">
-              <CalendarIcon className="w-3.5 h-3.5 text-[#DFC498]" /> Período Personalizado:
-            </span>
-            <input
-              type="date"
-              value={startDateFilter}
-              onChange={e => {
-                setDateRangePreset('custom');
-                setStartDateFilter(e.target.value);
-              }}
-              className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-xl px-2.5 py-1.5 outline-none font-medium focus:border-[#DFC498]"
-            />
-            <span className="text-xs text-[#8FAEA2]">até</span>
-            <input
-              type="date"
-              value={endDateFilter}
-              onChange={e => {
-                setDateRangePreset('custom');
-                setEndDateFilter(e.target.value);
-              }}
-              className="bg-[#061A14] border border-[#17473A] text-white text-xs rounded-xl px-2.5 py-1.5 outline-none font-medium focus:border-[#DFC498]"
-            />
-            {(startDateFilter || endDateFilter) && (
-              <button
-                onClick={() => {
-                  setDateRangePreset('all');
-                  setStartDateFilter('');
-                  setEndDateFilter('');
-                }}
-                className="text-[10px] text-[#DFC498] hover:underline px-1 font-semibold"
-              >
-                Limpar
-              </button>
-            )}
           </div>
 
           {/* TOGGLE MODO COMPARATIVO DIRETO */}
@@ -1155,6 +1151,24 @@ export default function ReportsAnalyticsTab({
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* MAPA INTERATIVO GOOGLE MAPS PLATFORM */}
+      <div className="w-full">
+        <GoogleBusinessMap
+          businessName={clientName || 'Sua Empresa'}
+          address="Localização Cadastrada"
+          city="Brasil"
+          state="BR"
+          lat={-23.55052}
+          lng={-46.633308}
+          rankingPosition={activeReport?.gmbMetrics?.rankingPosition || currentGmb?.rankingPosition || 1}
+          keyword={activeReport?.gmbMetrics?.targetKeyword || currentGmb?.targetKeyword || (topKeywordsList[0]?.keyword) || 'Estética & Beleza'}
+          directionRequests={activeReport?.gmbMetrics?.directionRequests || currentGmb?.directionRequests || 0}
+          rating={activeReport?.gmbMetrics?.rating || currentGmb?.rating || 5.0}
+          totalReviews={activeReport?.gmbMetrics?.reviewsCount || currentGmb?.reviewsCount || 0}
+          heightClass="h-[340px] md:h-[400px]"
+        />
       </div>
 
       {/* TABELA COMPARATIVA MÊS A MÊS COM TODAS AS MÉTRICAS DO GMN */}

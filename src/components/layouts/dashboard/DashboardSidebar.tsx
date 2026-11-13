@@ -27,8 +27,8 @@ export function DashboardSidebar({ navigation, isPlatformAdmin, userData, salonD
     <aside id="lumiere-desktop-sidebar" className="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-border bg-card z-20 shrink-0">
       <div className="h-20 flex items-center px-6 border-b border-border/70">
         <Link to="/dashboard" className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-xl bg-accent border border-primary/25 flex items-center justify-center group-hover:border-primary/50 transition-colors">
-            <Crown className="w-4.5 h-4.5 text-primary" />
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-primary/25 flex items-center justify-center group-hover:border-primary/50 transition-colors shadow-sm bg-black shrink-0">
+            <img src="/pwa-192x192.png" alt="LumièreOS Logo" className="w-full h-full object-cover" />
           </div>
           <div className="flex flex-col">
             <span className="text-base font-bold tracking-[0.18em] text-foreground uppercase leading-none">Lumière<span className="text-primary">OS</span></span>

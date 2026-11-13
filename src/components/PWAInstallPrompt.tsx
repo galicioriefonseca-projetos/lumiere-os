@@ -107,8 +107,8 @@ export default function PWAInstallPrompt() {
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37]/5 blur-2xl rounded-full -mr-12 -mt-12 pointer-events-none"></div>
 
         <div className="flex items-start gap-4 relative">
-          <div className="p-2.5 bg-gradient-to-br from-[#D4AF37]/20 to-[#D4AF37]/5 border border-[#D4AF37]/30 rounded-xl text-[#D4AF37] shrink-0">
-            <Crown className="w-5 h-5 filter drop-shadow-[0_0_4px_rgba(212,175,55,0.4)]" />
+          <div className="w-12 h-12 rounded-xl overflow-hidden border border-[#D4AF37]/40 shrink-0 shadow-md bg-black">
+            <img src="/pwa-192x192.png" alt="LumièreOS Logo" className="w-full h-full object-cover" />
           </div>
           
           <div className="flex-1 space-y-1">

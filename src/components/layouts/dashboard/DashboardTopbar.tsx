@@ -32,8 +32,8 @@ export function DashboardTopbar({ onOpenMobileMenu, onOpenGuide, onOpenRoadmap, 
         <button onClick={onOpenMobileMenu} className="p-2 rounded-lg border border-border bg-secondary hover:border-primary/30 transition-colors">
           <Menu className="w-5 h-5 text-foreground" />
         </button>
-        <div className="flex items-center gap-1.5">
-          <Crown className="w-4 h-4 text-primary" />
+        <div className="flex items-center gap-2">
+          <img src="/pwa-192x192.png" alt="Logo" className="w-6 h-6 rounded-md object-cover border border-primary/30" />
           <span className="font-bold tracking-[0.16em] text-primary text-sm uppercase leading-none">Lumiere<span className="text-foreground">OS</span></span>
         </div>
       </div>

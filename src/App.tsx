@@ -62,8 +62,39 @@ function FeatureRoute({ feature, children }: { feature: 'operation' | 'team' | '
 }
 
 function App() {
+  const [isGmpQuotaExceeded, setIsGmpQuotaExceeded] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleQuota = () => setIsGmpQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', handleQuota);
+    return () => window.removeEventListener('gmp-quota-exceeded', handleQuota);
+  }, []);
+
   return (
     <AuthProvider>
+      {isGmpQuotaExceeded && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm flex items-center justify-between">
+          <span className="flex-1 text-center">
+            Google Maps Platform quota reached. If you are the app owner, visit{' '}
+            <a
+              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-semibold text-amber-950 hover:text-amber-800"
+            >
+              maps developer site
+            </a>{' '}
+            for instructions to update your account.
+          </span>
+          <button
+            onClick={() => setIsGmpQuotaExceeded(false)}
+            className="text-amber-800 hover:text-amber-950 font-bold ml-2 text-sm px-1.5"
+            aria-label="Fechar aviso"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <BrowserRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>

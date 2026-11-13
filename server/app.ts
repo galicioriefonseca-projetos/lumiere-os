@@ -25,6 +25,7 @@ import { pushRoutes } from "./routes/push.js";
 import { aiRoutes } from "./routes/ai.js";
 import { clientPortalRoutes } from "./routes/clientPortal.js";
 import { contextConfigRoutes } from "./routes/contextConfig.js";
+import { pwaRoutes } from "./routes/pwa.js";
 import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging } from "./firebaseAdmin.js";
 
 // Carregar variáveis de ambiente
@@ -73,6 +74,9 @@ app.use("/client-portal", clientPortalRoutes);
 
 app.use("/api/context-config", contextConfigRoutes);
 app.use("/context-config", contextConfigRoutes);
+
+app.use("/api/pwa", pwaRoutes);
+app.use("/pwa", pwaRoutes);
 
 app.get(["/api/health", "/health"], publicLimiter, (req, res) => {
   res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });

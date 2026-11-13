@@ -13,6 +13,7 @@ export default defineConfig(({mode}) => {
       VitePWA({ 
         registerType: 'autoUpdate',
         injectRegister: 'inline',
+        includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'maskable-icon-512x512.png'],
         devOptions: {
           enabled: false
         },

@@ -48,6 +48,7 @@ import MarketingGlossaryTab from '@/components/portal/MarketingGlossaryTab';
 import AdditionalServicesTab from '@/components/portal/AdditionalServicesTab';
 import AccountTimelineTab from '@/components/portal/AccountTimelineTab';
 import ReportsAnalyticsTab from '@/components/portal/ReportsAnalyticsTab';
+import GoogleBusinessMap from '@/components/maps/GoogleBusinessMap';
 
 interface ClientPortalData {
   agency: {
@@ -816,6 +817,22 @@ export default function ClientPortalPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* Google Maps Interactive Component */}
+                  <div className="pt-2">
+                    <GoogleBusinessMap
+                      businessName={portalData?.client?.name || 'Sua Empresa'}
+                      address={portalData?.agency?.city ? `${portalData.agency.city}, ${portalData.agency.state || 'BR'}` : 'Localização do Negócio'}
+                      city={portalData?.agency?.city || 'Brasil'}
+                      state={portalData?.agency?.state || 'BR'}
+                      rankingPosition={selectedReport.gmbMetrics.rankingPosition || 1}
+                      keyword={selectedReport.gmbMetrics.targetKeyword || (selectedReport.gmbMetrics.topKeywords?.[0] ? (typeof selectedReport.gmbMetrics.topKeywords[0] === 'string' ? selectedReport.gmbMetrics.topKeywords[0] : selectedReport.gmbMetrics.topKeywords[0].keyword) : 'Estética & Beleza')}
+                      directionRequests={selectedReport.gmbMetrics.directionRequests || 0}
+                      rating={selectedReport.gmbMetrics.rating || 5.0}
+                      totalReviews={selectedReport.gmbMetrics.reviewsCount || 0}
+                      heightClass="h-[250px]"
+                    />
+                  </div>
                 </div>
               )}
 

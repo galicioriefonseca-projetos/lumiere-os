@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PROFESSIONAL_SPECIALTIES } from '../../data/professionalSpecialties';
 import { useLumiLexicon } from '../../hooks/useLumiLexicon';
+import AvatarUpload from '@/components/ui/AvatarUpload';
 
 const roleTranslations: Record<string, string> = {
   manager: 'Gerente',
@@ -80,6 +81,7 @@ export default function ProfessionalsPage() {
     role: '',
     phone: '',
     email: '',
+    photoURL: '',
   });
 
   const [primaryFunction, setPrimaryFunction] = useState('');
@@ -172,6 +174,8 @@ export default function ProfessionalsPage() {
           name: formData.name,
           phone: formData.phone,
           email: formData.email,
+          photoURL: formData.photoURL || null,
+          avatarUrl: formData.photoURL || null,
           updatedAt: Date.now(),
           
           primaryFunction: finalPrimary,
@@ -192,6 +196,8 @@ export default function ProfessionalsPage() {
             fullName: formData.name,
             phone: formData.phone,
             email: formData.email,
+            photoURL: formData.photoURL || null,
+            avatarUrl: formData.photoURL || null,
             primaryFunction: finalPrimary,
             professionalFunction: finalPrimary,
             professionalCategory: finalPrimary,
@@ -214,6 +220,8 @@ export default function ProfessionalsPage() {
           role: 'professional',
           phone: formData.phone,
           email: formData.email || null,
+          photoURL: formData.photoURL || null,
+          avatarUrl: formData.photoURL || null,
           isActive: true,
           status: 'active',
           
@@ -231,7 +239,7 @@ export default function ProfessionalsPage() {
         toast.success('Profissional adicionado!');
       }
       setIsDialogOpen(false);
-      setFormData({ name: '', role: '', phone: '', email: '' });
+      setFormData({ name: '', role: '', phone: '', email: '', photoURL: '' });
       setPrimaryFunction('');
       setCustomPrimary('');
       setAdditionalFunctions([]);
@@ -525,7 +533,13 @@ export default function ProfessionalsPage() {
 
   const openEdit = (prof: Professional) => {
     setEditingProf(prof);
-    setFormData({ name: prof.name, role: prof.role || 'professional', phone: prof.phone || '', email: prof.email || '' });
+    setFormData({ 
+      name: prof.name, 
+      role: prof.role || 'professional', 
+      phone: prof.phone || '', 
+      email: prof.email || '',
+      photoURL: prof.photoURL || prof.avatarUrl || ''
+    });
 
     // Fallback sequence: primaryFunction -> professionalFunction -> specialty -> category -> fallback
     const primary = prof.primaryFunction || prof.professionalFunction || prof.specialty || prof.category || '';
@@ -865,7 +879,7 @@ export default function ProfessionalsPage() {
             setIsDialogOpen(open);
             if (!open) { 
               setEditingProf(null); 
-              setFormData({ name: '', role: '', phone: '', email: '' }); 
+              setFormData({ name: '', role: '', phone: '', email: '', photoURL: '' }); 
               setPrimaryFunction('');
               setCustomPrimary('');
               setAdditionalFunctions([]);
@@ -886,6 +900,18 @@ export default function ProfessionalsPage() {
                 <DialogTitle className="font-heading">{editingProf ? 'Editar Profissional' : 'Novo Profissional'}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+                {/* Foto do Profissional */}
+                <div className="bg-zinc-950/60 p-3.5 rounded-2xl border border-white/5">
+                  <AvatarUpload
+                    value={formData.photoURL}
+                    onChange={url => setFormData(prev => ({ ...prev, photoURL: url }))}
+                    name={formData.name}
+                    size="md"
+                    label="Foto do Profissional"
+                    description="Carregue uma imagem para exibição no perfil e agendamentos."
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome Completo</Label>
                   <Input id="name" required value={formData.name} onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))} className="bg-background" />
@@ -1413,9 +1439,17 @@ export default function ProfessionalsPage() {
                     <div className="flex items-start justify-between gap-3 mb-4">
                       {/* Avatar + Name / Specialties */}
                       <div className="flex items-center gap-3">
-                        <div className="w-13 h-13 rounded-full bg-gradient-to-br from-zinc-950 to-zinc-900 border-2 border-[#D4AF37]/30 group-hover:border-[#D4AF37]/80 flex items-center justify-center text-[#D4AF37] font-bold text-sm shadow-md shrink-0 select-none transition-all duration-300 transform group-hover:scale-105">
-                          {getInitials(prof.name)}
-                        </div>
+                        {prof.photoURL || prof.avatarUrl ? (
+                          <img 
+                            src={prof.photoURL || prof.avatarUrl} 
+                            alt={prof.name}
+                            className="w-13 h-13 rounded-full object-cover border-2 border-[#D4AF37]/40 group-hover:border-[#D4AF37] shadow-md shrink-0 transition-all duration-300 transform group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="w-13 h-13 rounded-full bg-gradient-to-br from-zinc-950 to-zinc-900 border-2 border-[#D4AF37]/30 group-hover:border-[#D4AF37]/80 flex items-center justify-center text-[#D4AF37] font-bold text-sm shadow-md shrink-0 select-none transition-all duration-300 transform group-hover:scale-105">
+                            {getInitials(prof.name)}
+                          </div>
+                        )}
                         <div className="space-y-1 min-w-0">
                           <h4 className="text-[15px] font-semibold text-white leading-tight font-sans truncate pr-8 group-hover:text-[#D4AF37] transition-all" title={prof.name}>
                             {prof.name}
