@@ -50,7 +50,7 @@ export function translateAuthError(code?: string, customMessage?: string): strin
       return 'Este domínio de internet não está autorizado nas configurações do console do Firebase.';
 
     case 'auth/user-not-registered-google':
-      return 'Nenhuma conta LumièreOS encontrada com este e-mail do Google. Se você é proprietário de um salão, crie sua conta na página de cadastro.';
+      return 'Nenhuma conta LumièreOS vinculada a este e-mail do Google. Se você faz parte da equipe, solicite o link de convite ao gestor ou que cadastre seu e-mail na aba Equipe.';
 
     case 'auth/invalid-email':
       return 'O formato de e-mail fornecido é inválido. Por favor, use um endereço válido.';

@@ -16,7 +16,7 @@ interface AuthContextType {
   syncError: string | null;
   logout: () => Promise<void>;
   refreshUserData: () => Promise<void>;
-  signInWithGoogle: () => Promise<AuthUser>;
+  signInWithGoogle: () => Promise<AuthUser | null>;
   signInWithGoogleForRegister: (
     salonFields: {
       salonName: string;
@@ -32,13 +32,13 @@ interface AuthContextType {
       recommendedPlan?: string;
     },
     optionalFullName?: string
-  ) => Promise<AuthUser>;
+  ) => Promise<AuthUser | null>;
   signInWithGoogleForInvite: (
     inviteData: any,
     phone?: string,
     optionalFullName?: string,
     choices?: { primaryFunction?: string; additionalFunctions?: string[] }
-  ) => Promise<AuthUser>;
+  ) => Promise<AuthUser | null>;
   demoRole?: Role | null;
   setDemoRole?: (role: Role | null) => void;
   diagnostics?: {
@@ -179,8 +179,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [userData]);
 
   useEffect(() => {
-    if (!currentUser) return;
-    
+    if (!currentUser || !isPlatformAdmin) return;
+
     const countSalons = async () => {
       try {
         const snap = await getDocs(collection(db, 'salons'));
@@ -189,9 +189,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("diagnostics debug salons count fail:", err);
       }
     };
-    
+
     countSalons();
-  }, [currentUser]);
+  }, [currentUser, isPlatformAdmin]);
 
 
   if (!auth || !db) {
@@ -273,19 +273,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const trySalonFallback = async (uid: string, email: string | null): Promise<{ id: string; data: () => any } | null> => {
+  const trySalonFallback = async (
+    uid: string,
+    email: string | null
+  ): Promise<{ id: string; data: () => any; role?: Role; user?: any; blocked?: boolean; error?: string } | null> => {
     try {
       // 1. Tenta documento determinístico salon_{uid} diretamente (getDoc é permitido para o próprio ownerId)
       try {
         const directSnap = await getDoc(doc(db, 'salons', `salon_${uid}`));
         if (directSnap.exists()) {
-          return directSnap;
+          return {
+            id: directSnap.id,
+            data: () => directSnap.data(),
+            role: 'owner',
+          };
         }
       } catch {
         // Silencioso se o documento ainda não existir ou estiver sendo criado no cadastro
       }
 
-      // 2. Fallback seguro via Admin SDK no servidor (evita erros de permissão de listagem no cliente)
+      // 2. Fallback seguro via Admin SDK no servidor (resolve dono, profissional pré-cadastrado e convites)
       const activeAuthUser = getAuth().currentUser;
       if (activeAuthUser) {
         const idToken = await activeAuthUser.getIdToken();
@@ -297,14 +304,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
           body: JSON.stringify({ email: email || activeAuthUser.email || '' }),
         });
-        if (resp.ok) {
-          const result = await resp.json();
-          if (result?.found && result?.salonId && result?.salonData) {
-            return {
-              id: result.salonId,
-              data: () => result.salonData,
-            };
-          }
+        const result = await resp.json().catch(() => ({}));
+        if (resp.status === 403 || result?.blocked) {
+          return {
+            id: '',
+            data: () => null,
+            blocked: true,
+            error: result?.error || 'Sua conta está inativa no salão.',
+          };
+        }
+        if (resp.ok && result?.found && result?.salonId && result?.salonData) {
+          return {
+            id: result.salonId,
+            data: () => result.salonData,
+            role: (result.role as Role) || 'professional',
+            user: result.user || null,
+          };
         }
       }
     } catch (err) {
@@ -422,34 +437,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userSalonId = '';
       }
 
-      if (!uData) {
-        // Se users/{uid} não existe e Firestore está online, tentar buscar salão por fallback (Requirement 4)
+      if (uData && (uData.role as string) === 'function_link') {
+        uData.role = 'professional';
+      }
+
+      if (!uData || (!uData.salonId && uData.role !== 'platform_admin' && (uData.role as string) !== 'pending')) {
         const foundSalonDoc = await trySalonFallback(uid, currentUser?.email || null);
-        if (foundSalonDoc) {
-          console.log("[AuthFallback] Recuperação manual bem sucedida para novo/órfão usuário. Vinculando salão", foundSalonDoc.id, "ao usuário", uid);
+        if (foundSalonDoc?.blocked) {
+          setUserData(null);
+          setSalonData(null);
+          setSyncError(foundSalonDoc.error || "Sua conta está inativa.");
+          return;
+        }
+        if (foundSalonDoc && foundSalonDoc.id) {
+          console.log("[AuthFallback] Recuperação via servidor concluída. Salão:", foundSalonDoc.id, "Role:", foundSalonDoc.role);
           const foundSalonId = foundSalonDoc.id;
-          const uRef = doc(db, 'users', uid);
-          
-          // Verify email and potential duplicate account (Requirement 7)
-          const sDataForCheck = foundSalonDoc.data();
-          if (currentUser?.email && sDataForCheck?.ownerEmail && currentUser.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
-            console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+          const resolvedRole = foundSalonDoc.role || 'owner';
+          if (foundSalonDoc.user) {
+            uData = { id: uid, ...foundSalonDoc.user, role: resolvedRole, salonId: foundSalonId } as User;
+          } else {
+            const sDataForCheck = foundSalonDoc.data();
+            uData = {
+              ...(uData || {}),
+              id: uid,
+              fullName: uData?.fullName || currentUser?.displayName || sDataForCheck?.ownerName || 'Proprietário',
+              email: uData?.email || currentUser?.email || sDataForCheck?.ownerEmail || '',
+              phone: uData?.phone || currentUser?.phoneNumber || sDataForCheck?.phone || '',
+              salonId: foundSalonId,
+              role: resolvedRole,
+              isActive: true,
+              status: 'active',
+              createdAt: uData?.createdAt || Date.now(),
+              updatedAt: Date.now()
+            } as User;
+            if (resolvedRole === 'owner') {
+              await setDoc(doc(db, 'users', uid), uData, { merge: true });
+            }
           }
-
-          uData = {
-            id: uid,
-            fullName: currentUser?.displayName || sDataForCheck?.ownerName || 'Proprietário',
-            email: currentUser?.email || sDataForCheck?.ownerEmail || '',
-            phone: currentUser?.phoneNumber || sDataForCheck?.phone || '',
-            salonId: foundSalonId,
-            role: 'owner',
-            isActive: true,
-            status: 'active',
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          } as User;
-
-          await setDoc(uRef, uData);
           userDocExists = true;
           userSalonId = foundSalonId;
         }
@@ -529,32 +553,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Try fallback (Task 3)
-      if (!salonDocToLoad) {
+      if (!salonDocToLoad && (uData.role as string) !== 'pending') {
         const foundSalonDoc = await trySalonFallback(uid, currentUser?.email || null);
-        if (foundSalonDoc) {
-          console.log("[AuthFallback] Recuperação manual bem sucedida. Vinculando salão", foundSalonDoc.id, "ao usuário", uid);
+        if (foundSalonDoc?.blocked) {
+          setUserData(null);
+          setSalonData(null);
+          setSyncError(foundSalonDoc.error || "Sua conta está inativa.");
+          return;
+        }
+        if (foundSalonDoc && foundSalonDoc.id) {
+          console.log("[AuthFallback] Recuperação manual bem sucedida. Salão:", foundSalonDoc.id, "Role:", foundSalonDoc.role);
           const foundSalonId = foundSalonDoc.id;
-          const uRef = doc(db, 'users', uid);
-          
-          // Verify email and potential duplicate account (Requirement 7)
-          const sDataForCheck = foundSalonDoc.data();
-          if (currentUser?.email && sDataForCheck?.ownerEmail && currentUser.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
-            console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+          const resolvedRole = foundSalonDoc.role || uData.role || 'owner';
+
+          if (!foundSalonDoc.user && resolvedRole === 'owner') {
+            const sDataForCheck = foundSalonDoc.data();
+            await setDoc(doc(db, 'users', uid), {
+              fullName: uData.fullName || currentUser?.displayName || sDataForCheck?.ownerName || 'Proprietário',
+              email: uData.email || currentUser?.email || sDataForCheck?.ownerEmail || '',
+              phone: uData.phone || currentUser?.phoneNumber || sDataForCheck?.phone || '',
+              salonId: foundSalonId,
+              role: 'owner',
+              isActive: true,
+              status: 'active',
+              updatedAt: Date.now()
+            }, { merge: true });
           }
 
-          await setDoc(uRef, {
-            fullName: currentUser?.displayName || sDataForCheck?.ownerName || 'Proprietário',
-            email: currentUser?.email || sDataForCheck?.ownerEmail || '',
-            phone: currentUser?.phoneNumber || sDataForCheck?.phone || '',
-            salonId: foundSalonId,
-            role: 'owner',
-            isActive: true,
-            status: 'active',
-            updatedAt: Date.now()
-          }, { merge: true });
-
           uData.salonId = foundSalonId;
-          uData.role = 'owner';
+          uData.role = resolvedRole;
           salonDocToLoad = foundSalonDoc;
           salonDocExists = true;
           userSalonId = foundSalonId;
@@ -701,20 +728,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    let unsubscribeAuth: (() => void) | null = null;
     let unsubscribeUserSnapshot: (() => void) | null = null;
     let unsubscribeSalonSnapshot: (() => void) | null = null;
 
-    const unsubscribe = onAuthStateChanged(getAuth(), async (user) => {
-      setCurrentUser(user);
-      
-      if (unsubscribeUserSnapshot) {
-        unsubscribeUserSnapshot();
-        unsubscribeUserSnapshot = null;
+    const initAuth = async () => {
+      const redirectResult = await AuthService.completePendingRedirect();
+      if (!isMounted) return;
+      if (redirectResult?.error) {
+        setSyncError(redirectResult.error);
       }
-      if (unsubscribeSalonSnapshot) {
-        unsubscribeSalonSnapshot();
-        unsubscribeSalonSnapshot = null;
-      }
+
+      unsubscribeAuth = onAuthStateChanged(getAuth(), async (user) => {
+        if (!isMounted) return;
+        setCurrentUser(user);
+
+        if (unsubscribeUserSnapshot) {
+          unsubscribeUserSnapshot();
+          unsubscribeUserSnapshot = null;
+        }
+        if (unsubscribeSalonSnapshot) {
+          unsubscribeSalonSnapshot();
+          unsubscribeSalonSnapshot = null;
+        }
 
       if (user) {
         setLoading(true);
@@ -843,34 +880,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
 
-            if (!uData) {
-              // Se o Firestore estiver online, buscar salão por fallback
+            if (uData && (uData.role as string) === 'function_link') {
+              uData.role = 'professional';
+            }
+
+            if (!uData || (!uData.salonId && uData.role !== 'platform_admin' && (uData.role as string) !== 'pending')) {
               const foundSalonDoc = await trySalonFallback(user.uid, user.email);
-              if (foundSalonDoc) {
-                console.log("[AuthFallback] Reativo: Salão correspondente localizado por fallback:", foundSalonDoc.id, ". Atualizando usuário...");
+              if (foundSalonDoc?.blocked) {
+                setUserData(null);
+                setSalonData(null);
+                setSyncError(foundSalonDoc.error || "Sua conta está inativa.");
+                setLoading(false);
+                return;
+              }
+              if (foundSalonDoc && foundSalonDoc.id) {
+                console.log("[AuthFallback] Reativo: Salão localizado por fallback:", foundSalonDoc.id, "Role:", foundSalonDoc.role);
                 const foundSalonId = foundSalonDoc.id;
-                const uRef = doc(db, 'users', user.uid);
-                
-                // Verify email and potential duplicate account (Requirement 7)
-                const sDataForCheck = foundSalonDoc.data();
-                if (user.email && sDataForCheck?.ownerEmail && user.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
-                  console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+                const resolvedRole = foundSalonDoc.role || 'owner';
+
+                if (foundSalonDoc.user) {
+                  uData = { id: user.uid, ...foundSalonDoc.user, role: resolvedRole, salonId: foundSalonId } as User;
+                } else {
+                  const sDataForCheck = foundSalonDoc.data();
+                  uData = {
+                    ...(uData || {}),
+                    id: user.uid,
+                    fullName: uData?.fullName || user.displayName || sDataForCheck?.ownerName || 'Proprietário',
+                    email: uData?.email || user.email || sDataForCheck?.ownerEmail || '',
+                    phone: uData?.phone || user.phoneNumber || sDataForCheck?.phone || '',
+                    salonId: foundSalonId,
+                    role: resolvedRole,
+                    isActive: true,
+                    status: 'active',
+                    createdAt: uData?.createdAt || Date.now(),
+                    updatedAt: Date.now()
+                  } as User;
+
+                  if (resolvedRole === 'owner') {
+                    await setDoc(doc(db, 'users', user.uid), uData, { merge: true });
+                  }
                 }
-
-                uData = {
-                  id: user.uid,
-                  fullName: user.displayName || sDataForCheck?.ownerName || 'Proprietário',
-                  email: user.email || sDataForCheck?.ownerEmail || '',
-                  phone: user.phoneNumber || sDataForCheck?.phone || '',
-                  salonId: foundSalonId,
-                  role: 'owner',
-                  isActive: true,
-                  status: 'active',
-                  createdAt: Date.now(),
-                  updatedAt: Date.now()
-                } as User;
-
-                await setDoc(uRef, uData);
                 userDocExists = true;
                 userSalonId = foundSalonId;
               }
@@ -955,31 +1004,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             // Try fallback (Task 3)
-            if (!salonDocToLoad) {
+            if (!salonDocToLoad && (uData.role as string) !== 'pending') {
               const foundSalonDoc = await trySalonFallback(user.uid, user.email);
-              if (foundSalonDoc) {
-                console.log("[AuthFallback] Reativo: Salão correspondente localizado por fallback:", foundSalonDoc.id, ". Atualizando usuário...");
+              if (foundSalonDoc?.blocked) {
+                setUserData(null);
+                setSalonData(null);
+                setSyncError(foundSalonDoc.error || "Sua conta está inativa.");
+                setLoading(false);
+                return;
+              }
+              if (foundSalonDoc && foundSalonDoc.id) {
+                console.log("[AuthFallback] Reativo: Salão localizado por fallback:", foundSalonDoc.id, "Role:", foundSalonDoc.role);
                 const foundSalonId = foundSalonDoc.id;
-                const uRef = doc(db, 'users', user.uid);
-                
-                // Verify email and potential duplicate account (Requirement 7)
-                const sDataForCheck = foundSalonDoc.data();
-                if (user.email && sDataForCheck?.ownerEmail && user.email.toLowerCase() !== sDataForCheck.ownerEmail.toLowerCase()) {
-                  console.log("Possível conta duplicada: e-mail autenticado diferente do ownerEmail.");
+                const resolvedRole = foundSalonDoc.role || uData.role || 'owner';
+
+                if (!foundSalonDoc.user && resolvedRole === 'owner') {
+                  const sDataForCheck = foundSalonDoc.data();
+                  await setDoc(doc(db, 'users', user.uid), {
+                    fullName: uData.fullName || user.displayName || sDataForCheck?.ownerName || 'Proprietário',
+                    email: uData.email || user.email || sDataForCheck?.ownerEmail || '',
+                    phone: uData.phone || user.phoneNumber || sDataForCheck?.phone || '',
+                    salonId: foundSalonId,
+                    role: 'owner',
+                    isActive: true,
+                    status: 'active',
+                    updatedAt: Date.now()
+                  }, { merge: true });
                 }
 
-                await setDoc(uRef, {
-                  fullName: user.displayName || sDataForCheck?.ownerName || 'Proprietário',
-                  email: user.email || sDataForCheck?.ownerEmail || '',
-                  phone: user.phoneNumber || sDataForCheck?.phone || '',
-                  salonId: foundSalonId,
-                  role: 'owner',
-                  isActive: true,
-                  status: 'active',
-                  updatedAt: Date.now()
-                }, { merge: true });
-                // Return early; Firestore update will automatically trigger this snapshot listener again.
-                return;
+                uData.salonId = foundSalonId;
+                uData.role = resolvedRole;
+                salonDocToLoad = foundSalonDoc;
+                salonDocExists = true;
+                userSalonId = foundSalonId;
               }
             }
 
@@ -1261,10 +1318,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           firestoreError: 'Sem erro'
         });
       }
-    });
+      });
+    };
+
+    initAuth();
 
     return () => {
-      unsubscribe();
+      isMounted = false;
+      if (unsubscribeAuth) unsubscribeAuth();
       if (unsubscribeUserSnapshot) unsubscribeUserSnapshot();
       if (unsubscribeSalonSnapshot) unsubscribeSalonSnapshot();
     };
@@ -1280,7 +1341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   };
 
-  const signInWithGoogle = async (): Promise<AuthUser> => {
+  const signInWithGoogle = async (): Promise<AuthUser | null> => {
     return AuthService.signInWithGoogle();
   };
 
@@ -1299,7 +1360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       recommendedPlan?: string;
     },
     optionalFullName?: string
-  ): Promise<AuthUser> => {
+  ): Promise<AuthUser | null> => {
     return AuthService.signInWithGoogleForRegister(_salonFields, optionalFullName);
   };
 
@@ -1308,10 +1369,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     phone?: string,
     optionalFullName?: string,
     choices?: { primaryFunction?: string; additionalFunctions?: string[] }
-  ): Promise<AuthUser> => {
-    const { user } = await AuthService.signInWithGoogleForInvite(inviteData, phone, optionalFullName, choices);
+  ): Promise<AuthUser | null> => {
+    const res = await AuthService.signInWithGoogleForInvite(inviteData, phone, optionalFullName, choices);
+    if (!res) return null;
     await refreshUserData();
-    return user;
+    return res.user;
   };
 
   const isEssenzaSalon = Boolean(

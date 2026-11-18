@@ -40,9 +40,11 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
   const lex = cfg.lexicon;
 
   const emailCandidate = String(salonData?.ownerEmail || userEmail || userData?.email || '').toLowerCase();
+  const salonNameCandidate = String(salonData?.name || '').toLowerCase();
   const isAgencyAccount = 
     emailCandidate.includes('galicioriefonseca31@gmail.com') ||
     emailCandidate.includes('galicioriefonseca@gmail.com') ||
+    salonNameCandidate.includes('essenza') ||
     segment === 'agency' || 
     salonData?.segment === 'agency' || 
     salonData?.businessType === 'agency';

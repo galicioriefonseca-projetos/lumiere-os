@@ -10,14 +10,13 @@ import {
   signInWithEmailAndPassword, 
   signInWithCustomToken, 
   sendPasswordResetEmail,
-  GoogleAuthProvider,
-  signInWithPopup
+  User as AuthUser,
 } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import AuthLayout from '../../components/auth/AuthLayout';
 import AuthCard from '../../components/auth/AuthCard';
-import { translateAuthError, checkIfEmailExists, createActivationToken } from '../../lib/auth-helpers';
+import { translateAuthError, createActivationToken } from '../../lib/auth-helpers';
 import { logAuthAuditEvent } from '../../lib/audit';
 
 type LoginMode = 'login' | 'recovery' | 'activation-sim';
@@ -26,7 +25,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/dashboard';
-  const { signInWithGoogle, currentUser, userData, isPlatformAdmin, refreshUserData } = useAuth();
+  const { signInWithGoogle, currentUser, userData, isPlatformAdmin, refreshUserData, syncError } = useAuth();
 
   const isDevelopment = import.meta.env.DEV || import.meta.env.MODE === 'development';
   const isPlatform = isPlatformAdmin || userData?.role === 'platform_admin';
@@ -61,20 +60,20 @@ export default function LoginPage() {
   const recoveryQuery = queryParams.get('recovery');
   const welcomeQuery = queryParams.get('welcome') === '1';
 
-  const sourceQuery = queryParams.get('source');
-
   useEffect(() => {
-    if (sourceQuery === 'pwa') {
-      navigate('/', { replace: true });
-      return;
-    }
     if (emailQuery) {
       setEmail(emailQuery);
     }
     if (recoveryQuery === 'true') {
       setMode('recovery');
     }
-  }, [sourceQuery, emailQuery, recoveryQuery, navigate]);
+  }, [emailQuery, recoveryQuery]);
+
+  useEffect(() => {
+    if (syncError && !error) {
+      setError(syncError);
+    }
+  }, [syncError, error]);
 
   // Session persistence and intelligent redirection on load
   useEffect(() => {
@@ -89,12 +88,95 @@ export default function LoginPage() {
     }
   }, [currentUser, userData, isPlatformAdmin, navigate]);
 
+  const resolveAuthenticatedTarget = async (user: AuthUser): Promise<string | null> => {
+    let targetPath = '/dashboard';
+    let userSnap = null;
+    try {
+      userSnap = await getDoc(doc(db, 'users', user.uid));
+    } catch {
+      // ignore client read error; backend resolver handles it
+    }
+
+    let isPlatformUser = false;
+    try {
+      const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
+      isPlatformUser = adminSnap.exists();
+    } catch {
+      // ignore
+    }
+
+    const uData = userSnap?.exists() ? userSnap.data() : null;
+    if (uData?.role === 'platform_admin' || user.email?.toLowerCase() === 'galicioriefonseca@gmail.com') {
+      isPlatformUser = true;
+    }
+
+    if (uData && (uData.isActive === false || uData.status === 'inactive' || uData.status === 'deleted')) {
+      setError("Sua conta está inativa. Entre em contato com o administrador do salão.");
+      await auth.signOut();
+      return null;
+    }
+
+    if (isPlatformUser) {
+      return '/master';
+    }
+
+    let resolvedRole = uData?.role === 'function_link' ? 'professional' : uData?.role;
+    let resolvedSalonId = uData?.salonId || '';
+
+    if (user.email && user.email.toLowerCase() === String(import.meta.env.VITE_DEMO_USER_EMAIL || '').toLowerCase()) {
+      resolvedRole = 'owner';
+      resolvedSalonId = resolvedSalonId || 'tutorial_lumiere_studio';
+    }
+
+    if (!resolvedSalonId || !resolvedRole || resolvedRole === 'pending' || uData?.role === 'function_link') {
+      setStatusText('Sincronizando vínculo com seu salão...');
+      const idToken = await user.getIdToken(true);
+      const resolveResp = await fetch('/api/auth/resolve-salon', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ email: user.email || '' }),
+      });
+
+      const resolveData = await resolveResp.json().catch(() => ({}));
+      if (resolveResp.status === 403 || resolveData?.blocked) {
+        setError(resolveData?.error || "Seu perfil está inativo neste salão.");
+        await auth.signOut();
+        return null;
+      }
+
+      if (!resolveResp.ok || !resolveData?.found || !resolveData?.salonId) {
+        setError("Sua conta foi autenticada, mas ainda não está vinculada a nenhum salão. Solicite ao gestor que cadastre seu e-mail na aba Equipe ou envie seu link de convite.");
+        await auth.signOut();
+        return null;
+      }
+
+      resolvedSalonId = resolveData.salonId;
+      resolvedRole = resolveData.role || 'professional';
+    }
+
+    if (resolvedRole === 'platform_admin') {
+      targetPath = '/master';
+    } else if (resolvedRole === 'professional') {
+      targetPath = '/dashboard/meu-painel';
+    } else if (resolvedRole === 'owner') {
+      targetPath = '/dashboard';
+    } else {
+      targetPath = from.startsWith('/dashboard') ? from : '/dashboard';
+    }
+
+    return targetPath;
+  };
+
   // Handle direct/proxy email login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
 
-    if (!email.trim() || !password) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
       setError('Por favor, informe seu e-mail corporativo e senha.');
       return;
     }
@@ -104,17 +186,17 @@ export default function LoginPage() {
     setStatusText('Validando credenciais...');
 
     try {
-      let user;
+      let user: AuthUser;
       try {
         console.log("[LumièreAuth] Tentando autenticação segura direta...");
-        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+        const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
         user = userCredential.user;
       } catch (directErr: any) {
         console.warn("[LumièreAuth] Falha no canal direto, acionando fallback proxy:", directErr);
-        
+
         // Trigger server proxy if network-level failures block client direct connection
         if (
-          directErr.code === 'auth/network-request-failed' || 
+          directErr.code === 'auth/network-request-failed' ||
           directErr.message?.includes('network-request-failed') ||
           directErr.code === 'auth/internal-error'
         ) {
@@ -125,18 +207,18 @@ export default function LoginPage() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              email: email.trim(),
+              email: cleanEmail,
               password: password,
             }),
           });
-          
+
           if (!proxyResp.ok) {
             const proxyErrData = await proxyResp.json();
             const thrownError = new Error(proxyErrData.error || "Erro de proxy no login.");
             (thrownError as any).code = proxyErrData.code || "auth/unknown";
             throw thrownError;
           }
-          
+
           const { customToken } = await proxyResp.json();
           const userCredential = await signInWithCustomToken(auth, customToken);
           user = userCredential.user;
@@ -148,74 +230,10 @@ export default function LoginPage() {
       setStatusText('Sincronizando perfil corporativo...');
       sessionStorage.removeItem('demo_role');
 
-      // Check account details in Firestore
-      let targetPath = '/dashboard';
-      const userSnap = await getDoc(doc(db, 'users', user.uid));
-      const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
-      
-      let isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
-      let isOwner = userSnap.exists() && userSnap.data()?.role === 'owner';
-
-      // Fallback for demo users
-      if (!isPlatform && !isOwner) {
-        if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
-      }
-
-      if (userSnap.exists()) {
-        const uData = userSnap.data();
-        
-        // Block inactive users elegantly
-        if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
-          setError("Sua conta está inativa. Entre em contato com o suporte Lumière.");
-          await auth.signOut();
-          setLoading(false);
-          return;
-        }
-
-        // Auto-resolve missing salon associations
-        if (!isPlatform && !uData?.salonId) {
-          setStatusText('Sincronizando salão corporativo...');
-          const salonsColl = collection(db, 'salons');
-          const q1 = query(salonsColl, where('ownerId', '==', user.uid));
-          const snap1 = await getDocs(q1);
-          let foundSalonId = null;
-          if (!snap1.empty) {
-            foundSalonId = snap1.docs[0].id;
-          } else if (user.email) {
-            const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
-            const snap2 = await getDocs(q2);
-            if (!snap2.empty) {
-              foundSalonId = snap2.docs[0].id;
-            }
-          }
-
-          if (foundSalonId) {
-            await updateDoc(doc(db, 'users', user.uid), {
-              salonId: foundSalonId,
-              role: 'owner',
-              updatedAt: Date.now()
-            });
-            isOwner = true;
-          } else {
-            setError("Sua conta foi autenticada, mas não está vinculada a nenhum salão operacional.");
-            await auth.signOut();
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      if (isPlatform) {
-        targetPath = '/master';
-      } else if (isOwner) {
-        targetPath = '/dashboard';
-      } else if (userSnap.exists()) {
-        const uRole = userSnap.data()?.role;
-        if (uRole === 'professional') {
-          targetPath = '/dashboard/meu-painel';
-        } else {
-          targetPath = from.startsWith('/dashboard') ? from : '/dashboard';
-        }
+      const targetPath = await resolveAuthenticatedTarget(user);
+      if (!targetPath) {
+        setLoading(false);
+        return;
       }
 
       setStatusText('Sessão estabelecida. Redirecionando...');
@@ -244,69 +262,15 @@ export default function LoginPage() {
 
     try {
       const user = await signInWithGoogle();
-      
-      let targetPath = '/dashboard';
-      const userSnap = await getDoc(doc(db, 'users', user.uid));
-      const adminSnap = await getDoc(doc(db, 'platformAdmins', user.uid));
-      
-      let isPlatform = adminSnap.exists() || (userSnap.exists() && userSnap.data()?.role === 'platform_admin');
-      let isOwner = userSnap.exists() && userSnap.data()?.role === 'owner';
-
-      if (!isPlatform && !isOwner) {
-        if (user.email === import.meta.env.VITE_DEMO_USER_EMAIL) isOwner = true;
+      if (!user) {
+        // Redirecionamento OAuth em andamento (PWA/Navegador móvel)
+        return;
       }
 
-      if (userSnap.exists()) {
-        const uData = userSnap.data();
-        if (uData?.isActive === false || uData?.status === 'inactive' || uData?.status === 'deleted') {
-          setError("Sua conta está inativa. Entre em contato com o suporte Lumière.");
-          await auth.signOut();
-          setLoading(false);
-          return;
-        }
-
-        if (!isPlatform && !uData?.salonId) {
-          const salonsColl = collection(db, 'salons');
-          const q1 = query(salonsColl, where('ownerId', '==', user.uid));
-          const snap1 = await getDocs(q1);
-          let foundSalonId = null;
-          if (!snap1.empty) {
-            foundSalonId = snap1.docs[0].id;
-          } else if (user.email) {
-            const q2 = query(salonsColl, where('ownerEmail', '==', user.email));
-            const snap2 = await getDocs(q2);
-            if (!snap2.empty) {
-              foundSalonId = snap2.docs[0].id;
-            }
-          }
-
-          if (foundSalonId) {
-            await updateDoc(doc(db, 'users', user.uid), {
-              salonId: foundSalonId,
-              role: 'owner',
-              updatedAt: Date.now()
-            });
-            isOwner = true;
-          } else {
-            setError("Sua conta Google está autenticada, mas não está vinculada a nenhum salão operacional.");
-            await auth.signOut();
-            setLoading(false);
-            return;
-          }
-        }
-      }
-
-      if (isPlatform) {
-        targetPath = '/master';
-      } else if (isOwner) {
-        targetPath = '/dashboard';
-      } else if (userSnap.exists()) {
-        const uRole = userSnap.data()?.role;
-        if (uRole === 'professional') {
-          targetPath = '/dashboard/meu-painel';
-        } else {
-          targetPath = from.startsWith('/dashboard') ? from : '/dashboard';
-        }
+      const targetPath = await resolveAuthenticatedTarget(user);
+      if (!targetPath) {
+        setLoading(false);
+        return;
       }
 
       await refreshUserData();
@@ -333,7 +297,8 @@ export default function LoginPage() {
     e.preventDefault();
     if (loading) return;
 
-    if (!email.trim()) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
       setError('Por favor, informe seu endereço de e-mail.');
       return;
     }
@@ -343,9 +308,7 @@ export default function LoginPage() {
     setStatusText('Enviando link de redefinição...');
 
     try {
-      await sendPasswordResetEmail(auth, email.trim());
-      // Auditoria pré-login (Reset solicitado) foi removida do client-side direto no Firestore.
-      // Futuramente, esta auditoria pré-login deve ser implementada por endpoint backend protegido com App Check e rate limiting.
+      await sendPasswordResetEmail(auth, cleanEmail);
       setLoading(false);
       setRecoverySuccess(true);
     } catch (err: any) {

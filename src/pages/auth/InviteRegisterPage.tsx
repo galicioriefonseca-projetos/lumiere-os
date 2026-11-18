@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Sparkles, Loader2, ArrowRight, CheckCircle2, AlertTriangle, Chrome, Info, Check } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { professionalSpecialties } from '../../data/professionalSpecialties';
@@ -124,12 +124,15 @@ export default function InviteRegisterPage() {
 
     setFormLoading(true);
     try {
-      await signInWithGoogleForInvite(
-        inviteData, 
-        formData.phone || undefined, 
-        formData.fullName || undefined, 
+      const signedUser = await signInWithGoogleForInvite(
+        inviteData,
+        formData.phone || undefined,
+        formData.fullName || undefined,
         choices
       );
+      if (!signedUser) {
+        return;
+      }
 
       toast.success(`Cadastro de profissional concluído! Bem-vindo à equipe do ${inviteData.salonName}.`);
       navigate('/dashboard/meu-painel', { replace: true });
@@ -189,13 +192,32 @@ export default function InviteRegisterPage() {
       : [inviteData.specialty || inviteData.category || 'Profissional'];
 
     setFormLoading(true);
+    const cleanEmail = formData.email.trim().toLowerCase();
 
     try {
-      // 1. Create Auth Account
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-      const user = userCredential.user;
+      // 1. Create Auth Account (or sign in if already exists with same password)
+      let user;
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, formData.password);
+        user = userCredential.user;
+      } catch (createErr: any) {
+        if (createErr?.code === 'auth/email-already-in-use') {
+          try {
+            const signInCred = await signInWithEmailAndPassword(auth, cleanEmail, formData.password);
+            user = signInCred.user;
+          } catch (signInErr: any) {
+            throw createErr;
+          }
+        } else {
+          throw createErr;
+        }
+      }
 
-      await updateProfile(user, { displayName: formData.fullName });
+      if (formData.fullName.trim()) {
+        try {
+          await updateProfile(user, { displayName: formData.fullName.trim() });
+        } catch {}
+      }
 
       // 2. Chama a API para processar a aceitação do convite no backend
       const idToken = await user.getIdToken(true);
@@ -208,7 +230,7 @@ export default function InviteRegisterPage() {
         },
         body: JSON.stringify({
           inviteId: inviteData.inviteId,
-          fullName: formData.fullName,
+          fullName: formData.fullName.trim(),
           phone: formData.phone || "",
           primaryFunction: finalPrimary || "",
           additionalFunctions: cleanExtras || []
@@ -216,9 +238,9 @@ export default function InviteRegisterPage() {
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
-         throw new Error(data.error || 'Erro ao processar aceitação do convite no servidor.');
+        throw new Error(data.error || 'Erro ao processar aceitação do convite no servidor.');
       }
 
       sessionStorage.removeItem('demo_role');
@@ -227,7 +249,7 @@ export default function InviteRegisterPage() {
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/email-already-in-use') {
-        toast.error('Este e-mail já está cadastrado. Por favor, faça login ou use outro e-mail.');
+        toast.error('Este e-mail já possui uma conta LumièreOS. Se você cadastrou via Google, clique em "Concluir Cadastro com o Google" acima, ou informe sua senha atual.');
       } else {
         toast.error('Ocorreu um erro no cadastro: ' + (err.message || 'Erro inesperado'));
       }

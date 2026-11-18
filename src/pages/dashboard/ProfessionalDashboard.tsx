@@ -204,71 +204,94 @@ export default function ProfessionalDashboard() {
     let unsubscribeProfs: () => void;
 
     if (userData.role === 'professional') {
-      const docRef = doc(db, `salons/${salonData.id}/professionals`, userData.id);
-      unsubscribeProfs = onSnapshot(docRef, (docSnap) => {
+      const bindMatchedProfile = (matched: Professional) => {
+        setMyProfile(matched);
+        const targetProfIds = Array.from(
+          new Set([matched.id, (matched as any).linkedLegacyProfId, userData.id].filter(Boolean))
+        ) as string[];
+
+        // 1. Load Appointments (query primary matched id or 'in' when legacy id exists)
+        const qa =
+          targetProfIds.length > 1
+            ? query(
+                collection(db, `salons/${salonData.id}/appointments`),
+                where("professionalId", "in", targetProfIds.slice(0, 10))
+              )
+            : query(
+                collection(db, `salons/${salonData.id}/appointments`),
+                where("professionalId", "==", matched.id)
+              );
+        unsubscribeAppts = onSnapshot(qa, (snapAppt) => {
+          const arr: Appointment[] = [];
+          snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
+          setMyAppointments(
+            arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+          );
+        }, (err) => {
+          console.error("Erro ao carregar meus agendamentos:", err);
+        });
+
+        // 2. Load Evaluations
+        const qe = query(
+          collection(db, `salons/${salonData.id}/checklistRuns`),
+          where("checklistType", "==", "professional_daily_evaluation"),
+          where("evaluatedProfessionalId", "==", matched.id)
+        );
+        unsubscribeEvals = onSnapshot(qe, (snapEval) => {
+          const arr: ChecklistRun[] = [];
+          snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
+          setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
+
+          if (arr.length > 0 && !selectedEval) {
+            setSelectedEval(arr[0]);
+          }
+        }, (err) => {
+          console.error("Erro ao carregar minhas avaliações:", err);
+        });
+
+        // 3. Load Services to map pricing
+        const qs = query(collection(db, `salons/${salonData.id}/services`));
+        unsubscribeServices = onSnapshot(qs, (snapServ) => {
+          const arr: Service[] = [];
+          snapServ.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
+          setServices(arr);
+        }, (err) => {
+          console.error("Erro ao carregar serviços no painel de profissional:", err);
+        });
+
+        // 4. Load Goals (Firestore rules require professionalId == auth.uid)
+        const qg = query(
+          collection(db, `salons/${salonData.id}/professionalGoals`),
+          where("professionalId", "==", userData.id)
+        );
+        unsubscribeGoals = onSnapshot(qg, (snapGoal) => {
+          const arr: ProfessionalGoal[] = [];
+          snapGoal.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+          setMyGoals(arr);
+          setLoading(false);
+        }, (err) => {
+          console.error("Erro ao carregar minhas metas de profissional:", err);
+          setLoading(false);
+        });
+      };
+
+      const profsCollRef = collection(db, `salons/${salonData.id}/professionals`);
+      unsubscribeProfs = onSnapshot(profsCollRef, (snap) => {
         cleanupInner();
 
-        if (docSnap.exists()) {
-          const matched = { id: docSnap.id, ...docSnap.data() } as Professional;
-          setMyProfile(matched);
+        const pros: Professional[] = [];
+        snap.forEach(d => pros.push({ id: d.id, ...d.data() } as Professional));
 
-          // 1. Load Appointments
-          const qa = query(
-            collection(db, `salons/${salonData.id}/appointments`),
-            where("professionalId", "==", matched.id)
-          );
-          unsubscribeAppts = onSnapshot(qa, (snapAppt) => {
-            const arr: Appointment[] = [];
-            snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
-            setMyAppointments(
-              arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
-            );
-          }, (err) => {
-            console.error("Erro ao carregar meus agendamentos:", err);
-          });
+        const cleanUserEmail = userData.email?.toLowerCase().trim();
+        const cleanUserName = userData.fullName?.toLowerCase().trim();
 
-          // 2. Load Evaluations
-          const qe = query(
-            collection(db, `salons/${salonData.id}/checklistRuns`),
-            where("checklistType", "==", "professional_daily_evaluation"),
-            where("evaluatedProfessionalId", "==", matched.id)
-          );
-          unsubscribeEvals = onSnapshot(qe, (snapEval) => {
-            const arr: ChecklistRun[] = [];
-            snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
-            setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
-            
-            if (arr.length > 0 && !selectedEval) {
-              setSelectedEval(arr[0]);
-            }
-          }, (err) => {
-            console.error("Erro ao carregar minhas avaliações:", err);
-          });
+        const matched =
+          pros.find(p => p.id === userData.id || (p as any).userId === userData.id || (p as any).professionalId === userData.id) ||
+          (cleanUserEmail ? pros.find(p => p.email?.toLowerCase().trim() === cleanUserEmail) : undefined) ||
+          (cleanUserName ? pros.find(p => p.name?.toLowerCase().trim() === cleanUserName) : undefined);
 
-          // 3. Load Services to map pricing
-          const qs = query(collection(db, `salons/${salonData.id}/services`));
-          unsubscribeServices = onSnapshot(qs, (snapServ) => {
-            const arr: Service[] = [];
-            snapServ.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
-            setServices(arr);
-          }, (err) => {
-            console.error("Erro ao carregar serviços no painel de profissional:", err);
-          });
-
-          // 4. Load Goals
-          const qg = query(
-            collection(db, `salons/${salonData.id}/professionalGoals`),
-            where("professionalId", "==", matched.id)
-          );
-          unsubscribeGoals = onSnapshot(qg, (snapGoal) => {
-            const arr: ProfessionalGoal[] = [];
-            snapGoal.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
-            setMyGoals(arr);
-            setLoading(false);
-          }, (err) => {
-            console.error("Erro ao carregar minhas metas de profissional:", err);
-            setLoading(false);
-          });
+        if (matched) {
+          bindMatchedProfile(matched);
         } else {
           setLoading(false);
         }

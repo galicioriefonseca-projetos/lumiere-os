@@ -5,10 +5,555 @@ import { authLimiter } from "../middleware/rateLimiter.js";
 
 const router = Router();
 
+const VALID_STAFF_ROLES = new Set([
+  "owner",
+  "manager",
+  "receptionist",
+  "attendant",
+  "professional",
+]);
+
+function normalizeStaffRole(rawRole: unknown, fallback = "professional"): string {
+  const role = String(rawRole || "").trim();
+  if (role === "function_link" || role === "pending" || !role) {
+    return fallback;
+  }
+  if (role === "admin") return "owner";
+  return VALID_STAFF_ROLES.has(role) ? role : fallback;
+}
+
+function timestampToMillis(value: any): number {
+  if (typeof value === "number") return value;
+  if (value && typeof value.toMillis === "function") return value.toMillis();
+  if (value && typeof value.seconds === "number") return value.seconds * 1000;
+  return 0;
+}
+
+async function ensureProfessionalDocLinked(params: {
+  adminDb: any;
+  salonId: string;
+  uid: string;
+  email: string;
+  displayName?: string;
+  phone?: string;
+  role: string;
+  matchedProfId?: string | null;
+  matchedProfData?: Record<string, any> | null;
+}) {
+  const {
+    adminDb,
+    salonId,
+    uid,
+    email,
+    displayName,
+    phone,
+    role,
+    matchedProfId,
+    matchedProfData,
+  } = params;
+
+  if (role === "owner" || role === "platform_admin") return;
+
+  const now = Date.now();
+  const uidProfRef = adminDb.collection(`salons/${salonId}/professionals`).doc(uid);
+  const uidProfSnap = await uidProfRef.get();
+  const baseData = matchedProfData || {};
+  const existingUidData = uidProfSnap.exists ? uidProfSnap.data() || {} : {};
+
+  const primaryFn =
+    existingUidData.primaryFunction ||
+    baseData.primaryFunction ||
+    baseData.professionalFunction ||
+    baseData.specialty ||
+    baseData.category ||
+    (role === "manager" ? "Gerente" : role === "receptionist" ? "Recepcionista" : role === "attendant" ? "Atendente" : "");
+
+  const payload: Record<string, any> = {
+    id: uid,
+    userId: uid,
+    professionalId: uid,
+    salonId,
+    role,
+    name: existingUidData.name || baseData.name || displayName || (email ? email.split("@")[0] : "Profissional"),
+    email: email || existingUidData.email || baseData.email || "",
+    phone: existingUidData.phone || baseData.phone || phone || "",
+    isActive: true,
+    status: "active",
+    updatedAt: now,
+  };
+
+  if (!uidProfSnap.exists) {
+    payload.createdAt = baseData.createdAt || now;
+  }
+  if (primaryFn) {
+    payload.primaryFunction = primaryFn;
+    payload.professionalFunction = existingUidData.professionalFunction || baseData.professionalFunction || primaryFn;
+    payload.professionalCategory = existingUidData.professionalCategory || baseData.professionalCategory || primaryFn;
+    payload.category = existingUidData.category || baseData.category || primaryFn;
+    payload.specialty = existingUidData.specialty || baseData.specialty || primaryFn;
+  }
+  if (Array.isArray(existingUidData.additionalFunctions || baseData.additionalFunctions)) {
+    payload.additionalFunctions = existingUidData.additionalFunctions || baseData.additionalFunctions;
+  }
+  if (Array.isArray(existingUidData.specialties || baseData.specialties)) {
+    payload.specialties = existingUidData.specialties || baseData.specialties;
+  }
+  if (typeof (existingUidData.commissionRate ?? baseData.commissionRate) === "number") {
+    payload.commissionRate = existingUidData.commissionRate ?? baseData.commissionRate;
+  }
+  const photo = existingUidData.photoURL || existingUidData.avatarUrl || baseData.photoURL || baseData.avatarUrl;
+  if (photo) {
+    payload.photoURL = photo;
+    payload.avatarUrl = photo;
+  }
+  if (matchedProfId && matchedProfId !== uid) {
+    payload.linkedLegacyProfId = matchedProfId;
+  }
+
+  await uidProfRef.set(payload, { merge: true });
+
+  if (matchedProfId && matchedProfId !== uid) {
+    await adminDb
+      .collection(`salons/${salonId}/professionals`)
+      .doc(matchedProfId)
+      .set(
+        {
+          userId: uid,
+          linkedUserId: uid,
+          email: email || baseData.email || "",
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+  }
+}
+
+async function resolveMembershipAndRepairUser(params: {
+  adminDb: any;
+  uid: string;
+  email: string;
+  displayName?: string;
+  phone?: string;
+  existingUserData?: Record<string, any> | null;
+}) {
+  const { adminDb, uid, email, displayName, phone, existingUserData } = params;
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const now = Date.now();
+
+  if (
+    existingUserData &&
+    (existingUserData.isActive === false ||
+      existingUserData.status === "inactive" ||
+      existingUserData.status === "deleted")
+  ) {
+    return {
+      found: false,
+      blocked: true,
+      error: "Sua conta está inativa. Fale com o administrador do salão.",
+    };
+  }
+
+  // 1. Verificar se é platform_admin
+  const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
+  let isPlatformAdmin =
+    platformAdminSnap.exists ||
+    existingUserData?.role === "platform_admin" ||
+    cleanEmail === "galicioriefonseca@gmail.com";
+
+  if (!isPlatformAdmin && cleanEmail) {
+    const platformAdminByEmailSnap = await adminDb
+      .collection("platformAdmins")
+      .where("email", "==", cleanEmail)
+      .limit(1)
+      .get();
+    if (!platformAdminByEmailSnap.empty) {
+      isPlatformAdmin = true;
+    }
+  }
+
+  if (isPlatformAdmin) {
+    const adminProfile = {
+      id: uid,
+      fullName: existingUserData?.fullName || displayName || "Administrador da Plataforma",
+      email: cleanEmail || existingUserData?.email || "",
+      phone: existingUserData?.phone || phone || "",
+      role: "platform_admin",
+      isActive: true,
+      updatedAt: now,
+      ...(existingUserData ? {} : { createdAt: now }),
+    };
+    await adminDb.collection("users").doc(uid).set(adminProfile, { merge: true });
+    return {
+      found: true,
+      status: existingUserData ? "existing" : "synced",
+      role: "platform_admin",
+      salonId: null,
+      salonData: null,
+      user: adminProfile,
+    };
+  }
+
+  // 2. Verificar salão de propriedade (salon_{uid}, ownerId == uid, ownerEmail == cleanEmail)
+  let ownerSalonDoc: any = null;
+  const directSalonSnap = await adminDb.collection("salons").doc(`salon_${uid}`).get();
+  if (directSalonSnap.exists) {
+    ownerSalonDoc = directSalonSnap;
+  }
+
+  if (!ownerSalonDoc) {
+    const byOwnerIdSnap = await adminDb
+      .collection("salons")
+      .where("ownerId", "==", uid)
+      .limit(1)
+      .get();
+    if (!byOwnerIdSnap.empty) {
+      ownerSalonDoc = byOwnerIdSnap.docs[0];
+    }
+  }
+
+  if (!ownerSalonDoc && cleanEmail) {
+    const byEmailSnap = await adminDb
+      .collection("salons")
+      .where("ownerEmail", "==", cleanEmail)
+      .limit(1)
+      .get();
+    if (!byEmailSnap.empty) {
+      ownerSalonDoc = byEmailSnap.docs[0];
+    }
+  }
+
+  // 3. Caso já exista users/{uid} com salonId válido
+  if (existingUserData?.salonId) {
+    const existingSalonSnap = await adminDb
+      .collection("salons")
+      .doc(String(existingUserData.salonId))
+      .get();
+    if (existingSalonSnap.exists) {
+      const normalizedRole = normalizeStaffRole(existingUserData.role, "professional");
+      const userDocRef = adminDb.collection("users").doc(uid);
+
+      if (normalizedRole !== existingUserData.role || !existingUserData.email) {
+        await userDocRef.set(
+          {
+            role: normalizedRole,
+            email: cleanEmail || existingUserData.email || "",
+            isActive: true,
+            status: "active",
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
+
+      if (normalizedRole === "professional" || normalizedRole === "receptionist" || normalizedRole === "attendant") {
+        // Procurar se já existe doc em professionals com esse uid ou mesmo e-mail (para evitar Perfil Pendente de Vinculação)
+        const profColl = adminDb.collection(`salons/${existingSalonSnap.id}/professionals`);
+        const profSnap = await profColl.get();
+        let matchedProfDoc = profSnap.docs.find((d: any) => d.id === uid || d.data()?.userId === uid);
+        if (!matchedProfDoc && cleanEmail) {
+          matchedProfDoc = profSnap.docs.find(
+            (d: any) => String(d.data()?.email || "").trim().toLowerCase() === cleanEmail
+          );
+        }
+        await ensureProfessionalDocLinked({
+          adminDb,
+          salonId: existingSalonSnap.id,
+          uid,
+          email: cleanEmail || existingUserData.email || "",
+          displayName: existingUserData.fullName || displayName,
+          phone: existingUserData.phone || phone,
+          role: normalizedRole,
+          matchedProfId: matchedProfDoc?.id || null,
+          matchedProfData: matchedProfDoc?.data() || null,
+        });
+      }
+
+      return {
+        found: true,
+        status: "existing",
+        role: normalizedRole,
+        salonId: existingSalonSnap.id,
+        salonData: { id: existingSalonSnap.id, ...existingSalonSnap.data() },
+        user: { ...existingUserData, id: uid, role: normalizedRole },
+      };
+    }
+  }
+
+  // 4. Se for dono localizado acima
+  if (ownerSalonDoc) {
+    const salonId = ownerSalonDoc.id;
+    const salonData = ownerSalonDoc.data() || {};
+    if (!salonData.ownerId || salonData.ownerId !== uid) {
+      await ownerSalonDoc.ref.set(
+        {
+          ownerId: uid,
+          ownerName: displayName || salonData.ownerName || (cleanEmail ? cleanEmail.split("@")[0] : "Proprietário"),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
+
+    const ownerProfile = {
+      id: uid,
+      fullName: existingUserData?.fullName || displayName || salonData.ownerName || (cleanEmail ? cleanEmail.split("@")[0] : "Proprietário"),
+      email: cleanEmail || salonData.ownerEmail || "",
+      phone: existingUserData?.phone || phone || salonData.phone || "",
+      role: "owner",
+      salonId,
+      isActive: true,
+      status: "active",
+      onboardingStatus: existingUserData?.onboardingStatus || "completed",
+      updatedAt: now,
+      ...(existingUserData ? {} : { createdAt: now }),
+    };
+    await adminDb.collection("users").doc(uid).set(ownerProfile, { merge: true });
+
+    return {
+      found: true,
+      status: "synced",
+      role: "owner",
+      salonId,
+      salonData: { id: salonId, ...salonData },
+      user: ownerProfile,
+    };
+  }
+
+  // 5. Buscar como profissional/membro em todos os salões (inclui Cadastro Direto e e-mail case-insensitive)
+  const allSalonsSnap = await adminDb.collection("salons").get();
+
+  // Check case-insensitive ownerEmail fallback across salons
+  if (cleanEmail) {
+    for (const sDoc of allSalonsSnap.docs) {
+      const sData = sDoc.data() || {};
+      if (String(sData.ownerEmail || "").trim().toLowerCase() === cleanEmail) {
+        const salonId = sDoc.id;
+        await sDoc.ref.set({ ownerId: uid, updatedAt: now }, { merge: true });
+        const ownerProfile = {
+          id: uid,
+          fullName: existingUserData?.fullName || displayName || sData.ownerName || cleanEmail.split("@")[0],
+          email: cleanEmail,
+          phone: existingUserData?.phone || phone || sData.phone || "",
+          role: "owner",
+          salonId,
+          isActive: true,
+          status: "active",
+          onboardingStatus: existingUserData?.onboardingStatus || "completed",
+          updatedAt: now,
+          ...(existingUserData ? {} : { createdAt: now }),
+        };
+        await adminDb.collection("users").doc(uid).set(ownerProfile, { merge: true });
+        return {
+          found: true,
+          status: "synced",
+          role: "owner",
+          salonId,
+          salonData: { id: salonId, ...sData },
+          user: ownerProfile,
+        };
+      }
+    }
+  }
+
+  for (const sDoc of allSalonsSnap.docs) {
+    const sData = sDoc.data() || {};
+    if (sData.isActive === false || sData.activationStatus === "canceled") continue;
+
+    const profsSnap = await sDoc.ref.collection("professionals").get();
+    if (profsSnap.empty) continue;
+
+    const matchedProf =
+      profsSnap.docs.find((p: any) => p.id === uid || p.data()?.userId === uid || p.data()?.professionalId === uid) ||
+      (cleanEmail
+        ? profsSnap.docs.find(
+            (p: any) => String(p.data()?.email || "").trim().toLowerCase() === cleanEmail
+          )
+        : undefined);
+
+    if (matchedProf) {
+      const profData = matchedProf.data() || {};
+      if (profData.isActive === false || profData.status === "inactive" || profData.status === "deleted") {
+        return {
+          found: false,
+          blocked: true,
+          error: "Seu perfil profissional está inativo neste salão. Solicite a reativação ao administrador.",
+        };
+      }
+
+      const resolvedRole = normalizeStaffRole(profData.role, "professional");
+      const fullName =
+        existingUserData?.fullName ||
+        displayName ||
+        profData.name ||
+        (cleanEmail ? cleanEmail.split("@")[0] : "Profissional");
+
+      await ensureProfessionalDocLinked({
+        adminDb,
+        salonId: sDoc.id,
+        uid,
+        email: cleanEmail || profData.email || "",
+        displayName: fullName,
+        phone: existingUserData?.phone || phone || profData.phone || "",
+        role: resolvedRole,
+        matchedProfId: matchedProf.id,
+        matchedProfData: profData,
+      });
+
+      const syncedUserProfile = {
+        id: uid,
+        fullName,
+        name: fullName,
+        email: cleanEmail || String(profData.email || "").trim().toLowerCase(),
+        phone: existingUserData?.phone || phone || profData.phone || "",
+        role: resolvedRole,
+        salonId: sDoc.id,
+        primaryFunction:
+          profData.primaryFunction || profData.professionalFunction || profData.specialty || profData.category || "",
+        additionalFunctions: Array.isArray(profData.additionalFunctions) ? profData.additionalFunctions : [],
+        photoURL: existingUserData?.photoURL || profData.photoURL || profData.avatarUrl || null,
+        avatarUrl: existingUserData?.avatarUrl || profData.avatarUrl || profData.photoURL || null,
+        isActive: true,
+        status: "active",
+        onboardingStatus: "completed",
+        updatedAt: now,
+        ...(existingUserData ? {} : { createdAt: now }),
+      };
+
+      await adminDb.collection("users").doc(uid).set(syncedUserProfile, { merge: true });
+
+      return {
+        found: true,
+        status: "synced",
+        role: resolvedRole,
+        salonId: sDoc.id,
+        salonData: { id: sDoc.id, ...sData },
+        user: syncedUserProfile,
+      };
+    }
+  }
+
+  // 6. Buscar convite pendente nominal para o mesmo e-mail
+  if (cleanEmail) {
+    const pendingInvitesSnap = await adminDb
+      .collection("invites")
+      .where("status", "==", "pending")
+      .get();
+
+    const matchedInvite = pendingInvitesSnap.docs.find((invDoc: any) => {
+      const inv = invDoc.data() || {};
+      const invEmail = String(inv.email || "").trim().toLowerCase();
+      if (!invEmail || invEmail !== cleanEmail) return false;
+      const expMs = timestampToMillis(inv.expiresAt);
+      if (expMs > 0 && now > expMs) return false;
+      const uses = Number(inv.usesCount || 0);
+      const maxUses = Number(inv.maxUses || 1);
+      return uses < maxUses;
+    });
+
+    if (matchedInvite) {
+      const invData = matchedInvite.data() || {};
+      const salonId = String(invData.salonId || "");
+      const salonSnap = salonId ? await adminDb.collection("salons").doc(salonId).get() : null;
+      if (salonSnap && salonSnap.exists) {
+        const resolvedRole = normalizeStaffRole(invData.role, "professional");
+        const fullName =
+          existingUserData?.fullName ||
+          displayName ||
+          invData.invitedName ||
+          cleanEmail.split("@")[0];
+
+        if (resolvedRole !== "manager") {
+          await ensureProfessionalDocLinked({
+            adminDb,
+            salonId,
+            uid,
+            email: cleanEmail,
+            displayName: fullName,
+            phone: existingUserData?.phone || phone || invData.invitedPhone || "",
+            role: resolvedRole,
+            matchedProfId: null,
+            matchedProfData: {
+              primaryFunction: invData.professionalFunction || invData.specialty || invData.category || "",
+            },
+          });
+        }
+
+        const syncedUserProfile = {
+          id: uid,
+          fullName,
+          name: fullName,
+          email: cleanEmail,
+          phone: existingUserData?.phone || phone || invData.invitedPhone || "",
+          role: resolvedRole,
+          salonId,
+          isActive: true,
+          status: "active",
+          onboardingStatus: "completed",
+          updatedAt: now,
+          ...(existingUserData ? {} : { createdAt: now }),
+        };
+
+        await adminDb.collection("users").doc(uid).set(syncedUserProfile, { merge: true });
+
+        const currentUses = Number(invData.usesCount || 0) + 1;
+        const maxUses = Number(invData.maxUses || 1);
+        const isLink = invData.inviteType === "function_link" || invData.inviteType === "team_public_link";
+        const nextStatus = isLink ? (currentUses >= maxUses ? "used_limit_reached" : "pending") : "accepted";
+        await matchedInvite.ref.update({
+          status: nextStatus,
+          usesCount: currentUses,
+          acceptedByUserId: uid,
+          usedAt: now,
+          updatedAt: now,
+        });
+
+        return {
+          found: true,
+          status: "synced",
+          role: resolvedRole,
+          salonId,
+          salonData: { id: salonSnap.id, ...salonSnap.data() },
+          user: syncedUserProfile,
+        };
+      }
+    }
+  }
+
+  // 7. Verificar se é o usuário Demo
+  const demoEmail = process.env.VITE_DEMO_USER_EMAIL || "leandropfonseca20@gmail.com";
+  if (cleanEmail && cleanEmail === demoEmail.toLowerCase()) {
+    const demoSalonId = "tutorial_lumiere_studio";
+    const demoSalonSnap = await adminDb.collection("salons").doc(demoSalonId).get();
+    const demoProfile = {
+      id: uid,
+      fullName: displayName || "Administrador de Demonstração",
+      email: cleanEmail,
+      phone: phone || "",
+      role: "owner",
+      salonId: demoSalonId,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await adminDb.collection("users").doc(uid).set(demoProfile, { merge: true });
+    return {
+      found: true,
+      status: "synced",
+      role: "owner",
+      salonId: demoSalonId,
+      salonData: demoSalonSnap.exists ? { id: demoSalonSnap.id, ...demoSalonSnap.data() } : null,
+      user: demoProfile,
+    };
+  }
+
+  return { found: false };
+}
+
 router.post("/login", authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
+    const cleanEmail = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
+    if (!cleanEmail || !password) {
       return res.status(400).json({ error: "E-mail e senha são obrigatórios." });
     }
 
@@ -26,7 +571,7 @@ router.post("/login", authLimiter, async (req, res) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email,
+          email: cleanEmail,
           password,
           returnSecureToken: true,
         }),
@@ -38,11 +583,18 @@ router.post("/login", authLimiter, async (req, res) => {
     if (!response.ok) {
       const errMessage = data?.error?.message || "Erro desconhecido na autenticação.";
       console.warn("[PlatformAuthProxy] Erro ao autenticar via REST API:", errMessage);
-      
+
       // Mapeamento idêntico aos códigos de erro convencionais do Firebase Auth para continuidade de UX
       let code = "auth/unknown";
-      if (errMessage === "INVALID_PASSWORD" || errMessage === "INVALID_CREDENTIAL" || errMessage === "EMAIL_NOT_FOUND") {
+      if (
+        errMessage === "INVALID_LOGIN_CREDENTIALS" ||
+        errMessage === "INVALID_PASSWORD" ||
+        errMessage === "INVALID_CREDENTIAL" ||
+        errMessage === "EMAIL_NOT_FOUND"
+      ) {
         code = "auth/invalid-credential";
+      } else if (errMessage === "INVALID_EMAIL") {
+        code = "auth/invalid-email";
       } else if (errMessage === "USER_DISABLED") {
         code = "auth/user-disabled";
       } else if (errMessage === "TOO_MANY_ATTEMPTS_TRY_LATER") {
@@ -171,51 +723,52 @@ router.post("/resolve-salon", async (req, res) => {
     const decoded = await adminAuth.verifyIdToken(idToken);
     const uid = decoded.uid;
     let email = (decoded.email || req.body?.email || "").toLowerCase().trim();
-    if (!email) {
+    let displayName = decoded.name || "";
+    let phone = decoded.phone_number || "";
+    if (!email || !displayName) {
       try {
         const userRecord = await adminAuth.getUser(uid);
-        email = (userRecord.email || "").toLowerCase().trim();
+        email = email || (userRecord.email || "").toLowerCase().trim();
+        displayName = displayName || userRecord.displayName || "";
+        phone = phone || userRecord.phoneNumber || "";
       } catch {
         // ignore
       }
     }
 
-    // 1. Check direct salon_{uid}
-    const directSalonSnap = await adminDb.collection("salons").doc(`salon_${uid}`).get();
-    if (directSalonSnap.exists) {
-      return res.json({
-        found: true,
-        salonId: directSalonSnap.id,
-        salonData: { id: directSalonSnap.id, ...directSalonSnap.data() },
+    const existingUserSnap = await adminDb.collection("users").doc(uid).get();
+    const existingUserData = existingUserSnap.exists ? existingUserSnap.data() || null : null;
+
+    const resolved = await resolveMembershipAndRepairUser({
+      adminDb,
+      uid,
+      email,
+      displayName,
+      phone,
+      existingUserData,
+    });
+
+    if ((resolved as any).blocked) {
+      return res.status(403).json({
+        found: false,
+        blocked: true,
+        error: (resolved as any).error,
       });
     }
 
-    // 2. Check by ownerId == uid
-    const byOwnerIdSnap = await adminDb.collection("salons").where("ownerId", "==", uid).limit(1).get();
-    if (!byOwnerIdSnap.empty) {
-      const docSnap = byOwnerIdSnap.docs[0];
-      return res.json({
-        found: true,
-        salonId: docSnap.id,
-        salonData: { id: docSnap.id, ...docSnap.data() },
-      });
+    if (!resolved.found) {
+      return res.json({ found: false });
     }
 
-    // 3. Check by ownerEmail == email
-    if (email) {
-      const byEmailSnap = await adminDb.collection("salons").where("ownerEmail", "==", email).limit(1).get();
-      if (!byEmailSnap.empty) {
-        const docSnap = byEmailSnap.docs[0];
-        return res.json({
-          found: true,
-          salonId: docSnap.id,
-          salonData: { id: docSnap.id, ...docSnap.data() },
-        });
-      }
-    }
-
-    return res.json({ found: false });
+    return res.json({
+      found: true,
+      salonId: resolved.salonId,
+      salonData: resolved.salonData,
+      role: resolved.role,
+      user: resolved.user,
+    });
   } catch (err: any) {
+    console.error("[ResolveSalon] Erro ao resolver vínculo de salão:", err);
     return res.json({ found: false });
   }
 });
@@ -333,113 +886,51 @@ router.post("/sync-google-account", async (req, res) => {
     const adminAuth = getAdminAuth();
     const decoded = await adminAuth.verifyIdToken(idToken);
     const uid = decoded.uid;
-    const email = (decoded.email || "").toLowerCase().trim();
+    let email = (decoded.email || "").toLowerCase().trim();
+    let displayName = decoded.name || "";
+    let phone = decoded.phone_number || "";
+    if (!email) {
+      try {
+        const userRecord = await adminAuth.getUser(uid);
+        email = (userRecord.email || "").toLowerCase().trim();
+        displayName = displayName || userRecord.displayName || "";
+        phone = phone || userRecord.phoneNumber || "";
+      } catch {
+        // ignore
+      }
+    }
 
     const adminDb = getAdminDb();
     const userDocRef = adminDb.collection("users").doc(uid);
     const userSnap = await userDocRef.get();
+    const existingUserData = userSnap.exists ? userSnap.data() || null : null;
 
-    if (userSnap.exists) {
-      return res.json({
-        status: "existing",
-        role: userSnap.data()?.role,
-        salonId: userSnap.data()?.salonId,
-        user: userSnap.data(),
+    const resolved = await resolveMembershipAndRepairUser({
+      adminDb,
+      uid,
+      email,
+      displayName,
+      phone,
+      existingUserData,
+    });
+
+    if ((resolved as any).blocked) {
+      return res.status(403).json({
+        code: "auth/user-disabled",
+        error: (resolved as any).error || "Conta inativa.",
       });
     }
 
-    // 1. Verificar se é platform_admin
-    const platformAdminSnap = await adminDb.collection("platformAdmins").doc(uid).get();
-    let isPlatformAdmin = platformAdminSnap.exists;
-    if (!isPlatformAdmin && email) {
-      const platformAdminByEmailSnap = await adminDb.collection("platformAdmins").where("email", "==", email).get();
-      if (!platformAdminByEmailSnap.empty) {
-        isPlatformAdmin = true;
-      }
-    }
-
-    if (isPlatformAdmin) {
-      const now = Date.now();
-      const newAdmin = {
-        id: uid,
-        fullName: decoded.name || "Administrador da Plataforma",
-        email,
-        phone: decoded.phone_number || "",
-        role: "platform_admin",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await userDocRef.set(newAdmin);
+    if (resolved.found) {
       return res.json({
-        status: "synced",
-        role: "platform_admin",
-        salonId: null,
+        status: resolved.status || "synced",
+        role: resolved.role,
+        salonId: resolved.salonId,
+        user: resolved.user,
       });
     }
 
-    // 2. Verificar se o e-mail corresponde ao proprietário de um salão já registrado
-    if (email) {
-      const salonQuerySnap = await adminDb.collection("salons").where("ownerEmail", "==", email).get();
-      if (!salonQuerySnap.empty) {
-        const salonDoc = salonQuerySnap.docs[0];
-        const salonId = salonDoc.id;
-        const now = Date.now();
-
-        // Atualizar salão com o UID definitivo do Google Auth
-        await salonDoc.ref.update({
-          ownerId: uid,
-          ownerName: decoded.name || salonDoc.data().ownerName || email.split("@")[0],
-          updatedAt: now,
-        });
-
-        // Criar perfil users
-        const newProfile = {
-          id: uid,
-          fullName: decoded.name || salonDoc.data().ownerName || email.split("@")[0],
-          email,
-          phone: decoded.phone_number || salonDoc.data().phone || "",
-          role: "owner",
-          salonId,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await userDocRef.set(newProfile);
-
-        return res.json({
-          status: "synced",
-          role: "owner",
-          salonId,
-        });
-      }
-    }
-
-    // 3. Verificar se é o usuário Demo
-    const demoEmail = process.env.VITE_DEMO_USER_EMAIL || "leandropfonseca20@gmail.com";
-    if (email && email === demoEmail.toLowerCase()) {
-      const demoSalonId = "tutorial_lumiere_studio";
-      const now = Date.now();
-      const newProfile = {
-        id: uid,
-        fullName: decoded.name || "Administrador de Demonstração",
-        email,
-        phone: decoded.phone_number || "",
-        role: "owner",
-        salonId: demoSalonId,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await userDocRef.set(newProfile);
-      return res.json({
-        status: "synced",
-        role: "owner",
-        salonId: demoSalonId,
-      });
-    }
-
-    // 4. Usuário não registrado no sistema
+    // Usuário não registrado ou não vinculado no sistema
     return res.status(404).json({
       code: "auth/user-not-registered-google",
       error: "Nenhuma conta ou salão associado a este e-mail do Google.",

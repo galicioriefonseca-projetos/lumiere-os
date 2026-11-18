@@ -40,6 +40,11 @@ export default function DashboardHome() {
   const isPaymentPending = salonData?.billing?.status !== 'ACTIVE';
   const navigate = useNavigate();
   const location = useLocation();
+  const isProfessionalView =
+    userData?.role === 'professional' ||
+    location.pathname.endsWith('/meu-painel') ||
+    location.pathname.endsWith('/profissional');
+
   const { 
     loading: lumiLoading, 
     context,
@@ -53,13 +58,16 @@ export default function DashboardHome() {
     activeProvider, 
     providerType, 
     switchProvider 
-  } = useLumi(salonData?.id);
+  } = useLumi(isProfessionalView ? undefined : salonData?.id);
   
   const [viewMode, setViewMode] = useState<'detailed' | 'minimalist'>('detailed');
 
   const currentMonthStr = useMemo(() => new Date().toISOString().substring(0, 7), []);
   const [activeRankingMonth, setActiveRankingMonth] = useState<string>(currentMonthStr);
-  const { professionalsPerformance, latestActiveMonth, loading: rankingLoading } = useSalonPerformanceRanking(salonData?.id, activeRankingMonth);
+  const { professionalsPerformance, latestActiveMonth, loading: rankingLoading } = useSalonPerformanceRanking(
+    isProfessionalView ? undefined : salonData?.id,
+    activeRankingMonth
+  );
 
   useEffect(() => {
     if (latestActiveMonth && activeRankingMonth === currentMonthStr && !rankingLoading) {
@@ -162,7 +170,7 @@ export default function DashboardHome() {
     );
   }
 
-  if (lumiLoading || !salonData?.id) {
+  if (!salonData?.id || !userData) {
     return (
       <div className="flex flex-col items-center justify-center p-24 gap-4">
         <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
@@ -171,8 +179,17 @@ export default function DashboardHome() {
     );
   }
 
-  if (userData?.role === 'professional' || location.pathname.endsWith('/meu-painel') || location.pathname.endsWith('/profissional')) {
+  if (isProfessionalView) {
     return <ProfessionalDashboard />;
+  }
+
+  if (lumiLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-24 gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
+        <span className="text-xs text-[#a1a1aa] tracking-widest font-mono uppercase animate-pulse">Sincronizando LumiereOS...</span>
+      </div>
+    );
   }
 
   const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin';

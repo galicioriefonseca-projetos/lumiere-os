@@ -99,7 +99,32 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
             <p className="text-[12px] text-[#8FAEA2] leading-relaxed">Entre em contato com o administrador global ou o dono do salão para redefinir o seu nível de acesso.</p>
             {(userData?.specialty || userData?.professionalFunction) && <p className="text-[12px] text-[#8FAEA2] leading-relaxed mt-2 border-t border-white/5 pt-2">Identificamos que você tem a função <span className="text-white font-medium">{userData.specialty || userData.professionalFunction}</span> cadastrada. O dono do salão deve alterar seu acesso para <b>Profissional</b> nas configurações do painel ou no banco de dados.</p>}
           </div>
-          <Button onClick={logout} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button
+              disabled={correcting}
+              onClick={async () => {
+                setCorrecting(true);
+                try {
+                  if (currentUser) {
+                    const idToken = await currentUser.getIdToken(true);
+                    await fetch('/api/auth/resolve-salon', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+                      body: JSON.stringify({ email: currentUser.email || '' }),
+                    });
+                    window.location.reload();
+                  }
+                } finally {
+                  setCorrecting(false);
+                }
+              }}
+              className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"
+            >
+              {correcting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Sincronizar Perfil
+            </Button>
+            <Button onClick={logout} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
+          </div>
         </div>
       </div>
     );

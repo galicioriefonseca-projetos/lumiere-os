@@ -69,6 +69,7 @@ export default async function acceptInvite(req: VercelRequest, res: VercelRespon
 
       const allowedRoles = new Set(['manager', 'receptionist', 'attendant', 'professional']);
       let role = String(inviteData.role || '').trim();
+      if (role === 'function_link') role = 'professional';
       if (!role && allowedRoles.has(String(inviteData.inviteType || ''))) role = String(inviteData.inviteType);
       if (!allowedRoles.has(role)) throw new Error('INVITE_ROLE_INVALID');
 
@@ -81,6 +82,33 @@ export default async function acceptInvite(req: VercelRequest, res: VercelRespon
       const nextUsesCount = currentUses + 1;
       const nextStatus = isLink ? (nextUsesCount >= maxUses ? 'used_limit_reached' : 'pending') : 'accepted';
 
+      // Look up any pre-registered direct professional doc matching this email before writes
+      let legacyProfDoc: any = null;
+      if (role !== 'manager') {
+        const profsCollSnap = await transaction.get(adminDb.collection(`salons/${salonId}/professionals`));
+        legacyProfDoc = profsCollSnap.docs.find((d: any) => {
+          if (d.id === user.uid) return false;
+          const pData = d.data() || {};
+          return (
+            pData.userId === user.uid ||
+            String(pData.email || '').trim().toLowerCase() === normalizedUserEmail
+          );
+        }) || null;
+      }
+
+      const legacyData = legacyProfDoc ? (legacyProfDoc.data() || {}) : {};
+      const resolvedPrimaryFn =
+        (typeof primaryFunction === 'string' && primaryFunction.trim()) ||
+        String(inviteData.professionalFunction || '') ||
+        String(legacyData.primaryFunction || legacyData.specialty || legacyData.category || '');
+      const providedAdditional = Array.isArray(additionalFunctions)
+        ? additionalFunctions.filter((item: unknown) => typeof item === 'string').slice(0, 20)
+        : [];
+      const resolvedAdditional =
+        providedAdditional.length > 0
+          ? providedAdditional
+          : (Array.isArray(legacyData.additionalFunctions) ? legacyData.additionalFunctions : []);
+
       transaction.set(userRef, {
         id: user.uid,
         email: normalizedUserEmail,
@@ -88,7 +116,14 @@ export default async function acceptInvite(req: VercelRequest, res: VercelRespon
         salonId,
         fullName: fullName.trim(),
         name: fullName.trim(),
-        phone: typeof phone === 'string' ? phone.trim() : '',
+        phone: typeof phone === 'string' ? phone.trim() : (legacyData.phone || ''),
+        ...(legacyData.photoURL || legacyData.avatarUrl ? {
+          photoURL: legacyData.photoURL || legacyData.avatarUrl,
+          avatarUrl: legacyData.avatarUrl || legacyData.photoURL,
+        } : {}),
+        ...(resolvedPrimaryFn ? { primaryFunction: resolvedPrimaryFn } : {}),
+        isActive: true,
+        status: 'active',
         onboardingStatus: 'completed',
         updatedAt: now,
         ...(userSnap.exists ? {} : { createdAt: now })
@@ -97,23 +132,42 @@ export default async function acceptInvite(req: VercelRequest, res: VercelRespon
       if (role !== 'manager') {
         const professionalRef = adminDb.collection(`salons/${salonId}/professionals`).doc(user.uid);
         transaction.set(professionalRef, {
+          id: user.uid,
           userId: user.uid,
           professionalId: user.uid,
           salonId,
           role,
           name: fullName.trim(),
           email: normalizedUserEmail,
-          phone: typeof phone === 'string' ? phone.trim() : '',
-          primaryFunction: typeof primaryFunction === 'string' ? primaryFunction.trim() : String(inviteData.professionalFunction || ''),
-          additionalFunctions: Array.isArray(additionalFunctions) ? additionalFunctions.filter((item: unknown) => typeof item === 'string').slice(0, 20) : [],
+          phone: typeof phone === 'string' ? phone.trim() : (legacyData.phone || ''),
+          primaryFunction: resolvedPrimaryFn,
+          professionalFunction: resolvedPrimaryFn,
+          specialty: resolvedPrimaryFn,
+          category: resolvedPrimaryFn,
+          additionalFunctions: resolvedAdditional,
+          ...(typeof legacyData.commissionRate === 'number' ? { commissionRate: legacyData.commissionRate } : {}),
+          ...(legacyData.photoURL || legacyData.avatarUrl ? {
+            photoURL: legacyData.photoURL || legacyData.avatarUrl,
+            avatarUrl: legacyData.avatarUrl || legacyData.photoURL,
+          } : {}),
+          ...(legacyProfDoc ? { linkedLegacyProfId: legacyProfDoc.id } : {}),
           isActive: true,
           status: 'active',
           joinedByInvite: true,
           inviteId,
           inviteType: inviteData.inviteType,
-          createdAt: now,
+          createdAt: legacyData.createdAt || now,
           updatedAt: now
         }, { merge: true });
+
+        if (legacyProfDoc) {
+          transaction.set(legacyProfDoc.ref, {
+            userId: user.uid,
+            linkedUserId: user.uid,
+            email: normalizedUserEmail,
+            updatedAt: now,
+          }, { merge: true });
+        }
       }
 
       transaction.update(inviteRef, {

@@ -37,6 +37,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import PWAInstallButton from '../components/PWAInstallButton';
 import { LumiMascotAvatar } from '../components/lumi/LumiMascotAvatar';
+import { useAuth } from '../contexts/AuthContext';
 
 type BillingCycle = 'MONTHLY' | 'SEMIANNUALLY' | 'YEARLY';
 type Plan = { 
@@ -264,12 +265,38 @@ const faqs = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { currentUser, userData, isPlatformAdmin, loading: authLoading } = useAuth();
   const [cycle, setCycle] = useState<BillingCycle>('MONTHLY');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeSegmentTab, setActiveSegmentTab] = useState(0);
   const [selectedLumiInsight, setSelectedLumiInsight] = useState<number>(0);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+
+  // Redirect PWA app launches seamlessly to user panel or login
+  useEffect(() => {
+    if (authLoading) return;
+    const params = new URLSearchParams(window.location.search);
+    const isPwaSource = params.get('source') === 'pwa';
+    const isStandalone = Boolean(
+      window.matchMedia?.('(display-mode: standalone)')?.matches ||
+        (window.navigator as any)?.standalone === true
+    );
+
+    if (isPwaSource || isStandalone) {
+      if (currentUser && userData) {
+        if (isPlatformAdmin || userData.role === 'platform_admin') {
+          navigate('/master', { replace: true });
+        } else if (userData.role === 'professional') {
+          navigate('/dashboard/meu-painel', { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true });
+        }
+      } else if (!currentUser) {
+        navigate('/login', { replace: true });
+      }
+    }
+  }, [authLoading, currentUser, userData, isPlatformAdmin, navigate]);
 
   // Close modal on Escape key press
   useEffect(() => {

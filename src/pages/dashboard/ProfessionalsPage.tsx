@@ -167,17 +167,19 @@ export default function ProfessionalsPage() {
 
     const allSpecialties = Array.from(new Set([finalPrimary, ...cleanExtras])).filter(Boolean);
 
+    const normalizedEmail = formData.email ? formData.email.trim().toLowerCase() : '';
+
     try {
       if (editingProf) {
         const profRef = doc(db, `salons/${salonData.id}/professionals`, editingProf.id);
         const updatePayload = {
-          name: formData.name,
-          phone: formData.phone,
-          email: formData.email,
+          name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          email: normalizedEmail || null,
           photoURL: formData.photoURL || null,
           avatarUrl: formData.photoURL || null,
           updatedAt: Date.now(),
-          
+
           primaryFunction: finalPrimary,
           professionalFunction: finalPrimary,
           professionalCategory: finalPrimary,
@@ -193,9 +195,9 @@ export default function ProfessionalsPage() {
         try {
           const userRef = doc(db, 'users', editingProf.id);
           await updateDoc(userRef, {
-            fullName: formData.name,
-            phone: formData.phone,
-            email: formData.email,
+            fullName: formData.name.trim(),
+            phone: formData.phone.trim(),
+            email: normalizedEmail,
             photoURL: formData.photoURL || null,
             avatarUrl: formData.photoURL || null,
             primaryFunction: finalPrimary,
@@ -216,15 +218,15 @@ export default function ProfessionalsPage() {
         const profRef = doc(collection(db, `salons/${salonData.id}/professionals`));
         await setDoc(profRef, {
           id: profRef.id,
-          name: formData.name,
+          name: formData.name.trim(),
           role: 'professional',
-          phone: formData.phone,
-          email: formData.email || null,
+          phone: formData.phone.trim(),
+          email: normalizedEmail || null,
           photoURL: formData.photoURL || null,
           avatarUrl: formData.photoURL || null,
           isActive: true,
           status: 'active',
-          
+
           primaryFunction: finalPrimary,
           professionalFunction: finalPrimary,
           professionalCategory: finalPrimary,
@@ -232,7 +234,7 @@ export default function ProfessionalsPage() {
           specialty: finalPrimary,
           additionalFunctions: cleanExtras,
           specialties: allSpecialties,
-          
+
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
