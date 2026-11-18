@@ -100,6 +100,7 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
           { name: 'Arena & Conquistas', href: '/dashboard/gamificacao', icon: Trophy },
           { name: 'Minhas Avaliações', href: '/dashboard?tab=avaliacoes', icon: Star },
           { name: 'Minhas Metas', href: '/dashboard?tab=metas', icon: Target },
+          { name: 'Minha Conta', href: '/dashboard/minha-conta', icon: Settings },
         ]
       }
     ];

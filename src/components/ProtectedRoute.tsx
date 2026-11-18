@@ -31,7 +31,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
           <p className="text-[#8FAEA2] text-sm font-light mb-6 leading-relaxed">{syncError}</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button onClick={() => { sessionStorage.clear(); const toRemove: string[] = []; for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key && key.startsWith('lumiere_')) toRemove.push(key); } toRemove.forEach(k => localStorage.removeItem(k)); window.location.reload(); }} className="bg-[#DFC498] hover:bg-[#C5A880] text-[#04140F] font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2">Recarregar</Button>
-            <Button onClick={logout} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
+            <Button onClick={logout} variant="outline" className="border-[#E5E2DC] bg-white text-[#171717] hover:bg-[#F5F1E9] hover:text-[#171717] font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
           </div>
           {showDiagnostics && diagnostics && (
             <div className="mt-6 border-t border-white/5 pt-4 text-left font-mono text-[10px] space-y-1.5 text-zinc-400">
@@ -123,7 +123,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
               {correcting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Sincronizar Perfil
             </Button>
-            <Button onClick={logout} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
+            <Button onClick={logout} variant="outline" className="border-[#E5E2DC] bg-white text-[#171717] hover:bg-[#F5F1E9] hover:text-[#171717] font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><LogOut className="w-4 h-4" />Sair da Conta</Button>
           </div>
         </div>
       </div>
@@ -152,7 +152,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
           <h2 className="text-2xl font-heading font-light text-white mb-2 tracking-tight">Acesso Restrito</h2>
           <p className="text-[#8FAEA2] text-sm font-light mb-6 leading-relaxed">Seu perfil como <span className="text-primary font-medium">{role}</span> não possui autorização para visualizar esta página ({location.pathname}).</p>
           <div className="flex flex-col gap-3 justify-center">
-            <Button onClick={() => navigate(-1)} variant="outline" className="border-white/10 text-white hover:bg-white/5 font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><ArrowLeft className="w-4 h-4" />Voltar</Button>
+            <Button onClick={() => navigate(-1)} variant="outline" className="border-[#E5E2DC] bg-white text-[#171717] hover:bg-[#F5F1E9] hover:text-[#171717] font-medium rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><ArrowLeft className="w-4 h-4" />Voltar</Button>
             <Button onClick={() => navigate('/dashboard')} className="bg-primary hover:bg-gold-500 text-[#04140F] font-semibold rounded-xl text-xs px-5 h-10 flex items-center justify-center gap-2"><Home className="w-4 h-4" />Ver Meu Painel</Button>
           </div>
         </div>

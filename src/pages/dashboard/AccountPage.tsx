@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, auth } from '@/lib/firebase';
 import { updateProfile } from 'firebase/auth';
-import { collection, query, onSnapshot, getDocs, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, getDocs, getDoc, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 import { AuditLog } from '../../types';
 import { 
   User, 
@@ -52,6 +52,7 @@ import PwaIconSettingsCard from '@/components/pwa/PwaIconSettingsCard';
 export default function AccountPage() {
   const { salonData, userData, currentUser, refreshUserData } = useAuth();
   const { segment, segmentConfig, lexicon, t } = useLexicon();
+  const isManagement = ['owner', 'manager', 'platform_admin'].includes(userData?.role || '');
 
   // User Profile Editing State (Rede Social & Bio)
   const [isEditingUser, setIsEditingUser] = useState(false);
@@ -177,21 +178,25 @@ export default function AccountPage() {
         }
       }
 
-      // 4. Se o usuário estiver vinculado a um registro de profissional, sincronizar dados
-      if (salonData?.id && userData?.professionalId) {
+      // 4. Se o usuário estiver vinculado a um registro de profissional (ou doc com seu uid), sincronizar dados
+      if (salonData?.id) {
+        const targetProfId = userData?.professionalId || currentUser.uid;
         try {
-          const profRef = doc(db, 'salons', salonData.id, 'professionals', userData.professionalId);
-          await updateDoc(profRef, {
-            name: cleanName,
-            phone: cleanPhone,
-            photoURL: cleanPhoto,
-            avatarUrl: cleanPhoto,
-            bio: cleanBio,
-            headline: cleanHeadline,
-            instagram: cleanInstagram,
-            specialties: userForm.specialties || [],
-            updatedAt: Date.now()
-          });
+          const profRef = doc(db, 'salons', salonData.id, 'professionals', targetProfId);
+          const profSnap = await getDoc(profRef);
+          if (profSnap.exists()) {
+            await updateDoc(profRef, {
+              name: cleanName,
+              phone: cleanPhone,
+              photoURL: cleanPhoto,
+              avatarUrl: cleanPhoto,
+              bio: cleanBio,
+              headline: cleanHeadline,
+              instagram: cleanInstagram,
+              specialties: userForm.specialties || [],
+              updatedAt: Date.now()
+            });
+          }
         } catch (profErr) {
           console.warn('Falha ao sincronizar profissional:', profErr);
         }
@@ -320,7 +325,10 @@ export default function AccountPage() {
   const [loadingAudits, setLoadingAudits] = useState(true);
 
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData || !isManagement) {
+      setLoading(false);
+      return;
+    }
 
     const fetchStats = async () => {
       try {
@@ -359,10 +367,14 @@ export default function AccountPage() {
     };
 
     fetchStats();
-  }, [salonData]);
+  }, [salonData, isManagement]);
 
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData || !isManagement) {
+      setAuditLogs([]);
+      setLoadingAudits(false);
+      return;
+    }
 
     setLoadingAudits(true);
     const salonId = salonData.id;
@@ -385,7 +397,7 @@ export default function AccountPage() {
     });
 
     return () => unsubscribe();
-  }, [salonData]);
+  }, [salonData, isManagement]);
 
   const getRoleBadge = (role: string | undefined) => {
     switch (role) {
@@ -395,6 +407,12 @@ export default function AccountPage() {
         return <span className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 font-bold px-3 py-1 rounded-full">Super Admin</span>;
       case 'manager':
         return <span className="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-bold px-3 py-1 rounded-full">Gerente</span>;
+      case 'professional':
+        return <span className="text-xs bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 font-bold px-3 py-1 rounded-full">Profissional</span>;
+      case 'receptionist':
+        return <span className="text-xs bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold px-3 py-1 rounded-full">Recepção</span>;
+      case 'attendant':
+        return <span className="text-xs bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold px-3 py-1 rounded-full">Atendente</span>;
       default:
         return <span className="text-xs bg-zinc-800 text-zinc-300 font-bold px-3 py-1 rounded-full">{role || 'Colaborador'}</span>;
     }
@@ -409,10 +427,12 @@ export default function AccountPage() {
       <div>
         <h2 className="text-2xl font-heading font-light tracking-tight text-white flex items-center gap-2">
           <Building className="w-6 h-6 text-[#D4AF37]" />
-          Configurações da Conta
+          {isManagement ? 'Configurações da Conta' : 'Minha Conta & Perfil'}
         </h2>
         <p className="text-zinc-500 text-xs">
-          Acompanhe todos os limites, detalhes do salão, licenças ativas e informações do seu perfil de proprietário.
+          {isManagement
+            ? 'Acompanhe todos os limites, detalhes do salão, licenças ativas e informações do seu perfil.'
+            : 'Personalize seu perfil social, biografia ("Sobre"), redes sociais e acompanhe os dados da sua conta.'}
         </p>
       </div>
 
@@ -803,7 +823,9 @@ export default function AccountPage() {
             </CardContent>
           </Card>
 
-          {/* Salon Details Card */}
+          {/* Salon Details Card (Management Only) */}
+          {isManagement && (
+          <>
           <Card className="bg-zinc-950 border-zinc-900">
             <CardHeader className="border-b border-zinc-900/50 pb-5">
               <div className="flex items-start justify-between">
@@ -1155,110 +1177,162 @@ export default function AccountPage() {
 
           {/* Configuração & Customização do Ícone PWA */}
           <PwaIconSettingsCard />
+          </>
+          )}
         </div>
 
-        {/* Right column: Subscription Plan, seats, and database usage */}
+        {/* Right column: Subscription Plan, seats, and database usage (Management) OR Unit Summary (Staff) */}
         <div className="space-y-6">
-          
-          {/* Subscription and active seats limit */}
-          <Card className="bg-zinc-950 border-zinc-900 overflow-hidden relative">
-            <div className="absolute -top-4 -right-4 w-20 h-20 bg-[#D4AF37]/5 rounded-full blur-xl" />
-            
-            <CardHeader className="border-b border-zinc-900/50 pb-5">
-              <CardTitle className="text-md font-heading font-light text-white flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#D4AF37]" />
-                Inscrição & Licenciamento
-              </CardTitle>
-              <CardDescription className="text-xs text-zinc-500">Status atual do seu plano Lumière e limites operacionais.</CardDescription>
-            </CardHeader>
+          {isManagement ? (
+            <>
+              {/* Subscription and active seats limit */}
+              <Card className="bg-zinc-950 border-zinc-900 overflow-hidden relative">
+                <div className="absolute -top-4 -right-4 w-20 h-20 bg-[#D4AF37]/5 rounded-full blur-xl" />
+                
+                <CardHeader className="border-b border-zinc-900/50 pb-5">
+                  <CardTitle className="text-md font-heading font-light text-white flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-[#D4AF37]" />
+                    Inscrição & Licenciamento
+                  </CardTitle>
+                  <CardDescription className="text-xs text-zinc-500">Status atual do seu plano Lumière e limites operacionais.</CardDescription>
+                </CardHeader>
 
-            <CardContent className="p-6 space-y-5">
-              <div className="flex items-center gap-3 bg-[#D4AF37]/5 border border-[#D4AF37]/20 p-4 rounded-xl">
-                <Crown className="w-5 h-5 text-[#D4AF37] shrink-0" />
-                <div>
-                  <h4 className="text-sm font-extrabold text-[#D4AF37]">{currentPlanLabel}</h4>
-                  <p className="text-[10px] text-zinc-400">Assinatura Digital Ativa e Segura</p>
-                </div>
-              </div>
-
-              <div className="space-y-1 hover:bg-zinc-900/10 p-2.5 rounded-xl transition-all">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-zinc-400 font-medium">Assentos de Equipe Utilizados</span>
-                  <span className="font-mono font-bold text-[#D4AF37]">{stats.professionalsCount} ativos</span>
-                </div>
-                <div className="w-full bg-zinc-900 rounded-full h-1.5 mt-2">
-                  <div 
-                    className="bg-[#D4AF37] h-1.5 rounded-full" 
-                    style={{ width: `${salonData?.plan === 'founder' ? 35 : (stats.professionalsCount / 5) * 100}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[10px] text-zinc-500 mt-1.5">
-                  <span>Capacidade do Plano</span>
-                  <span>{maxProfessionalsSeat}</span>
-                </div>
-              </div>
-
-              <div className="border-t border-zinc-900/50 pt-3 space-y-2 text-xs">
-                <div className="flex justify-between text-zinc-400">
-                  <span>Renovação Próxima</span>
-                  <span className="text-white font-semibold flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> Benefício Vitalício</span>
-                </div>
-                <div className="flex justify-between text-zinc-400">
-                  <span>Valor de Mensalidade</span>
-                  <span className="text-white font-mono font-semibold">Sem cobrança (Founder)</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Core Telemetry and Usage Audits */}
-          <Card className="bg-zinc-950 border-zinc-900">
-            <CardHeader className="border-b border-zinc-900/50 pb-5">
-              <CardTitle className="text-md font-heading font-light text-white flex items-center gap-1.5">
-                <Database className="w-4 h-4 text-purple-400" />
-                Métricas de Armazenamento
-              </CardTitle>
-              <CardDescription className="text-xs text-zinc-500">Métricas consolidadas de uso real do Firestore.</CardDescription>
-            </CardHeader>
-
-            <CardContent className="p-6">
-              {loading ? (
-                <p className="text-xs text-zinc-500">Carregando telemetria...</p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 justify-between p-2 rounded-lg border border-zinc-900 bg-zinc-900/20">
-                    <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                      <CalendarDays className="w-4 h-4 text-cyan-400" />
-                      <span>Agendamentos Concluídos</span>
+                <CardContent className="p-6 space-y-5">
+                  <div className="flex items-center gap-3 bg-[#D4AF37]/5 border border-[#D4AF37]/20 p-4 rounded-xl">
+                    <Crown className="w-5 h-5 text-[#D4AF37] shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-extrabold text-[#D4AF37]">{currentPlanLabel}</h4>
+                      <p className="text-[10px] text-zinc-400">Assinatura Digital Ativa e Segura</p>
                     </div>
-                    <span className="font-mono font-bold text-white text-xs">{stats.appointmentsCount}</span>
                   </div>
 
-                  <div className="flex items-center gap-3 justify-between p-2 rounded-lg border border-zinc-900 bg-zinc-900/20">
-                    <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                      <ListTodo className="w-4 h-4 text-green-400" />
-                      <span>Checklists Executados</span>
+                  <div className="space-y-1 hover:bg-zinc-900/10 p-2.5 rounded-xl transition-all">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-zinc-400 font-medium">Assentos de Equipe Utilizados</span>
+                      <span className="font-mono font-bold text-[#D4AF37]">{stats.professionalsCount} ativos</span>
                     </div>
-                    <span className="font-mono font-bold text-white text-xs">{stats.checklistsRunCount}</span>
+                    <div className="w-full bg-zinc-900 rounded-full h-1.5 mt-2">
+                      <div 
+                        className="bg-[#D4AF37] h-1.5 rounded-full" 
+                        style={{ width: `${salonData?.plan === 'founder' ? 35 : (stats.professionalsCount / 5) * 100}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-zinc-500 mt-1.5">
+                      <span>Capacidade do Plano</span>
+                      <span>{maxProfessionalsSeat}</span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 justify-between p-2 rounded-lg border border-zinc-900 bg-zinc-900/20">
-                    <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                      <Users className="w-4 h-4 text-purple-400" />
-                      <span>Clientes Cadastrados</span>
+                  <div className="border-t border-zinc-900/50 pt-3 space-y-2 text-xs">
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Renovação Próxima</span>
+                      <span className="text-white font-semibold flex items-center gap-1"><Sparkles className="w-3.5 h-3.5 text-amber-500" /> Benefício Vitalício</span>
                     </div>
-                    <span className="font-mono font-bold text-white text-xs">{stats.clientsCount}</span>
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Valor de Mensalidade</span>
+                      <span className="text-white font-mono font-semibold">Sem cobrança (Founder)</span>
+                    </div>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Core Telemetry and Usage Audits */}
+              <Card className="bg-zinc-950 border-zinc-900">
+                <CardHeader className="border-b border-zinc-900/50 pb-5">
+                  <CardTitle className="text-md font-heading font-light text-white flex items-center gap-1.5">
+                    <Database className="w-4 h-4 text-purple-400" />
+                    Métricas de Armazenamento
+                  </CardTitle>
+                  <CardDescription className="text-xs text-zinc-500">Métricas consolidadas de uso real do Firestore.</CardDescription>
+                </CardHeader>
+
+                <CardContent className="p-6">
+                  {loading ? (
+                    <p className="text-xs text-zinc-500">Carregando telemetria...</p>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 justify-between p-2 rounded-lg border border-zinc-900 bg-zinc-900/20">
+                        <div className="flex items-center gap-2 text-zinc-400 text-xs">
+                          <CalendarDays className="w-4 h-4 text-cyan-400" />
+                          <span>Agendamentos Concluídos</span>
+                        </div>
+                        <span className="font-mono font-bold text-white text-xs">{stats.appointmentsCount}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3 justify-between p-2 rounded-lg border border-zinc-900 bg-zinc-900/20">
+                        <div className="flex items-center gap-2 text-zinc-400 text-xs">
+                          <ListTodo className="w-4 h-4 text-green-400" />
+                          <span>Checklists Executados</span>
+                        </div>
+                        <span className="font-mono font-bold text-white text-xs">{stats.checklistsRunCount}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3 justify-between p-2 rounded-lg border border-zinc-900 bg-zinc-900/20">
+                        <div className="flex items-center gap-2 text-zinc-400 text-xs">
+                          <Users className="w-4 h-4 text-purple-400" />
+                          <span>Clientes Cadastrados</span>
+                        </div>
+                        <span className="font-mono font-bold text-white text-xs">{stats.clientsCount}</span>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <Card className="bg-zinc-950 border-zinc-900">
+              <CardHeader className="border-b border-zinc-900/50 pb-5">
+                <CardTitle className="text-md font-heading font-light text-white flex items-center gap-2">
+                  <Building className="w-4 h-4 text-[#D4AF37]" />
+                  Unidade Vinculada
+                </CardTitle>
+                <CardDescription className="text-xs text-zinc-500">
+                  Dados do estabelecimento onde sua conta atua.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6 space-y-4 text-xs">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-zinc-500 uppercase font-mono">Empresa</span>
+                  <p className="text-sm font-semibold text-white">{salonData?.name || 'LumièreOS'}</p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
+                <div className="space-y-1">
+                  <span className="text-[10px] text-zinc-500 uppercase font-mono">Segmento</span>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#D4AF37] bg-[#D4AF37]/10 px-2.5 py-1 rounded-full border border-[#D4AF37]/25">
+                    <Sparkles className="w-3 h-3" />
+                    {segmentConfig?.name || 'Beleza & Estética'}
+                  </span>
+                </div>
+                {salonData?.phone && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> Contato da Unidade
+                    </span>
+                    <p className="text-white font-medium">{salonData.phone}</p>
+                  </div>
+                )}
+                {(salonData?.city || salonData?.state) && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 uppercase font-mono flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> Localização
+                    </span>
+                    <p className="text-white font-medium">
+                      {[salonData.city, salonData.state].filter(Boolean).join(' - ')}
+                    </p>
+                  </div>
+                )}
+                <div className="pt-3 border-t border-zinc-900 flex items-center gap-2 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>Acesso ativo vinculado à equipe</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
       </div>
 
-      {/* Histórico de Auditoria do Estabelecimento */}
+      {/* Histórico de Auditoria do Estabelecimento (Management Only) */}
+      {isManagement && (
       <Card className="bg-zinc-950 border-zinc-900 overflow-hidden">
         <CardHeader className="border-b border-zinc-900/50 pb-5">
           <CardTitle className="text-lg font-heading font-light text-white flex items-center gap-2">
@@ -1366,6 +1440,7 @@ export default function AccountPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
     </div>
   );

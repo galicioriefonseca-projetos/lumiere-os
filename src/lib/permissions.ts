@@ -151,7 +151,13 @@ export function canAccessRoute(role: Role | undefined, route: string): boolean {
   }
 
   if (isProfessional(role)) {
-    return cleanRoute === '/dashboard' || cleanRoute === '/dashboard/meu-painel' || cleanRoute === '/dashboard/profissional' || cleanRoute === '/dashboard/gamificacao';
+    return (
+      cleanRoute === '/dashboard' ||
+      cleanRoute === '/dashboard/meu-painel' ||
+      cleanRoute === '/dashboard/profissional' ||
+      cleanRoute === '/dashboard/gamificacao' ||
+      cleanRoute === '/dashboard/minha-conta'
+    );
   }
 
   if (cleanRoute === '/dashboard' || cleanRoute === '/dashboard/') {
