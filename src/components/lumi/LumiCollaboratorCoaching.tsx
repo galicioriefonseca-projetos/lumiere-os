@@ -54,7 +54,7 @@ export function LumiCollaboratorCoaching({
   const [isConsultingModalOpen, setIsConsultingModalOpen] = useState(false);
   const [metricViewMode, setMetricViewMode] = useState<'week' | 'day'>(weekGoal && weekGoal > 0 ? 'week' : 'day');
 
-  const firstName = professionalName.split(' ')[0];
+  const firstName = String(professionalName || 'Especialista').trim().split(' ')[0] || 'Especialista';
   const todayProgressPct = todayGoal > 0 ? Math.min(Math.round((todayAchieved / todayGoal) * 100), 200) : 0;
   
   const hasWeekGoal = weekGoal !== undefined && weekGoal > 0;

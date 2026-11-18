@@ -66,19 +66,21 @@ export function InteractiveTour() {
     }
   ];
 
-  // Control auto-starting the tour for fresh salon accounts
+  // Control auto-starting the tour for fresh owner/manager accounts only
   useEffect(() => {
-    if (!salonData?.id) return;
-    
+    if (!salonData?.id || !userData?.role) return;
+    if (userData.role !== 'owner' && userData.role !== 'manager') return;
+
     const tourStatus = localStorage.getItem(`lumiere_tour_completed_${salonData.id}`);
     // Trigger if onboarding was completed AND they haven't run the guided tour yet
     if (salonData.onboardingCompleted && !tourStatus) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         setIsRunning(true);
         setCurrentStepIndex(0);
       }, 1600);
+      return () => clearTimeout(timer);
     }
-  }, [salonData]);
+  }, [salonData?.id, salonData?.onboardingCompleted, userData?.role]);
 
   // Listener to track click dispatchers from DashboardLayout restart-tour trigger
   useEffect(() => {
@@ -161,9 +163,7 @@ export function InteractiveTour() {
   };
 
   const handleClose = () => {
-    if (window.confirm("Deseja encerrar o tour interativo? Você poderá reiniciá-lo a qualquer momento.")) {
-      handleComplete();
-    }
+    handleComplete();
   };
 
   const handleComplete = () => {

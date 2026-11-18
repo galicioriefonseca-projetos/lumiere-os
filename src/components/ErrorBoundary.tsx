@@ -11,6 +11,7 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  showDetails: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -18,9 +19,10 @@ export class ErrorBoundary extends Component<Props, State> {
     hasError: false,
     error: null,
     errorInfo: null,
+    showDetails: false,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error, errorInfo: null };
   }
 
@@ -86,6 +88,11 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render() {
     if (this.state.hasError) {
+      const forceDebug =
+        import.meta.env.MODE === 'development' ||
+        (typeof window !== 'undefined' && window.location.search.includes('debug=true'));
+      const showDetails = forceDebug || this.state.showDetails;
+
       return (
         <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6 text-white text-center">
           <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-8 max-w-md w-full shadow-2xl">
@@ -110,30 +117,37 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
 
               <button
-                onClick={() => window.location.href = '/login'}
+                onClick={() => {
+                  try { sessionStorage.clear(); } catch {}
+                  window.location.href = '/login';
+                }}
                 className="w-full text-neutral-400 hover:text-white font-medium py-3 px-4 transition-colors"
               >
                 Ir para Login
               </button>
             </div>
 
-            {/* Debug info */}
-            {import.meta.env.MODE === 'development' || (typeof window !== 'undefined' && window.location.search.includes('debug=true')) ? (
-              <div className="mt-8 text-left bg-neutral-950 p-4 rounded-lg overflow-auto text-xs text-neutral-500 max-h-48 border border-neutral-800">
+            {showDetails ? (
+              <div className="mt-6 text-left bg-neutral-950 p-4 rounded-lg overflow-auto text-xs text-neutral-400 max-h-48 border border-neutral-800">
                 <p className="font-semibold text-red-400 mb-2">Detalhes Técnicos (Para Suporte):</p>
-                <p><strong>Erro:</strong> {this.state.error?.message}</p>
-                <p><strong>Caminho:</strong> {typeof window !== 'undefined' ? window.location.pathname + window.location.search : 'N/A'}</p>
-                <p><strong>Device:</strong> {typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : 'N/A'}</p>
-                <p className="truncate"><strong>User Agent:</strong> {typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'}</p>
+                <p className="break-words"><strong>Erro:</strong> {this.state.error?.message || 'Erro desconhecido'}</p>
+                <p className="break-all"><strong>Caminho:</strong> {typeof window !== 'undefined' ? window.location.pathname + window.location.search : 'N/A'}</p>
+                <p><strong>Versão:</strong> {APP_INFO.version}</p>
                 {this.state.errorInfo?.componentStack && (
-                  <pre className="mt-2 text-neutral-600 whitespace-pre-wrap">
+                  <pre className="mt-2 text-neutral-500 whitespace-pre-wrap text-[10px]">
                     {this.state.errorInfo.componentStack}
                   </pre>
                 )}
               </div>
             ) : (
-              <div className="mt-4 text-xs text-neutral-600">
-                 <p>Um relatório de erros foi gerado. Para exibir detalhes técnicos, adicione <code className="text-neutral-500">?debug=true</code> na URL.</p>
+              <div className="mt-4 text-xs text-neutral-500">
+                <button
+                  type="button"
+                  onClick={() => this.setState({ showDetails: true })}
+                  className="text-neutral-400 hover:text-neutral-200 underline decoration-dotted cursor-pointer"
+                >
+                  Ver detalhes técnicos
+                </button>
               </div>
             )}
           </div>

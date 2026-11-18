@@ -1,11 +1,14 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Crown, Settings, Sparkles, UserX, LogOut } from 'lucide-react';
+import { Crown, Settings, Sparkles, UserX, LogOut, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { BugReportDialog } from '../../BugReportDialog';
 import PWAInstallButton from '../../PWAInstallButton';
 import { APP_INFO } from '../../../config/appInfo';
 import { DashboardLumiWidget } from './DashboardLumiWidget';
+import { checkAppVersionAndRefresh } from '../../../lib/cacheControl';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
 interface NavigationItem { name: string; href: string; icon: any; exact?: boolean; }
 interface NavigationCategory { category: string; items: NavigationItem[]; }
@@ -22,6 +25,14 @@ interface DashboardSidebarProps {
 
 export function DashboardSidebar({ navigation, isPlatformAdmin, userData, salonData, hasNewVersionNotice, onOpenUpdates, onOpenDeletionModal, logout }: DashboardSidebarProps) {
   const location = useLocation();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncVersion = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    toast.info('Sincronizando atualização do PWA...');
+    await checkAppVersionAndRefresh({ force: true });
+  };
 
   return (
     <aside id="lumiere-desktop-sidebar" className="hidden md:flex flex-col w-64 h-screen sticky top-0 border-r border-border bg-card z-20 shrink-0">
@@ -69,15 +80,25 @@ export function DashboardSidebar({ navigation, isPlatformAdmin, userData, salonD
 
         <div className="px-2 flex flex-col gap-2">
           <PWAInstallButton />
-          <div className="mt-1 px-3 py-3 bg-secondary/70 border border-border rounded-xl text-center flex flex-col items-center gap-1.5">
+          <div className="mt-1 px-3 py-3 bg-secondary/70 border border-border rounded-xl text-center flex flex-col items-center gap-2">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground select-none justify-center">
-              <span>LumiereOS</span> • <span className="font-semibold text-primary">v{APP_INFO.version}</span>
+              <span>Versão do Sistema:</span>
+              <span className="font-semibold font-mono text-primary">v{APP_INFO.version}</span>
               {hasNewVersionNotice && <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" /></span>}
             </div>
+            <button
+              type="button"
+              onClick={handleSyncVersion}
+              disabled={isSyncing}
+              className="w-full py-1.5 px-2.5 rounded-lg bg-card hover:bg-accent border border-border hover:border-primary/30 text-[10px] font-semibold text-foreground transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={cn("w-3 h-3 text-primary", isSyncing && "animate-spin")} />
+              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Atualização'}</span>
+            </button>
             <button onClick={onOpenUpdates} className="text-[9px] tracking-wider uppercase font-bold text-primary hover:text-primary/80 transition-colors flex items-center gap-1 cursor-pointer focus:outline-none">
               <Sparkles className="w-3 h-3" /> O que há de novo?
             </button>
-            <p className="text-[9px] text-muted-foreground leading-tight mt-1 select-none">© Galiciori e Fonseca</p>
+            <p className="text-[9px] text-muted-foreground leading-tight mt-0.5 select-none">© Galiciori e Fonseca</p>
           </div>
         </div>
       </div>

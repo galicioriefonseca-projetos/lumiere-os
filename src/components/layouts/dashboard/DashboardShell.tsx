@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { DashboardFooter } from './DashboardFooter';
 
 interface DashboardShellProps {
   sidebar: ReactNode;
@@ -14,11 +15,12 @@ export function DashboardShell({ sidebar, topbar, mobileNav, subscriptionBanner,
       {sidebar}
       <div className="flex-1 flex flex-col min-w-0 bg-background">
         {topbar}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto flex flex-col">
           {subscriptionBanner}
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="max-w-7xl w-full mx-auto space-y-6 flex-1">
             {children}
           </div>
+          <DashboardFooter />
         </main>
       </div>
       {mobileNav}

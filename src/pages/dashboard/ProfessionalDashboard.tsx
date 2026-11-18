@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useAlerts } from "../../hooks/useAlerts";
 import { db } from "@/lib/firebase";
@@ -44,6 +44,12 @@ import { calculateGoalProgress, normalizeGoal, getCurrentWeekIndex, calculateRev
 import { requestAndRegisterNotificationPermission } from "../../lib/pushNotifications";
 import { LumiCollaboratorCoaching } from "../../components/lumi/LumiCollaboratorCoaching";
 
+function formatBrDate(dateStr?: string): string {
+  if (!dateStr || typeof dateStr !== 'string') return '-';
+  const clean = dateStr.substring(0, 10);
+  const parts = clean.split('-');
+  return parts.length === 3 ? parts.reverse().join('/') : clean;
+}
 
 export default function ProfessionalDashboard() {
   const { userData, salonData } = useAuth();
@@ -61,6 +67,8 @@ export default function ProfessionalDashboard() {
   const [selectedEval, setSelectedEval] = useState<ChecklistRun | null>(null);
   const [agendaTab, setAgendaTab] = useState<"today" | "all">("today");
   const [useBusinessDays, setUseBusinessDays] = useState(false);
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0);
+  const [showMonthlyDetails, setShowMonthlyDetails] = useState<boolean>(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState('');
@@ -90,11 +98,14 @@ export default function ProfessionalDashboard() {
         setPushStatus('granted');
         toast.success("Notificações push ativadas com sucesso!");
       } else {
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-          setPushStatus(Notification.permission as any);
-        }
-        if (Notification.permission === 'denied') {
+        const perm = typeof window !== 'undefined' && 'Notification' in window
+          ? Notification.permission
+          : 'unsupported';
+        setPushStatus(perm as any);
+        if (perm === 'denied') {
           toast.error("Permissão de notificação negada pelo navegador. Ative as permissões nas configurações do seu navegador para receber alertas.");
+        } else if (perm === 'unsupported') {
+          toast.error("Este dispositivo ou navegador não oferece suporte a notificações push.");
         } else {
           toast.error("Não foi possível registrar o token de notificações. Verifique as credenciais do Firebase.");
         }
@@ -146,7 +157,7 @@ export default function ProfessionalDashboard() {
         setEditCustomPrimary('');
       }
 
-      const extras = myProfile.additionalFunctions || [];
+      const extras = Array.isArray(myProfile.additionalFunctions) ? myProfile.additionalFunctions : [];
       const standardExtras = extras.filter(e => PROFESSIONAL_SPECIALTIES.includes(e));
       const customExtras = extras.filter(e => !PROFESSIONAL_SPECIALTIES.includes(e));
 
@@ -225,7 +236,11 @@ export default function ProfessionalDashboard() {
           const arr: Appointment[] = [];
           snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
           setMyAppointments(
-            arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+            arr.sort((a, b) => {
+              const ta = new Date(`${a.date || ''}T${a.time || '00:00'}`).getTime() || 0;
+              const tb = new Date(`${b.date || ''}T${b.time || '00:00'}`).getTime() || 0;
+              return ta - tb;
+            })
           );
         }, (err) => {
           console.error("Erro ao carregar meus agendamentos:", err);
@@ -240,7 +255,7 @@ export default function ProfessionalDashboard() {
         unsubscribeEvals = onSnapshot(qe, (snapEval) => {
           const arr: ChecklistRun[] = [];
           snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
-          setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
+          setMyEvaluations(arr.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
 
           if (arr.length > 0 && !selectedEval) {
             setSelectedEval(arr[0]);
@@ -313,7 +328,7 @@ export default function ProfessionalDashboard() {
         // Match profile
         const matched = pros.find(
           p => p.email?.toLowerCase().trim() === userData.email?.toLowerCase().trim() ||
-               p.name.toLowerCase().trim() === userData.fullName?.toLowerCase().trim()
+               p.name?.toLowerCase().trim() === userData.fullName?.toLowerCase().trim()
         );
 
         if (matched) {
@@ -328,7 +343,11 @@ export default function ProfessionalDashboard() {
             const arr: Appointment[] = [];
             snapAppt.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
             setMyAppointments(
-              arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime())
+              arr.sort((a, b) => {
+                const ta = new Date(`${a.date || ''}T${a.time || '00:00'}`).getTime() || 0;
+                const tb = new Date(`${b.date || ''}T${b.time || '00:00'}`).getTime() || 0;
+                return ta - tb;
+              })
             );
           }, (err) => {
             console.error("Erro ao carregar agendamentos (view de teste):", err);
@@ -343,7 +362,7 @@ export default function ProfessionalDashboard() {
           unsubscribeEvals = onSnapshot(qe, (snapEval) => {
             const arr: ChecklistRun[] = [];
             snapEval.forEach(d => arr.push({ id: d.id, ...d.data() } as ChecklistRun));
-            setMyEvaluations(arr.sort((a, b) => b.date.localeCompare(a.date)));
+            setMyEvaluations(arr.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
             
             if (arr.length > 0 && !selectedEval) {
               setSelectedEval(arr[0]);
@@ -401,6 +420,49 @@ export default function ProfessionalDashboard() {
     }
   };
 
+  const myCompletedAppts = useMemo(
+    () => myAppointments.filter(a => a.status === 'completed'),
+    [myAppointments]
+  );
+
+  const currentMonthEarnings = useMemo(() => {
+    return myCompletedAppts
+      .filter(a => typeof a.date === 'string' && a.date.startsWith(currentMonthStr))
+      .reduce((sum, appt) => {
+        if (appt.price !== undefined && appt.price !== null) {
+          return sum + (Number(appt.price) || 0);
+        }
+        const service = services.find(s => s.id === appt.serviceId);
+        return sum + (Number(service?.price) || 0);
+      }, 0);
+  }, [myCompletedAppts, currentMonthStr, services]);
+
+  const currentGoalRaw = useMemo(
+    () => myGoals.find(g => g.month === currentMonthStr),
+    [myGoals, currentMonthStr]
+  );
+
+  const currentGoal = useMemo(
+    () => (currentGoalRaw ? normalizeGoal(currentGoalRaw, currentMonthEarnings) : undefined),
+    [currentGoalRaw, currentMonthEarnings]
+  );
+
+  const weeklySplits = useMemo(
+    () => currentGoal?.weeklyGoals || [],
+    [currentGoal]
+  );
+
+  const currentWeekIdx = useMemo(
+    () => getCurrentWeekIndex(weeklySplits),
+    [weeklySplits]
+  );
+
+  useEffect(() => {
+    if (weeklySplits.length > 0) {
+      setSelectedWeekIndex(currentWeekIdx);
+    }
+  }, [weeklySplits.length, currentWeekIdx]);
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -432,18 +494,13 @@ export default function ProfessionalDashboard() {
   }
 
   // Earnings calculations
-  const myCompletedAppts = myAppointments.filter(a => a.status === 'completed');
   const totalEarnings = myCompletedAppts.reduce((sum, appt) => {
+    if (appt.price !== undefined && appt.price !== null) {
+      return sum + (Number(appt.price) || 0);
+    }
     const service = services.find(s => s.id === appt.serviceId);
-    return sum + (service?.price || 0);
+    return sum + (Number(service?.price) || 0);
   }, 0);
-
-  const currentMonthEarnings = myCompletedAppts
-    .filter(a => a.date.startsWith(currentMonthStr))
-    .reduce((sum, appt) => {
-      const service = services.find(s => s.id === appt.serviceId);
-      return sum + (service?.price || 0);
-    }, 0);
 
   // Stats Calculations
   const totalAppointments = myAppointments.filter(a => a.status === 'completed' || a.status === 'scheduled').length;
@@ -458,23 +515,6 @@ export default function ProfessionalDashboard() {
 
   const todayAppointments = myAppointments.filter(a => a.date === todayStr);
   const displayAppointments = agendaTab === "today" ? todayAppointments : myAppointments;
-
-  // State for weekly goal navigation
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0);
-  const [showMonthlyDetails, setShowMonthlyDetails] = useState<boolean>(false);
-
-  // Active Goal for current month
-  const currentGoalRaw = myGoals.find(g => g.month === currentMonthStr);
-  const currentGoal = currentGoalRaw ? normalizeGoal(currentGoalRaw, currentMonthEarnings) : undefined;
-  
-  const weeklySplits = currentGoal?.weeklyGoals || [];
-  const currentWeekIdx = getCurrentWeekIndex(weeklySplits);
-
-  useEffect(() => {
-    if (weeklySplits.length > 0) {
-      setSelectedWeekIndex(currentWeekIdx);
-    }
-  }, [weeklySplits.length, currentWeekIdx]);
 
   const selectedWeek = weeklySplits[selectedWeekIndex] || weeklySplits[0];
   const selectedWeekRevenue = (selectedWeek && myProfile)
@@ -591,18 +631,18 @@ export default function ProfessionalDashboard() {
         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
           <div className="flex gap-4 items-center">
             <div className="w-14 h-14 rounded-2xl bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37] text-xl font-bold font-heading">
-              {myProfile.name.charAt(0).toUpperCase()}
+              {(myProfile.name || (myProfile as any).fullName || userData?.fullName || 'P').charAt(0).toUpperCase()}
             </div>
             <div>
               <span className="text-[9px] uppercase tracking-widest font-bold text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/20 px-2 py-0.5 rounded-full inline-block leading-none mb-1.5 font-mono shadow-[0_2px_8px_rgba(212,175,55,0.05)]">COLABORADOR PARCEIRO</span>
               <h1 className="text-xl md:text-2xl font-heading font-light text-foreground leading-tight">
-                <b className="font-semibold text-white">{myProfile.name}</b>
+                <b className="font-semibold text-white">{myProfile.name || (myProfile as any).fullName || userData?.fullName || 'Profissional'}</b>
               </h1>
               <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap mt-0.5">
                 <span className="text-[#D4AF37] font-semibold">{myProfile.primaryFunction || myProfile.professionalFunction || myProfile.specialty || myProfile.category || myProfile.role || "Profissional"}</span>
                 {salonData?.name && <span>| {salonData.name}</span>}
               </p>
-              {myProfile.additionalFunctions && myProfile.additionalFunctions.length > 0 && (
+              {Array.isArray(myProfile.additionalFunctions) && myProfile.additionalFunctions.length > 0 && (
                 <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                   <span className="text-[9px] uppercase text-zinc-500 font-bold tracking-wider">Outras Especialidades:</span>
                   {myProfile.additionalFunctions.map(ext => (
@@ -1116,7 +1156,7 @@ export default function ProfessionalDashboard() {
                 ) : (
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-muted-foreground">{myEvaluations[0].date.split("-").reverse().join("/")}</span>
+                      <span className="text-xs text-muted-foreground">{formatBrDate(myEvaluations[0].date)}</span>
                       <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-primary/10 text-primary">
                         {myEvaluations[0].attendanceStatus === 'absent' ? 'Falta' : myEvaluations[0].attendanceStatus === 'not_attended' ? 'Prejudicado' : `Nota ${myEvaluations[0].totalScore}/${myEvaluations[0].maxScore}`}
                       </span>
@@ -1187,7 +1227,7 @@ export default function ProfessionalDashboard() {
                           <div className="flex justify-between items-center mb-2">
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-sm font-semibold text-primary">{app.time}</span>
-                              <span className="text-[10px] text-muted-foreground bg-white/5 px-2 py-0.5 rounded border border-white/5">{app.date.split("-").reverse().join("/")}</span>
+                              <span className="text-[10px] text-muted-foreground bg-white/5 px-2 py-0.5 rounded border border-white/5">{formatBrDate(app.date)}</span>
                             </div>
                             
                             <span className={cn(
@@ -1278,7 +1318,7 @@ export default function ProfessionalDashboard() {
                         return (
                           <div key={s.id} className="flex justify-between items-center text-xs p-2 bg-black/10 rounded-xl">
                             <span>{s.name}</span>
-                            <span className="font-mono text-muted-foreground">{count}x ({formatBRL(s.price * count)})</span>
+                            <span className="font-mono text-muted-foreground">{count}x ({formatBRL((Number(s.price) || 0) * count)})</span>
                           </div>
                         );
                       })}
@@ -1349,7 +1389,7 @@ export default function ProfessionalDashboard() {
                     >
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-[10px] text-muted-foreground">{evalRun.date.split("-").reverse().join("/")}</p>
+                          <p className="text-[10px] text-muted-foreground">{formatBrDate(evalRun.date)}</p>
                           {(() => {
                             const evalFunc = evalRun.evaluationFunction || evalRun.evaluatedFunction || evalRun.professionalFunction || evalRun.primaryFunction;
                             if (evalFunc) {
@@ -1390,7 +1430,7 @@ export default function ProfessionalDashboard() {
               <CardContent className="p-6 space-y-4">
                 <div className="border-b border-white/5 pb-4">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-base font-semibold text-primary">Avaliação de {selectedEval.date.split("-").reverse().join("/")}</h3>
+                    <h3 className="text-base font-semibold text-primary">Avaliação de {formatBrDate(selectedEval.date)}</h3>
                     <span className={cn(
                       "text-xs px-2.5 py-0.5 rounded-full font-bold",
                       selectedEval.attendanceStatus === 'absent' ? "bg-destructive/15 text-destructive" : (selectedEval.attendanceStatus === 'not_attended' ? "bg-purple-500/15 text-purple-400" : "bg-primary/15 text-primary")

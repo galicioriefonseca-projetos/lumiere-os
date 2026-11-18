@@ -78,17 +78,52 @@ export function forceFreshReload(path?: string) {
 /**
  * Checks if the cached app version is different from the current compiled version
  * and triggers automated recovery if a mismatch is detected, with loop protection.
+ * When `force` is true (e.g. manual "Sincronizar Atualização" button), it forces
+ * the PWA service worker to check for updates, clears cached bundles, and reloads cleanly.
  */
-export async function checkAppVersionAndRefresh() {
+export async function checkAppVersionAndRefresh(options?: { force?: boolean } | boolean) {
   if (typeof window === 'undefined') return;
 
+  const force = typeof options === 'boolean' ? options : Boolean(options?.force);
   const currentVersion = APP_INFO.version;
-  console.info("[LumiereVersion]", currentVersion);
+  console.info("[LumiereVersion]", currentVersion, force ? "(manual sync)" : "(auto)");
 
   try {
+    // Ask active Service Workers to check for a newer version from the server
+    if (force && 'serviceWorker' in navigator && navigator.serviceWorker) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(
+          registrations.map(async (reg) => {
+            try {
+              await reg.update();
+              if (reg.waiting) {
+                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+              }
+            } catch (swErr) {
+              console.warn('[LumiereOS] SW update check warning:', swErr);
+            }
+          })
+        );
+      } catch (swListErr) {
+        console.warn('[LumiereOS] Could not list SW registrations:', swListErr);
+      }
+    }
+
     const cachedVersion = localStorage.getItem('lumiere_app_version');
-    
-    // If there is a version mismatch, or no version is recorded at all
+
+    if (force) {
+      console.info(`[LumiereOS] Manual PWA update sync requested (current: ${currentVersion}). Clearing caches and reloading...`);
+      localStorage.setItem('lumiere_cache_refresh_time', String(Date.now()));
+      localStorage.setItem('lumiere_app_version', currentVersion);
+
+      await clearLumiereCaches();
+      await unregisterOldServiceWorkers();
+      forceFreshReload();
+      return;
+    }
+
+    // If there is a version mismatch
     if (cachedVersion && cachedVersion !== currentVersion) {
       const now = Date.now();
       const lastRefreshStr = localStorage.getItem('lumiere_cache_refresh_time');
@@ -121,6 +156,9 @@ export async function checkAppVersionAndRefresh() {
     }
   } catch (e) {
     console.error('[LumiereOS] Error in app version validator:', e);
+    if (force) {
+      forceFreshReload();
+    }
   }
 }
 

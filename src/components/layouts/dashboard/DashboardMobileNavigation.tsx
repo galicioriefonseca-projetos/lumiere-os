@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   X, 
@@ -6,13 +7,16 @@ import {
   Sparkles, 
   Settings, 
   UserX, 
-  LogOut 
+  LogOut,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import PWAInstallButton from '../../PWAInstallButton';
 import { APP_INFO } from '../../../config/appInfo';
 import { NavigationCategory } from './getNavigationByRole';
+import { checkAppVersionAndRefresh } from '../../../lib/cacheControl';
+import { toast } from 'sonner';
 
 interface DashboardMobileNavigationProps {
   isOpen: boolean;
@@ -44,8 +48,16 @@ export function DashboardMobileNavigation({
   logout
 }: DashboardMobileNavigationProps) {
   const location = useLocation();
+  const [isSyncing, setIsSyncing] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleSyncVersion = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    toast.info('Sincronizando atualização do PWA...');
+    await checkAppVersionAndRefresh({ force: true });
+  };
 
   return (
     <div className="fixed inset-0 z-50 md:hidden animate-in fade-in duration-200">
@@ -135,9 +147,10 @@ export function DashboardMobileNavigation({
              <PWAInstallButton />
 
              {/* Institutional version footer mobile */}
-             <div className="mt-2.5 px-3 py-3.5 bg-secondary/70 border border-border rounded-xl text-center flex flex-col items-center gap-1.5">
+             <div className="mt-2.5 px-3 py-3.5 bg-secondary/70 border border-border rounded-xl text-center flex flex-col items-center gap-2">
                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-sans select-none justify-center">
-                 <span>LumiereOS</span> • <span className="font-semibold text-primary">v{APP_INFO.version}</span>
+                 <span>Versão do Sistema:</span>
+                 <span className="font-semibold font-mono text-primary">v{APP_INFO.version}</span>
                  {hasNewVersionNotice && (
                    <span className="relative flex h-1.5 w-1.5">
                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -145,6 +158,15 @@ export function DashboardMobileNavigation({
                    </span>
                  )}
                </div>
+               <button
+                 type="button"
+                 onClick={handleSyncVersion}
+                 disabled={isSyncing}
+                 className="w-full py-2 px-3 rounded-lg bg-card hover:bg-accent border border-border hover:border-primary/30 text-[11px] font-semibold text-foreground transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+               >
+                 <RefreshCw className={cn("w-3.5 h-3.5 text-primary", isSyncing && "animate-spin")} />
+                 <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Atualização'}</span>
+               </button>
                <button 
                  onClick={() => {
                    onClose();
@@ -154,7 +176,7 @@ export function DashboardMobileNavigation({
                >
                  <Sparkles className="w-3 h-3 text-primary" /> O que há de novo?
                </button>
-               <p className="text-[9px] text-muted-foreground leading-tight mt-1 select-none text-center font-light">
+               <p className="text-[9px] text-muted-foreground leading-tight mt-0.5 select-none text-center font-light">
                  © Galiciori e Fonseca
                </p>
              </div>
