@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import PWAInstallButton from '../PWAInstallButton';
+import { APP_INFO } from '../../config/appInfo';
+import { checkAppVersionAndRefresh } from '../../lib/cacheControl';
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -19,6 +22,23 @@ export default function AuthLayout({
   backText = 'Voltar para a página inicial',
   onBackClick
 }: AuthLayoutProps) {
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncUpdate = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    toast.info('Sincronizando atualização do PWA...', {
+      description: 'Buscando a versão mais recente e limpando o cache local.',
+    });
+    try {
+      await checkAppVersionAndRefresh({ force: true });
+    } catch (error) {
+      console.error('[AuthLayout] Falha ao sincronizar atualização:', error);
+      toast.error('Não foi possível sincronizar agora. Tente novamente.');
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden font-sans select-none">
       
@@ -73,9 +93,27 @@ export default function AuthLayout({
       </main>
 
       {/* Elegant Footer / PWA Actions */}
-      <footer className="w-full max-w-md mx-auto flex flex-col items-center gap-5 mt-10">
+      <footer className="w-full max-w-md mx-auto flex flex-col items-center gap-4 mt-10">
         <div className="flex justify-center w-full">
           <PWAInstallButton variant="banner" />
+        </div>
+
+        <div className="w-full flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white/90 border border-[#E5E2DC] shadow-xs">
+          <div className="inline-flex items-center gap-2 text-[11px] text-[#55534F]">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span>Versão do Sistema:</span>
+            <span className="font-bold font-mono text-[#8A6D36]">v{APP_INFO.version}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSyncUpdate}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF9F7] hover:bg-[#F1EEE7] border border-[#D8D4CC] hover:border-[#B89B5E]/60 text-[11px] font-semibold text-[#171717] transition-colors cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-[#8A6D36] ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Atualização'}</span>
+          </button>
         </div>
         
         <p className="text-[10px] text-neutral-500 font-mono tracking-widest text-center uppercase">
