@@ -447,13 +447,13 @@ service cloud.firestore {
           (('crmStage' in request.resource.data) && ('crmStage' in resource.data) && request.resource.data.crmStage == resource.data.crmStage)
         )
       );
-      allow delete: if canUseTutorialDemo(salonId) || isPlatformAdmin();
+      allow delete: if canUseTutorialDemo(salonId) || isPlatformAdmin() || canManageSalon(salonId);
 
       // History logs subcollection
       match /history/{historyId} {
         allow get, list: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
         allow create, update: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
-        allow delete: if false;
+        allow delete: if canUseTutorialDemo(salonId) || isPlatformAdmin() || canManageSalon(salonId);
       }
     }
 

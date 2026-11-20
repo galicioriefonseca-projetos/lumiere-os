@@ -21,6 +21,9 @@ interface KanbanBoardProps {
   onSelectClient: (client: Client) => void;
   onQuickAddClient: (stage: Client['crmStage']) => void;
   onArchiveClient: (client: Client) => void;
+  canBulkSelect?: boolean;
+  selectedClientIds?: string[];
+  onToggleSelectClient?: (clientId: string) => void;
 }
 
 export default function KanbanBoard({
@@ -29,7 +32,10 @@ export default function KanbanBoard({
   onMoveClient,
   onSelectClient,
   onQuickAddClient,
-  onArchiveClient
+  onArchiveClient,
+  canBulkSelect = false,
+  selectedClientIds = [],
+  onToggleSelectClient
 }: KanbanBoardProps) {
   const [activeDragOverStage, setActiveDragOverStage] = useState<string | null>(null);
   const [mobileActiveStage, setMobileActiveStage] = useState<Client['crmStage']>('new');
@@ -178,6 +184,7 @@ export default function KanbanBoard({
                     list.map((c) => {
                       const isOverdue = c.nextActionAt && c.nextActionAt < todayStr;
                       const hasNext = !!c.nextActionAt;
+                      const isSelected = selectedClientIds.includes(c.id);
 
                       return (
                         <div
@@ -188,19 +195,33 @@ export default function KanbanBoard({
                           className={`bg-[#121215]/80 hover:bg-[#15151a] border rounded-lg p-3 cursor-pointer shadow-md group relative transition-all duration-200 ${
                             canUserMove ? 'active:cursor-grabbing hover:scale-[1.01]' : ''
                           } ${
-                            isOverdue 
-                              ? 'border-red-500/20 shadow-red-500/[0.01]' 
-                              : hasNext 
-                                ? 'border-[#D4AF37]/15' 
-                                : 'border-zinc-800/80 hover:border-zinc-700/80'
+                            isSelected
+                              ? 'border-[#D4AF37] ring-1 ring-[#D4AF37]/60 bg-[#D4AF37]/5'
+                              : isOverdue 
+                                ? 'border-red-500/20 shadow-red-500/[0.01]' 
+                                : hasNext 
+                                  ? 'border-[#D4AF37]/15' 
+                                  : 'border-zinc-800/80 hover:border-zinc-700/80'
                           }`}
                         >
                           <div className="space-y-2">
                             {/* Card Top Title */}
-                            <div className="flex justify-between items-start gap-1">
-                              <span className="font-semibold text-xs text-white leading-tight break-words pr-4 grow group-hover:text-[#D4AF37] transition">
-                                {c.name}
-                              </span>
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex items-start gap-2 grow min-w-0 pr-5">
+                                {canBulkSelect && onToggleSelectClient && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => onToggleSelectClient(c.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    aria-label={`Selecionar ${c.name}`}
+                                    className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-600 accent-[#D4AF37] cursor-pointer shrink-0"
+                                  />
+                                )}
+                                <span className="font-semibold text-xs text-white leading-tight break-words grow group-hover:text-[#D4AF37] transition">
+                                  {c.name}
+                                </span>
+                              </div>
                               {!isProfessionalRole && (
                                 <button
                                   onClick={(e) => {

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, setDoc, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { Client, ClientHistory } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,11 +12,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { 
-  Loader2, Plus, Edit2, Users, Search, Kanban, List, Filter, Archive,
+  Loader2, Plus, Edit2, Users, Search, Kanban, List, Filter, Archive, Trash2,
   MessageSquare, User, Tag, Calendar, AlertCircle, Sparkles, FolderOpen, RotateCcw,
-  Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2
+  Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2, Download
 } from 'lucide-react';
 import { useLumiLexicon } from '../../hooks/useLumiLexicon';
+import { logAuditEvent } from '../../lib/audit';
+import {
+  parseClientSpreadsheet,
+  parseCurrencyOrNumberSafe,
+  downloadClientTemplateXlsx,
+} from '../../lib/clientSpreadsheetParser';
 
 import KanbanBoard from '../../components/crm/KanbanBoard';
 import ClientDetailsDrawer from '../../components/crm/ClientDetailsDrawer';
@@ -36,6 +42,7 @@ export default function ClientsPage() {
   const { salonData, currentUser, userData } = useAuth();
   const lex = useLumiLexicon();
   const userRole = userData?.role || 'professional';
+  const canBulkDelete = ['owner', 'admin', 'manager', 'platform_admin'].includes(userRole);
 
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [clients, setClients] = useState<Client[]>([]);
@@ -49,11 +56,22 @@ export default function ClientsPage() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  // Bulk selection & delete state
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(0);
+  const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const tableSelectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
+
   // Import state
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importHeaders, setImportHeaders] = useState<string[]>([]);
   const [importRows, setImportRows] = useState<string[][]>([]);
+  const [importSheetNames, setImportSheetNames] = useState<string[]>([]);
+  const [selectedImportSheet, setSelectedImportSheet] = useState<string>('');
+  const [isParsingFile, setIsParsingFile] = useState(false);
   const [columnMappings, setColumnMappings] = useState<Record<string, number>>({
     name: -1,
     phone: -1,
@@ -73,6 +91,9 @@ export default function ClientsPage() {
     setImportFile(null);
     setImportHeaders([]);
     setImportRows([]);
+    setImportSheetNames([]);
+    setSelectedImportSheet('');
+    setIsParsingFile(false);
     setColumnMappings({
       name: -1,
       phone: -1,
@@ -102,76 +123,52 @@ export default function ClientsPage() {
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileLoad(e.dataTransfer.files[0]);
+      void handleFileLoad(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      handleFileLoad(e.target.files[0]);
+      void handleFileLoad(e.target.files[0]);
+      e.target.value = '';
     }
   };
 
-  // Parse CSV File
-  const handleFileLoad = (file: File) => {
-    setImportFile(file);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (!text) return;
-
-      const parsedLines: string[][] = [];
-      let row: string[] = [];
-      let inQuotes = false;
-      let currentValue = "";
-
-      const normalizedText = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-      for (let i = 0; i < normalizedText.length; i++) {
-        const char = normalizedText[i];
-        const nextChar = normalizedText[i + 1];
-
-        if (char === '"') {
-          if (inQuotes && nextChar === '"') {
-            currentValue += '"';
-            i++; 
-          } else {
-            inQuotes = !inQuotes;
-          }
-        } else if ((char === ',' || char === ';') && !inQuotes) {
-          row.push(currentValue.trim());
-          currentValue = "";
-        } else if (char === '\n' && !inQuotes) {
-          row.push(currentValue.trim());
-          parsedLines.push(row);
-          row = [];
-          currentValue = "";
-        } else {
-          currentValue += char;
+  // Parse XLSX, XLS or CSV File
+  const handleFileLoad = async (file: File, preferredSheet?: string) => {
+    try {
+      setIsParsingFile(true);
+      const parsed = await parseClientSpreadsheet(file, preferredSheet);
+      if (parsed.rows.length === 0) {
+        toast.error("A planilha possui apenas cabeçalho e nenhuma linha de cliente.");
+        if (!preferredSheet) {
+          resetImportState();
         }
-      }
-      if (currentValue !== "" || row.length > 0) {
-        row.push(currentValue.trim());
-        parsedLines.push(row);
-      }
-
-      const validLines = parsedLines.filter(r => r.some(cell => cell.length > 0));
-      if (validLines.length === 0) {
-        toast.error("O arquivo selecionado está vazio.");
         return;
       }
 
-      const headers = validLines[0];
-      const dataRows = validLines.slice(1);
+      setImportFile(file);
+      setImportHeaders(parsed.headers);
+      setImportRows(parsed.rows);
+      setImportSheetNames(parsed.sheetNames);
+      setSelectedImportSheet(parsed.activeSheet);
 
-      setImportHeaders(headers);
-      setImportRows(dataRows);
-
-      // Auto detect mappings
-      const detected = autoDetectMappings(headers);
+      const detected = autoDetectMappings(parsed.headers);
       setColumnMappings(detected);
-    };
-    reader.readAsText(file, 'utf-8');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao ler o arquivo da planilha.";
+      toast.error(msg);
+      if (!preferredSheet) {
+        resetImportState();
+      }
+    } finally {
+      setIsParsingFile(false);
+    }
+  };
+
+  const handleSheetChange = (sheetName: string) => {
+    if (!importFile) return;
+    void handleFileLoad(importFile, sheetName);
   };
 
   const autoDetectMappings = (headers: string[]) => {
@@ -257,15 +254,7 @@ export default function ClientsPage() {
       return { source: 'whatsapp', sourceLabel: '' };
     };
 
-    const parseFloatSafe = (val: string): number => {
-      if (!val) return 0;
-      const sanitized = val
-        .replace(/[R$\s]/g, '')
-        .replace(/\./g, '')
-        .replace(/,/g, '.');
-      const parsed = parseFloat(sanitized);
-      return isNaN(parsed) ? 0 : parsed;
-    };
+    const parseFloatSafe = (val: string): number => parseCurrencyOrNumberSafe(val);
 
     try {
       for (let i = 0; i < total; i++) {
@@ -287,7 +276,7 @@ export default function ClientsPage() {
         const { source: sourceVal, sourceLabel: sourceLabelVal } = mapSource(rawSource);
 
         const tagsVal = columnMappings.tags !== -1 ? 
-          row[columnMappings.tags] ? row[columnMappings.tags].split(/[,\s]+/).map((t: string) => t.trim()).filter(Boolean) : [] 
+          row[columnMappings.tags] ? row[columnMappings.tags].split(/[,;]+/).map((t: string) => t.trim()).filter(Boolean) : [] 
           : [];
 
         const ltvVal = columnMappings.lifetimeValue !== -1 ? parseFloatSafe(row[columnMappings.lifetimeValue]) : 0;
@@ -335,9 +324,13 @@ export default function ClientsPage() {
         setImportProgress(Math.round(((i + 1) / total) * 100));
       }
 
-      toast.success(`${count} clientes importados e devidamente organizados no CRM com sucesso!`);
-      setIsImportDialogOpen(false);
-      resetImportState();
+      if (count === 0) {
+        toast.warning('Nenhum cliente com nome válido foi encontrado para importar.');
+      } else {
+        toast.success(`${count} clientes importados e devidamente organizados no CRM com sucesso!`);
+        setIsImportDialogOpen(false);
+        resetImportState();
+      }
     } catch (err) {
       console.error("Error during clients import:", err);
       toast.error("Houve um problema durante a importação. Algumas gravações podem ter falhado.");
@@ -499,6 +492,51 @@ export default function ClientsPage() {
     search, clients, filterStage, filterSource, filterResponsible, 
     filterOverdue, filterNoAction, filterCreatedThisMonth, showArchived, userRole, userData
   ]);
+
+  // Keep selection synced with existing clients
+  useEffect(() => {
+    setSelectedClientIds((prev) => {
+      if (prev.length === 0) return prev;
+      const existingIds = new Set(clients.map((c) => c.id));
+      const pruned = prev.filter((id) => existingIds.has(id));
+      return pruned.length === prev.length ? prev : pruned;
+    });
+  }, [clients]);
+
+  const visibleClientIds = filteredClients.map((c) => c.id);
+  const selectedVisibleCount = visibleClientIds.filter((id) => selectedClientIds.includes(id)).length;
+  const allVisibleSelected = filteredClients.length > 0 && selectedVisibleCount === filteredClients.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && selectedVisibleCount < filteredClients.length;
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = someVisibleSelected;
+    }
+    if (tableSelectAllCheckboxRef.current) {
+      tableSelectAllCheckboxRef.current.indeterminate = someVisibleSelected;
+    }
+  }, [someVisibleSelected]);
+
+  const toggleSelectClient = (clientId: string) => {
+    if (!canBulkDelete) return;
+    setSelectedClientIds((prev) =>
+      prev.includes(clientId) ? prev.filter((id) => id !== clientId) : [...prev, clientId]
+    );
+  };
+
+  const toggleSelectAllVisible = () => {
+    if (!canBulkDelete || filteredClients.length === 0) return;
+    if (allVisibleSelected) {
+      const visibleSet = new Set(visibleClientIds);
+      setSelectedClientIds((prev) => prev.filter((id) => !visibleSet.has(id)));
+    } else {
+      setSelectedClientIds((prev) => Array.from(new Set([...prev, ...visibleClientIds])));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedClientIds([]);
+  };
 
   // Save or Create Client
   const handleSubmit = async (e: React.FormEvent) => {
@@ -737,6 +775,92 @@ export default function ClientsPage() {
     }
   };
 
+  // Permanent bulk delete
+  const handleConfirmBulkDelete = async () => {
+    if (!salonData || selectedClientIds.length === 0 || !canBulkDelete) return;
+
+    setIsBulkDeleting(true);
+    setBulkDeleteProgress(0);
+
+    const idsToDelete = [...selectedClientIds];
+    const deletedNames = clients
+      .filter((c) => idsToDelete.includes(c.id))
+      .map((c) => c.name);
+
+    try {
+      const docRefsToDelete: ReturnType<typeof doc>[] = [];
+
+      for (let i = 0; i < idsToDelete.length; i++) {
+        const clientId = idsToDelete[i];
+        try {
+          const histSnapshot = await getDocs(
+            collection(db, `salons/${salonData.id}/clients/${clientId}/history`)
+          );
+          histSnapshot.forEach((histDoc) => {
+            docRefsToDelete.push(histDoc.ref);
+          });
+        } catch (histErr) {
+          console.warn(`Could not read history for client ${clientId}:`, histErr);
+        }
+
+        docRefsToDelete.push(doc(db, `salons/${salonData.id}/clients`, clientId));
+      }
+
+      const CHUNK_SIZE = 400;
+      const totalOps = docRefsToDelete.length || 1;
+      let completedOps = 0;
+
+      for (let i = 0; i < docRefsToDelete.length; i += CHUNK_SIZE) {
+        const chunk = docRefsToDelete.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((ref) => batch.delete(ref));
+        await batch.commit();
+        completedOps += chunk.length;
+        setBulkDeleteProgress(Math.round((completedOps / totalOps) * 100));
+      }
+
+      if (selectedClient && idsToDelete.includes(selectedClient.id)) {
+        setIsDrawerOpen(false);
+        setSelectedClient(null);
+      }
+      if (editingClient && idsToDelete.includes(editingClient.id)) {
+        setIsDialogOpen(false);
+        setEditingClient(null);
+      }
+
+      await logAuditEvent(
+        salonData.id,
+        currentUser?.uid || '',
+        userData?.fullName || currentUser?.displayName || 'Gestor',
+        currentUser?.email || '',
+        userRole,
+        {
+          action: 'delete',
+          targetEntity: 'clients',
+          targetId: 'bulk_delete',
+          description: `Exclusão em massa de ${idsToDelete.length} contato(s) do CRM.`,
+          details: {
+            count: idsToDelete.length,
+            clientIds: idsToDelete.slice(0, 50),
+            sampleNames: deletedNames.slice(0, 15),
+          },
+        }
+      );
+
+      toast.success(
+        `${idsToDelete.length} ${idsToDelete.length === 1 ? 'contato apagado' : 'contatos apagados'} permanentemente!`
+      );
+      setSelectedClientIds([]);
+      setIsBulkDeleteDialogOpen(false);
+    } catch (err) {
+      console.error('Erro na exclusão em massa de clientes:', err);
+      toast.error('Erro ao apagar os contatos selecionados. Verifique suas permissões.');
+    } finally {
+      setIsBulkDeleting(false);
+      setBulkDeleteProgress(0);
+    }
+  };
+
   // Compute stats card values
   const activeClients = clients.filter(c => !c.archived && c.status !== 'inactive');
   const countNew = activeClients.filter(c => (c.crmStage || 'new') === 'new').length;
@@ -858,23 +982,34 @@ export default function ClientsPage() {
             if (!open) resetImportState();
           }}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="border-zinc-800 hover:border-[#D4AF37]/50 text-zinc-300 hover:text-white h-10 px-4 rounded-lg flex items-center gap-2 font-medium">
-                <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" /> Importar Lista
+              <Button variant="outline" className="border-zinc-800 hover:border-[#D4AF37]/50 text-zinc-300 hover:text-[#171717] h-10 px-4 rounded-lg flex items-center gap-2 font-medium">
+                <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" /> Importar Planilha
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[620px] bg-[#0c0c0e] border border-zinc-800 text-white shadow-2xl">
               <DialogHeader>
                 <DialogTitle className="font-heading font-normal text-zinc-100 flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" /> Migrar de Outro SaaS (CSV)
+                  <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" /> Importar Planilha de Clientes (XLSX / CSV)
                 </DialogTitle>
               </DialogHeader>
 
               {/* Step 1: Upload */}
               {!importFile && (
                 <div className="space-y-4 py-4">
-                  <p className="text-sm text-zinc-400">
-                    Facilite a transição para o <strong>LumièreOS</strong>. Carregue um arquivo de planilha no formato <strong>CSV</strong> (separado por vírgula ou ponto-e-vírgula) para carregar todos os dados de forma massiva.
-                  </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <p className="text-sm text-zinc-400">
+                      Carregue uma planilha <strong>Excel (.xlsx, .xls)</strong> ou <strong>CSV</strong> para importar seus clientes para o <strong>LumièreOS</strong>.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadClientTemplateXlsx()}
+                      className="border-zinc-800 hover:border-[#D4AF37]/50 text-zinc-300 hover:text-[#171717] h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 text-[#D4AF37]" /> Modelo (.xlsx)
+                    </Button>
+                  </div>
 
                   <div
                     onDragEnter={handleDrag}
@@ -887,20 +1022,28 @@ export default function ClientsPage() {
                         : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/20'
                     }`}
                   >
-                    <Upload className="w-10 h-10 text-zinc-500" />
+                    {isParsingFile ? (
+                      <Loader2 className="w-10 h-10 text-[#D4AF37] animate-spin" />
+                    ) : (
+                      <Upload className="w-10 h-10 text-zinc-500" />
+                    )}
                     <div className="text-center">
-                      <p className="text-sm font-semibold text-zinc-200">Arraste seu arquivo CSV aqui</p>
-                      <p className="text-xs text-zinc-500 mt-1">Ou clique para navegar nos seus arquivos</p>
+                      <p className="text-sm font-semibold text-zinc-200">
+                        {isParsingFile ? 'Lendo planilha...' : 'Arraste sua planilha XLSX ou CSV aqui'}
+                      </p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Formatos aceitos: .xlsx, .xls e .csv (até 10 MB)
+                      </p>
                     </div>
                     <input
                       type="file"
-                      accept=".csv"
+                      accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
                       onChange={handleFileChange}
                       className="hidden"
-                      id="csv-upload"
+                      id="spreadsheet-upload"
                     />
-                    <label htmlFor="csv-upload" className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg cursor-pointer transition">
-                      Procurar Arquivo
+                    <label htmlFor="spreadsheet-upload" className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-3.5 py-2 rounded-lg cursor-pointer transition font-medium">
+                      Procurar Arquivo (.xlsx / .csv)
                     </label>
                   </div>
 
@@ -908,8 +1051,8 @@ export default function ClientsPage() {
                     <span className="font-semibold text-zinc-300 flex items-center gap-1.5 mb-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Dica de Reconhecimento
                     </span>
-                    <p>Nosso sistema utiliza inteligência heurística para identificar as colunas automaticamente (Nome, Celular, E-mail, Origem, Etapas do Funil, etc.).</p>
-                    <p className="mt-1">Formatos de stage como 'Novo', 'Atendimento', 'Agendado', 'Ativo' serão mapeados sem necessidade de ajuste extra.</p>
+                    <p>Nosso sistema identifica automaticamente as colunas (Nome, Celular, E-mail, Origem, Etapas do Funil, Tags e Valor Gasto).</p>
+                    <p className="mt-1">Em planilhas Excel com várias abas, você poderá escolher qual aba deseja importar no próximo passo.</p>
                   </div>
                 </div>
               )}
@@ -917,17 +1060,33 @@ export default function ClientsPage() {
               {/* Step 2: Mapping Columns & Preview */}
               {importFile && !isImporting && (
                 <div className="space-y-4 py-3 max-h-[70vh] overflow-y-auto pr-1">
-                  <div className="flex justify-between items-center bg-zinc-900/60 p-3 rounded-lg border border-zinc-800">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 bg-zinc-900/60 p-3 rounded-lg border border-zinc-800">
                     <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
+                      <FileSpreadsheet className="w-4 h-4 text-[#D4AF37] shrink-0" />
                       <div className="text-left w-full">
                         <p className="text-xs font-semibold text-zinc-200 truncate max-w-[280px]">{importFile.name}</p>
                         <p className="text-[10px] text-zinc-500">{importRows.length} linhas de clientes identificadas</p>
                       </div>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={resetImportState} className="text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800">
-                      Trocar Arquivo
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {importSheetNames.length > 1 && (
+                        <Select value={selectedImportSheet} onValueChange={handleSheetChange}>
+                          <SelectTrigger className="bg-[#121215] border-zinc-800 text-[11px] h-8 w-[140px]">
+                            <SelectValue placeholder="Aba" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
+                            {importSheetNames.map((sheetName) => (
+                              <SelectItem key={sheetName} value={sheetName}>
+                                Aba: {sheetName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <Button variant="ghost" size="sm" onClick={resetImportState} className="text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800">
+                        Trocar Arquivo
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="space-y-3">
@@ -1053,11 +1212,30 @@ export default function ClientsPage() {
                       </div>
 
                       {/* Tags mapping */}
-                      <div className="space-y-1.5 col-span-2">
+                      <div className="space-y-1.5">
                         <Label className="text-[11px] text-zinc-400">Marcadores / Tags (separados por vírgula)</Label>
                         <Select 
                           value={String(columnMappings.tags)} 
                           onValueChange={(val) => setColumnMappings(prev => ({ ...prev, tags: Number(val) }))}
+                        >
+                          <SelectTrigger className="bg-[#121215] border-zinc-800 text-[12px] h-9 text-left">
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
+                            <SelectItem value="-1">Não mapeado</SelectItem>
+                            {importHeaders.map((hdr, idx) => (
+                              <SelectItem key={hdr + idx} value={String(idx)}>{hdr}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* LTV mapping */}
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-zinc-400">Valor Gasto (LTV / Faturamento)</Label>
+                        <Select 
+                          value={String(columnMappings.lifetimeValue)} 
+                          onValueChange={(val) => setColumnMappings(prev => ({ ...prev, lifetimeValue: Number(val) }))}
                         >
                           <SelectTrigger className="bg-[#121215] border-zinc-800 text-[12px] h-9 text-left">
                             <SelectValue placeholder="Selecione..." />
@@ -1369,6 +1547,60 @@ export default function ClientsPage() {
         </div>
       </div>
 
+      {/* ⚠️ Bulk Selection & Action Bar */}
+      {canBulkDelete && (filteredClients.length > 0 || selectedClientIds.length > 0) && (
+        <div className="bg-[#0b0b0d] border border-zinc-800/80 px-4 py-3 rounded-xl flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {filteredClients.length > 0 && (
+              <label className="flex items-center gap-2.5 cursor-pointer select-none text-xs font-medium text-zinc-200 hover:text-[#D4AF37] transition">
+                <input
+                  ref={selectAllCheckboxRef}
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAllVisible}
+                  className="h-4 w-4 rounded border-zinc-600 accent-[#D4AF37] cursor-pointer"
+                />
+                <span>
+                  {allVisibleSelected
+                    ? `Desmarcar todos (${filteredClients.length})`
+                    : `Selecionar todos (${filteredClients.length})`}
+                </span>
+              </label>
+            )}
+
+            {selectedClientIds.length > 0 && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#D4AF37]/15 text-[#B89B5E] border border-[#D4AF37]/30">
+                {selectedClientIds.length}{' '}
+                {selectedClientIds.length === 1 ? 'contato selecionado' : 'contatos selecionados'}
+              </span>
+            )}
+          </div>
+
+          {selectedClientIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearSelection}
+                className="h-9 px-3 text-xs text-zinc-400 hover:text-[#171717]"
+              >
+                Limpar seleção
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setIsBulkDeleteDialogOpen(true)}
+                className="h-9 px-4 text-xs font-semibold bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Apagar Selecionados ({selectedClientIds.length})
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ⚠️ Render matching View Mode */}
       {filteredClients.length === 0 ? (
         <Card className="border-border bg-[#0b0b0d] py-16">
@@ -1390,6 +1622,9 @@ export default function ClientsPage() {
           onSelectClient={openDrawer}
           onQuickAddClient={handleQuickAddClient}
           onArchiveClient={handleSoftArchive}
+          canBulkSelect={canBulkDelete}
+          selectedClientIds={selectedClientIds}
+          onToggleSelectClient={toggleSelectClient}
         />
       ) : (
         /* Structured List View */
@@ -1398,7 +1633,19 @@ export default function ClientsPage() {
             <table className="w-full text-left border-collapse text-zinc-300">
               <thead>
                 <tr className="bg-[#121215] text-zinc-400 text-xs font-semibold border-b border-zinc-800">
-                  <th className="p-4 pl-6">Cliente</th>
+                  {canBulkDelete && (
+                    <th className="p-4 pl-6 w-10">
+                      <input
+                        ref={tableSelectAllCheckboxRef}
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        aria-label="Selecionar todos os contatos visíveis"
+                        className="h-4 w-4 rounded border-zinc-600 accent-[#D4AF37] cursor-pointer"
+                      />
+                    </th>
+                  )}
+                  <th className={`p-4 ${canBulkDelete ? '' : 'pl-6'}`}>Cliente</th>
                   <th className="p-4">Etapa CRM</th>
                   <th className="p-4">Celular</th>
                   <th className="p-4">Origem</th>
@@ -1410,13 +1657,27 @@ export default function ClientsPage() {
               <tbody className="divide-y divide-zinc-800/50">
                 {filteredClients.map((client) => {
                   const isActionOverdue = client.nextActionAt && client.nextActionAt < todayStr;
+                  const isSelected = selectedClientIds.includes(client.id);
                   return (
                     <tr 
                       key={client.id} 
                       onClick={() => openDrawer(client)}
-                      className="hover:bg-[#121215]/40 transition duration-150 cursor-pointer group"
+                      className={`hover:bg-[#121215]/40 transition duration-150 cursor-pointer group ${
+                        isSelected ? 'bg-[#D4AF37]/10' : ''
+                      }`}
                     >
-                      <td className="p-4 pl-6">
+                      {canBulkDelete && (
+                        <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectClient(client.id)}
+                            aria-label={`Selecionar ${client.name}`}
+                            className="h-4 w-4 rounded border-zinc-600 accent-[#D4AF37] cursor-pointer"
+                          />
+                        </td>
+                      )}
+                      <td className={`p-4 ${canBulkDelete ? '' : 'pl-6'}`}>
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-[#15151a] border border-[#D4AF37]/10 flex items-center justify-center text-[#D4AF37] font-semibold text-xs text-center shrink-0">
                             {client.name.charAt(0).toUpperCase()}
@@ -1517,6 +1778,103 @@ export default function ClientsPage() {
           // No need to manually refetch since the onSnapshot handles it perfectly
         }}
       />
+
+      {/* ⚠️ Permanent Bulk Delete Confirmation Dialog */}
+      <Dialog
+        open={isBulkDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!isBulkDeleting) setIsBulkDeleteDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px] bg-[#0c0c0e] border border-zinc-800 text-white shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading font-semibold text-zinc-100 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+              Confirmar Exclusão em Massa
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-sm text-zinc-300">
+            <p>
+              Você está prestes a apagar permanentemente{' '}
+              <strong className="text-red-500">
+                {selectedClientIds.length}{' '}
+                {selectedClientIds.length === 1 ? 'contato' : 'contatos'}
+              </strong>{' '}
+              e todo o histórico de timeline associado a eles.
+            </p>
+
+            {selectedClientIds.length > 0 && (
+              <div className="bg-[#121215] border border-zinc-800 rounded-lg p-3 space-y-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Contatos selecionados:
+                </p>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  {clients
+                    .filter((c) => selectedClientIds.includes(c.id))
+                    .slice(0, 5)
+                    .map((c) => c.name)
+                    .join(', ')}
+                  {selectedClientIds.length > 5 &&
+                    ` e mais ${selectedClientIds.length - 5}...`}
+                </p>
+              </div>
+            )}
+
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-500 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Esta ação é irreversível e não poderá ser desfeita após a confirmação.
+              </span>
+            </div>
+
+            {isBulkDeleting && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-zinc-400">
+                  <span>Apagando contatos selecionados...</span>
+                  <span className="font-mono">{bulkDeleteProgress}%</span>
+                </div>
+                <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-red-600 transition-all duration-200"
+                    style={{ width: `${bulkDeleteProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isBulkDeleting}
+              onClick={() => setIsBulkDeleteDialogOpen(false)}
+              className="border-zinc-800 text-zinc-300 hover:text-[#171717]"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={isBulkDeleting || selectedClientIds.length === 0}
+              onClick={handleConfirmBulkDelete}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold flex items-center gap-2"
+            >
+              {isBulkDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Apagando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  Apagar Tudo Permanentemente
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
