@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { collection, query, onSnapshot, doc, setDoc, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { Client, ClientHistory } from '../../types';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,59 @@ import {
 
 import KanbanBoard from '../../components/crm/KanbanBoard';
 import ClientDetailsDrawer from '../../components/crm/ClientDetailsDrawer';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  const activeUser = auth?.currentUser;
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: activeUser?.uid,
+      email: activeUser?.email,
+      emailVerified: activeUser?.emailVerified,
+      isAnonymous: activeUser?.isAnonymous,
+      tenantId: activeUser?.tenantId,
+      providerInfo:
+        activeUser?.providerData?.map((provider: any) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 const CRM_STAGES = [
   { id: 'all', label: 'Todas as etapas' },
@@ -257,9 +310,22 @@ export default function ClientsPage() {
     const parseFloatSafe = (val: string): number => parseCurrencyOrNumberSafe(val);
 
     try {
+      const now = Date.now();
+      const createdByUid = currentUser?.uid || '';
+      const createdByLabel = currentUser?.displayName || currentUser?.email || 'Sistema/Importador';
+      const clientsCollectionRef = collection(db, `salons/${salonData.id}/clients`);
+
+      interface PreparedImportItem {
+        clientRef: ReturnType<typeof doc>;
+        clientPayload: Client;
+        histRef: ReturnType<typeof doc>;
+        histPayload: Record<string, any>;
+      }
+
+      const itemsToImport: PreparedImportItem[] = [];
+
       for (let i = 0; i < total; i++) {
         const row = importRows[i];
-        
         const nameVal = row[columnMappings.name]?.trim();
         if (!nameVal) {
           continue;
@@ -268,22 +334,22 @@ export default function ClientsPage() {
         const phoneVal = columnMappings.phone !== -1 ? row[columnMappings.phone]?.trim() || '' : '';
         const emailVal = columnMappings.email !== -1 ? row[columnMappings.email]?.trim() || '' : '';
         const notesVal = columnMappings.notes !== -1 ? row[columnMappings.notes]?.trim() || '' : '';
-        
+
         const rawStage = columnMappings.crmStage !== -1 ? row[columnMappings.crmStage]?.trim() || '' : '';
         const crmStageVal = rawStage ? mapCrmStage(rawStage) : 'new';
 
         const rawSource = columnMappings.source !== -1 ? row[columnMappings.source]?.trim() || '' : '';
         const { source: sourceVal, sourceLabel: sourceLabelVal } = mapSource(rawSource);
 
-        const tagsVal = columnMappings.tags !== -1 ? 
-          row[columnMappings.tags] ? row[columnMappings.tags].split(/[,;]+/).map((t: string) => t.trim()).filter(Boolean) : [] 
+        const tagsVal = columnMappings.tags !== -1 && row[columnMappings.tags]
+          ? row[columnMappings.tags].split(/[,;]+/).map((t: string) => t.trim()).filter(Boolean)
           : [];
 
         const ltvVal = columnMappings.lifetimeValue !== -1 ? parseFloatSafe(row[columnMappings.lifetimeValue]) : 0;
 
-        const ref = doc(collection(db, `salons/${salonData.id}/clients`));
+        const clientRef = doc(clientsCollectionRef);
         const newClient: Client = {
-          id: ref.id,
+          id: clientRef.id,
           name: nameVal,
           phone: phoneVal,
           email: emailVal,
@@ -299,38 +365,66 @@ export default function ClientsPage() {
           lifetimeValue: ltvVal,
           totalSpent: ltvVal,
           totalAppointments: ltvVal > 0 ? 1 : 0,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          createdBy: currentUser?.uid || '',
-          updatedBy: currentUser?.uid || ''
+          createdAt: now,
+          updatedAt: now,
+          createdBy: createdByUid,
+          updatedBy: createdByUid
         };
 
-        await setDoc(ref, newClient);
-
-        // Created activity history entry for each client
-        const histId = doc(collection(db, `salons/${salonData.id}/clients/${ref.id}/history`)).id;
-        await setDoc(doc(db, `salons/${salonData.id}/clients/${ref.id}/history`, histId), {
-          id: histId,
+        const histRef = doc(collection(db, `salons/${salonData.id}/clients/${clientRef.id}/history`));
+        const histPayload = {
+          id: histRef.id,
           type: 'created',
           title: 'Importado de outro SaaS',
           description: `Importação automática via migração Lumière. Etapa definida: "${getStageLabel(crmStageVal)}".`,
-          createdBy: currentUser?.uid || '',
-          createdByName: currentUser?.displayName || currentUser?.email || 'Sistema/Importador',
-          createdAt: Date.now()
-        });
+          createdBy: createdByUid,
+          createdByName: createdByLabel,
+          createdAt: now
+        };
 
-        count++;
-        setTotalImported(count);
-        setImportProgress(Math.round(((i + 1) / total) * 100));
+        itemsToImport.push({ clientRef, clientPayload: newClient, histRef, histPayload });
       }
 
-      if (count === 0) {
+      if (itemsToImport.length === 0) {
         toast.warning('Nenhum cliente com nome válido foi encontrado para importar.');
-      } else {
-        toast.success(`${count} clientes importados e devidamente organizados no CRM com sucesso!`);
-        setIsImportDialogOpen(false);
-        resetImportState();
+        return;
       }
+
+      // Commit in fast Firestore writeBatch chunks (150 clients = 300 ops per batch, max 500 ops limit)
+      const ITEMS_PER_BATCH = 150;
+      const CONCURRENT_BATCHES = 3;
+      const batchChunks: PreparedImportItem[][] = [];
+
+      for (let i = 0; i < itemsToImport.length; i += ITEMS_PER_BATCH) {
+        batchChunks.push(itemsToImport.slice(i, i + ITEMS_PER_BATCH));
+      }
+
+      for (let i = 0; i < batchChunks.length; i += CONCURRENT_BATCHES) {
+        const wave = batchChunks.slice(i, i + CONCURRENT_BATCHES);
+        try {
+          await Promise.all(
+            wave.map(async (chunk) => {
+              const batch = writeBatch(db);
+              chunk.forEach((item) => {
+                batch.set(item.clientRef, item.clientPayload);
+                batch.set(item.histRef, item.histPayload);
+              });
+              await batch.commit();
+            })
+          );
+        } catch (batchErr) {
+          handleFirestoreError(batchErr, OperationType.WRITE, `salons/${salonData.id}/clients`);
+        }
+
+        const waveCount = wave.reduce((sum, chunk) => sum + chunk.length, 0);
+        count += waveCount;
+        setTotalImported(count);
+        setImportProgress(Math.round((count / itemsToImport.length) * 100));
+      }
+
+      toast.success(`${count} clientes importados e devidamente organizados no CRM com sucesso!`);
+      setIsImportDialogOpen(false);
+      resetImportState();
     } catch (err) {
       console.error("Error during clients import:", err);
       toast.error("Houve um problema durante a importação. Algumas gravações podem ter falhado.");
@@ -503,8 +597,12 @@ export default function ClientsPage() {
     });
   }, [clients]);
 
-  const visibleClientIds = filteredClients.map((c) => c.id);
-  const selectedVisibleCount = visibleClientIds.filter((id) => selectedClientIds.includes(id)).length;
+  const selectedIdSet = useMemo(() => new Set(selectedClientIds), [selectedClientIds]);
+  const visibleClientIds = useMemo(() => filteredClients.map((c) => c.id), [filteredClients]);
+  const selectedVisibleCount = useMemo(
+    () => visibleClientIds.reduce((acc, id) => (selectedIdSet.has(id) ? acc + 1 : acc), 0),
+    [visibleClientIds, selectedIdSet]
+  );
   const allVisibleSelected = filteredClients.length > 0 && selectedVisibleCount === filteredClients.length;
   const someVisibleSelected = selectedVisibleCount > 0 && selectedVisibleCount < filteredClients.length;
 
@@ -775,49 +873,97 @@ export default function ClientsPage() {
     }
   };
 
-  // Permanent bulk delete
+  // Permanent bulk delete (fast batched client deletion + parallel best-effort history cleanup)
   const handleConfirmBulkDelete = async () => {
     if (!salonData || selectedClientIds.length === 0 || !canBulkDelete) return;
 
     setIsBulkDeleting(true);
-    setBulkDeleteProgress(0);
+    setBulkDeleteProgress(5);
 
     const idsToDelete = [...selectedClientIds];
     const deletedNames = clients
-      .filter((c) => idsToDelete.includes(c.id))
+      .filter((c) => selectedIdSet.has(c.id))
       .map((c) => c.name);
 
     try {
-      const docRefsToDelete: ReturnType<typeof doc>[] = [];
+      // Phase 1: Delete client documents directly in fast concurrent writeBatch chunks (100 docs/batch)
+      const CLIENT_BATCH_SIZE = 100;
+      const CLIENT_CONCURRENCY = 3;
+      const clientChunks: string[][] = [];
 
-      for (let i = 0; i < idsToDelete.length; i++) {
-        const clientId = idsToDelete[i];
+      for (let i = 0; i < idsToDelete.length; i += CLIENT_BATCH_SIZE) {
+        clientChunks.push(idsToDelete.slice(i, i + CLIENT_BATCH_SIZE));
+      }
+
+      let deletedClientsCount = 0;
+      for (let i = 0; i < clientChunks.length; i += CLIENT_CONCURRENCY) {
+        const wave = clientChunks.slice(i, i + CLIENT_CONCURRENCY);
         try {
-          const histSnapshot = await getDocs(
-            collection(db, `salons/${salonData.id}/clients/${clientId}/history`)
+          await Promise.all(
+            wave.map(async (chunk) => {
+              const batch = writeBatch(db);
+              chunk.forEach((clientId) => {
+                batch.delete(doc(db, `salons/${salonData.id}/clients`, clientId));
+              });
+              await batch.commit();
+            })
           );
-          histSnapshot.forEach((histDoc) => {
-            docRefsToDelete.push(histDoc.ref);
-          });
-        } catch (histErr) {
-          console.warn(`Could not read history for client ${clientId}:`, histErr);
+        } catch (batchErr) {
+          handleFirestoreError(batchErr, OperationType.DELETE, `salons/${salonData.id}/clients`);
         }
 
-        docRefsToDelete.push(doc(db, `salons/${salonData.id}/clients`, clientId));
+        deletedClientsCount += wave.reduce((acc, c) => acc + c.length, 0);
+        setBulkDeleteProgress(5 + Math.round((deletedClientsCount / idsToDelete.length) * 70));
       }
 
-      const CHUNK_SIZE = 400;
-      const totalOps = docRefsToDelete.length || 1;
-      let completedOps = 0;
+      // Phase 2: Clean up history subcollections in parallel pools (best-effort so legacy rules never block client deletion)
+      const HISTORY_CONCURRENCY = 20;
+      const historyRefsToDelete: ReturnType<typeof doc>[] = [];
 
-      for (let i = 0; i < docRefsToDelete.length; i += CHUNK_SIZE) {
-        const chunk = docRefsToDelete.slice(i, i + CHUNK_SIZE);
-        const batch = writeBatch(db);
-        chunk.forEach((ref) => batch.delete(ref));
-        await batch.commit();
-        completedOps += chunk.length;
-        setBulkDeleteProgress(Math.round((completedOps / totalOps) * 100));
+      for (let i = 0; i < idsToDelete.length; i += HISTORY_CONCURRENCY) {
+        const pool = idsToDelete.slice(i, i + HISTORY_CONCURRENCY);
+        const snapshots = await Promise.all(
+          pool.map(async (clientId) => {
+            try {
+              return await getDocs(
+                collection(db, `salons/${salonData.id}/clients/${clientId}/history`)
+              );
+            } catch {
+              return null;
+            }
+          })
+        );
+        snapshots.forEach((snap) => {
+          if (snap && !snap.empty) {
+            snap.forEach((histDoc) => historyRefsToDelete.push(histDoc.ref));
+          }
+        });
       }
+
+      if (historyRefsToDelete.length > 0) {
+        const HIST_BATCH_SIZE = 200;
+        const histChunks: ReturnType<typeof doc>[][] = [];
+        for (let i = 0; i < historyRefsToDelete.length; i += HIST_BATCH_SIZE) {
+          histChunks.push(historyRefsToDelete.slice(i, i + HIST_BATCH_SIZE));
+        }
+
+        for (let i = 0; i < histChunks.length; i += CLIENT_CONCURRENCY) {
+          const wave = histChunks.slice(i, i + CLIENT_CONCURRENCY);
+          await Promise.all(
+            wave.map(async (chunk) => {
+              try {
+                const batch = writeBatch(db);
+                chunk.forEach((ref) => batch.delete(ref));
+                await batch.commit();
+              } catch (histDelErr) {
+                console.warn('Aviso ao limpar subcoleção history:', histDelErr);
+              }
+            })
+          );
+        }
+      }
+
+      setBulkDeleteProgress(100);
 
       if (selectedClient && idsToDelete.includes(selectedClient.id)) {
         setIsDrawerOpen(false);
@@ -828,7 +974,7 @@ export default function ClientsPage() {
         setEditingClient(null);
       }
 
-      await logAuditEvent(
+      void logAuditEvent(
         salonData.id,
         currentUser?.uid || '',
         userData?.fullName || currentUser?.displayName || 'Gestor',
@@ -854,7 +1000,13 @@ export default function ClientsPage() {
       setIsBulkDeleteDialogOpen(false);
     } catch (err) {
       console.error('Erro na exclusão em massa de clientes:', err);
-      toast.error('Erro ao apagar os contatos selecionados. Verifique suas permissões.');
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const isPermDenied = rawMessage.toLowerCase().includes('permission');
+      toast.error(
+        isPermDenied
+          ? 'Permissão negada ao apagar contatos. Verifique seu perfil de acesso ou as regras do banco.'
+          : 'Erro ao apagar os contatos selecionados. Tente novamente em instantes.'
+      );
     } finally {
       setIsBulkDeleting(false);
       setBulkDeleteProgress(0);
@@ -1657,7 +1809,7 @@ export default function ClientsPage() {
               <tbody className="divide-y divide-zinc-800/50">
                 {filteredClients.map((client) => {
                   const isActionOverdue = client.nextActionAt && client.nextActionAt < todayStr;
-                  const isSelected = selectedClientIds.includes(client.id);
+                  const isSelected = selectedIdSet.has(client.id);
                   return (
                     <tr 
                       key={client.id} 

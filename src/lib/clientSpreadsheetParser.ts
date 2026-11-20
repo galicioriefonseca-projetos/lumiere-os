@@ -163,6 +163,7 @@ export async function parseClientSpreadsheet(
     header: 1,
     raw: false,
     defval: '',
+    blankrows: false,
     dateNF: 'dd/mm/yyyy',
   });
 

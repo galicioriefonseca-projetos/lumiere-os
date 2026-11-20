@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Client } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Phone, Calendar, Mail, Edit2, AlertCircle, Clock, Trash2, Archive, UserCheck, MessageSquare, Plus, Tag } from 'lucide-react';
@@ -39,6 +39,7 @@ export default function KanbanBoard({
 }: KanbanBoardProps) {
   const [activeDragOverStage, setActiveDragOverStage] = useState<string | null>(null);
   const [mobileActiveStage, setMobileActiveStage] = useState<Client['crmStage']>('new');
+  const selectedIdSet = useMemo(() => new Set(selectedClientIds), [selectedClientIds]);
 
   const canUserMove = userRole !== 'professional';
   const isProfessionalRole = userRole === 'professional';
@@ -184,7 +185,7 @@ export default function KanbanBoard({
                     list.map((c) => {
                       const isOverdue = c.nextActionAt && c.nextActionAt < todayStr;
                       const hasNext = !!c.nextActionAt;
-                      const isSelected = selectedClientIds.includes(c.id);
+                      const isSelected = selectedIdSet.has(c.id);
 
                       return (
                         <div

@@ -114,14 +114,15 @@ service cloud.firestore {
     function canManageSalon(salonId) {
       return isSignedIn() && (
         canUseTutorialDemo(salonId) || isPlatformAdmin() || (
-          exists(/databases/$(database)/documents/salons/$(salonId)) && 
-          'ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && 
-          get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid
-        ) || (
           exists(userDoc()) && 
           'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
           'role' in get(userDoc()).data && 
           (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+        ) || (
+          exists(/databases/$(database)/documents/salons/$(salonId)) && (
+            ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
+            (userEmail() != "" && 'ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
+          )
         )
       );
     }
@@ -447,13 +448,13 @@ service cloud.firestore {
           (('crmStage' in request.resource.data) && ('crmStage' in resource.data) && request.resource.data.crmStage == resource.data.crmStage)
         )
       );
-      allow delete: if canUseTutorialDemo(salonId) || isPlatformAdmin() || canManageSalon(salonId);
+      allow delete: if canManageSalon(salonId);
 
       // History logs subcollection
       match /history/{historyId} {
         allow get, list: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
         allow create, update: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
-        allow delete: if canUseTutorialDemo(salonId) || isPlatformAdmin() || canManageSalon(salonId);
+        allow delete: if canManageSalon(salonId);
       }
     }
 
