@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { APP_INFO } from '../../config/appInfo';
 import { InteractiveTour } from '../InteractiveTour';
+import { subscribeForegroundPushMessages } from '../../lib/pushNotifications';
 
 // Modular Components
 import { DashboardSidebar } from './dashboard/DashboardSidebar';
@@ -17,6 +19,7 @@ import { GoogleCalendarDialog } from '../workspace/GoogleCalendarDialog';
 
 export default function DashboardLayout() {
   const { userData, salonData, isPlatformAdmin, logout, currentUser } = useAuth();
+  const navigate = useNavigate();
 
   // Dialog States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -36,6 +39,17 @@ export default function DashboardLayout() {
       setHasNewVersionNotice(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!currentUser || !salonData?.id) return;
+    const targetRoute =
+      userData?.role === 'professional'
+        ? '/dashboard/meu-painel?tab=agenda'
+        : '/dashboard/agendamentos';
+    return subscribeForegroundPushMessages(() => {
+      navigate(targetRoute);
+    });
+  }, [currentUser, salonData?.id, userData?.role, navigate]);
 
   const navigation = getNavigationByRole(userData?.role, salonData, currentUser?.email || userData?.email, userData);
 

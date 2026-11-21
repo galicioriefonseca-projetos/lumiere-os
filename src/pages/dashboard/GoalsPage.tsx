@@ -18,10 +18,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { normalizeGoal, calculateGoalProgress, GoalProgress, getDaysCount, generateDefaultWeeklySplits, calculateRevenueForDateRange, NormalizedGoal } from "../../lib/goals";
+import { normalizeGoal, calculateGoalProgress, GoalProgress, getDaysCount, generateDefaultWeeklySplits, calculateGoalPredictability, NormalizedGoal } from "../../lib/goals";
 import { WeeklyGoalSplit } from "../../types";
 import { canManageGoals } from "../../lib/permissions";
 import { applyXPGain } from "../../lib/gamification";
+import { GoalPredictabilityPanel } from "@/components/goals/GoalPredictabilityPanel";
 import {
   Loader2,
   Plus,
@@ -727,7 +728,18 @@ export default function GoalsPage() {
       {activeTab === "salon" ? (
         // SALON TAB
         <div className="space-y-6">
-          <div className="flex justify-end">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 bg-white border border-[#E5E2DC] px-3 py-2 rounded-xl">
+              <Calendar className="w-4 h-4 text-[#8A6D36] shrink-0" />
+              <span className="text-xs text-[#6B6B6B] font-medium">Competência:</span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent border-none text-xs font-semibold text-[#171717] focus:outline-none cursor-pointer"
+              />
+            </div>
+
             <Dialog
               open={isDialogOpen}
               onOpenChange={(open) => {
@@ -825,6 +837,17 @@ export default function GoalsPage() {
               </DialogContent>
             </Dialog>
           </div>
+
+          <GoalPredictabilityPanel
+            mode="team"
+            professionals={professionals}
+            appointments={appointments}
+            services={services}
+            goals={professionalGoals}
+            salonGoals={goals}
+            selectedMonth={selectedMonth}
+            title="Previsibilidade Semanal do Salão (Base Agendamentos Confirmados)"
+          />
 
           {goals.length === 0 ? (
             <Card className="border border-border bg-card rounded-2xl shadow-xs">
@@ -1115,6 +1138,21 @@ export default function GoalsPage() {
               {/* SUBTAB: OVERVIEW */}
               {subTab === "overview" && (
                 <div className="space-y-6">
+                  <GoalPredictabilityPanel
+                    mode="team"
+                    professionals={professionals}
+                    appointments={appointments}
+                    services={services}
+                    goals={professionalGoals}
+                    selectedMonth={selectedMonth}
+                    onSelectProfessional={(pid) => {
+                      if (pid) {
+                        const found = professionals.find((pr) => pr.id === pid);
+                        if (found) setSelectedProf(found);
+                      }
+                    }}
+                  />
+
                   {/* General Summary Stats Cards */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card className="border-border bg-card p-5 rounded-2xl space-y-2 shadow-xs">
@@ -2066,33 +2104,54 @@ export default function GoalsPage() {
                             {/* 4 Semanas Detalhadas */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                               {splits.map((w) => {
-                                const wRev = calculateRevenueForDateRange(appointments, services, p.id, w.startDate, w.endDate);
+                                const wPred = calculateGoalPredictability(
+                                  appointments,
+                                  services,
+                                  p.id,
+                                  w.startDate,
+                                  w.endDate,
+                                  w.targetAmount || 0
+                                );
+                                const wRev = wPred.realizedRevenue;
+                                const wConfirmedTotal = wPred.confirmedTotalRevenue;
                                 const isHit = w.targetAmount > 0 && wRev >= w.targetAmount;
+                                const isConfirmedGuaranteed = w.targetAmount > 0 && wConfirmedTotal >= w.targetAmount;
                                 const wPct = w.targetAmount > 0 ? Math.min(Math.round((wRev / w.targetAmount) * 100), 100) : 0;
-                                const wRem = Math.max(0, w.targetAmount - wRev);
+                                const wRemWithConfirmed = wPred.missingWithConfirmed;
 
                                 return (
-                                  <div key={w.weekNumber} className="bg-black/30 p-3 rounded-xl border border-white/5 space-y-1.5">
+                                  <div key={w.weekNumber} className="bg-[#FAF9F7] p-3 rounded-xl border border-[#E5E2DC] space-y-1.5">
                                     <div className="flex justify-between items-center text-xs">
-                                      <span className="font-semibold text-white text-[11px]">Semana {w.weekNumber}</span>
+                                      <span className="font-semibold text-[#171717] text-[11px]">Semana {w.weekNumber}</span>
                                       <span className={cn(
-                                        "text-[9px] font-bold px-1.5 py-0.2 rounded font-mono",
-                                        isHit ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "text-zinc-400"
+                                        "text-[9px] font-bold px-1.5 py-0.5 rounded font-mono",
+                                        isHit
+                                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                          : isConfirmedGuaranteed
+                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                            : "text-[#6B6B6B]"
                                       )}>
-                                        {isHit ? "✓ Batida!" : `${wPct}%`}
+                                        {isHit ? "✓ Batida!" : isConfirmedGuaranteed ? "✓ Garantida" : `${wPct}%`}
                                       </span>
                                     </div>
 
                                     <div className="flex justify-between text-[10px] font-mono">
-                                      <span className="text-zinc-300 font-bold">{formatBRL(wRev)}</span>
-                                      <span className="text-zinc-500">Alvo: {formatBRL(w.targetAmount)}</span>
+                                      <span className="text-[#171717] font-bold">{formatBRL(wRev)}</span>
+                                      <span className="text-[#6B6B6B]">Alvo: {formatBRL(w.targetAmount)}</span>
                                     </div>
 
-                                    <Progress value={wPct} className="h-1 bg-zinc-800" />
+                                    <Progress value={wPct} className="h-1 bg-[#EAE7E0]" />
 
-                                    <span className="text-[9px] text-zinc-400 block pt-0.5 truncate font-mono">
-                                      {isHit ? `+${formatBRL(wRev - w.targetAmount)} superávit` : `Faltam ${formatBRL(wRem)}`}
-                                    </span>
+                                    <div className="flex justify-between text-[9px] font-mono pt-0.5">
+                                      <span className="text-emerald-700 font-semibold">
+                                        Projetado: {formatBRL(wConfirmedTotal)}
+                                      </span>
+                                      <span className="text-[#6B6B6B]">
+                                        {isConfirmedGuaranteed
+                                          ? `+${formatBRL(wPred.surplusWithConfirmed)}`
+                                          : `Falta: ${formatBRL(wRemWithConfirmed)}`}
+                                      </span>
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -2215,7 +2274,19 @@ export default function GoalsPage() {
                     const { progress, hasManualProgress } = matchedItem;
 
                     return (
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      <div className="space-y-6">
+                        <GoalPredictabilityPanel
+                          mode="professional"
+                          professionals={[selectedProf]}
+                          appointments={appointments}
+                          services={services}
+                          goals={professionalGoals}
+                          selectedMonth={selectedMonth}
+                          focusedProfessionalId={selectedProf.id}
+                          title={`Previsibilidade Semanal & Saldo de Metas — ${selectedProf.name}`}
+                        />
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Summary Column */}
                         <Card className="lg:col-span-1 border-white/5 bg-[#15151b] p-5 rounded-3xl space-y-6 flex flex-col justify-between">
                           <div className="space-y-4">
@@ -2302,6 +2373,7 @@ export default function GoalsPage() {
                             </div>
                           )}
                         </Card>
+                        </div>
                       </div>
                     );
                   })() : (

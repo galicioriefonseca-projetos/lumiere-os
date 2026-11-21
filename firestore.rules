@@ -393,6 +393,17 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'role', 'salonId', 'userId', 'professionalId', 'isActive', 'status', 'joinedByInvite', 'inviteId', 'inviteType', 'createdAt', 'commissionRate'
         ])
+      ) || (
+        isSignedIn() &&
+        userSalonId() == salonId &&
+        resource != null &&
+        (
+          ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+          (userEmail() != "" && 'email' in resource.data && resource.data.email == userEmail())
+        ) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'fcmToken', 'fcmTokens', 'pushEnabled', 'pushPreferences', 'updatedAt'
+        ])
       );
       allow delete: if canManageSalon(salonId);
     }
@@ -406,7 +417,11 @@ service cloud.firestore {
     // Notifications
     match /salons/{salonId}/notifications/{notifId} {
       allow read: if isSalonMember(salonId);
-      allow create, update, delete: if canOperateFrontDesk(salonId);
+      allow create, delete: if canOperateFrontDesk(salonId);
+      allow update: if canOperateFrontDesk(salonId) || (
+        isSalonMember(salonId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+      );
     }
 
     // 3. Checklist Configurations (Templates)
@@ -464,6 +479,18 @@ service cloud.firestore {
       allow create, update, delete: if canManageSalon(salonId);
     }
 
+    // 8b. Service Packages & Combos
+    match /salons/{salonId}/packages/{packageId} {
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
+    // 8c. Rooms, Cabins & Equipment Resources
+    match /salons/{salonId}/resources/{resourceId} {
+      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
     // 9. Categories
     match /salons/{salonId}/categories/{categoryId} {
       allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ;
@@ -480,6 +507,18 @@ service cloud.firestore {
     // 11. Financial Transactions
     match /salons/{salonId}/financialTransactions/{transactionId} {
       allow read, write: if canManageSalon(salonId);
+    }
+
+    // 11b. Commission Adjustments (Bonus & Discounts)
+    match /salons/{salonId}/commissionAdjustments/{adjustmentId} {
+      allow read: if canManageSalon(salonId) || isSalonProfessional(salonId);
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
+    // 11c. Commission Payout Batches
+    match /salons/{salonId}/commissionPayouts/{payoutId} {
+      allow read: if canManageSalon(salonId) || isSalonProfessional(salonId);
+      allow create, update, delete: if canManageSalon(salonId);
     }
 
     // 12. Inventory / Stock Management

@@ -37,12 +37,36 @@ import {
   Filter,
   Info,
   Bell,
-  BellOff,
+  MessageCircle,
+  ExternalLink,
+  Copy,
 } from "lucide-react";
 import { formatBRL, cn } from "@/lib/utils";
-import { calculateGoalProgress, normalizeGoal, getCurrentWeekIndex, calculateRevenueForDateRange } from "../../lib/goals";
-import { requestAndRegisterNotificationPermission } from "../../lib/pushNotifications";
+import {
+  calculateGoalProgress,
+  normalizeGoal,
+  getCurrentWeekIndex,
+  calculateRevenueForDateRange,
+  calculateGoalPredictability,
+  getCalendarWeekRange,
+} from "../../lib/goals";
+import { PushNotificationSettingsCard } from "../../components/notifications/PushNotificationSettingsCard";
 import { LumiCollaboratorCoaching } from "../../components/lumi/LumiCollaboratorCoaching";
+import { WeeklyGoalForecastPanel } from "../../components/appointments/WeeklyGoalForecastPanel";
+import { GoalPredictabilityPanel } from "../../components/goals/GoalPredictabilityPanel";
+import {
+  getAppointmentStatusMeta,
+  sendWhatsAppConfirmation,
+  SendWhatsAppConfirmationResponse,
+  updateAppointmentStatusApi,
+} from "@/services/appointmentsService";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 function formatBrDate(dateStr?: string): string {
   if (!dateStr || typeof dateStr !== 'string') return '-';
@@ -65,56 +89,22 @@ export default function ProfessionalDashboard() {
   const [services, setServices] = useState<Service[]>([]);
   const [myGoals, setMyGoals] = useState<ProfessionalGoal[]>([]);
   const [selectedEval, setSelectedEval] = useState<ChecklistRun | null>(null);
-  const [agendaTab, setAgendaTab] = useState<"today" | "all">("today");
+  const [agendaTab, setAgendaTab] = useState<"today" | "week" | "all">("week");
   const [useBusinessDays, setUseBusinessDays] = useState(false);
   const [selectedWeekIndex, setSelectedWeekIndex] = useState<number>(0);
   const [showMonthlyDetails, setShowMonthlyDetails] = useState<boolean>(false);
+  const [sendingWaId, setSendingWaId] = useState<string | null>(null);
+  const [waDispatchResult, setWaDispatchResult] = useState<{
+    appointment: Appointment;
+    response: SendWhatsAppConfirmationResponse;
+  } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editPrimary, setEditPrimary] = useState('');
   const [editCustomPrimary, setEditCustomPrimary] = useState('');
-  const [pushStatus, setPushStatus] = useState<'granted' | 'default' | 'denied' | 'unsupported'>('default');
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (!('Notification' in window)) {
-        setPushStatus('unsupported');
-      } else {
-        setPushStatus(Notification.permission as any);
-      }
-    }
-  }, [activeTab]);
-
-  const handleEnablePush = async () => {
-    if (!salonData || !userData) {
-      toast.error("Erro interno: dados de sessão ausentes.");
-      return;
-    }
-    try {
-      const token = await requestAndRegisterNotificationPermission(salonData.id, userData.id);
-      if (token) {
-        setPushStatus('granted');
-        toast.success("Notificações push ativadas com sucesso!");
-      } else {
-        const perm = typeof window !== 'undefined' && 'Notification' in window
-          ? Notification.permission
-          : 'unsupported';
-        setPushStatus(perm as any);
-        if (perm === 'denied') {
-          toast.error("Permissão de notificação negada pelo navegador. Ative as permissões nas configurações do seu navegador para receber alertas.");
-        } else if (perm === 'unsupported') {
-          toast.error("Este dispositivo ou navegador não oferece suporte a notificações push.");
-        } else {
-          toast.error("Não foi possível registrar o token de notificações. Verifique as credenciais do Firebase.");
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error("Ocorreu um erro ao configurar notificações push.");
-    }
-  };
 
   useEffect(() => {
     if (!salonData?.id || !myProfile?.id) return;
@@ -413,10 +403,34 @@ export default function ProfessionalDashboard() {
   const changeApptStatus = async (apptId: string, status: Appointment["status"]) => {
     if (!salonData) return;
     try {
-      const ref = doc(db, `salons/${salonData.id}/appointments`, apptId);
-      await updateDoc(ref, { status, updatedAt: Date.now() });
-    } catch (e) {
-      console.error(e);
+      await updateAppointmentStatusApi(salonData.id, apptId, status);
+      toast.success("Status do atendimento atualizado!");
+    } catch (e: unknown) {
+      try {
+        const ref = doc(db, `salons/${salonData.id}/appointments`, apptId);
+        await updateDoc(ref, { status, updatedAt: Date.now() });
+        toast.success("Status do atendimento atualizado!");
+      } catch (err) {
+        console.error(e, err);
+        toast.error("Não foi possível atualizar o status.");
+      }
+    }
+  };
+
+  const handleRequestWhatsApp = async (app: Appointment) => {
+    if (!salonData?.id) return;
+    try {
+      setSendingWaId(app.id);
+      const res = await sendWhatsAppConfirmation(salonData.id, app.id);
+      if (res.sentViaCloudApi) {
+        toast.success("Confirmação enviada via WhatsApp! Assim que o cliente responder, o horário ficará verde.");
+      } else {
+        setWaDispatchResult({ appointment: app, response: res });
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar confirmação via WhatsApp.");
+    } finally {
+      setSendingWaId(null);
     }
   };
 
@@ -513,13 +527,23 @@ export default function ProfessionalDashboard() {
     ? presentEvaluations.reduce((sum, current) => sum + ((current.totalScore || 0) / (current.maxScore || 40)) * 5, 0) / presentEvaluations.length
     : 0;
 
+  const calendarWeek = getCalendarWeekRange(todayStr);
   const todayAppointments = myAppointments.filter(a => a.date === todayStr);
-  const displayAppointments = agendaTab === "today" ? todayAppointments : myAppointments;
+  const weekAppointments = myAppointments.filter(
+    a => typeof a.date === "string" && a.date >= calendarWeek.startDate && a.date <= calendarWeek.endDate
+  );
+  const displayAppointments =
+    agendaTab === "today"
+      ? todayAppointments
+      : agendaTab === "week"
+        ? weekAppointments
+        : myAppointments;
 
   const selectedWeek = weeklySplits[selectedWeekIndex] || weeklySplits[0];
-  const selectedWeekRevenue = (selectedWeek && myProfile)
-    ? calculateRevenueForDateRange(myAppointments, services, myProfile.id, selectedWeek.startDate, selectedWeek.endDate)
-    : 0;
+  const selectedWeekPred = (selectedWeek && myProfile)
+    ? calculateGoalPredictability(myAppointments, services, myProfile.id, selectedWeek.startDate, selectedWeek.endDate, selectedWeek.targetAmount || 0)
+    : null;
+  const selectedWeekRevenue = selectedWeekPred?.realizedRevenue || 0;
   const selectedWeekTarget = selectedWeek?.targetAmount || 0;
   const selectedWeekRemaining = Math.max(0, selectedWeekTarget - selectedWeekRevenue);
   const selectedWeekPct = selectedWeekTarget > 0 ? Math.min(Math.round((selectedWeekRevenue / selectedWeekTarget) * 100), 200) : 0;
@@ -1107,6 +1131,19 @@ export default function ProfessionalDashboard() {
             </Card>
           </div>
 
+          <WeeklyGoalForecastPanel
+            appointments={myAppointments}
+            services={services}
+            professionals={myProfile ? [myProfile] : []}
+            goals={myGoals}
+            selectedDate={todayStr}
+            selectedProfessionalIds={myProfile ? [myProfile.id] : []}
+            currentUserRole="professional"
+            compact
+            onRequestWhatsAppConfirmation={handleRequestWhatsApp}
+            onSelectAppointment={() => setTab("agenda")}
+          />
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             {/* Agenda Preview */}
@@ -1179,101 +1216,149 @@ export default function ProfessionalDashboard() {
 
       {/* ==================== SCREEN: MINHA AGENDA ==================== */}
       {activeTab === 'agenda' && (
-        <Card className="border-border bg-card/50">
-          <CardHeader className="border-b border-white/5 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-            <div>
-              <CardTitle className="text-lg font-heading font-normal">Sua Agenda de Atendimentos</CardTitle>
-              <CardDescription className="text-xs">Monitore seus clientes, horários e confirme a realização dos serviços.</CardDescription>
-            </div>
-            
-            <div className="flex gap-1 bg-muted p-0.5 rounded-lg border border-white/5 self-end">
-              <Button 
-                size="xs" 
-                variant={agendaTab === "today" ? "default" : "ghost"}
-                onClick={() => setAgendaTab("today")}
-                className="text-xs rounded-md"
-              >
-                Hoje ({todayAppointments.length})
-              </Button>
-              <Button 
-                size="xs" 
-                variant={agendaTab === "all" ? "default" : "ghost"}
-                onClick={() => setAgendaTab("all")}
-                className="text-xs rounded-md"
-              >
-                Todos os Períodos ({myAppointments.length})
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 md:p-6">
-            {displayAppointments.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                <Calendar className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="font-heading font-medium text-sm">Nenhum agendamento encontrado</p>
-                <p className="text-xs font-light mt-1 text-muted-foreground">Não há compromissos para a seleção atual.</p>
+        <div className="space-y-4">
+          <WeeklyGoalForecastPanel
+            appointments={myAppointments}
+            services={services}
+            professionals={myProfile ? [myProfile] : []}
+            goals={myGoals}
+            selectedDate={todayStr}
+            selectedProfessionalIds={myProfile ? [myProfile.id] : []}
+            currentUserRole="professional"
+            compact
+            onRequestWhatsAppConfirmation={handleRequestWhatsApp}
+          />
+
+          <Card className="border-border bg-card/50">
+            <CardHeader className="border-b border-white/5 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <CardTitle className="text-lg font-heading font-normal">Sua Agenda de Atendimentos</CardTitle>
+                <CardDescription className="text-xs">
+                  Acompanhe confirmações em tempo real (verde = confirmado pelo cliente), veja seus horários da semana e finalize atendimentos.
+                </CardDescription>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {displayAppointments.map(app => {
-                  const isToday = app.date === todayStr;
-                  return (
-                    <Card key={app.id} className="border border-white/5 bg-black/20 hover:border-white/10 transition-colors relative overflow-hidden">
-                      {app.status === 'completed' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
-                      {app.status === 'canceled' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-destructive" />}
-                      {app.status === 'scheduled' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-primary" />}
-                      
-                      <CardContent className="p-4 flex flex-col justify-between h-full">
-                        <div>
-                          <div className="flex justify-between items-center mb-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono text-sm font-semibold text-primary">{app.time}</span>
-                              <span className="text-[10px] text-muted-foreground bg-white/5 px-2 py-0.5 rounded border border-white/5">{formatBrDate(app.date)}</span>
+              
+              <div className="flex gap-1 bg-muted p-0.5 rounded-lg border border-white/5 self-end">
+                <Button 
+                  size="xs" 
+                  variant={agendaTab === "today" ? "default" : "ghost"}
+                  onClick={() => setAgendaTab("today")}
+                  className="text-xs rounded-md"
+                >
+                  Hoje ({todayAppointments.length})
+                </Button>
+                <Button 
+                  size="xs" 
+                  variant={agendaTab === "week" ? "default" : "ghost"}
+                  onClick={() => setAgendaTab("week")}
+                  className="text-xs rounded-md"
+                >
+                  Esta Semana ({weekAppointments.length})
+                </Button>
+                <Button 
+                  size="xs" 
+                  variant={agendaTab === "all" ? "default" : "ghost"}
+                  onClick={() => setAgendaTab("all")}
+                  className="text-xs rounded-md"
+                >
+                  Todos ({myAppointments.length})
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6">
+              {displayAppointments.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground">
+                  <Calendar className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                  <p className="font-heading font-medium text-sm">Nenhum agendamento encontrado</p>
+                  <p className="text-xs font-light mt-1 text-muted-foreground">Não há compromissos para a seleção atual.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {displayAppointments.map(app => {
+                    const meta = getAppointmentStatusMeta(app);
+                    const canAct = !app.isBlock && app.status !== 'completed' && app.status !== 'canceled';
+                    return (
+                      <Card key={app.id} className={cn("border transition-colors relative overflow-hidden", meta.cardBg, meta.cardBorder)}>
+                        <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: meta.accentHex }} />
+                        
+                        <CardContent className="p-4 pl-5 flex flex-col justify-between h-full">
+                          <div>
+                            <div className="flex justify-between items-center mb-2 gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-sm font-semibold text-[#171717]">{app.time}</span>
+                                <span className="text-[10px] text-[#6B6B6B] bg-white/80 px-2 py-0.5 rounded border border-[#E5E2DC]">{formatBrDate(app.date)}</span>
+                              </div>
+                              
+                              <span className={cn(
+                                "text-[10px] font-semibold px-2 py-0.5 rounded-md border",
+                                meta.badgeBg,
+                                meta.badgeText,
+                                meta.badgeBorder
+                              )}>{meta.label}</span>
                             </div>
-                            
-                            <span className={cn(
-                              "text-[10px] uppercase font-bold px-2 py-0.5 rounded-full font-mono",
-                              app.status === 'completed' ? "bg-green-500/10 text-green-400" :
-                              app.status === 'canceled' ? "bg-destructive/10 text-destructive" :
-                              "bg-primary/10 text-primary"
-                            )}>{app.status}</span>
+
+                            <h4 className="font-semibold text-sm text-[#171717]">
+                              {app.isBlock ? "Bloqueio de Horário" : app.clientName}
+                            </h4>
+                            {!app.isBlock && (
+                              <p className="text-xs text-[#6B6B6B] mt-0.5">
+                                Serviço: <b className="text-[#171717]">{app.serviceName}</b>
+                              </p>
+                            )}
+                            {app.confirmationStatus === 'awaiting_client' && app.status === 'scheduled' && (
+                              <p className="text-[11px] text-amber-800 mt-1 font-medium">
+                                Link enviado — aguardando cliente confirmar no WhatsApp
+                              </p>
+                            )}
+                            {app.notes && (
+                              <p className="text-xs text-[#6B6B6B] bg-white/70 border border-[#E5E2DC] p-2 rounded mt-3 italic">
+                                "{app.notes}"
+                              </p>
+                            )}
                           </div>
 
-                          <h4 className="font-medium text-sm text-foreground">{app.clientName}</h4>
-                          <p className="text-xs text-muted-foreground mt-0.5">Serviço: <b className="text-[#eee]">{app.serviceName}</b></p>
-                          {app.notes && (
-                            <p className="text-xs text-muted-foreground bg-white/5 border border-white/5 p-2 rounded mt-3 italic">
-                              "{app.notes}"
-                            </p>
+                          {canAct && (
+                            <div className="flex flex-wrap gap-2 justify-end mt-4 pt-3 border-t border-[#E5E2DC]">
+                              {app.status === "scheduled" && (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  disabled={sendingWaId === app.id}
+                                  onClick={() => handleRequestWhatsApp(app)}
+                                  className="border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-50 text-xs font-semibold rounded-lg px-2.5 gap-1"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                  WhatsApp
+                                </Button>
+                              )}
+                              {app.status !== "in_service" && (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  onClick={() => changeApptStatus(app.id, 'in_service')}
+                                  className="border-sky-300 bg-white text-sky-800 hover:bg-sky-50 text-xs font-semibold rounded-lg px-2.5"
+                                >
+                                  Iniciar
+                                </Button>
+                              )}
+                              <Button 
+                                size="xs" 
+                                onClick={() => changeApptStatus(app.id, 'completed')}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg px-3"
+                              >
+                                Concluir
+                              </Button>
+                            </div>
                           )}
-                        </div>
-
-                        {app.status === "scheduled" && isToday && (
-                          <div className="flex gap-2 justify-end mt-4 pt-4 border-t border-white/5">
-                            <Button 
-                              size="xs" 
-                              onClick={() => changeApptStatus(app.id, 'completed')}
-                              className="bg-green-500 hover:bg-green-600 text-black text-xs font-semibold rounded-lg px-3"
-                            >
-                              Finalizar Serviço
-                            </Button>
-                            <Button 
-                              size="xs" 
-                              variant="ghost" 
-                              onClick={() => changeApptStatus(app.id, 'canceled')}
-                              className="text-destructive hover:bg-destructive/10 text-xs rounded-lg px-3"
-                            >
-                              Cancelar
-                            </Button>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ==================== SCREEN: MEU DESEMPENHO ==================== */}
@@ -1528,256 +1613,246 @@ export default function ProfessionalDashboard() {
 
       {/* ==================== SCREEN: MINHAS METAS ==================== */}
       {activeTab === 'metas' && (
-        <Card className="border-border bg-card/50">
-          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <CardTitle className="text-base font-medium">Painel de Metas & Acompanhamento</CardTitle>
-              <CardDescription className="text-xs">Visualize suas metas contratuais de faturamento, aderência em tempo real e projeção diária.</CardDescription>
-            </div>
+        <div className="space-y-6">
+          <GoalPredictabilityPanel
+            mode="professional"
+            professionals={myProfile ? [myProfile] : []}
+            appointments={myAppointments}
+            services={services}
+            goals={myGoals}
+            selectedMonth={currentMonthStr}
+            focusedProfessionalId={myProfile?.id}
+            onRequestWhatsAppConfirmation={handleRequestWhatsApp}
+            onOpenAppointment={() => setTab("agenda")}
+            title="Previsibilidade de Faturamento (Base Confirmados)"
+          />
 
-            {/* Business days configuration selector */}
-            {currentGoal && (
-              <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 self-start sm:self-center">
-                <button
-                  type="button"
-                  onClick={() => setUseBusinessDays(false)}
-                  className={`px-3 py-1 rounded-lg text-[9px] uppercase font-bold tracking-wider transition-all ${
-                    !useBusinessDays
-                      ? "bg-primary text-black font-extrabold"
-                      : "text-muted-foreground hover:text-white"
-                  }`}
-                >
-                  Dias Corridos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUseBusinessDays(true)}
-                  className={`px-3 py-1 rounded-lg text-[9px] uppercase font-bold tracking-wider transition-all ${
-                    useBusinessDays
-                      ? "bg-primary text-black font-extrabold"
-                      : "text-muted-foreground hover:text-white"
-                  }`}
-                >
-                  Dias Úteis
-                </button>
+          <Card className="border-border bg-card/50">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base font-medium">Detalhamento por Semana & Previsibilidade</CardTitle>
+                <CardDescription className="text-xs">Compare realizado, agendamentos confirmados da semana e projeção de meta.</CardDescription>
               </div>
-            )}
-          </CardHeader>
-          <CardContent className="p-4 md:p-6 space-y-6">
-            {!currentGoal || !goalProgress ? (
-              <div className="text-center py-10 text-muted-foreground">
-                <Target className="w-10 h-10 mx-auto mb-3 opacity-30 text-primary animate-pulse" />
-                <p className="font-heading font-medium text-sm text-foreground">Nenhuma meta ativa para {currentMonthStr}</p>
-                <p className="text-xs mt-1">A gerência estabelecerá metas de faturamento e comissionamento para você aqui.</p>
-              </div>
-            ) : (
-              <div className="max-w-2xl mx-auto space-y-6">
-                
-                {/* Seletor Visual de Semanas do Mês */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                      <Calendar className="w-3 h-3 text-primary" />
-                      Escolha a Semana de Acompanhamento
-                    </span>
-                    <span className="text-[10px] text-zinc-500 font-mono">
-                      Mês: {currentGoal.month}
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {weeklySplits.map((week, idx) => {
-                      const isSelected = selectedWeekIndex === idx;
-                      const isCurrent = currentWeekIdx === idx;
-                      const weekRev = calculateRevenueForDateRange(myAppointments, services, myProfile.id, week.startDate, week.endDate);
-                      const isHit = week.targetAmount > 0 && weekRev >= week.targetAmount;
-                      const weekPct = week.targetAmount > 0 ? Math.min(Math.round((weekRev / week.targetAmount) * 100), 100) : 0;
-
-                      return (
-                        <button
-                          key={week.weekNumber}
-                          type="button"
-                          onClick={() => setSelectedWeekIndex(idx)}
-                          className={cn(
-                            "p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
-                            isSelected
-                              ? "bg-[#D4AF37]/15 border-[#D4AF37] ring-1 ring-[#D4AF37]/50 shadow-lg"
-                              : "bg-[#121217] border-white/5 hover:border-white/20 hover:bg-white/5"
-                          )}
-                        >
-                          <div className="flex items-center justify-between w-full mb-1">
-                            <span className={cn(
-                              "text-xs font-bold font-heading",
-                              isSelected ? "text-[#D4AF37]" : "text-white"
-                            )}>
-                              Semana {week.weekNumber}
-                            </span>
-                            {isCurrent && (
-                              <span className="text-[8px] bg-primary text-black font-extrabold px-1.5 py-0.2 rounded-full uppercase tracking-wider font-mono">
-                                Atual 📍
-                              </span>
-                            )}
-                          </div>
-
-                          <p className="text-[9px] text-zinc-400 font-mono mb-2 truncate">
-                            {week.startDate.slice(8, 10)}/{week.startDate.slice(5, 7)} a {week.endDate.slice(8, 10)}/{week.endDate.slice(5, 7)}
-                          </p>
-
-                          <div className="space-y-1 w-full pt-1 border-t border-white/5">
-                            <div className="flex justify-between items-center text-[10px] font-mono">
-                              <span className={cn("font-bold", isHit ? "text-emerald-400" : "text-zinc-200")}>
-                                {formatBRL(weekRev)}
-                              </span>
-                              <span className="text-zinc-500">{weekPct}%</span>
-                            </div>
-                            <Progress value={weekPct} className="h-1 bg-black/40" />
-                          </div>
-
-                          {isHit && (
-                            <span className="text-[8px] text-emerald-400 font-bold font-mono mt-1 flex items-center gap-0.5">
-                              ✓ Batida!
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Card Principal de Destaque: META SEMANAL (Foco e Leveza Visual) */}
-                <div className="bg-gradient-to-b from-[#15141b] to-[#0c0c10] p-6 rounded-3xl border border-[#D4AF37]/30 shadow-2xl space-y-5 text-center relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none" />
-
-                  <div className="flex justify-between items-center relative z-10 flex-wrap gap-2">
-                    <span className="text-[10px] bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 uppercase font-extrabold tracking-widest px-3 py-1 rounded-full font-mono flex items-center gap-1">
-                      <Target className="w-3 h-3 text-[#D4AF37]" />
-                      {selectedWeek?.label || `Semana ${selectedWeekIndex + 1}`}
-                      {currentWeekIdx === selectedWeekIndex && " • SEMANA ATUAL"}
-                    </span>
-
-                    <span className={cn(
-                      "text-[10px] font-bold tracking-wider rounded-md px-2.5 py-1 font-mono border",
-                      isSelectedWeekHit
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        : selectedWeekPct >= 75
-                        ? "bg-amber-400/10 text-amber-300 border-amber-400/20"
-                        : selectedWeekPct >= 40
-                        ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
-                        : "bg-zinc-800 text-zinc-300 border-zinc-700"
-                    )}>
-                      {isSelectedWeekHit
-                        ? "META DA SEMANA BATIDA! 🏆"
-                        : selectedWeekPct >= 75
-                        ? "RETA FINAL DA SEMANA 🔥"
-                        : selectedWeekPct >= 40
-                        ? "EM ANDAMENTO 👍"
-                        : "VAMOS ACELERAR ⚡"}
-                    </span>
-                  </div>
-
-                  {/* Valor Principal Realizado na Semana */}
-                  <div className="pt-2 relative z-10">
-                    <p className="text-zinc-400 text-xs font-light uppercase tracking-wider">
-                      Seu Faturamento Realizado Nesta Semana
-                    </p>
-                    <p className="text-4xl md:text-5xl font-heading font-extrabold text-white tracking-tight font-mono select-all mt-1">
-                      {formatBRL(selectedWeekRevenue)}
-                    </p>
-                    
-                    <p className="text-xs text-zinc-400 mt-2 font-mono">
-                      Meta desta semana: <span className="text-[#D4AF37] font-semibold">{formatBRL(selectedWeekTarget)}</span>
-                    </p>
-                  </div>
-
-                  {/* Barra de Progresso Semanal com "Quanto Falta" em Destaque */}
-                  <div className="space-y-3 bg-black/40 p-4 rounded-2xl border border-white/10 relative z-10">
-                    <div className="flex justify-between items-center text-xs font-medium">
-                      <span className="text-[#D4AF37] font-bold font-mono text-sm">
-                        {selectedWeekPct}% Atingido
-                      </span>
-                      {selectedWeekRemaining > 0 ? (
-                        <span className="text-zinc-200 font-sans text-xs">
-                          Faltam apenas <strong className="text-white font-mono font-bold text-sm bg-white/10 px-2 py-0.5 rounded">{formatBRL(selectedWeekRemaining)}</strong> para bater a semana!
-                        </span>
-                      ) : (
-                        <span className="text-emerald-400 font-semibold flex items-center text-xs">
-                          <Award className="w-4 h-4 mr-1 text-emerald-400" />
-                          Você superou a meta semanal em {formatBRL(Math.abs(selectedWeekRemaining))}! 🎉
-                        </span>
-                      )}
-                    </div>
-                    <Progress value={Math.min(selectedWeekPct, 100)} className="h-3 rounded-xl bg-zinc-900" />
-                  </div>
-
-                  {/* Cards de Apoio da Semana */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left relative z-10">
-                    <div className="bg-black/30 p-3.5 rounded-2xl border border-white/5 space-y-1">
-                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-mono">
-                        Período da Semana
-                      </span>
-                      <p className="text-sm font-semibold text-white font-mono">
-                        {selectedWeek?.startDate} até {selectedWeek?.endDate}
-                      </p>
-                      <p className="text-[10px] text-zinc-500">
-                        Total de 7 dias de produção na semana.
-                      </p>
-                    </div>
-
-                    <div className="bg-black/30 p-3.5 rounded-2xl border border-white/5 space-y-1">
-                      <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider font-mono">
-                        {selectedWeekRemaining > 0 ? "Ritmo da Semana" : "Status de Conquista"}
-                      </span>
-                      <p className="text-sm font-semibold text-[#D4AF37] font-mono">
-                        {selectedWeekRemaining > 0 ? `Falta ${formatBRL(selectedWeekRemaining)}` : "Meta Concluída!"}
-                      </p>
-                      <p className="text-[10px] text-zinc-500">
-                        {selectedWeekRemaining > 0 
-                          ? "Foco nesta semana para manter seu bônus de produção em dia!"
-                          : "Excelente! Desfrute do seu bônus e continue avançando!"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Seção Opcional: Acumulado Mensal Retrátil */}
-                <div className="border border-white/5 bg-[#121217] rounded-2xl p-4">
+              {/* Business days configuration selector */}
+              {currentGoal && (
+                <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 self-start sm:self-center">
                   <button
                     type="button"
-                    onClick={() => setShowMonthlyDetails(prev => !prev)}
-                    className="w-full flex items-center justify-between text-xs font-semibold text-zinc-300 hover:text-white transition-all cursor-pointer"
+                    onClick={() => setUseBusinessDays(false)}
+                    className={`px-3 py-1 rounded-lg text-[9px] uppercase font-bold tracking-wider transition-all ${
+                      !useBusinessDays
+                        ? "bg-primary text-black font-extrabold"
+                        : "text-muted-foreground hover:text-white"
+                    }`}
                   >
-                    <span className="flex items-center gap-2">
-                      <Info className="w-4 h-4 text-primary" />
-                      Deseja ver a meta mensal consolidada ({currentGoal.month})?
-                    </span>
-                    <span className="text-[11px] text-[#D4AF37] underline decoration-dotted font-mono">
-                      {showMonthlyDetails ? "Ocultar Mensal ▲" : "Visualizar Mensal ▼"}
-                    </span>
+                    Dias Corridos
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseBusinessDays(true)}
+                    className={`px-3 py-1 rounded-lg text-[9px] uppercase font-bold tracking-wider transition-all ${
+                      useBusinessDays
+                        ? "bg-primary text-black font-extrabold"
+                        : "text-muted-foreground hover:text-white"
+                    }`}
+                  >
+                    Dias Úteis
+                  </button>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="p-4 md:p-6 space-y-6">
+              {!currentGoal || !goalProgress ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Target className="w-10 h-10 mx-auto mb-3 opacity-30 text-primary animate-pulse" />
+                  <p className="font-heading font-medium text-sm text-foreground">Nenhuma meta ativa para {currentMonthStr}</p>
+                  <p className="text-xs mt-1">A gerência estabelecerá metas de faturamento e comissionamento para você aqui.</p>
+                </div>
+              ) : (
+                <div className="max-w-3xl mx-auto space-y-6">
+                  
+                  {/* Seletor Visual de Semanas do Mês */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                        <Calendar className="w-3 h-3 text-primary" />
+                        Escolha a Semana de Acompanhamento
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-mono">
+                        Mês: {currentGoal.month}
+                      </span>
+                    </div>
 
-                  {showMonthlyDetails && (
-                    <div className="pt-4 mt-3 border-t border-white/5 space-y-3 text-xs">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-black/30 p-3 rounded-xl border border-white/5">
-                          <span className="text-[10px] text-zinc-500 uppercase font-mono block">Meta Total do Mês</span>
-                          <span className="text-base font-bold text-white font-mono">{formatBRL(currentGoal.targetValue)}</span>
-                        </div>
-                        <div className="bg-black/30 p-3 rounded-xl border border-white/5 text-right">
-                          <span className="text-[10px] text-zinc-500 uppercase font-mono block">Realizado no Mês</span>
-                          <span className="text-base font-bold text-emerald-400 font-mono">{formatBRL(currentGoal.currentValue)}</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {weeklySplits.map((week, idx) => {
+                        const isSelected = selectedWeekIndex === idx;
+                        const isCurrent = currentWeekIdx === idx;
+                        const weekPred = calculateGoalPredictability(
+                          myAppointments,
+                          services,
+                          myProfile.id,
+                          week.startDate,
+                          week.endDate,
+                          week.targetAmount || 0
+                        );
+                        const weekRev = weekPred.realizedRevenue;
+                        const isHit = week.targetAmount > 0 && weekRev >= week.targetAmount;
+                        const isCovered = week.targetAmount > 0 && weekPred.projectedTotalRevenue >= week.targetAmount;
+                        const weekPct = week.targetAmount > 0 ? Math.min(Math.round((weekRev / week.targetAmount) * 100), 100) : 0;
+
+                        return (
+                          <button
+                            key={week.weekNumber}
+                            type="button"
+                            onClick={() => setSelectedWeekIndex(idx)}
+                            className={cn(
+                              "p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer",
+                              isSelected
+                                ? "bg-[#FAF9F7] border-[#B89B5E] ring-1 ring-[#B89B5E] shadow-xs"
+                                : "bg-white border-[#E5E2DC] hover:bg-[#FAF9F7]"
+                            )}
+                          >
+                            <div className="flex items-center justify-between w-full mb-1">
+                              <span className={cn(
+                                "text-xs font-bold font-heading",
+                                isSelected ? "text-[#8A6D36]" : "text-[#171717]"
+                              )}>
+                                Semana {week.weekNumber}
+                              </span>
+                              {isCurrent && (
+                                <span className="text-[8px] bg-[#171717] text-white font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                                  Atual
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-[10px] text-[#6B6B6B] font-mono mb-2 truncate">
+                              {week.startDate.slice(8, 10)}/{week.startDate.slice(5, 7)} a {week.endDate.slice(8, 10)}/{week.endDate.slice(5, 7)}
+                            </p>
+
+                            <div className="space-y-1 w-full pt-1 border-t border-[#E5E2DC]">
+                              <div className="flex justify-between items-center text-[10px] font-mono">
+                                <span className={cn("font-bold", isHit ? "text-emerald-700" : "text-[#171717]")}>
+                                  {formatBRL(weekRev)}
+                                </span>
+                                <span className="text-[#6B6B6B]">{weekPct}%</span>
+                              </div>
+                              <Progress value={weekPct} className="h-1 bg-[#EAE7E0]" />
+                              <div className="flex justify-between text-[9px] text-[#6B6B6B]">
+                                <span>Agenda: {formatBRL(weekPred.scheduledTotalRevenue)}</span>
+                                {isCovered && !isHit && <span className="text-emerald-700 font-semibold">Coberta</span>}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Card Principal de Destaque: META SEMANAL + PREVISÃO */}
+                  <div className="bg-[#FAF9F7] p-6 rounded-2xl border border-[#E5E2DC] space-y-5 text-center relative overflow-hidden">
+                    <div className="flex justify-between items-center flex-wrap gap-2">
+                      <span className="text-[11px] bg-white text-[#8A6D36] border border-[#E5E2DC] font-semibold px-3 py-1 rounded-lg flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-[#8A6D36]" />
+                        {selectedWeek?.label || `Semana ${selectedWeekIndex + 1}`}
+                        {currentWeekIdx === selectedWeekIndex && " • Semana Atual"}
+                      </span>
+
+                      <span className={cn(
+                        "text-[11px] font-semibold rounded-lg px-2.5 py-1 border",
+                        isSelectedWeekHit
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                          : selectedWeekPred && selectedWeekPred.missingWithAgenda <= 0 && selectedWeekTarget > 0
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-white text-[#6B6B6B] border-[#E5E2DC]"
+                      )}>
+                        {isSelectedWeekHit
+                          ? "Meta da Semana Batida!"
+                          : selectedWeekPred && selectedWeekPred.missingWithAgenda <= 0 && selectedWeekTarget > 0
+                            ? "Coberta pelos Agendamentos"
+                            : `${selectedWeekPct}% realizado • ${selectedWeekPred ? selectedWeekPred.projectedPercent.toFixed(0) : selectedWeekPct}% previsto`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+                      <div className="bg-white p-4 rounded-xl border border-[#E5E2DC]">
+                        <span className="text-[11px] text-[#6B6B6B] block">Realizado na Semana</span>
+                        <p className="text-2xl font-bold text-[#171717] tabular-nums mt-1">
+                          {formatBRL(selectedWeekRevenue)}
+                        </p>
+                        <p className="text-[11px] text-[#6B6B6B] mt-1 tabular-nums">
+                          Meta: {formatBRL(selectedWeekTarget)}
+                        </p>
+                      </div>
+
+                      <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200">
+                        <span className="text-[11px] text-emerald-900 block">Projetado na Semana (c/ Confirmados)</span>
+                        <p className="text-2xl font-bold text-emerald-800 tabular-nums mt-1">
+                          {formatBRL(selectedWeekPred?.confirmedTotalRevenue || selectedWeekRevenue)}
+                        </p>
+                        <p className="text-[11px] text-emerald-800/80 mt-1 tabular-nums">
+                          {selectedWeekPred?.confirmedCount || 0} conf. • {selectedWeekPred?.pendingCount || 0} a confirmar
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-xl border border-[#B89B5E]/40">
+                        <span className="text-[11px] text-[#8A6D36] font-semibold block">
+                          {selectedWeekPred && selectedWeekPred.missingWithConfirmed <= 0
+                            ? "Meta Semanal Garantida"
+                            : "Falta p/ Meta Semanal"}
+                        </span>
+                        <p className="text-2xl font-bold text-[#171717] tabular-nums mt-1">
+                          {selectedWeekPred && selectedWeekPred.missingWithConfirmed > 0
+                            ? formatBRL(selectedWeekPred.missingWithConfirmed)
+                            : `+${formatBRL(selectedWeekPred?.surplusWithConfirmed || 0)}`}
+                        </p>
+                        <p className="text-[11px] text-[#6B6B6B] mt-1 tabular-nums">
+                          {selectedWeekRemaining > 0
+                            ? `Falta faturar: ${formatBRL(selectedWeekRemaining)}`
+                            : "Meta já superada!"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Acumulado Mensal Retrátil */}
+                  <div className="border border-[#E5E2DC] bg-white rounded-2xl p-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowMonthlyDetails(prev => !prev)}
+                      className="w-full flex items-center justify-between text-xs font-semibold text-[#171717] cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Info className="w-4 h-4 text-[#8A6D36]" />
+                        Resumo Consolidado do Mês ({currentGoal.month})
+                      </span>
+                      <span className="text-[11px] text-[#8A6D36] underline decoration-dotted">
+                        {showMonthlyDetails ? "Ocultar ▲" : "Visualizar ▼"}
+                      </span>
+                    </button>
+
+                    {showMonthlyDetails && (
+                      <div className="pt-4 mt-3 border-t border-[#E5E2DC] space-y-3 text-xs">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-[#FAF9F7] p-3 rounded-xl border border-[#E5E2DC]">
+                            <span className="text-[10px] text-[#6B6B6B] uppercase block">Meta Total do Mês</span>
+                            <span className="text-base font-bold text-[#171717] tabular-nums">{formatBRL(currentGoal.targetValue)}</span>
+                          </div>
+                          <div className="bg-[#FAF9F7] p-3 rounded-xl border border-[#E5E2DC] text-right">
+                            <span className="text-[10px] text-[#6B6B6B] uppercase block">Realizado no Mês</span>
+                            <span className="text-base font-bold text-emerald-700 tabular-nums">{formatBRL(currentGoal.currentValue)}</span>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed font-light">
-                        A meta mensal foi dividida em 4 semanas para que você acompanhe passo a passo seu crescimento, sem o peso de ver o montante total distante. Cada semana concluída garante o sucesso do seu mês!
-                      </p>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
 
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* ==================== SCREEN: MEU PERFIL ==================== */}
@@ -1935,76 +2010,72 @@ export default function ProfessionalDashboard() {
             </CardContent>
           </Card>
 
-          {/* Core Feature Card for Push Notifications */}
-          <Card className="border-border bg-card/50 overflow-hidden shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-[#D4AF37]" /> Notificações Push Essenciais
-                </span>
-                {pushStatus === 'granted' ? (
-                  <span className="text-[10px] bg-green-500/10 border border-green-500/20 text-green-400 px-2.5 py-0.5 rounded-full uppercase font-bold font-mono">
-                    Ativo
-                  </span>
-                ) : pushStatus === 'denied' ? (
-                  <span className="text-[10px] bg-red-500/10 border border-red-500/20 text-red-400 px-2.5 py-0.5 rounded-full uppercase font-bold font-mono">
-                    Bloqueado
-                  </span>
-                ) : (
-                  <span className="text-[10px] bg-zinc-500/15 border border-zinc-500/25 text-zinc-400 px-2.5 py-0.5 rounded-full uppercase font-bold font-mono">
-                    Inativo
-                  </span>
-                )}
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Receba alertas instantâneos no seu celular ou computador sempre que um novo agendamento for confirmado para você no salão.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-xs text-zinc-300 space-y-2 leading-relaxed font-sans font-light">
-                <p>
-                  O LumièreOS utiliza a tecnologia segura do Firebase Cloud Messaging (FCM) integrada para enviar alertas diretos em tempo real ao seu navegador. Assim, você nunca perde um horário!
-                </p>
-                {pushStatus === 'denied' && (
-                  <p className="text-xs font-normal text-red-300 bg-red-950/20 border border-red-900/30 p-3 rounded-xl flex items-start gap-2 leading-relaxed">
-                    <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
-                    Você recusou anteriormente a permissão de notificações deste site. Clique no ícone de "cadeado" ou "configurações" no seu navegador ao lado do endereço do site (URL) e mude para "Permitir" para restaurar os alertas.
-                  </p>
-                )}
-                {pushStatus === 'unsupported' && (
-                  <p className="text-xs font-semibold text-zinc-400 bg-zinc-950/40 p-3 rounded-xl">
-                    Seu navegador ou dispositivo atual não oferece suporte à API Push nativa (no iOS, adicione o LumièreOS à tela de início como aplicativo PWA para ativar o recurso completo!).
-                  </p>
-                )}
-              </div>
-
-              {pushStatus !== 'unsupported' && (
-                <div className="pt-2">
-                  <Button
-                    onClick={handleEnablePush}
-                    disabled={pushStatus === 'granted'}
-                    className={`w-full font-semibold rounded-xl text-xs h-11 flex items-center justify-center gap-2 transition-all ${
-                      pushStatus === 'granted'
-                        ? 'bg-zinc-800 border border-zinc-700/50 text-zinc-500 cursor-default'
-                        : 'bg-gradient-to-r from-[#D4AF37] to-[#b08f2e] hover:from-[#b08f2e] hover:to-[#917524] text-black shadow-md shadow-amber-500/5 cursor-pointer'
-                    }`}
-                  >
-                    {pushStatus === 'granted' ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-green-400" /> Alertas Push Ativos neste Dispositivo
-                      </>
-                    ) : (
-                      <>
-                        <Bell className="w-4 h-4 animate-bounce" /> Ativar Alertas Push do LumièreOS
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {salonData?.id && userData?.id && (
+            <PushNotificationSettingsCard
+              salonId={salonData.id}
+              userId={userData.id}
+              professionalDocId={myProfile?.id}
+              initialPushEnabled={myProfile?.pushEnabled}
+              initialTokensCount={
+                myProfile?.fcmTokens?.length || (myProfile?.fcmToken ? 1 : 0)
+              }
+              initialPreferences={myProfile?.pushPreferences}
+            />
+          )}
         </div>
       )}
+
+      {/* Modal de Disparo de Confirmação WhatsApp (Fallback Link Seguro) */}
+      <Dialog
+        open={Boolean(waDispatchResult)}
+        onOpenChange={(open) => !open && setWaDispatchResult(null)}
+      >
+        <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg text-[#171717] flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-emerald-600" />
+              Confirmar com {waDispatchResult?.appointment.clientName}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#6B6B6B]">
+              Envie esta mensagem pelo WhatsApp. Assim que o cliente tocar no link e confirmar, o agendamento muda para verde na sua agenda!
+            </DialogDescription>
+          </DialogHeader>
+
+          {waDispatchResult && (
+            <div className="space-y-4 pt-2 text-xs">
+              <div className="bg-[#FAF9F7] border border-[#E5E2DC] rounded-xl p-3 whitespace-pre-wrap text-[11px] text-[#171717] leading-relaxed max-h-48 overflow-y-auto">
+                {waDispatchResult.response.messageText}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <a
+                  href={waDispatchResult.response.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setWaDispatchResult(null)}
+                  className="flex-1 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs inline-flex items-center justify-center gap-2 px-4 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Abrir WhatsApp Agora
+                </a>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard
+                      .writeText(waDispatchResult.response.confirmUrl)
+                      .then(() => toast.success("Link de confirmação copiado!"))
+                      .catch(() => toast.error("Não foi possível copiar."));
+                  }}
+                  className="h-10 rounded-xl border-[#E5E2DC] text-xs font-semibold gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copiar Link
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

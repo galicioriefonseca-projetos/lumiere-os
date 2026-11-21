@@ -142,21 +142,6 @@
         "status": { "type": "string", "enum": ["published", "draft"] },
         "createdAt": { "type": "integer" }
       },
-    "Report": {
-      "title": "Report",
-      "description": "Relatório de performance de marketing da agência para o cliente.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "salonId": { "type": "string" },
-        "clientId": { "type": "string" },
-        "clientName": { "type": "string" },
-        "title": { "type": "string" },
-        "period": { "type": "string" },
-        "summary": { "type": "string" },
-        "status": { "type": "string", "enum": ["published", "draft"] },
-        "createdAt": { "type": "integer" }
-      },
       "required": ["id", "salonId", "title", "period", "createdAt"]
     },
     "Contract": {
@@ -234,6 +219,77 @@
         "createdAt": { "type": "integer" }
       },
       "required": ["id", "salonId", "serviceName", "status", "createdAt"]
+    },
+    "ServicePackage": {
+      "title": "ServicePackage",
+      "description": "Pacote promocional ou assinatura de sessões de serviços.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "validityDays": { "type": "integer" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "name", "price", "validityDays", "isActive", "createdAt"]
+    },
+    "SalonResource": {
+      "title": "SalonResource",
+      "description": "Sala, cabine, cadeira ou equipamento do estabelecimento.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["room", "equipment", "chair", "other"] },
+        "quantity": { "type": "integer" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "name", "type", "quantity", "isActive", "createdAt"]
+    },
+    "CommissionAdjustment": {
+      "title": "CommissionAdjustment",
+      "description": "Lançamento de bônus ou desconto na comissão do profissional.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "professionalId": { "type": "string" },
+        "type": { "type": "string", "enum": ["bonus", "discount"] },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "settled"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "professionalId", "type", "amount", "status", "createdAt"]
+    },
+    "CommissionPayout": {
+      "title": "CommissionPayout",
+      "description": "Lote de pagamento de comissões liquidado para profissionais.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "periodStart": { "type": "string" },
+        "periodEnd": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "paidAt": { "type": "integer" }
+      },
+      "required": ["id", "periodStart", "periodEnd", "totalAmount", "paidAt"]
+    },
+    "SalonNotification": {
+      "title": "SalonNotification",
+      "description": "Notificação em tempo real e registro de alerta push FCM para profissionais do salão.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["appointment_confirmed", "appointment_canceled", "appointment_created", "system", "alert"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "appointmentId": { "type": "string" },
+        "professionalId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "type", "title", "message", "read", "createdAt"]
     }
   },
   "firestore": {
@@ -261,6 +317,10 @@
       "schema": "ProductionLog",
       "description": "Subcoleção contendo logs de erros em produção para suporte e depuração."
     },
+    "/salons/{salonId}/notifications/{notifId}": {
+      "schema": "SalonNotification",
+      "description": "Subcoleção de notificações em tempo real e alertas de agendamento via FCM."
+    },
     "/salons/{salonId}/reports/{reportId}": {
       "schema": "Report",
       "description": "Subcoleção contendo relatórios de marketing para clientes."
@@ -284,6 +344,22 @@
     "/salons/{salonId}/serviceRequests/{requestId}": {
       "schema": "ServiceRequest",
       "description": "Subcoleção de pedidos de serviços extras."
+    },
+    "/salons/{salonId}/packages/{packageId}": {
+      "schema": "ServicePackage",
+      "description": "Subcoleção de pacotes de serviços e assinaturas de sessões."
+    },
+    "/salons/{salonId}/resources/{resourceId}": {
+      "schema": "SalonResource",
+      "description": "Subcoleção de salas, cabines e equipamentos físicos."
+    },
+    "/salons/{salonId}/commissionAdjustments/{adjustmentId}": {
+      "schema": "CommissionAdjustment",
+      "description": "Subcoleção de bônus e descontos sobre comissões."
+    },
+    "/salons/{salonId}/commissionPayouts/{payoutId}": {
+      "schema": "CommissionPayout",
+      "description": "Subcoleção de lotes de repasse e pagamento de comissões."
     },
     "/coupons/{code}": {
       "schema": "Coupon",

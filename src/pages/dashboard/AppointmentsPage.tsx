@@ -1,8 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Appointment, Client, Professional, Service } from '../../types';
+import { collection, query, onSnapshot, where, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  Appointment,
+  AppointmentStatus,
+  Client,
+  ComandaFlow,
+  ComandaItem,
+  Professional,
+  ProfessionalGoal,
+  SalonResource,
+  Service,
+  ServicePackage,
+} from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,9 +24,10 @@ import { toast } from 'sonner';
 import { 
   Loader2, Plus, Calendar as CalendarIcon, CalendarPlus, Clock, Edit2, ShoppingBag, 
   Scissors, FileText, Check, Trash2, ArrowRight, DollarSign, Sparkles, 
-  UserPlus, Percent, CreditCard, ChevronRight, CheckCircle2, AlertCircle, ShoppingCart
+  UserPlus, Percent, CreditCard, ChevronRight, CheckCircle2, AlertCircle, ShoppingCart,
+  Receipt, DoorOpen
 } from 'lucide-react';
-import { formatBRL } from '@/lib/utils';
+import { formatBRL, cn } from '@/lib/utils';
 import { triggerAppointmentPushNotification } from '../../lib/pushNotifications';
 import { motion, AnimatePresence } from 'motion/react';
 import { getAvailableSlots } from '../../lib/availability';
@@ -25,32 +37,11 @@ import {
   GoogleCalendarDialog,
 } from '@/components/workspace/GoogleCalendarDialog';
 import { buildEventDescriptionFromAppointment } from '@/services/calendarService';
-
-interface ComandaItem {
-  type: 'service' | 'product';
-  id: string; // ID do serviço/produto cadastrado
-  name: string;
-  price: number;
-  professionalId: string;
-  professionalName: string;
-}
-
-interface ComandaFlow {
-  id: string;
-  clientId: string;
-  clientName: string;
-  status: 'checked_in' | 'in_service' | 'checkout_pending' | 'completed';
-  items: ComandaItem[];
-  date: string;
-  time: string;
-  notes?: string;
-  paymentMethod?: string;
-  totalAmount: number;
-  discount?: number;
-  charges?: number;
-  createdAt: number;
-  updatedAt: number;
-}
+import { LumiereAgendaView } from '@/components/appointments/LumiereAgendaView';
+import { WhatsAppSettingsDialog } from '@/components/appointments/WhatsAppSettingsDialog';
+import { ComandaModal360 } from '@/components/comandas/ComandaModal360';
+import { OpenComandasModal } from '@/components/comandas/OpenComandasModal';
+import { updateAppointmentStatusApi } from '@/services/appointmentsService';
 
 export default function AppointmentsPage() {
   const { salonData, userData } = useAuth();
@@ -71,7 +62,11 @@ export default function AppointmentsPage() {
   const userRole = userData?.role || 'professional';
 
   const [activePageTab, setActivePageTab] = useState<'flow' | 'traditional'>(
-    uiPreferences.enableComandasFlow ? 'flow' : 'traditional'
+    userRole === 'professional'
+      ? 'traditional'
+      : uiPreferences.enableComandasFlow
+        ? 'flow'
+        : 'traditional'
   );
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -79,6 +74,9 @@ export default function AppointmentsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [packages, setPackages] = useState<ServicePackage[]>([]);
+  const [resources, setResources] = useState<SalonResource[]>([]);
+  const [professionalGoals, setProfessionalGoals] = useState<ProfessionalGoal[]>([]);
   
   const [loading, setLoading] = useState(true);
   
@@ -86,9 +84,11 @@ export default function AppointmentsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
   const [isNewComandaOpen, setIsNewComandaOpen] = useState(false);
-  const [isAddItemOpen, setIsAddItemOpen] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isComanda360Open, setIsComanda360Open] = useState(false);
+  const [comanda360InitialTab, setComanda360InitialTab] = useState<'items' | 'payment' | 'prontuario' | 'info'>('items');
+  const [isOpenComandasModalOpen, setIsOpenComandasModalOpen] = useState(false);
   const [isGoogleCalendarOpen, setIsGoogleCalendarOpen] = useState(false);
+  const [isWhatsAppSettingsOpen, setIsWhatsAppSettingsOpen] = useState(false);
   const [calendarDialogTab, setCalendarDialogTab] = useState<'events' | 'create' | 'sync'>('events');
   const [calendarPrefillEvent, setCalendarPrefillEvent] = useState<CalendarPrefillEvent | null>(null);
 
@@ -125,20 +125,23 @@ export default function AppointmentsPage() {
     setIsGoogleCalendarOpen(true);
   };
 
-  // Formulário Agenda Tradicional
+  // Formulário Agenda Tradicional & Bloqueio
   const [formData, setFormData] = useState({
     clientId: '',
     professionalId: '',
     serviceId: '',
+    resourceId: '',
     date: new Date().toISOString().split('T')[0],
     time: '',
     notes: '',
-    status: 'scheduled' as Appointment['status']
+    status: 'scheduled' as AppointmentStatus,
+    isBlock: false,
+    blockDuration: 60,
   });
 
   // Slots de disponibilidade para o profissional e data selecionados no form
   const availableSlotsList = useMemo(() => {
-    if (!salonData || !salonData.workingHours || !formData.date || !formData.serviceId) {
+    if (formData.isBlock || !salonData || !salonData.workingHours || !formData.date || !formData.serviceId) {
       return [];
     }
     const service = services.find(s => s.id === formData.serviceId);
@@ -152,13 +155,13 @@ export default function AppointmentsPage() {
       appointments
     );
 
-    if (editingItem && editingItem.date === formData.date && editingItem.time && !slots.includes(editingItem.time)) {
-      slots.push(editingItem.time);
+    if (formData.time && !slots.includes(formData.time)) {
+      slots.push(formData.time);
       slots.sort();
     }
 
     return slots;
-  }, [salonData, formData.date, formData.serviceId, formData.professionalId, appointments, services, editingItem]);
+  }, [salonData, formData.isBlock, formData.date, formData.serviceId, formData.professionalId, formData.time, appointments, services]);
 
   // Formulário Lançamento Direto (Original)
   const [manualFormData, setManualFormData] = useState({
@@ -176,24 +179,6 @@ export default function AppointmentsPage() {
     clientName: 'Consumidor Final',
     professionalId: '',
     serviceId: '',
-    notes: ''
-  });
-
-  // Formulário Adicionar Item na Comanda Ativa
-  const [addItemFormData, setAddItemFormData] = useState({
-    type: 'service' as 'service' | 'product',
-    itemId: '',
-    customName: '',
-    price: '',
-    professionalId: ''
-  });
-
-  // Formulário Checkout Final
-  const [checkoutData, setCheckoutData] = useState({
-    paymentMethod: 'pix',
-    discountType: 'percentage' as 'fixed' | 'percentage',
-    discountValue: '0',
-    chargesValue: '0',
     notes: ''
   });
 
@@ -261,26 +246,84 @@ export default function AppointmentsPage() {
       console.error("Erro ao carregar serviços:", error);
     }));
 
+    // Carregar Pacotes
+    const qPkg = query(collection(db, `salons/${salonData.id}/packages`));
+    unsubs.push(onSnapshot(qPkg, snap => {
+      const arr: ServicePackage[] = [];
+      snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ServicePackage));
+      setPackages(arr.filter(p => p.isActive));
+    }, (error) => {
+      console.error("Erro ao carregar pacotes:", error);
+    }));
+
+    // Carregar Salas e Equipamentos
+    const qRes = query(collection(db, `salons/${salonData.id}/resources`));
+    unsubs.push(onSnapshot(qRes, snap => {
+      const arr: SalonResource[] = [];
+      snap.forEach(d => arr.push({ id: d.id, ...d.data() } as SalonResource));
+      setResources(arr.filter(r => r.isActive));
+    }, (error) => {
+      console.error("Erro ao carregar recursos:", error);
+    }));
+
+    // Carregar Metas dos Profissionais para Previsibilidade na Agenda (respeitando firestore.rules)
+    if (['owner', 'admin', 'manager', 'platform_admin'].includes(userRole)) {
+      const qGoals = query(collection(db, `salons/${salonData.id}/professionalGoals`));
+      unsubs.push(onSnapshot(qGoals, snap => {
+        const arr: ProfessionalGoal[] = [];
+        snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+        setProfessionalGoals(arr);
+      }, (error) => {
+        console.error("Erro ao carregar metas para previsibilidade:", error);
+      }));
+    } else if (userRole === 'professional' && userData?.id) {
+      const qOwnGoals = query(
+        collection(db, `salons/${salonData.id}/professionalGoals`),
+        where('professionalId', '==', userData.id)
+      );
+      unsubs.push(onSnapshot(qOwnGoals, snap => {
+        const arr: ProfessionalGoal[] = [];
+        snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+        setProfessionalGoals(arr);
+      }, (error) => {
+        console.error("Erro ao carregar metas do profissional:", error);
+      }));
+    }
+
     return () => unsubs.forEach(u => u());
-  }, [salonData]);
+  }, [salonData, userRole, userData?.id]);
 
   // Handler para trocar status de agendamento tradicional
-  const changeStatus = async (id: string, newStatus: Appointment['status']) => {
+  const changeStatus = async (id: string, newStatus: AppointmentStatus) => {
     if (!salonData) return;
     try {
-      await updateDoc(doc(db, `salons/${salonData.id}/appointments`, id), {
+      const now = Date.now();
+      const statusPatch: Record<string, unknown> = {
         status: newStatus,
-        updatedAt: Date.now()
-      });
+        updatedAt: now,
+      };
+      if (newStatus === 'confirmed') {
+        statusPatch.confirmationStatus = 'confirmed_by_client';
+        statusPatch.confirmedAt = now;
+      } else if (newStatus === 'canceled') {
+        statusPatch.canceledAt = now;
+      }
+
+      if (userRole === 'professional') {
+        await updateAppointmentStatusApi(salonData.id, id, newStatus);
+      } else {
+        await updateDoc(doc(db, `salons/${salonData.id}/appointments`, id), statusPatch);
+      }
       toast.success('Status atualizado com sucesso!');
 
       const appointment = appointments.find(a => a.id === id);
-      if (appointment) {
+      if (appointment && (newStatus === 'confirmed' || newStatus === 'canceled')) {
         triggerAppointmentPushNotification({
           salonId: salonData.id,
           appointmentId: id,
           professionalId: appointment.professionalId,
-          clientName: appointment.clientName || 'Consumidor',
+          professionalName: appointment.professionalName,
+          clientName: appointment.clientName || 'Cliente',
           serviceName: appointment.serviceName || 'Procedimento',
           date: appointment.date,
           time: appointment.time,
@@ -292,36 +335,93 @@ export default function AppointmentsPage() {
     }
   };
 
-  // Handler para submeter agendamento tradicional (Editar / Criar)
+  // Handler para submeter agendamento tradicional (Editar / Criar / Bloqueio)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!salonData) return;
 
     try {
-      const clientName = clients.find(c => c.id === formData.clientId)?.name || 'Consumidor Final';
       const professional = professionals.find(p => p.id === formData.professionalId);
       const professionalName = professional ? professional.name : '';
+
+      if (formData.isBlock) {
+        if (!formData.professionalId || !formData.date || !formData.time) {
+          toast.error('Informe profissional, data e horário para bloquear.');
+          return;
+        }
+        const blockPayload = {
+          clientId: 'bloqueio',
+          clientName: 'Bloqueio de Horário',
+          professionalId: formData.professionalId,
+          professionalName,
+          serviceId: 'bloqueio',
+          serviceName: 'Bloqueio de Agenda',
+          price: 0,
+          serviceDuration: Number(formData.blockDuration) || 60,
+          date: formData.date,
+          time: formData.time,
+          notes: formData.notes || 'Horário bloqueado pela equipe',
+          status: 'blocked' as AppointmentStatus,
+          isBlock: true,
+          source: 'manual' as const,
+          updatedAt: Date.now(),
+        };
+
+        if (editingItem) {
+          const ref = doc(db, `salons/${salonData.id}/appointments`, editingItem.id);
+          await updateDoc(ref, blockPayload);
+          toast.success('Bloqueio atualizado!');
+        } else {
+          const ref = doc(collection(db, `salons/${salonData.id}/appointments`));
+          await setDoc(ref, {
+            id: ref.id,
+            ...blockPayload,
+            createdAt: Date.now(),
+          });
+          toast.success('Horário bloqueado na agenda!');
+        }
+        setIsDialogOpen(false);
+        resetForm();
+        return;
+      }
+
+      const clientMatch = clients.find(c => c.id === formData.clientId);
+      const clientName = clientMatch?.name || 'Consumidor Final';
       const service = services.find(s => s.id === formData.serviceId);
       const serviceName = service ? service.name : '';
       const price = service ? service.price : 0;
+      const resourceMatch = resources.find(r => r.id === formData.resourceId);
 
       const dataToSave = {
-        ...formData,
+        clientId: formData.clientId,
         clientName,
+        clientPhone: clientMatch?.phone || editingItem?.clientPhone || '',
+        clientEmail: clientMatch?.email || editingItem?.clientEmail || '',
+        professionalId: formData.professionalId,
         professionalName,
+        serviceId: formData.serviceId,
         serviceName,
+        resourceId: resourceMatch ? resourceMatch.id : '',
+        resourceName: resourceMatch ? resourceMatch.name : '',
         price,
         serviceDuration: service ? service.durationMinutes : 30,
+        date: formData.date,
+        time: formData.time,
+        notes: formData.notes,
+        status: formData.status,
+        isBlock: false,
         source: editingItem ? (editingItem.source || 'manual') : 'manual',
         updatedAt: Date.now()
       };
 
+      let savedApptId = editingItem?.id || '';
       if (editingItem) {
         const ref = doc(db, `salons/${salonData.id}/appointments`, editingItem.id);
         await updateDoc(ref, dataToSave);
         toast.success('Agendamento atualizado com sucesso!');
       } else {
         const ref = doc(collection(db, `salons/${salonData.id}/appointments`));
+        savedApptId = ref.id;
         await setDoc(ref, {
           id: ref.id,
           ...dataToSave,
@@ -329,6 +429,27 @@ export default function AppointmentsPage() {
         });
         toast.success('Agendamento registrado!');
       }
+
+      const statusChanged = !editingItem || editingItem.status !== formData.status;
+      if (
+        savedApptId &&
+        formData.professionalId &&
+        statusChanged &&
+        (formData.status === 'confirmed' || formData.status === 'canceled')
+      ) {
+        triggerAppointmentPushNotification({
+          salonId: salonData.id,
+          appointmentId: savedApptId,
+          professionalId: formData.professionalId,
+          professionalName,
+          clientName,
+          serviceName: serviceName || 'Procedimento',
+          date: formData.date,
+          time: formData.time,
+          action: formData.status === 'canceled' ? 'cancel' : 'confirm',
+        }).catch(err => console.error('[Push notification error]', err));
+      }
+
       setIsDialogOpen(false);
       resetForm();
     } catch (error) {
@@ -337,9 +458,71 @@ export default function AppointmentsPage() {
     }
   };
 
+  const handleDeleteAppointment = async (app: Appointment) => {
+    if (!salonData) return;
+    try {
+      if (
+        !app.isBlock &&
+        app.professionalId &&
+        app.status !== 'canceled' &&
+        app.status !== 'completed'
+      ) {
+        await triggerAppointmentPushNotification({
+          salonId: salonData.id,
+          appointmentId: app.id,
+          professionalId: app.professionalId,
+          professionalName: app.professionalName,
+          clientName: app.clientName || 'Cliente',
+          serviceName: app.serviceName || 'Procedimento',
+          date: app.date,
+          time: app.time,
+          action: 'cancel',
+        }).catch(() => undefined);
+      }
+      await deleteDoc(doc(db, `salons/${salonData.id}/appointments`, app.id));
+      toast.success(app.isBlock ? 'Bloqueio removido da agenda!' : 'Agendamento excluído!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao excluir agendamento.');
+    }
+  };
+
   const resetForm = () => {
     setEditingItem(null);
-    setFormData({ clientId: '', professionalId: '', serviceId: '', date: new Date().toISOString().split('T')[0], time: '', notes: '', status: 'scheduled' });
+    setFormData({
+      clientId: '',
+      professionalId: '',
+      serviceId: '',
+      resourceId: '',
+      date: new Date().toISOString().split('T')[0],
+      time: '',
+      notes: '',
+      status: 'scheduled',
+      isBlock: false,
+      blockDuration: 60,
+    });
+  };
+
+  const openQuickCreate = (prefill: {
+    date: string;
+    time?: string;
+    professionalId?: string;
+    isBlock?: boolean;
+  }) => {
+    setEditingItem(null);
+    setFormData({
+      clientId: '',
+      professionalId: prefill.professionalId || '',
+      serviceId: '',
+      resourceId: '',
+      date: prefill.date || new Date().toISOString().split('T')[0],
+      time: prefill.time || '',
+      notes: '',
+      status: prefill.isBlock ? 'blocked' : 'scheduled',
+      isBlock: Boolean(prefill.isBlock),
+      blockDuration: 60,
+    });
+    setIsDialogOpen(true);
   };
 
   const openEdit = (app: Appointment) => {
@@ -348,10 +531,13 @@ export default function AppointmentsPage() {
       clientId: app.clientId,
       professionalId: app.professionalId,
       serviceId: app.serviceId,
+      resourceId: app.resourceId || '',
       date: app.date,
       time: app.time,
       notes: app.notes || '',
-      status: app.status
+      status: app.status,
+      isBlock: Boolean(app.isBlock || app.status === 'blocked'),
+      blockDuration: Number(app.serviceDuration) || 60,
     });
     setIsDialogOpen(true);
   };
@@ -443,18 +629,101 @@ export default function AppointmentsPage() {
   };
 
   // ============================================
-  // FLUXO DE COMANDAS INTELIGENTES (LUMIÈRE FLOW)
+  // FLUXO DE COMANDAS INTELIGENTES (COMANDA 360°)
   // ============================================
+
+  const openComandasList = useMemo(
+    () => comandas.filter((c) => c.status !== 'completed' && c.status !== 'canceled'),
+    [comandas]
+  );
 
   // Classificação das comandas ativas pelas colunas de fluxo
   const comandasByStatus = useMemo(() => {
-    const active = comandas.filter(c => c.status !== 'completed');
     return {
-      checked_in: active.filter(c => c.status === 'checked_in'),
-      in_service: active.filter(c => c.status === 'in_service'),
-      checkout_pending: active.filter(c => c.status === 'checkout_pending')
+      checked_in: openComandasList.filter(c => c.status === 'checked_in'),
+      in_service: openComandasList.filter(c => c.status === 'in_service'),
+      checkout_pending: openComandasList.filter(c => c.status === 'checkout_pending')
     };
-  }, [comandas]);
+  }, [openComandasList]);
+
+  const openComandaModal = (
+    comanda: ComandaFlow,
+    tab: 'items' | 'payment' | 'prontuario' | 'info' = 'items'
+  ) => {
+    setSelectedComanda(comanda);
+    setComanda360InitialTab(tab);
+    setIsComanda360Open(true);
+  };
+
+  // Abrir ou criar comanda automaticamente a partir de um agendamento da Agenda
+  const handleOpenComandaFromAppointment = async (app: Appointment) => {
+    if (!salonData) return;
+
+    const existing = openComandasList.find(
+      (c) =>
+        (app.comandaId && c.id === app.comandaId) ||
+        (app.clientId &&
+          app.clientId !== 'consumidor-final' &&
+          c.clientId === app.clientId &&
+          c.date === app.date)
+    );
+
+    if (existing) {
+      openComandaModal(existing, 'items');
+      return;
+    }
+
+    try {
+      const svc = services.find((s) => s.id === app.serviceId);
+      const itemPrice = app.price !== undefined ? app.price : (svc?.price || 0);
+      const nextNum =
+        comandas.reduce((max, c) => Math.max(max, Number(c.comandaNumber || 0)), 0) + 1;
+
+      const initialItem: ComandaItem = {
+        type: 'service',
+        id: app.serviceId || 'custom-service',
+        name: app.serviceName || 'Atendimento',
+        price: itemPrice,
+        quantity: 1,
+        unitPrice: itemPrice,
+        discountPercent: 0,
+        professionalId: app.professionalId || '',
+        professionalName: app.professionalName || 'Profissional',
+        appointmentId: app.id,
+      };
+
+      const ref = doc(collection(db, `salons/${salonData.id}/comandas`));
+      const newComanda: ComandaFlow = {
+        id: ref.id,
+        comandaNumber: nextNum,
+        clientId: app.clientId || 'consumidor-final',
+        clientName: app.clientName || 'Consumidor Final',
+        status: 'in_service',
+        items: [initialItem],
+        totalAmount: itemPrice,
+        date: app.date || new Date().toISOString().substring(0, 10),
+        time: app.time || new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        notes: app.notes || '',
+        openedByName: userData?.fullName || userData?.email || 'Recepção',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      await setDoc(ref, newComanda);
+      if (app.id && userRole !== 'professional') {
+        await updateDoc(doc(db, `salons/${salonData.id}/appointments`, app.id), {
+          comandaId: ref.id,
+          updatedAt: Date.now(),
+        });
+      }
+
+      toast.success(`Comanda #${nextNum} aberta para ${newComanda.clientName}!`);
+      openComandaModal(newComanda, 'items');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao gerar comanda a partir do agendamento.');
+    }
+  };
 
   // Alterar estágio do fluxo da comanda
   const handleMoveComanda = async (comandaId: string, nextStatus: ComandaFlow['status']) => {
@@ -491,19 +760,25 @@ export default function AppointmentsPage() {
 
       if (!professional || !service) return;
 
+      const nextNum =
+        comandas.reduce((max, c) => Math.max(max, Number(c.comandaNumber || 0)), 0) + 1;
+
       const initialItem: ComandaItem = {
         type: 'service',
         id: service.id,
         name: service.name,
         price: service.price,
+        quantity: 1,
+        unitPrice: service.price,
+        discountPercent: 0,
         professionalId: professional.id,
         professionalName: professional.name
       };
 
       const ref = doc(collection(db, `salons/${salonData.id}/comandas`));
-      
-      await setDoc(ref, {
+      const createdComanda: ComandaFlow = {
         id: ref.id,
+        comandaNumber: nextNum,
         clientId: comandaFormData.clientId,
         clientName,
         status: 'checked_in',
@@ -512,11 +787,14 @@ export default function AppointmentsPage() {
         date: new Date().toISOString().substring(0, 10),
         time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
         notes: comandaFormData.notes || '',
+        openedByName: userData?.fullName || userData?.email || 'Recepção',
         createdAt: Date.now(),
         updatedAt: Date.now()
-      });
+      };
+      
+      await setDoc(ref, createdComanda);
 
-      toast.success('Comanda aberta com sucesso! O cliente está na fila de espera.');
+      toast.success(`Comanda #${nextNum} aberta! Abrindo painel 360°...`);
       setIsNewComandaOpen(false);
       setComandaFormData({
         clientId: 'consumidor-final',
@@ -525,239 +803,17 @@ export default function AppointmentsPage() {
         serviceId: '',
         notes: ''
       });
+      openComandaModal(createdComanda, 'items');
     } catch (err) {
       console.error(err);
       toast.error('Ocorreu um erro ao abrir a comanda.');
     }
   };
 
-  // Adicionar item (produto ou serviço casado) à comanda em curso
-  const handleAddComandaItemChange = (itemId: string) => {
-    if (itemId === 'custom') {
-      setAddItemFormData(p => ({ ...p, itemId, customName: '', price: '' }));
-    } else {
-      const isSrv = addItemFormData.type === 'service';
-      if (isSrv) {
-        const srv = services.find(s => s.id === itemId);
-        setAddItemFormData(p => ({
-          ...p,
-          itemId,
-          customName: srv ? srv.name : '',
-          price: srv ? String(srv.price) : ''
-        }));
-      } else {
-        // Obter preço base ou customizado
-        setAddItemFormData(p => ({ ...p, itemId, customName: '', price: '' }));
-      }
-    }
-  };
-
-  const handleAddComandaItemSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!salonData || !selectedComanda) return;
-
-    if (!addItemFormData.professionalId) {
-      toast.error('Escolha qual profissional executou ou realizou a venda.');
-      return;
-    }
-
-    try {
-      const professional = professionals.find(p => p.id === addItemFormData.professionalId);
-      if (!professional) return;
-
-      let finalName = addItemFormData.customName.trim();
-      let finalPrice = parseFloat(addItemFormData.price) || 0;
-
-      if (!finalName && addItemFormData.itemId !== 'custom') {
-        const matchingSrv = services.find(s => s.id === addItemFormData.itemId);
-        finalName = matchingSrv ? matchingSrv.name : 'Adicional';
-        finalPrice = parseFloat(addItemFormData.price) || (matchingSrv ? matchingSrv.price : 0);
-      }
-
-      if (addItemFormData.type === 'product' && !finalName.toLowerCase().includes('produto')) {
-        finalName = `Produto: ${finalName}`;
-      }
-
-      const newItem: ComandaItem = {
-        type: addItemFormData.type,
-        id: addItemFormData.itemId || 'custom-item',
-        name: finalName,
-        price: finalPrice,
-        professionalId: professional.id,
-        professionalName: professional.name
-      };
-
-      const updatedItems = [...selectedComanda.items, newItem];
-      const newTotal = updatedItems.reduce((acc, item) => acc + item.price, 0);
-
-      const ref = doc(db, `salons/${salonData.id}/comandas`, selectedComanda.id);
-      await updateDoc(ref, {
-        items: updatedItems,
-        totalAmount: newTotal,
-        updatedAt: Date.now()
-      });
-
-      toast.success(`${newItem.type === 'service' ? 'Serviço' : 'Produto'} adicionado à comanda!`);
-      setIsAddItemOpen(false);
-      setAddItemFormData({
-        type: 'service',
-        itemId: '',
-        customName: '',
-        price: '',
-        professionalId: ''
-      });
-    } catch (err) {
-      console.error(err);
-      toast.error('Erro ao adicionar item.');
-    }
-  };
-
-  // Remover item de uma comanda em curso
-  const handleRemoveComandaItem = async (comanda: ComandaFlow, itemIdx: number) => {
-    if (!salonData) return;
-    if (comanda.items.length <= 1) {
-      toast.error('A comanda precisa conter pelo menos 1 serviço inicial!');
-      return;
-    }
-
-    try {
-      const updatedItems = comanda.items.filter((_, idx) => idx !== itemIdx);
-      const newTotal = updatedItems.reduce((acc, item) => acc + item.price, 0);
-
-      const ref = doc(db, `salons/${salonData.id}/comandas`, comanda.id);
-      await updateDoc(ref, {
-        items: updatedItems,
-        totalAmount: newTotal,
-        updatedAt: Date.now()
-      });
-
-      toast.success('Item removido com sucesso.');
-    } catch (err) {
-      toast.error('Erro ao descartar item da comanda.');
-    }
-  };
-
-  // Calcular Comissões Detalhadas e Rateios na Comanda para Checkout em tempo real
-  const comandaCalculatedRates = useMemo(() => {
-    if (!selectedComanda) return [];
-    
-    // Agrupar items por profissional para rateio de cada um
-    const map: Record<string, { name: string, itemsPrice: number, rateAmount: number }> = {};
-
-    selectedComanda.items.forEach(itm => {
-      const prof = professionals.find(p => p.id === itm.professionalId);
-      // Taxa padrão de comissão (se não houver, assume 40% de fallback)
-      const commissionRate = prof?.commissionRate !== undefined ? prof.commissionRate : 40;
-      
-      const rateAmount = itm.price * (commissionRate / 100);
-
-      if (!map[itm.professionalId]) {
-        map[itm.professionalId] = {
-          name: itm.professionalName,
-          itemsPrice: 0,
-          rateAmount: 0
-        };
-      }
-
-      map[itm.professionalId].itemsPrice += itm.price;
-      map[itm.professionalId].rateAmount += rateAmount;
-    });
-
-    return Object.entries(map).map(([key, value]) => ({
-      professionalId: key,
-      ...value
-    }));
-  }, [selectedComanda, professionals]);
-
-  // Totalizadores de Checkout com Desconto/Acréscimo
-  const checkoutTotals = useMemo(() => {
-    if (!selectedComanda) return { subtotal: 0, discount: 0, charges: 0, total: 0 };
-
-    const subtotal = selectedComanda.totalAmount;
-    const descVal = parseFloat(checkoutData.discountValue) || 0;
-    const isPct = checkoutData.discountType === 'percentage';
-    
-    const discount = isPct ? (subtotal * (descVal / 100)) : descVal;
-    const charges = parseFloat(checkoutData.chargesValue) || 0;
-    
-    const total = Math.max(0, subtotal - discount + charges);
-
-    return {
-      subtotal,
-      discount,
-      charges,
-      total
-    };
-  }, [selectedComanda, checkoutData]);
-
-  // Confirmar Checkout e Liquidar Comanda (Gera relatórios de faturamento e comissão instantâneo)
-  const handleConfirmCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!salonData || !selectedComanda) return;
-
-    try {
-      // 1. Gravar cada item individualizado como um "appointment completed" para manter consistência absoluta
-      // de relatórios, gráficos financeiros, comissões retroativas do LumièreOS
-      const dateStr = new Date().toISOString().substring(0, 10);
-      const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
-      for (let i = 0; i < selectedComanda.items.length; i++) {
-        const item = selectedComanda.items[i];
-        const appRef = doc(collection(db, `salons/${salonData.id}/appointments`));
-        
-        // Ratear o desconto proporcional da comanda para que os relatórios sejam perfeitos
-        const proportion = selectedComanda.totalAmount > 0 
-          ? item.price / selectedComanda.totalAmount 
-          : 0;
-        
-        const itemDiscount = checkoutTotals.discount * proportion;
-        const itemPriceWithDiscount = Math.max(0, item.price - itemDiscount);
-
-        await setDoc(appRef, {
-          id: appRef.id,
-          clientId: selectedComanda.clientId,
-          clientName: selectedComanda.clientName,
-          professionalId: item.professionalId,
-          professionalName: item.professionalName,
-          serviceId: item.id,
-          serviceName: item.name,
-          price: itemPriceWithDiscount, // Guarda o preço já líquido do rateio de desconto para relatórios e comissões limpas
-          type: item.type,
-          date: dateStr,
-          time: timeStr,
-          status: 'completed',
-          paymentMethod: checkoutData.paymentMethod,
-          isManualLaunch: false,
-          notes: `Checkout Lumière Flow (Comanda #${selectedComanda.id.substring(0, 5).toUpperCase()}). ${checkoutData.notes || ''}`,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        });
-      }
-
-      // 2. Marcar comanda de fluxo como resolvida (pode deletar do fluxo ativo ou marcar status como 'completed' para soft delete)
-      const comandaRef = doc(db, `salons/${salonData.id}/comandas`, selectedComanda.id);
-      await deleteDoc(comandaRef); // Limpa do tabuleiro operacional ativo de comandas
-
-      toast.success('Comanda liquidada com muito sucesso! Repasses calculados e equipe pontuada.');
-      setIsCheckoutOpen(false);
-      setSelectedComanda(null);
-      setCheckoutData({
-        paymentMethod: 'pix',
-        discountType: 'percentage',
-        discountValue: '0',
-        chargesValue: '0',
-        notes: ''
-      });
-    } catch (err) {
-      console.error(err);
-      toast.error('Erro ao consolidar checkout financeiro.');
-    }
-  };
-
   // Cancelar/Descartar Comanda por completo
   const handleDeleteComanda = async (comandaId: string) => {
     if (!salonData) return;
-    if (!window.confirm("Deseja realmente cancelar e descartar esta comanda de fluxo de forma definitiva?")) return;
+    if (!window.confirm("Deseja realmente cancelar e descartar esta comanda?")) return;
 
     try {
       await deleteDoc(doc(db, `salons/${salonData.id}/comandas`, comandaId));
@@ -767,20 +823,11 @@ export default function AppointmentsPage() {
     }
   };
 
-  const getFlowStatusLabel = (status: ComandaFlow['status']) => {
-    switch (status) {
-      case 'checked_in': return 'Aguardando';
-      case 'in_service': return 'Em Serviço';
-      case 'checkout_pending': return 'No Caixa';
-      default: return 'Concluído';
-    }
-  };
-
   if (loading || !salonData?.id) {
     return (
       <div className="flex flex-col items-center justify-center p-24 gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
-        <span className="text-xs text-[#a1a1aa] tracking-widest font-mono uppercase animate-pulse">Sincronizando LumiereOS...</span>
+        <Loader2 className="w-8 h-8 animate-spin text-[#8A6D36]" />
+        <span className="text-xs text-[#6B6B6B] font-medium">Sincronizando Agenda LumièreOS...</span>
       </div>
     );
   }
@@ -788,52 +835,70 @@ export default function AppointmentsPage() {
   return (
     <div className="space-y-6 pb-12" id="appointments-page">
       
-      {/* Header Central de Atendimentos */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gradient-to-r from-zinc-950 via-zinc-900 to-black p-6 rounded-2xl border border-[#D4AF37]/10">
+      {/* Header Central de Atendimentos (Warm-Light Editorial) */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-[#E5E2DC] shadow-xs">
         <div>
-          <h2 className="text-2xl font-bold font-heading text-white flex items-center gap-2">
-            ⚡ Lumière <span className="text-[#D4AF37]">{lex.appointments || 'Agenda & Atendimentos'}</span>
+          <h2 className="text-xl sm:text-2xl font-bold font-heading text-[#171717] flex items-center gap-2">
+            <CalendarIcon className="w-5 h-5 text-[#8A6D36]" />
+            {lex.appointments || 'Agenda & Comandas'}
           </h2>
-          <p className="text-[#a1a1aa] text-xs">
+          <p className="text-[#6B6B6B] text-xs mt-1">
             {isBeauty 
-              ? 'Controle a recepção, adicione adicionais na comanda do cliente em curso, feche o caixa e pague comissões automáticas.'
-              : 'Gestão completa de horários, reuniões, sessões, fechamento de faturamento e fluxo de atendimentos.'}
+              ? 'Gerencie horários, confirmações via WhatsApp, previsibilidade de metas e comandas 360° em um só lugar.'
+              : 'Gestão completa de horários, recursos, fechamento de comandas e fluxo de atendimentos.'}
           </p>
         </div>
 
-        {/* Escolha de Visualização + Google Agenda */}
+        {/* Escolha de Visualização + Comandas Abertas + Google Agenda */}
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
-            onClick={() => openGoogleCalendarDialog('events')}
-            className="h-9 px-3.5 rounded-xl border-[#D4AF37]/30 bg-[#121214] text-[#D4AF37] hover:bg-[#D4AF37]/10 text-xs font-bold flex items-center gap-1.5"
+            onClick={() => setIsOpenComandasModalOpen(true)}
+            className="h-9 px-3 rounded-xl border-[#B89B5E]/50 bg-[#FAF9F7] text-[#171717] hover:bg-[#EFECE4] text-xs font-semibold gap-1.5 whitespace-nowrap shrink-0"
           >
-            <CalendarIcon className="w-3.5 h-3.5" />
+            <Receipt className="w-3.5 h-3.5 text-[#8A6D36]" />
+            <span>Comandas Abertas</span>
+            <span className="ml-0.5 px-1.5 py-0.5 rounded-md bg-[#171717] text-white text-[10px] font-bold tabular-nums">
+              {openComandasList.length}
+            </span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => openGoogleCalendarDialog('events')}
+            className="h-9 px-3.5 rounded-xl border-[#E5E2DC] bg-white text-[#171717] hover:bg-[#FAF9F7] text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0"
+          >
+            <CalendarIcon className="w-3.5 h-3.5 text-[#8A6D36]" />
             Google Agenda
           </Button>
 
-          <div className="flex items-center gap-2 bg-[#121214] p-1 rounded-xl border border-zinc-800">
+          <div className="flex items-center gap-1 bg-[#FAF9F7] p-1 rounded-xl border border-[#E5E2DC]">
             <button
+              type="button"
               onClick={() => setActivePageTab('traditional')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={cn(
+                'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer',
                 activePageTab === 'traditional'
-                  ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                  : 'text-zinc-400 hover:text-white border border-transparent'
-              }`}
+                  ? 'bg-[#171717] text-white shadow-xs'
+                  : 'text-[#6B6B6B] hover:text-[#171717]'
+              )}
             >
               {lex.appointments || 'Agenda & Calendário'}
             </button>
 
             <button
+              type="button"
               onClick={() => setActivePageTab('flow')}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={cn(
+                'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer',
                 activePageTab === 'flow'
-                  ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                  : 'text-zinc-400 hover:text-white border border-transparent'
-              }`}
+                  ? 'bg-[#171717] text-white shadow-xs'
+                  : 'text-[#6B6B6B] hover:text-[#171717]'
+              )}
             >
-              {uiPreferences.enableComandasFlow ? 'Fluxo de Comandas (Salão)' : `Fluxo de ${flowItemTermPlural || 'Atendimentos'}`}
+              {uiPreferences.enableComandasFlow ? 'Fluxo de Comandas' : `Fluxo de ${flowItemTermPlural || 'Atendimentos'}`}
             </button>
           </div>
         </div>
@@ -841,7 +906,7 @@ export default function AppointmentsPage() {
 
       {loading ? (
         <div className="flex justify-center p-12">
-          <Loader2 className="w-8 h-8 animate-spin text-[#D4AF37]" />
+          <Loader2 className="w-8 h-8 animate-spin text-[#8A6D36]" />
         </div>
       ) : (
         <AnimatePresence mode="wait">
@@ -856,32 +921,31 @@ export default function AppointmentsPage() {
               className="space-y-6"
             >
               <div className="flex justify-end gap-3">
-                
                 {/* Lançar Comanda / Fluxo */}
                 <Dialog open={isNewComandaOpen} onOpenChange={setIsNewComandaOpen}>
                   <DialogTrigger asChild>
-                    <Button className="bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold px-5 py-2.5 rounded-xl flex items-center gap-2">
-                      <UserPlus className="w-4 h-4" /> Registrar Entrada (Check-In {clientTerm.toLowerCase()})
+                    <Button className="bg-[#171717] text-white hover:bg-[#2c2c2c] font-semibold px-5 py-2.5 rounded-xl flex items-center gap-2 text-xs whitespace-nowrap">
+                      <UserPlus className="w-4 h-4 text-[#D4AF37]" /> Abrir Nova Comanda (Check-In {clientTerm.toLowerCase()})
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-zinc-950 border-zinc-800 text-white max-w-sm rounded-xl">
+                  <DialogContent className="bg-white border-[#E5E2DC] text-[#171717] max-w-sm rounded-2xl">
                     <DialogHeader>
-                      <DialogTitle className="font-heading text-[#D4AF37] text-lg flex items-center gap-2">
-                        🔑 Abrir {flowItemTerm} Operacional
+                      <DialogTitle className="font-heading text-[#171717] text-lg flex items-center gap-2">
+                        <Receipt className="w-4 h-4 text-[#8A6D36]" /> Abrir {flowItemTerm}
                       </DialogTitle>
-                      <CardDescription className="text-zinc-400">
+                      <CardDescription className="text-[#6B6B6B] text-xs">
                         O(A) {clientTerm.toLowerCase()} acabou de chegar. Defina quem irá realizar o primeiro atendimento no(a) {workstationTerm.toLowerCase()}.
                       </CardDescription>
                     </DialogHeader>
 
-                    <form onSubmit={handleInitComanda} className="space-y-4 pt-3">
-                      <div className="space-y-2">
-                        <Label className="text-zinc-300">{clientTerm}</Label>
+                    <form onSubmit={handleInitComanda} className="space-y-4 pt-2 text-xs">
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">{clientTerm}</Label>
                         <Select value={comandaFormData.clientId} onValueChange={(v) => setComandaFormData(p => ({ ...p, clientId: v }))}>
-                          <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                          <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]">
                             <SelectValue placeholder={`Escolha um(a) ${clientTerm.toLowerCase()} cadastrado(a)`} />
                           </SelectTrigger>
-                          <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                          <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
                             <SelectItem value="consumidor-final">-- Consumidor Final (Sem Cadastro) --</SelectItem>
                             {clients.map(c => (
                               <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
@@ -890,13 +954,13 @@ export default function AppointmentsPage() {
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-zinc-300">Profissional Inicial</Label>
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Profissional Inicial</Label>
                         <Select required value={comandaFormData.professionalId} onValueChange={(v) => setComandaFormData(p => ({ ...p, professionalId: v }))}>
-                          <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                          <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]">
                             <SelectValue placeholder="Selecione quem fará o primeiro atendimento" />
                           </SelectTrigger>
-                          <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                          <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
                             {professionals.map(p => (
                               <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                             ))}
@@ -904,13 +968,13 @@ export default function AppointmentsPage() {
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-zinc-300">Serviço de Entrada</Label>
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Serviço de Entrada</Label>
                         <Select required value={comandaFormData.serviceId} onValueChange={(v) => setComandaFormData(p => ({ ...p, serviceId: v }))}>
-                          <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                          <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]">
                             <SelectValue placeholder="Qual o procedimento inicial?" />
                           </SelectTrigger>
-                          <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
+                          <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
                             {services.map(s => (
                               <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>
                             ))}
@@ -918,64 +982,71 @@ export default function AppointmentsPage() {
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="text-zinc-300">Anotações Internas (Opcional)</Label>
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Anotações Internas (Opcional)</Label>
                         <Input 
                           value={comandaFormData.notes} 
                           onChange={e => setComandaFormData(p => ({ ...p, notes: e.target.value }))}
-                          className="bg-zinc-900 border-zinc-800 text-white"
+                          className="bg-[#FAF9F7] border-[#E5E2DC] text-[#171717]"
                           placeholder="Recomendações técnicas..."
                         />
                       </div>
 
-                      <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-xl">
-                        Gerar {flowItemTerm} de Fluxo
+                      <Button type="submit" className="w-full bg-[#171717] hover:bg-[#2c2c2c] text-white font-semibold h-10 rounded-xl">
+                        Abrir {flowItemTerm} 360°
                       </Button>
                     </form>
                   </DialogContent>
                 </Dialog>
               </div>
 
-              {/* Quadro Board de Fluxos Operacionais */}
+              {/* Quadro Board de Fluxos Operacionais (Warm-Light Architecture) */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* COLUNA 1: ESPERA / CHECK-IN */}
-                <div className="bg-[#09090b]/80 border border-zinc-900 rounded-2xl p-4 flex flex-col space-y-4">
-                  <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
-                    <span className="text-xs font-extrabold uppercase tracking-widest text-[#D4AF37] font-sans">
-                      ⏳ Fila / Recepção ({comandasByStatus.checked_in.length})
+                <div className="bg-white border border-[#E5E2DC] rounded-2xl p-4 flex flex-col space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-[#E5E2DC] pb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#171717]">
+                      Fila / Recepção
                     </span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="text-xs font-bold text-[#8A6D36] tabular-nums">
+                      {comandasByStatus.checked_in.length}
+                    </span>
                   </div>
 
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px]">
                     {comandasByStatus.checked_in.length === 0 ? (
-                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} aguardando na fila.</p>
+                      <p className="text-xs text-[#6B6B6B] py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} aguardando na fila.</p>
                     ) : (
                       comandasByStatus.checked_in.map(c => (
-                        <Card key={c.id} className="bg-zinc-950 border border-zinc-900 p-4 rounded-xl space-y-3">
+                        <Card key={c.id} className="bg-[#FAF9F7] border border-[#E5E2DC] p-4 rounded-xl space-y-3 shadow-none">
                           <div className="flex justify-between items-start">
                             <div>
-                              <h4 className="text-xs font-extrabold text-white">{c.clientName}</h4>
-                              <p className="text-[10px] text-zinc-500">Chegada: {c.time}</p>
+                              <h4 className="text-xs font-bold text-[#171717]">{c.clientName}</h4>
+                              <p className="text-[11px] text-[#6B6B6B] tabular-nums">
+                                Comanda #{c.comandaNumber || c.id.substring(0, 4)} · {c.time}
+                              </p>
                             </div>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteComanda(c.id)} className="h-6 w-6 text-zinc-600 hover:text-red-500">
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteComanda(c.id)} className="h-7 w-7 text-[#6B6B6B] hover:text-rose-600">
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
 
                           <div className="space-y-1">
                             {c.items.map((itm, idx) => (
-                              <div key={idx} className="flex justify-between text-[11px] bg-zinc-900/60 px-2 py-1.5 rounded-md text-zinc-300">
-                                <span className="font-sans truncate max-w-[120px]">{itm.name}</span>
-                                <span className="text-zinc-500 font-mono">{formatBRL(itm.price)}</span>
+                              <div key={idx} className="flex justify-between text-[11px] bg-white px-2.5 py-1.5 rounded-lg border border-[#E5E2DC]/70 text-[#171717]">
+                                <span className="truncate max-w-[140px]">{itm.name}</span>
+                                <span className="text-[#6B6B6B] font-semibold tabular-nums">{formatBRL(itm.price)}</span>
                               </div>
                             ))}
                           </div>
 
                           <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleMoveComanda(c.id, 'in_service')} className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-[10px] h-8 hover:bg-zinc-800 gap-1 rounded-lg">
-                              Acolher no(a) {workstationTerm.split('/')[0].trim()} <ArrowRight className="w-3 h-3 text-[#D4AF37]" />
+                            <Button size="sm" variant="outline" onClick={() => openComandaModal(c, 'items')} className="border-[#E5E2DC] bg-white text-[#171717] text-[11px] h-8 hover:bg-[#EFECE4] rounded-lg whitespace-nowrap">
+                              Abrir 360°
+                            </Button>
+                            <Button size="sm" onClick={() => handleMoveComanda(c.id, 'in_service')} className="flex-1 bg-[#171717] text-white text-[11px] h-8 hover:bg-[#2c2c2c] gap-1 rounded-lg whitespace-nowrap">
+                              Acolher <ArrowRight className="w-3 h-3 text-[#D4AF37]" />
                             </Button>
                           </div>
                         </Card>
@@ -985,68 +1056,60 @@ export default function AppointmentsPage() {
                 </div>
 
                 {/* COLUNA 2: EM ATENDIMENTO */}
-                <div className="bg-[#09090b]/80 border border-zinc-900 rounded-2xl p-4 flex flex-col space-y-4">
-                  <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
-                    <span className="text-xs font-extrabold uppercase tracking-widest text-[#D4AF37] font-sans">
-                      {isClinic ? '🩺' : isStudio ? '🎨' : isBeauty ? '💇' : '⚡'} No(a) {workstationTerm} ({comandasByStatus.in_service.length})
+                <div className="bg-white border border-[#E5E2DC] rounded-2xl p-4 flex flex-col space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-[#E5E2DC] pb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#171717]">
+                      Em Atendimento ({workstationTerm})
                     </span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-bold text-emerald-700 tabular-nums">
+                      {comandasByStatus.in_service.length}
+                    </span>
                   </div>
 
                   <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px]">
                     {comandasByStatus.in_service.length === 0 ? (
-                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} em atendimento agora.</p>
+                      <p className="text-xs text-[#6B6B6B] py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} em atendimento agora.</p>
                     ) : (
                       comandasByStatus.in_service.map(c => (
-                        <Card key={c.id} className="bg-[#0c0d11] border border-[#D4AF37]/10 p-4 rounded-xl space-y-3 relative overflow-hidden">
-                          <div className="absolute top-0 right-0 w-2 h-full bg-[#D4AF37]/20" />
+                        <Card key={c.id} className="bg-[#FAF9F7] border border-[#E5E2DC] p-4 rounded-xl space-y-3 shadow-none">
                           <div className="flex justify-between items-start">
                             <div className="space-y-0.5">
-                              <h4 className="text-xs font-extrabold text-white">{c.clientName}</h4>
-                              <p className="text-[10px] text-zinc-500 flex items-center gap-1">
-                                <Clock className="w-3 h-3" /> Iniciado às: {c.time}
+                              <h4 className="text-xs font-bold text-[#171717]">{c.clientName}</h4>
+                              <p className="text-[11px] text-[#6B6B6B] flex items-center gap-1 tabular-nums">
+                                <Clock className="w-3 h-3 text-[#8A6D36]" /> #{c.comandaNumber || c.id.substring(0, 4)} · {c.time}
                               </p>
                             </div>
-                            <span className="text-xs font-bold text-[#D4AF37] font-mono">{formatBRL(c.totalAmount)}</span>
+                            <span className="text-xs font-bold text-[#8A6D36] tabular-nums">{formatBRL(c.totalAmount)}</span>
                           </div>
 
-                          {/* Itens Atuais e profissionais */}
                           <div className="space-y-1.5 pt-1">
                             {c.items.map((itm, idx) => (
-                              <div key={idx} className="flex justify-between items-center text-[11px] bg-zinc-950 px-2 py-1.5 rounded-md border border-zinc-900">
-                                <div className="space-y-0.5">
-                                   <span className="text-zinc-200 block font-semibold leading-none">{itm.name}</span>
-                                   <span className="text-[9px] text-[#D4AF37]/80">{itm.professionalName}</span>
+                              <div key={idx} className="flex justify-between items-center text-[11px] bg-white px-2.5 py-1.5 rounded-lg border border-[#E5E2DC]/70">
+                                <div className="min-w-0 pr-2">
+                                   <span className="text-[#171717] block font-medium truncate">{itm.name}</span>
+                                   <span className="text-[10px] text-[#6B6B6B]">{itm.professionalName}</span>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-zinc-400 font-bold">{formatBRL(itm.price)}</span>
-                                  <button onClick={() => handleRemoveComandaItem(c, idx)} className="text-zinc-600 hover:text-red-500 p-0.5 transition-colors">
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
+                                <span className="font-semibold text-[#171717] tabular-nums shrink-0">{formatBRL(itm.price)}</span>
                               </div>
                             ))}
                           </div>
 
-                          {/* Botões operacionais */}
-                          <div className="grid grid-cols-2 gap-2 pt-2">
+                          <div className="grid grid-cols-2 gap-2 pt-1">
                             <Button 
                               size="sm" 
-                              onClick={() => {
-                                setSelectedComanda(c);
-                                setIsAddItemOpen(true);
-                              }} 
-                              className="bg-zinc-900 border border-zinc-800 text-zinc-300 text-[10px] h-8 hover:bg-zinc-850 hover:text-white rounded-lg flex items-center gap-1.5 font-bold"
+                              variant="outline"
+                              onClick={() => openComandaModal(c, 'items')} 
+                              className="bg-white border-[#E5E2DC] text-[#171717] text-[11px] h-8 hover:bg-[#EFECE4] rounded-lg flex items-center gap-1 font-semibold whitespace-nowrap"
                             >
-                              <Plus className="w-3.5 h-3.5 text-[#D4AF37]" /> Adicionar Venda
+                              <Edit2 className="w-3 h-3 text-[#8A6D36]" /> Comanda 360°
                             </Button>
                             
                             <Button 
                               size="sm" 
                               onClick={() => handleMoveComanda(c.id, 'checkout_pending')} 
-                              className="bg-[#D4AF37] text-black text-[10px] h-8 hover:bg-[#D4AF37]/90 rounded-lg flex items-center gap-1 font-bold"
+                              className="bg-[#171717] text-white text-[11px] h-8 hover:bg-[#2c2c2c] rounded-lg flex items-center gap-1 font-semibold whitespace-nowrap"
                             >
-                              Finalizar <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                              Enviar Caixa <ArrowRight className="w-3 h-3 text-[#D4AF37]" />
                             </Button>
                           </div>
                         </Card>
@@ -1056,55 +1119,55 @@ export default function AppointmentsPage() {
                 </div>
 
                 {/* COLUNA 3: NO CAIXA / AGUARDANDO CHECKOUT */}
-                <div className="bg-[#09090b]/80 border border-zinc-900 rounded-2xl p-4 flex flex-col space-y-4">
-                  <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
-                    <span className="text-xs font-extrabold uppercase tracking-widest text-[#D4AF37] font-sans">
-                      💰 Caixa / Fechamento ({comandasByStatus.checkout_pending.length})
+                <div className="bg-white border border-[#E5E2DC] rounded-2xl p-4 flex flex-col space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between border-b border-[#E5E2DC] pb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#171717]">
+                      Caixa / Fechamento
                     </span>
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-xs font-bold text-[#8A6D36] tabular-nums">
+                      {comandasByStatus.checkout_pending.length}
+                    </span>
                   </div>
 
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px]">
                     {comandasByStatus.checkout_pending.length === 0 ? (
-                      <p className="text-[11px] text-zinc-500 py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} aguardando faturamento.</p>
+                      <p className="text-xs text-[#6B6B6B] py-6 text-center">Nenhum(a) {clientTerm.toLowerCase()} aguardando fechamento.</p>
                     ) : (
                       comandasByStatus.checkout_pending.map(c => (
-                        <Card key={c.id} className="bg-zinc-950 border border-zinc-900 p-4 rounded-xl space-y-3">
+                        <Card key={c.id} className="bg-[#FAF9F7] border border-[#E5E2DC] p-4 rounded-xl space-y-3 shadow-none">
                           <div className="flex justify-between items-start">
                             <div>
-                              <h4 className="text-xs font-extrabold text-white">{c.clientName}</h4>
-                              <p className="text-[10px] text-zinc-500">{c.items.length} itens a consolidar</p>
+                              <h4 className="text-xs font-bold text-[#171717]">{c.clientName}</h4>
+                              <p className="text-[11px] text-[#6B6B6B] tabular-nums">{c.items.length} itens para recebimento</p>
                             </div>
-                            <span className="text-xs font-extrabold text-[#D4AF37] font-mono">{formatBRL(c.totalAmount)}</span>
+                            <span className="text-xs font-bold text-[#8A6D36] tabular-nums">{formatBRL(c.totalAmount)}</span>
                           </div>
 
-                          <div className="space-y-1 max-h-[120px] overflow-y-auto pr-1">
+                          <div className="space-y-1 max-h-[120px] overflow-y-auto">
                             {c.items.map((itm, idx) => (
-                              <div key={idx} className="flex justify-between text-[10px] bg-zinc-900/40 p-2 rounded-md">
-                                <span className="text-zinc-400 capitalize truncate max-w-[130px]">{itm.name}</span>
-                                <span className="text-zinc-500 font-mono font-bold">{formatBRL(itm.price)}</span>
+                              <div key={idx} className="flex justify-between text-[11px] bg-white px-2.5 py-1.5 rounded-lg border border-[#E5E2DC]/70">
+                                <span className="text-[#171717] truncate max-w-[140px]">{itm.name}</span>
+                                <span className="text-[#6B6B6B] font-semibold tabular-nums">{formatBRL(itm.price)}</span>
                               </div>
                             ))}
                           </div>
 
-                          <div className="flex gap-2 pt-1 border-t border-zinc-900/60">
+                          <div className="flex gap-2 pt-1 border-t border-[#E5E2DC]">
                             <Button 
                               size="sm" 
-                              onClick={() => handleMoveComanda(c.id, 'comanda_deslocar' as any).then(() => handleMoveComanda(c.id, 'in_service'))} 
-                              className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-[10px] h-8 hover:bg-zinc-850 hover:text-white rounded-lg flex items-center justify-center"
+                              variant="outline"
+                              onClick={() => handleMoveComanda(c.id, 'in_service')} 
+                              className="bg-white border-[#E5E2DC] text-[#6B6B6B] text-[11px] h-8 hover:text-[#171717] rounded-lg whitespace-nowrap"
                             >
                               Voltar
                             </Button>
                             
                             <Button 
                               size="sm" 
-                              onClick={() => {
-                                setSelectedComanda(c);
-                                setIsCheckoutOpen(true);
-                              }} 
-                              className="flex-1 bg-green-500 text-black text-[10px] h-8 hover:bg-green-400 font-extrabold gap-1 rounded-lg"
+                              onClick={() => openComandaModal(c, 'payment')} 
+                              className="flex-1 bg-emerald-700 text-white text-[11px] h-8 hover:bg-emerald-800 font-semibold gap-1.5 rounded-lg whitespace-nowrap"
                             >
-                              <CreditCard className="w-3.5 h-3.5" /> Receber Caixa
+                              <CreditCard className="w-3.5 h-3.5" /> Receber Comanda 360°
                             </Button>
                           </div>
                         </Card>
@@ -1114,567 +1177,382 @@ export default function AppointmentsPage() {
                 </div>
 
               </div>
-
-              {/* MODAL ADICIONAR ITEM NA COMANDA IN CURSU */}
-              <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-                <DialogContent className="bg-zinc-950 border-zinc-800 text-white max-w-sm rounded-xl">
-                  <DialogHeader>
-                    <DialogTitle className="font-heading text-white text-lg flex items-center gap-2">
-                      🛍️ Adicionar Serviço / Produto Casado
-                    </DialogTitle>
-                    <CardDescription className="text-zinc-400">
-                      Ideal para lançar adicionais comprados pelo cliente durante o atendimento (ex: hidratação, shampoo, etc).
-                    </CardDescription>
-                  </DialogHeader>
-
-                  <form onSubmit={handleAddComandaItemSubmit} className="space-y-4 pt-3 text-xs">
-                    
-                    {/* Filtro tipo */}
-                    <div className="space-y-2">
-                      <Label className="text-zinc-300">Tipo do Item</Label>
-                      <div className="grid grid-cols-2 gap-2 bg-zinc-900 p-1 rounded-xl">
-                        <button
-                          type="button"
-                          onClick={() => setAddItemFormData(p => ({ ...p, type: 'service' }))}
-                          className={`py-2 text-[11px] font-bold rounded-lg transition-all ${
-                            addItemFormData.type === 'service'
-                              ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                              : 'text-zinc-400'
-                          }`}
-                        >
-                          💇 Serviço
-                        </button>
-                        
-                        <button
-                          type="button"
-                          onClick={() => setAddItemFormData(p => ({ ...p, type: 'product' }))}
-                          className={`py-2 text-[11px] font-bold rounded-lg transition-all ${
-                            addItemFormData.type === 'product'
-                              ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                              : 'text-zinc-400'
-                          }`}
-                        >
-                          🛍️ Produto
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-zinc-300">Profissional Responsável</Label>
-                      <Select required value={addItemFormData.professionalId} onValueChange={v => setAddItemFormData(p => ({ ...p, professionalId: v }))}>
-                        <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                          <SelectValue placeholder="Escolha quem executou/vendeu" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                          {professionals.map(p => (
-                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-zinc-300">Item Cadastrado (Opcional)</Label>
-                      {addItemFormData.type === 'service' ? (
-                        <Select value={addItemFormData.itemId} onValueChange={handleAddComandaItemChange}>
-                          <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                            <SelectValue placeholder="Selecione na lista ou avulso" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                            <SelectItem value="custom">-- Digitar Item Avulso (Fora da Lista) --</SelectItem>
-                            {services.map(s => (
-                              <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Select value={addItemFormData.itemId} onValueChange={v => setAddItemFormData(p => ({ ...p, itemId: v, customName: v === 'custom' ? '' : v }))}>
-                          <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                            <SelectValue placeholder="Selecione um produto ou avulso" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                            <SelectItem value="custom">-- Digitar Produto Manual --</SelectItem>
-                            <SelectItem value="Shampoo Hidratante Premium">Shampoo Importado (R$ 89,00)</SelectItem>
-                            <SelectItem value="Pomada Efeito Matte 150g">Pomada Matte (R$ 45,00)</SelectItem>
-                            <SelectItem value="Óleo de Barba Especial">Óleo de Barba Luxo (R$ 55,00)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-
-                    {(addItemFormData.itemId === 'custom' || !addItemFormData.itemId) && (
-                      <div className="space-y-2">
-                        <Label className="text-zinc-300">Nome do Item Avulso</Label>
-                        <Input 
-                          required 
-                          value={addItemFormData.customName} 
-                          onChange={e => setAddItemFormData(p => ({ ...p, customName: e.target.value }))}
-                          className="bg-zinc-900 border-zinc-800 text-white"
-                          placeholder="Ex: Barba Clássica Adicional"
-                        />
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <Label className="text-zinc-300">Preço R$</Label>
-                      <Input 
-                        required 
-                        type="number"
-                        step="0.01"
-                        value={addItemFormData.price} 
-                        onChange={e => setAddItemFormData(p => ({ ...p, price: e.target.value }))}
-                        className="bg-zinc-900 border-zinc-800 text-white font-mono"
-                        placeholder="Ex: 55.00"
-                      />
-                    </div>
-
-                    <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-xl">
-                      Inserir na Comanda
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-
-              {/* MODAL DE CHECKOUT FINAL DA COMANDA OPERACIONAL */}
-              <Dialog open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
-                <DialogContent className="bg-zinc-950 border-zinc-800 text-white max-w-md rounded-2xl max-h-[92vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle className="font-heading text-[#D4AF37] text-lg flex items-center gap-2">
-                      🧾 Fechamento & Checkout de Comanda
-                    </DialogTitle>
-                    <CardDescription className="text-zinc-400">
-                      Consolide os repasses, registre o faturamento operacional e emita a comissão imediata do salão.
-                    </CardDescription>
-                  </DialogHeader>
-
-                  {selectedComanda && (
-                    <form onSubmit={handleConfirmCheckout} className="space-y-5 pt-3 text-xs">
-                      
-                      {/* Recibo detalhado */}
-                      <div className="bg-zinc-900/60 border border-zinc-900 rounded-xl p-4 space-y-2">
-                        <div className="flex justify-between border-b border-zinc-800 pb-2 text-[10px] text-zinc-500 uppercase tracking-widest font-sans">
-                          <span>Descrição do Item</span>
-                          <span>Preço</span>
-                        </div>
-                        <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1">
-                          {selectedComanda.items.map((itm, i) => (
-                            <div key={i} className="flex justify-between text-[11px]">
-                              <div>
-                                <span className="text-white block font-medium capitalize">{itm.name}</span>
-                                <span className="text-[10px] text-zinc-500">Com profissional: {itm.professionalName}</span>
-                              </div>
-                              <span className="font-semibold text-zinc-300 font-mono">{formatBRL(itm.price)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="border-t border-zinc-800 pt-2 flex justify-between font-bold text-xs">
-                          <span className="text-zinc-400 font-sans">Subtotal dos Itens</span>
-                          <span className="text-white font-mono">{formatBRL(selectedComanda.totalAmount)}</span>
-                        </div>
-                      </div>
-
-                      {/* Repasses e comissões estimados em tempo real */}
-                      <div className="bg-[#0c0d12] border border-[#D4AF37]/10 rounded-xl p-4 space-y-2">
-                        <h4 className="text-[10px] uppercase font-bold tracking-wider text-[#D4AF37] flex items-center gap-1 font-sans">
-                          ⚡ Monitor de Comissão em Tempo Real
-                        </h4>
-                        <div className="space-y-1.5">
-                          {comandaCalculatedRates.map((cRate) => (
-                            <div key={cRate.professionalId} className="flex justify-between text-[11px]">
-                              <span className="text-zinc-400">Repasse para {cRate.name}</span>
-                              <span className="text-green-400 font-semibold font-mono">{formatBRL(cRate.rateAmount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Desconto, taxas e tipo de pagamento */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                          <Label className="text-zinc-300">Forma de Recebimento</Label>
-                          <Select value={checkoutData.paymentMethod} onValueChange={v => setCheckoutData(p => ({ ...p, paymentMethod: v }))}>
-                            <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                              <SelectItem value="pix">⚡ Pix Instantâneo</SelectItem>
-                              <SelectItem value="credit_card">💳 Cartão de Crédito</SelectItem>
-                              <SelectItem value="debit_card">💳 Cartão de Débito</SelectItem>
-                              <SelectItem value="cash">💵 Dinheiro Vivo</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label className="text-zinc-300 font-sans">Desconto Operacional</Label>
-                          <div className="flex gap-1.5">
-                            <Input 
-                              type="number"
-                              value={checkoutData.discountValue}
-                              onChange={e => setCheckoutData(p => ({ ...p, discountValue: e.target.value }))}
-                              className="bg-zinc-900 border-zinc-800 text-white font-mono w-2/3"
-                              placeholder="0"
-                            />
-                            <Select value={checkoutData.discountType} onValueChange={(v: any) => setCheckoutData(p => ({ ...p, discountType: v }))}>
-                              <SelectTrigger className="bg-zinc-900 border-zinc-800 w-1/3">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                                <SelectItem value="percentage">%</SelectItem>
-                                <SelectItem value="fixed">R$</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label className="text-zinc-300">Observações Operacionais</Label>
-                        <Input 
-                          value={checkoutData.notes} 
-                          onChange={e => setCheckoutData(p => ({ ...p, notes: e.target.value }))}
-                          className="bg-zinc-900 border-zinc-800"
-                          placeholder="Recepção, cortesia, etc..."
-                        />
-                      </div>
-
-                      {/* Resumo Consolidado Final */}
-                      <div className="bg-zinc-950/60 p-4 border border-zinc-900 rounded-xl space-y-2">
-                        {checkoutTotals.discount > 0 && (
-                          <div className="flex justify-between text-[11px] text-zinc-400">
-                            <span>Desconto Aplicado</span>
-                            <span className="font-mono text-red-400">-{formatBRL(checkoutTotals.discount)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between text-base font-extrabold text-white border-t border-zinc-900 pt-2 font-sans">
-                          <span>Total a Pagar</span>
-                          <span className="text-yellow-500 font-mono filter drop-shadow-[0_0_8px_rgba(250,204,21,0.2)]">
-                            {formatBRL(checkoutTotals.total)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <Button type="submit" className="w-full bg-green-500 hover:bg-green-400 text-black font-extrabold h-11 rounded-xl text-xs uppercase tracking-wider gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-black" /> Liquidar Caixa & Repassar Comissões
-                      </Button>
-                    </form>
-                  )}
-                </DialogContent>
-              </Dialog>
-
             </motion.div>
           )}
 
-          {/* TAB 2: AGENDA TRADICIONAL & HISTÓRICO */}
+          {/* TAB 2: AGENDA INTELIGENTE LUMIÈREOS (DIA / SEMANA / MÊS + WHATSAPP + PREVISIBILIDADE) */}
           {activePageTab === 'traditional' && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="space-y-6"
+              className="space-y-4"
             >
-              
-              <div className="flex justify-between items-center flex-wrap gap-4">
-                <h3 className="text-lg font-bold font-heading text-white">Cronograma e Agendamentos Históricos</h3>
-                
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => openGoogleCalendarDialog('sync')}
-                    className="border-zinc-800 text-zinc-300 hover:text-white hover:bg-white/[0.02] rounded-xl text-xs h-10 px-4 flex items-center gap-1.5"
-                  >
-                    <CalendarPlus className="w-4 h-4 text-[#D4AF37]" /> Sincronizar Google Agenda
-                  </Button>
-                  
-                  {/* Novo Agendamento */}
-                  <Dialog open={isDialogOpen} onOpenChange={(open) => {
-                    setIsDialogOpen(open);
-                    if (!open) resetForm();
-                  }}>
+              {/* Ação rápida de Lançamento Manual Avulso para Recepção/Gestão */}
+              {['owner', 'manager', 'receptionist', 'attendant'].includes(userRole) && (
+                <div className="flex justify-end">
+                  <Dialog open={isManualDialogOpen} onOpenChange={setIsManualDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button className="bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold px-4 py-2 rounded-xl flex items-center gap-2">
-                        <Plus className="w-4 h-4" /> Novo Agendamento Físico
+                      <Button variant="outline" className="border-[#E5E2DC] bg-white text-[#171717] hover:bg-[#FAF9F7] rounded-xl text-xs h-9 px-3.5">
+                        <FileText className="w-3.5 h-3.5 mr-1.5 text-[#8A6D36]" /> Lançamento Direto no Caixa
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-[425px] bg-[#0c0d0f] border-zinc-850 text-white max-h-[90vh] overflow-y-auto w-full">
+                    <DialogContent className="sm:max-w-[425px] bg-[#0c0d10] border-zinc-850 text-white max-h-[90vh] overflow-y-auto w-full">
                       <DialogHeader>
-                        <DialogTitle className="font-heading text-lg text-[#D4AF37]">{editingItem ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
+                        <DialogTitle className="font-heading text-white text-lg flex items-center gap-2">
+                          <FileText className="w-5 h-5 text-[#D4AF37]" /> Lançamento Manual Avulso
+                        </DialogTitle>
                       </DialogHeader>
-                      <form onSubmit={handleSubmit} className="space-y-4 pt-4 text-xs">
+                      <form onSubmit={handleManualSubmit} className="space-y-4 pt-4 text-xs">
                         <div className="space-y-2">
-                          <Label className="text-zinc-300">Cliente</Label>
-                          <Select required value={formData.clientId} onValueChange={(v) => setFormData(p => ({...p, clientId: v}))}>
-                            <SelectTrigger className="bg-zinc-900 border-zinc-800"><SelectValue placeholder="Selecione um cliente" /></SelectTrigger>
-                            <SelectContent className="bg-zinc-950 border-zinc-800 text-white">{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                          <Label className="text-zinc-400">Tipo de Lançamento</Label>
+                          <div className="grid grid-cols-2 gap-2 bg-zinc-900 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => setManualFormData(p => ({ ...p, type: 'service' }))}
+                              className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                                manualFormData.type === 'service' ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25' : 'text-zinc-400'
+                              }`}
+                            >
+                              <Scissors className="w-3.5 h-3.5 mr-1 inline" /> Serviço
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setManualFormData(p => ({ ...p, type: 'product' }))}
+                              className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                                manualFormData.type === 'product' ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25' : 'text-zinc-400'
+                              }`}
+                            >
+                              <ShoppingBag className="w-3.5 h-3.5 mr-1 inline" /> Produto
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-zinc-400">Profissional Relacionado</Label>
+                          <Select required value={manualFormData.professionalId} onValueChange={(v) => setManualFormData(p => ({ ...p, professionalId: v }))}>
+                            <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white"><SelectValue placeholder="Escolha quem executou/vendeu" /></SelectTrigger>
+                            <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                              {professionals.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                            </SelectContent>
                           </Select>
                         </div>
+
                         <div className="space-y-2">
-                          <Label className="text-zinc-300">Serviço</Label>
-                          <Select required value={formData.serviceId} onValueChange={(v) => setFormData(p => ({...p, serviceId: v}))}>
-                            <SelectTrigger className="bg-zinc-900 border-zinc-800"><SelectValue placeholder="Selecione o serviço" /></SelectTrigger>
-                            <SelectContent className="bg-zinc-950 border-zinc-800 text-white">{services.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>)}</SelectContent>
+                          <Label className="text-zinc-400">Base de Serviço (Opcional)</Label>
+                          <Select value={manualFormData.serviceId} onValueChange={handleManualServiceChange}>
+                            <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white"><SelectValue placeholder="Deixe avulso ou selecione" /></SelectTrigger>
+                            <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
+                              <SelectItem value="custom">-- Digitar Manual (Avulso) --</SelectItem>
+                              {services.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>)}
+                            </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-zinc-300">Profissional</Label>
-                          <Select required value={formData.professionalId} onValueChange={(v) => setFormData(p => ({...p, professionalId: v}))}>
-                            <SelectTrigger className="bg-zinc-900 border-zinc-800"><SelectValue placeholder="Quem irá atender?" /></SelectTrigger>
-                            <SelectContent className="bg-zinc-950 border-zinc-800 text-white">{professionals.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="space-y-2">
-                             <Label className="text-zinc-300">Data</Label>
-                             <Input required type="date" value={formData.date} onChange={e => setFormData(p => ({...p, date: e.target.value}))} className="bg-zinc-900 border-zinc-800 text-white" />
-                           </div>
-                           <div className="space-y-2">
-                             <Label className="text-zinc-300">Horário</Label>
-                             {formData.serviceId && formData.professionalId && formData.date ? (
-                               <Select required value={formData.time} onValueChange={(v) => setFormData(p => ({...p, time: v}))}>
-                                 <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white">
-                                   <SelectValue placeholder={availableSlotsList.length > 0 ? "Escolha" : "Sem vagas"} />
-                                 </SelectTrigger>
-                                 <SelectContent className="bg-zinc-950 border-zinc-800 text-white max-h-60">
-                                   {availableSlotsList.length === 0 ? (
-                                     <SelectItem value={formData.time || "none"} disabled>Nenhum horário livre</SelectItem>
-                                   ) : (
-                                     availableSlotsList.map(t => (
-                                       <SelectItem key={t} value={t}>{t}</SelectItem>
-                                     ))
-                                   )}
-                                 </SelectContent>
-                               </Select>
-                             ) : (
-                               <Input required type="time" value={formData.time} onChange={e => setFormData(p => ({...p, time: e.target.value}))} className="bg-zinc-900 border-zinc-800 text-white" />
-                             )}
-                           </div>
-                        </div>
-                        {editingItem && (
-                           <div className="space-y-2">
-                             <Label className="text-zinc-300">Status</Label>
-                             <Select value={formData.status} onValueChange={(v: any) => setFormData(p => ({...p, status: v}))}>
-                               <SelectTrigger className="bg-zinc-900 border-zinc-800"><SelectValue /></SelectTrigger>
-                               <SelectContent className="bg-zinc-950 border-zinc-800 text-white">
-                                  <SelectItem value="scheduled">Agendado</SelectItem>
-                                  <SelectItem value="completed">Concluído</SelectItem>
-                                  <SelectItem value="canceled">Cancelado</SelectItem>
-                               </SelectContent>
-                             </Select>
-                           </div>
+
+                        {(manualFormData.serviceId === 'custom' || !manualFormData.serviceId) && (
+                          <div className="space-y-2">
+                            <Label className="text-zinc-400">Nome do {manualFormData.type === 'service' ? 'Serviço' : 'Produto'}</Label>
+                            <Input
+                              required
+                              value={manualFormData.customName}
+                              onChange={e => setManualFormData(p => ({ ...p, customName: e.target.value }))}
+                              className="bg-zinc-900 border-zinc-800 text-white"
+                              placeholder={`Ex: ${manualFormData.type === 'service' ? 'Penteado Clássico' : 'Defrizante'}`}
+                            />
+                          </div>
                         )}
+
                         <div className="space-y-2">
-                          <Label className="text-zinc-300">Observações</Label>
-                          <Input value={formData.notes} onChange={e => setFormData(p => ({...p, notes: e.target.value}))} className="bg-zinc-900 border-zinc-800 text-white" placeholder="Opcional..." />
+                          <Label className="text-zinc-400">Preço R$</Label>
+                          <Input
+                            required
+                            type="number"
+                            step="0.01"
+                            value={manualFormData.price}
+                            onChange={e => setManualFormData(p => ({ ...p, price: e.target.value }))}
+                            className="bg-zinc-900 border-zinc-800 text-white"
+                          />
                         </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-zinc-400">Data do Lançamento</Label>
+                          <Input
+                            required
+                            type="date"
+                            value={manualFormData.date}
+                            onChange={e => setManualFormData(p => ({ ...p, date: e.target.value }))}
+                            className="bg-zinc-900 border-zinc-800 text-white"
+                          />
+                        </div>
+
                         <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-xl">
-                          {editingItem ? 'Salvar Alterações' : 'Confirmar Agendamento'}
+                          Salvar Lançamento Direto
                         </Button>
                       </form>
                     </DialogContent>
                   </Dialog>
-
-                  {/* Lançamento manual avulso */}
-                  {['owner', 'manager', 'receptionist', 'attendant'].includes(userRole) && (
-                    <Dialog open={isManualDialogOpen} onOpenChange={setIsManualDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" className="border-zinc-800 text-zinc-300 hover:text-white hover:bg-white/[0.02] rounded-xl text-xs h-10 px-4">
-                          <FileText className="w-4 h-4 mr-1.5 text-[#D4AF37]" /> Lançamento de Caixa
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-[425px] bg-[#0c0d10] border-zinc-850 text-white max-h-[90vh] overflow-y-auto w-full">
-                        <DialogHeader>
-                          <DialogTitle className="font-heading text-white text-lg flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-[#D4AF37]" /> Lançamento Manual Avulso
-                          </DialogTitle>
-                        </DialogHeader>
-                        <form onSubmit={handleManualSubmit} className="space-y-4 pt-4 text-xs">
-                          <div className="space-y-2">
-                            <Label className="text-zinc-400">Tipo de Lançamento</Label>
-                            <div className="grid grid-cols-2 gap-2 bg-zinc-900 p-1 rounded-xl">
-                              <button
-                                type="button"
-                                onClick={() => setManualFormData(p => ({ ...p, type: 'service' }))}
-                                className={`py-2 rounded-lg text-xs font-bold transition-all ${
-                                  manualFormData.type === 'service' ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25' : 'text-zinc-400'
-                                }`}
-                              >
-                                <Scissors className="w-3.5 h-3.5 mr-1 inline" /> Serviço
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setManualFormData(p => ({ ...p, type: 'product' }))}
-                                className={`py-2 rounded-lg text-xs font-bold transition-all ${
-                                  manualFormData.type === 'product' ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25' : 'text-zinc-400'
-                                }`}
-                              >
-                                <ShoppingBag className="w-3.5 h-3.5 mr-1 inline" /> Produto
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-zinc-400">Profissional Relacionado</Label>
-                            <Select required value={manualFormData.professionalId} onValueChange={(v) => setManualFormData(p => ({ ...p, professionalId: v }))}>
-                              <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white"><SelectValue placeholder="Escolha quem executou/vendeu" /></SelectTrigger>
-                              <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
-                                {professionals.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-zinc-400">Base de Serviço (Opcional)</Label>
-                            <Select value={manualFormData.serviceId} onValueChange={handleManualServiceChange}>
-                              <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white"><SelectValue placeholder="Deixe avulso ou selecione" /></SelectTrigger>
-                              <SelectContent className="bg-zinc-950 border-zinc-850 text-white">
-                                <SelectItem value="custom">-- Digitar Manual (Avulso) --</SelectItem>
-                                {services.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {(manualFormData.serviceId === 'custom' || !manualFormData.serviceId) && (
-                            <div className="space-y-2">
-                              <Label className="text-zinc-400">Nome do {manualFormData.type === 'service' ? 'Serviço' : 'Produto'}</Label>
-                              <Input
-                                required
-                                value={manualFormData.customName}
-                                onChange={e => setManualFormData(p => ({ ...p, customName: e.target.value }))}
-                                className="bg-zinc-900 border-zinc-800 text-white"
-                                placeholder={`Ex: ${manualFormData.type === 'service' ? 'Penteado Clássico' : 'Defrizante'}`}
-                              />
-                            </div>
-                          )}
-
-                          <div className="space-y-2">
-                            <Label className="text-zinc-400">Preço R$</Label>
-                            <Input
-                              required
-                              type="number"
-                              step="0.01"
-                              value={manualFormData.price}
-                              onChange={e => setManualFormData(p => ({ ...p, price: e.target.value }))}
-                              className="bg-zinc-900 border-zinc-800 text-white"
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-zinc-400">Data do Lançamento</Label>
-                            <Input
-                              required
-                              type="date"
-                              value={manualFormData.date}
-                              onChange={e => setManualFormData(p => ({ ...p, date: e.target.value }))}
-                              className="bg-zinc-900 border-zinc-800 text-white"
-                            />
-                          </div>
-
-                          <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-xl">
-                            Salvar Lançamento Direto
-                          </Button>
-                        </form>
-                      </DialogContent>
-                    </Dialog>
-                  )}
-                </div>
-              </div>
-
-              {appointments.length === 0 ? (
-                <Card className="border-zinc-900 bg-[#09090b]/80">
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center text-zinc-500 text-xs">
-                    <CalendarIcon className="w-8 h-8 text-[#D4AF37] mb-2" />
-                    <p>Sem agendamentos clássicos cadastrados no momento.</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-4">
-                  {appointments.map((app) => (
-                    <Card key={app.id} className="bg-zinc-950 border-zinc-900 hover:border-zinc-800 transition-all relative overflow-hidden group">
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#D4AF37]" />
-                      <CardContent className="p-4 sm:p-5">
-                        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-                          
-                          <div className="flex items-center gap-4 min-w-[200px]">
-                            <div className="text-center shrink-0 w-16 bg-zinc-900/60 p-2 rounded-xl border border-zinc-900">
-                              <p className="text-[10px] text-zinc-500 font-bold uppercase">{new Date(app.date + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short' })}</p>
-                              <p className="text-xl font-extrabold text-[#D4AF37] font-mono leading-none pt-0.5">{app.date.split('-')[2]}</p>
-                              <p className="text-[9px] text-zinc-500 font-mono">{app.date.split('-')[1]}/{app.date.split('-')[0].substring(2)}</p>
-                            </div>
-                            
-                            <div>
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <Clock className="w-3.5 h-3.5 text-[#D4AF37]" />
-                                <span className="font-mono text-xs text-white font-bold">{app.time}</span>
-                                {app.status === 'completed' ? (
-                                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 bg-green-500/10 border border-green-500/20 text-green-400 rounded-md">Concluído</span>
-                                ) : app.status === 'canceled' ? (
-                                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-md">Cancelado</span>
-                                ) : app.status === 'confirmed' ? (
-                                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-md">Confirmado</span>
-                                ) : (
-                                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37] rounded-md">Agendado</span>
-                                )}
-                                {app.source === 'client_booking' ? (
-                                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-md">Online</span>
-                                ) : (
-                                  <span className="text-[9px] uppercase font-bold px-2 py-0.5 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md">Manual</span>
-                                )}
-                              </div>
-                              <h4 className="font-bold text-sm text-white">{app.clientName}</h4>
-                              {app.clientPhone && (
-                                <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{app.clientPhone}</p>
-                              )}
-                              <p className="text-xs text-zinc-400 mt-0.5">{app.serviceName} com <span className="text-[#D4AF37]">{app.professionalName}</span></p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 bg-zinc-900/40 p-2 rounded-xl">
-                            {(app.status === 'scheduled' || app.status === 'confirmed') && (
-                              <>
-                                {app.status === 'scheduled' && (
-                                  <Button variant="outline" size="sm" onClick={() => changeStatus(app.id, 'confirmed')} className="w-full sm:w-auto h-8 text-blue-400 border-blue-500/10 hover:bg-blue-500/10 text-[10px] uppercase font-bold">
-                                    Confirmar
-                                  </Button>
-                                )}
-                                <Button variant="outline" size="sm" onClick={() => changeStatus(app.id, 'completed')} className="w-full sm:w-auto h-8 text-green-400 border-green-500/10 hover:bg-green-500/10 text-[10px] uppercase font-bold">
-                                  Concluir
-                                </Button>
-                                <Button variant="ghost" size="sm" onClick={() => changeStatus(app.id, 'canceled')} className="w-full sm:w-auto h-8 text-zinc-500 hover:text-red-400 text-[10px] uppercase font-bold">
-                                  Cancelar
-                                </Button>
-                              </>
-                            )}
-                            {app.status !== 'canceled' && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => openGoogleCalendarForAppointment(app)}
-                                className="h-8 w-8"
-                                title="Enviar para Google Agenda"
-                              >
-                                <CalendarPlus className="w-3.5 h-3.5 text-[#D4AF37]" />
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="icon" onClick={() => openEdit(app)} className="h-8 w-8">
-                              <Edit2 className="w-3.5 h-3.5 text-zinc-500 hover:text-white" />
-                            </Button>
-                          </div>
-
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
                 </div>
               )}
 
+              {/* Novo Agendamento / Bloqueio Dialog */}
+              <Dialog
+                open={isDialogOpen}
+                onOpenChange={(open) => {
+                  setIsDialogOpen(open);
+                  if (!open) resetForm();
+                }}
+              >
+                <DialogContent className="sm:max-w-[440px] bg-white border-[#E5E2DC] text-[#171717] max-h-[90vh] overflow-y-auto w-full rounded-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="font-heading text-lg text-[#171717]">
+                      {editingItem
+                        ? formData.isBlock
+                          ? 'Editar Bloqueio de Horário'
+                          : 'Editar Agendamento'
+                        : formData.isBlock
+                          ? 'Bloquear Horário na Agenda'
+                          : 'Novo Agendamento'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleSubmit} className="space-y-4 pt-2 text-xs">
+                    {!editingItem && (
+                      <div className="grid grid-cols-2 gap-2 bg-[#FAF9F7] p-1 rounded-xl border border-[#E5E2DC]">
+                        <button
+                          type="button"
+                          onClick={() => setFormData(p => ({ ...p, isBlock: false, status: 'scheduled' }))}
+                          className={`py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            !formData.isBlock ? 'bg-[#171717] text-white' : 'text-[#6B6B6B]'
+                          }`}
+                        >
+                          Agendamento
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(p => ({ ...p, isBlock: true, status: 'blocked' }))}
+                          className={`py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            formData.isBlock ? 'bg-[#171717] text-white' : 'text-[#6B6B6B]'
+                          }`}
+                        >
+                          Bloqueio de Horário
+                        </button>
+                      </div>
+                    )}
+
+                    {!formData.isBlock && (
+                      <>
+                        <div className="space-y-1.5">
+                          <Label className="text-[#171717]">Cliente</Label>
+                          <Select required value={formData.clientId} onValueChange={(v) => setFormData(p => ({ ...p, clientId: v }))}>
+                            <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]"><SelectValue placeholder="Selecione um cliente" /></SelectTrigger>
+                            <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
+                              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[#171717]">Serviço</Label>
+                          <Select required value={formData.serviceId} onValueChange={(v) => setFormData(p => ({ ...p, serviceId: v }))}>
+                            <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]"><SelectValue placeholder="Selecione o serviço" /></SelectTrigger>
+                            <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
+                              {services.map(s => <SelectItem key={s.id} value={s.id}>{s.name} ({formatBRL(s.price)})</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[#171717]">Profissional</Label>
+                      <Select required value={formData.professionalId} onValueChange={(v) => setFormData(p => ({ ...p, professionalId: v }))}>
+                        <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]"><SelectValue placeholder="Escolha o profissional" /></SelectTrigger>
+                        <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
+                          {professionals.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {!formData.isBlock && resources.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717] flex items-center gap-1.5">
+                          <DoorOpen className="w-3.5 h-3.5 text-[#8A6D36]" /> Sala ou Equipamento (Opcional)
+                        </Label>
+                        <Select
+                          value={formData.resourceId || 'none'}
+                          onValueChange={(v) => setFormData(p => ({ ...p, resourceId: v === 'none' ? '' : v }))}
+                        >
+                          <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]">
+                            <SelectValue placeholder="Nenhum recurso vinculado" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
+                            <SelectItem value="none">Nenhum (Atendimento padrão)</SelectItem>
+                            {resources.map(r => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {r.name} ({r.quantity} un.)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Data</Label>
+                        <Input required type="date" value={formData.date} onChange={e => setFormData(p => ({ ...p, date: e.target.value }))} className="bg-[#FAF9F7] border-[#E5E2DC] text-[#171717]" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Horário</Label>
+                        {!formData.isBlock && formData.serviceId && formData.professionalId && formData.date && availableSlotsList.length > 0 ? (
+                          <Select required value={formData.time} onValueChange={(v) => setFormData(p => ({ ...p, time: v }))}>
+                            <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC] text-[#171717]">
+                              <SelectValue placeholder="Escolha" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-white border-[#E5E2DC] text-[#171717] max-h-60">
+                              {availableSlotsList.map(t => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input required type="time" value={formData.time} onChange={e => setFormData(p => ({ ...p, time: e.target.value }))} className="bg-[#FAF9F7] border-[#E5E2DC] text-[#171717]" />
+                        )}
+                      </div>
+                    </div>
+
+                    {formData.isBlock && (
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Duração do Bloqueio</Label>
+                        <Select
+                          value={String(formData.blockDuration)}
+                          onValueChange={(v) => setFormData(p => ({ ...p, blockDuration: Number(v) }))}
+                        >
+                          <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
+                            <SelectItem value="30">30 minutos</SelectItem>
+                            <SelectItem value="60">1 hora</SelectItem>
+                            <SelectItem value="90">1h 30min</SelectItem>
+                            <SelectItem value="120">2 horas</SelectItem>
+                            <SelectItem value="240">4 horas (Meio período)</SelectItem>
+                            <SelectItem value="480">8 horas (Dia inteiro)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {editingItem && !formData.isBlock && (
+                      <div className="space-y-1.5">
+                        <Label className="text-[#171717]">Status</Label>
+                        <Select value={formData.status} onValueChange={(v: AppointmentStatus) => setFormData(p => ({ ...p, status: v }))}>
+                          <SelectTrigger className="bg-[#FAF9F7] border-[#E5E2DC]"><SelectValue /></SelectTrigger>
+                          <SelectContent className="bg-white border-[#E5E2DC] text-[#171717]">
+                            <SelectItem value="scheduled">Agendado</SelectItem>
+                            <SelectItem value="confirmed">Confirmado</SelectItem>
+                            <SelectItem value="waiting">Na Recepção</SelectItem>
+                            <SelectItem value="in_service">Em Atendimento</SelectItem>
+                            <SelectItem value="completed">Concluído</SelectItem>
+                            <SelectItem value="canceled">Cancelado</SelectItem>
+                            <SelectItem value="no_show">Não Compareceu</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[#171717]">{formData.isBlock ? 'Motivo do Bloqueio' : 'Observações'}</Label>
+                      <Input
+                        value={formData.notes}
+                        onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))}
+                        className="bg-[#FAF9F7] border-[#E5E2DC] text-[#171717]"
+                        placeholder={formData.isBlock ? 'Ex: Almoço, compromisso externo...' : 'Opcional...'}
+                      />
+                    </div>
+
+                    <Button type="submit" className="w-full bg-[#171717] hover:bg-[#2c2c2c] text-white font-semibold h-11 rounded-xl">
+                      {editingItem
+                        ? 'Salvar Alterações'
+                        : formData.isBlock
+                          ? 'Confirmar Bloqueio'
+                          : 'Confirmar Agendamento'}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <LumiereAgendaView
+                salonData={salonData}
+                appointments={appointments}
+                clients={clients}
+                professionals={professionals}
+                services={services}
+                goals={professionalGoals}
+                userRole={userRole}
+                currentUserId={userData?.id}
+                canManageGoals={['owner', 'admin', 'manager', 'platform_admin', 'professional'].includes(userRole)}
+                canEditAppointments={['owner', 'admin', 'manager', 'receptionist', 'attendant', 'platform_admin'].includes(userRole)}
+                onQuickCreate={openQuickCreate}
+                onEditAppointment={openEdit}
+                onChangeStatus={changeStatus}
+                onDeleteAppointment={handleDeleteAppointment}
+                onOpenGoogleCalendar={(mode, app) => {
+                  if (mode === 'create' && app) {
+                    openGoogleCalendarForAppointment(app);
+                  } else {
+                    openGoogleCalendarDialog(mode);
+                  }
+                }}
+                onOpenWhatsAppSettings={
+                  ['owner', 'admin', 'manager', 'platform_admin'].includes(userRole)
+                    ? () => setIsWhatsAppSettingsOpen(true)
+                    : undefined
+                }
+                openComandasCount={openComandasList.length}
+                onOpenComandasList={() => setIsOpenComandasModalOpen(true)}
+                onOpenComandaFromAppointment={handleOpenComandaFromAppointment}
+              />
             </motion.div>
           )}
 
         </AnimatePresence>
       )}
+
+      <OpenComandasModal
+        open={isOpenComandasModalOpen}
+        onOpenChange={setIsOpenComandasModalOpen}
+        comandas={comandas}
+        onSelectComanda={(c) => {
+          setIsOpenComandasModalOpen(false);
+          openComandaModal(c, 'items');
+        }}
+        onNewComanda={() => {
+          setActivePageTab('flow');
+          setIsNewComandaOpen(true);
+        }}
+      />
+
+      <ComandaModal360
+        open={isComanda360Open}
+        onOpenChange={setIsComanda360Open}
+        salonId={salonData.id}
+        comanda={selectedComanda}
+        clients={clients}
+        professionals={professionals}
+        services={services}
+        packages={packages}
+        appointments={appointments}
+        currentUserName={userData?.fullName || userData?.email || 'Equipe'}
+        initialTab={comanda360InitialTab}
+        onFinalized={() => {
+          setSelectedComanda(null);
+        }}
+      />
+
+      <WhatsAppSettingsDialog
+        open={isWhatsAppSettingsOpen}
+        onOpenChange={setIsWhatsAppSettingsOpen}
+        salonId={salonData.id}
+        appointments={appointments}
+      />
 
       <GoogleCalendarDialog
         open={isGoogleCalendarOpen}

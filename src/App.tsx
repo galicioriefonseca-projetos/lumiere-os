@@ -44,6 +44,7 @@ const OnboardingGoals = React.lazy(() => import('./pages/onboarding/OnboardingGo
 const OnboardingChecklist = React.lazy(() => import('./pages/onboarding/OnboardingChecklist'));
 const OnboardingSetupHub = React.lazy(() => import('./pages/onboarding/OnboardingSetupHub'));
 const BookingPage = React.lazy(() => import('./pages/booking/BookingPage'));
+const AppointmentConfirmPage = React.lazy(() => import('./pages/booking/AppointmentConfirmPage'));
 const ClientPortalInvitePage = React.lazy(() => import('./pages/portal/ClientPortalInvitePage'));
 const ClientPortalPage = React.lazy(() => import('./pages/portal/ClientPortalPage'));
 const ClientPortalManagementPage = React.lazy(() => import('./pages/dashboard/ClientPortalManagementPage'));
@@ -113,6 +114,7 @@ function App() {
             <Route path="/dashboard/configurar-empresa" element={<ProtectedRoute><CompanySetupPage /></ProtectedRoute>} />
             <Route path="/preparando-ambiente" element={<PreparingEnvironmentPage />} />
             <Route path="/agendar/:salonSlug" element={<BookingPage />} />
+            <Route path="/confirmar-agendamento" element={<AppointmentConfirmPage />} />
             <Route path="/onboarding/configuracao" element={<ProtectedRoute><OnboardingSetupHub /></ProtectedRoute>} />
             <Route path="/onboarding" element={<ProtectedRoute><OnboardingLayout /></ProtectedRoute>}>
               <Route path="equipe" element={<FeatureRoute feature="team"><OnboardingTeam /></FeatureRoute>} />

@@ -219,6 +219,15 @@ export interface Professional {
   commissionRate?: number;
   photoURL?: string;
   avatarUrl?: string;
+  userId?: string;
+  professionalId?: string;
+  pushEnabled?: boolean;
+  fcmToken?: string;
+  fcmTokens?: string[];
+  pushPreferences?: {
+    onConfirmed: boolean;
+    onCanceled: boolean;
+  };
 }
 
 export interface Category {
@@ -235,10 +244,12 @@ export interface Service {
   name: string;
   category: string;
   price: number;
+  costPrice?: number;
   priceType?: 'fixed' | 'from' | 'variable';
   durationMinutes: number; // in minutes
   description?: string;
   isActive: boolean;
+  onlineBookingEnabled?: boolean;
   source?: 'template' | 'custom' | string;
   type?: 'service' | 'product';
   createdAt: number;
@@ -270,6 +281,7 @@ export interface Client {
   lifetimeValue?: number;
   totalAppointments?: number;
   totalSpent?: number;
+  creditBalance?: number; // positive = crédito disponível, negative = saldo em aberto / fiado
   status?: 'active' | 'inactive';
   createdBy?: string;
   updatedBy?: string;
@@ -289,6 +301,16 @@ export interface ClientHistory {
   createdAt: number;
 }
 
+export type AppointmentStatus =
+  | 'scheduled'
+  | 'confirmed'
+  | 'waiting'
+  | 'in_service'
+  | 'completed'
+  | 'canceled'
+  | 'no_show'
+  | 'blocked';
+
 export interface Appointment {
   id: string;
   clientId: string;
@@ -299,13 +321,27 @@ export interface Appointment {
   serviceName: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  status: 'scheduled' | 'confirmed' | 'completed' | 'canceled' | 'no_show';
+  endTime?: string; // HH:mm
+  status: AppointmentStatus;
   notes?: string;
   source?: 'manual' | 'client_booking'; // origem do agendamento
   clientPhone?: string;                  // para agendamentos online (sem cadastro)
   clientEmail?: string;
   serviceDuration?: number;              // duração em minutos
   price?: number;                        // valor cobrado
+  isBlock?: boolean;                     // bloqueio de horário na agenda
+  confirmToken?: string;
+  confirmationStatus?: 'pending' | 'awaiting_client' | 'confirmed_by_client' | 'declined_by_client';
+  whatsappSentAt?: number;
+  confirmedAt?: number;
+  canceledAt?: number;
+  confirmationChannel?: 'whatsapp_cloud' | 'whatsapp_link' | 'public_link' | 'manual';
+  whatsappMessageId?: string;
+  resourceId?: string;
+  resourceName?: string;
+  comandaId?: string;
+  isManualLaunch?: boolean;
+  paymentMethod?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -753,5 +789,178 @@ export interface LumiereSystemUser {
   createdAt: number;
 }
 
+export interface PackageIncludedService {
+  serviceId: string;
+  serviceName: string;
+  sessions: number;
+}
 
+export interface ServicePackage {
+  id: string;
+  salonId?: string;
+  name: string;
+  description?: string;
+  includedServices: PackageIncludedService[];
+  price: number;
+  validityDays: number;
+  isActive: boolean;
+  onlineBookingEnabled?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
 
+export type SalonResourceType = 'room' | 'equipment' | 'chair' | 'other';
+
+export interface SalonResource {
+  id: string;
+  salonId?: string;
+  name: string;
+  type: SalonResourceType;
+  description?: string;
+  quantity: number;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ComandaItem {
+  type: 'service' | 'product' | 'package';
+  id: string;
+  name: string;
+  quantity?: number;
+  unitPrice?: number;
+  discountPercent?: number;
+  price: number; // subtotal líquido do item (unitPrice * qty - desconto)
+  professionalId: string;
+  professionalName: string;
+  appointmentId?: string;
+  updatedByName?: string;
+  updatedAt?: number;
+}
+
+export interface ComandaPaymentSplit {
+  id: string;
+  method: 'pix' | 'credit_card' | 'debit_card' | 'cash' | 'transfer' | 'client_credit' | 'other';
+  amount: number;
+  info?: string;
+}
+
+export interface ComandaFlow {
+  id: string;
+  comandaNumber?: number;
+  clientId: string;
+  clientName: string;
+  status: 'checked_in' | 'in_service' | 'checkout_pending' | 'completed' | 'canceled';
+  items: ComandaItem[];
+  date: string;
+  time: string;
+  notes?: string;
+  prontuarioNotes?: string;
+  paymentMethod?: string;
+  paymentSplits?: ComandaPaymentSplit[];
+  cashRegisterName?: string;
+  totalAmount: number;
+  servicesTotal?: number;
+  productsTotal?: number;
+  discount?: number;
+  charges?: number;
+  finalTotal?: number;
+  paidAmount?: number;
+  clientBalanceDelta?: number;
+  openedByName?: string;
+  updatedByName?: string;
+  lastItemUpdatedByName?: string;
+  lastItemUpdatedAt?: number;
+  closedByName?: string;
+  closedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FinancialTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  netAmount?: number;
+  type: 'revenue' | 'expense';
+  category: string;
+  date: string;
+  status?: 'paid' | 'pending';
+  paymentMethod: string;
+  cashRegisterName?: string;
+  comandaId?: string;
+  comandaNumber?: number;
+  payoutId?: string;
+  createdByName?: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface CommissionAdjustment {
+  id: string;
+  professionalId: string;
+  professionalName: string;
+  type: 'bonus' | 'discount';
+  amount: number;
+  description: string;
+  date: string;
+  month: string; // YYYY-MM
+  status: 'pending' | 'settled';
+  payoutId?: string;
+  createdByName?: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface CommissionPayoutItem {
+  professionalId: string;
+  professionalName: string;
+  role?: string;
+  rateioAmount: number;
+  bonusAmount: number;
+  discountAmount: number;
+  netAmount: number;
+  adjustmentsAppliedIds?: string[];
+}
+
+export interface CommissionPayout {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  monthLabel?: string;
+  paymentMethod: string;
+  cashRegisterName?: string;
+  notes?: string;
+  totalAmount: number;
+  professionalsCount: number;
+  items: CommissionPayoutItem[];
+  paidByName?: string;
+  paidAt: number;
+  createdAt: number;
+}
+
+export type SalonNotificationType =
+  | 'appointment_confirmed'
+  | 'appointment_canceled'
+  | 'appointment_created'
+  | 'system'
+  | 'alert';
+
+export interface SalonNotification {
+  id: string;
+  type: SalonNotificationType | string;
+  title: string;
+  message: string;
+  appointmentId?: string;
+  professionalId?: string;
+  professionalName?: string;
+  clientName?: string;
+  date?: string;
+  time?: string;
+  actionUrl?: string;
+  pushDispatched?: boolean;
+  pushTokensCount?: number;
+  read: boolean;
+  readAt?: number;
+  createdAt: number;
+}

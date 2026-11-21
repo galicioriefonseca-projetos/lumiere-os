@@ -17,49 +17,64 @@ const firebaseConfig = {
 
 if (firebaseConfig.apiKey && firebaseConfig.messagingSenderId) {
   firebase.initializeApp(firebaseConfig);
-  
+
   const messaging = firebase.messaging();
 
   messaging.onBackgroundMessage((payload) => {
-    console.log('[Lumiere FCM SW] Background message received:', payload);
-    
-    const notificationTitle = payload.notification?.title || 'Novo do LumièreOS';
+    const title =
+      payload.notification?.title ||
+      payload.data?.title ||
+      'LumièreOS · Alerta de Agenda';
+
+    const body =
+      payload.notification?.body ||
+      payload.data?.body ||
+      'Você recebeu uma atualização na sua agenda.';
+
+    const appointmentId = payload.data?.appointmentId || '';
+    const clickAction = payload.data?.click_action || '/dashboard/agendamentos';
+
     const notificationOptions = {
-      body: payload.notification?.body || 'Você recebeu uma nova notificação.',
+      body,
       icon: '/icons/icon-192x192.png',
       badge: '/icons/icon-192x192.png',
-      data: payload.data || {},
-      vibrate: [100, 50, 100],
-      actions: [
-        { action: 'open', title: 'Ver na Agenda' }
-      ]
+      tag: appointmentId ? `lumiere-appt-${appointmentId}` : 'lumiere-push',
+      renotify: true,
+      requireInteraction: payload.data?.action === 'cancel',
+      data: {
+        ...(payload.data || {}),
+        click_action: clickAction,
+      },
+      vibrate: [120, 60, 120],
+      actions: [{ action: 'open', title: 'Ver na Agenda' }],
     };
 
-    self.registration.showNotification(notificationTitle, notificationOptions);
+    return self.registration.showNotification(title, notificationOptions);
   });
-} else {
-  console.warn('[Lumiere FCM SW] Configuração dinâmica incompleta para inicialização de background messaging.');
 }
 
-// Handle notification interaction click
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  
-  const clickAction = event.notification.data?.click_action || '/dashboard?tab=agenda';
-  
+
+  const rawAction = event.notification.data?.click_action || '/dashboard/agendamentos';
+  const targetUrl = rawAction.startsWith('/') ? rawAction : '/dashboard/agendamentos';
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Loop across windows and focus if already open
       for (let i = 0; i < windowClients.length; i++) {
         const client = windowClients[i];
-        if (client.url.includes(clickAction) && 'focus' in client) {
-          return client.focus();
+        if (client.url.includes('/dashboard') && 'focus' in client) {
+          client.focus();
+          if ('navigate' in client) {
+            return client.navigate(targetUrl);
+          }
+          return client;
         }
       }
-      // Or open a new one
       if (clients.openWindow) {
-        return clients.openWindow(clickAction);
+        return clients.openWindow(targetUrl);
       }
+      return undefined;
     })
   );
 });

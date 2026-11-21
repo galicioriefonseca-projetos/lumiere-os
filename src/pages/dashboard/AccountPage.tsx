@@ -48,6 +48,7 @@ import { useLexicon } from '../../hooks/useLexicon';
 import { SEGMENTS, BusinessSegment } from '../../config/segments';
 import AvatarUpload from '@/components/ui/AvatarUpload';
 import PwaIconSettingsCard from '@/components/pwa/PwaIconSettingsCard';
+import { PushNotificationSettingsCard } from '@/components/notifications/PushNotificationSettingsCard';
 
 export default function AccountPage() {
   const { salonData, userData, currentUser, refreshUserData } = useAuth();
@@ -1179,6 +1180,23 @@ export default function AccountPage() {
           {/* Configuração & Customização do Ícone PWA */}
           <PwaIconSettingsCard />
           </>
+          )}
+
+          {salonData?.id && userData?.id && (
+            <PushNotificationSettingsCard
+              salonId={salonData.id}
+              userId={userData.id}
+              professionalDocId={(userData as { professionalId?: string }).professionalId || userData.id}
+              initialPushEnabled={(userData as { pushEnabled?: boolean }).pushEnabled}
+              initialTokensCount={
+                Array.isArray((userData as { fcmTokens?: string[] }).fcmTokens)
+                  ? (userData as { fcmTokens?: string[] }).fcmTokens?.length || 0
+                  : (userData as { fcmToken?: string }).fcmToken
+                    ? 1
+                    : 0
+              }
+              initialPreferences={(userData as { pushPreferences?: { onConfirmed?: boolean; onCanceled?: boolean } }).pushPreferences}
+            />
           )}
         </div>
 
