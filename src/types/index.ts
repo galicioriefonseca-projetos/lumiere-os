@@ -245,11 +245,14 @@ export interface Service {
   updatedAt: number;
 }
 
+export type ClientGender = 'female' | 'male' | 'other' | 'prefer_not_to_say';
+
 export interface Client {
   id: string;
   name: string;
   phone: string;
   email?: string;
+  gender?: ClientGender | string;
   notes?: string;
   createdAt: number;
   updatedAt: number;

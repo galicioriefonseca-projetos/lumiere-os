@@ -3,6 +3,7 @@ import { Client } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Phone, Calendar, Mail, Edit2, AlertCircle, Clock, Trash2, Archive, UserCheck, MessageSquare, Plus, Tag } from 'lucide-react';
 import { format } from 'date-fns';
+import { getClientGenderBadgeClasses, getClientGenderLabel } from '@/lib/clientGender';
 
 const CRM_STAGES = [
   { id: 'new', label: 'Novo contato', color: 'border-blue-500/20 text-blue-400 bg-blue-500/5 hover:bg-blue-500/10' },
@@ -237,11 +238,26 @@ export default function KanbanBoard({
                               )}
                             </div>
 
-                            {/* phone */}
-                            {c.phone && (
-                              <div className="text-[11px] text-zinc-400 flex items-center gap-1">
-                                <span>📱</span>
-                                <span className="font-mono">{c.phone}</span>
+                            {/* phone & gender */}
+                            {(c.phone || c.gender) && (
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                {c.phone ? (
+                                  <div className="text-[11px] text-zinc-400 flex items-center gap-1">
+                                    <span>📱</span>
+                                    <span className="font-mono">{c.phone}</span>
+                                  </div>
+                                ) : (
+                                  <span />
+                                )}
+                                {c.gender && (
+                                  <span
+                                    className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${getClientGenderBadgeClasses(
+                                      c.gender
+                                    )}`}
+                                  >
+                                    {getClientGenderLabel(c.gender)}
+                                  </span>
+                                )}
                               </div>
                             )}
 

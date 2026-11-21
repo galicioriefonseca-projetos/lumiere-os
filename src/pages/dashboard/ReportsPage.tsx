@@ -2,20 +2,21 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import { 
-  FileText, 
-  Download, 
-  TrendingUp, 
-  Users, 
-  Calendar, 
-  BarChart, 
+import {
+  FileText,
+  Download,
+  TrendingUp,
+  Users,
+  Calendar,
+  BarChart,
   ChevronRight,
   TrendingDown,
   Award,
   Sparkles,
   PieChart as PieChartIcon,
   Activity,
-  Layers
+  Layers,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,8 @@ import { formatBRL } from '@/lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import MonthRangePicker, { MonthRange, formatMonthYearLabel, formatMonthFullLabel } from '@/components/ui/MonthRangePicker';
+import { GoogleSheetsSyncDialog } from '@/components/workspace/GoogleSheetsSyncDialog';
+import { SheetCellValue } from '@/services/googleWorkspaceService';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -71,6 +74,7 @@ export default function ReportsPage() {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isGoogleSheetsOpen, setIsGoogleSheetsOpen] = useState(false);
 
   // Intervalo de Meses Selecionado
   const [monthRange, setMonthRange] = useState<MonthRange>(() => {
@@ -324,6 +328,16 @@ export default function ReportsPage() {
             <Download className="w-4 h-4" />
             Exportar PDF
           </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsGoogleSheetsOpen(true)}
+            className="border-zinc-800 hover:border-emerald-500/60 text-zinc-300 hover:text-[#171717] rounded-xl whitespace-nowrap h-9 gap-1.5"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            Google Sheets
+          </Button>
         </div>
       </div>
 
@@ -546,6 +560,45 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+      <GoogleSheetsSyncDialog
+        open={isGoogleSheetsOpen}
+        onOpenChange={setIsGoogleSheetsOpen}
+        defaultSpreadsheetTitle={`Relatório ${salonData?.name || 'LumièreOS'} - ${periodDisplay}`}
+        defaultSheetTabTitle="Relatório"
+        datasetLabel={`Relatório Executivo (${periodDisplay})`}
+        headers={['Profissional', 'Período', 'Atendimentos Concluídos', 'Faturamento (R$)', 'Ticket Médio (R$)']}
+        rows={
+          professionals.length > 0
+            ? [
+                ...professionals.map((p): SheetCellValue[] => {
+                  const stats = getProfessionalStats(p.id);
+                  return [
+                    p.name,
+                    periodDisplay,
+                    stats.count,
+                    Number(stats.revenue.toFixed(2)),
+                    Number(stats.avgTicket.toFixed(2)),
+                  ];
+                }),
+                [
+                  'TOTAL CONSOLIDADO',
+                  periodDisplay,
+                  totalAppointments,
+                  Number(totalRevenue.toFixed(2)),
+                  Number(averageTicket.toFixed(2)),
+                ],
+              ]
+            : [
+                [
+                  'TOTAL CONSOLIDADO',
+                  periodDisplay,
+                  totalAppointments,
+                  Number(totalRevenue.toFixed(2)),
+                  Number(averageTicket.toFixed(2)),
+                ],
+              ]
+        }
+      />
     </div>
   );
 }

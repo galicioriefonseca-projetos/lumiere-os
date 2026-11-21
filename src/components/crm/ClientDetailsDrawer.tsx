@@ -8,10 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { 
-  X, Calendar, Phone, Mail, Clock, MessageSquare, Tag, UserCheck, 
-  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2
+import {
+  X, Calendar, Phone, Mail, Clock, MessageSquare, Tag, UserCheck,
+  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2, Inbox
 } from 'lucide-react';
+import { GmailWorkspaceDialog, GmailSentEvent } from '../workspace/GmailWorkspaceDialog';
+import {
+  CLIENT_GENDER_OPTIONS,
+  getClientGenderBadgeClasses,
+  getClientGenderLabel,
+  normalizeClientGender,
+} from '@/lib/clientGender';
 
 interface ClientDetailsDrawerProps {
   isOpen: boolean;
@@ -47,6 +54,7 @@ export default function ClientDetailsDrawer({
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [gender, setGender] = useState<string>('none');
   const [notes, setNotes] = useState('');
   const [source, setSource] = useState<Client['source']>('whatsapp');
   const [sourceLabel, setSourceLabel] = useState('');
@@ -88,6 +96,8 @@ export default function ClientDetailsDrawer({
   };
 
   const [generatingInvite, setGeneratingInvite] = useState(false);
+  const [isGmailOpen, setIsGmailOpen] = useState(false);
+  const [gmailInitialTab, setGmailInitialTab] = useState<'inbox' | 'compose'>('compose');
 
   const handleGeneratePortalInvite = async () => {
     if (!client) return;
@@ -128,6 +138,7 @@ export default function ClientDetailsDrawer({
       setName(client.name || '');
       setPhone(client.phone || '');
       setEmail(client.email || '');
+      setGender(normalizeClientGender(client.gender) || 'none');
       setNotes(client.notes || '');
       setSource(client.source || 'whatsapp');
       setSourceLabel(client.sourceLabel || '');
@@ -228,6 +239,7 @@ export default function ClientDetailsDrawer({
         name,
         phone,
         email,
+        gender: gender === 'none' ? '' : gender,
         notes,
         crmStage,
         source,
@@ -482,6 +494,7 @@ export default function ClientDetailsDrawer({
   };
 
   return (
+    <>
     <AnimatePresence>
       {isOpen && client && (
         <>
@@ -515,11 +528,20 @@ export default function ClientDetailsDrawer({
                     {client.name}
                     {client.archived && <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded">Arquivado</span>}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center flex-wrap gap-2 mt-1">
                     <span className="text-xs text-zinc-400">Origem: </span>
                     <span className="text-xs bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded capitalize">
                       {client.source === 'other' ? (client.sourceLabel || 'Outro') : (client.source || 'Não especificada')}
                     </span>
+                    {client.gender && (
+                      <span
+                        className={`text-[10px] font-semibold border px-2 py-0.5 rounded ${getClientGenderBadgeClasses(
+                          client.gender
+                        )}`}
+                      >
+                        {getClientGenderLabel(client.gender)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -541,12 +563,28 @@ export default function ClientDetailsDrawer({
                 </a>
               )}
               {client.email && (
-                <a
-                  href={`mailto:${client.email}`}
-                  className="flex items-center gap-2 text-xs bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/25 px-3 py-1.5 rounded-lg font-medium transition shrink-0"
-                >
-                  <Mail className="w-3.5 h-3.5" /> Enviar E-mail
-                </a>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGmailInitialTab('compose');
+                      setIsGmailOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-xs bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/25 px-3 py-1.5 rounded-lg font-medium transition shrink-0"
+                  >
+                    <Mail className="w-3.5 h-3.5" /> Enviar Gmail
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGmailInitialTab('inbox');
+                      setIsGmailOpen(true);
+                    }}
+                    className="flex items-center gap-2 text-xs bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 px-3 py-1.5 rounded-lg font-medium transition shrink-0"
+                  >
+                    <Inbox className="w-3.5 h-3.5" /> Ver E-mails
+                  </button>
+                </>
               )}
               {isManagerOrOwner && (
                 <Button
@@ -678,6 +716,27 @@ export default function ClientDetailsDrawer({
                           disabled={isProfessionalRole}
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Gênero</Label>
+                      <Select
+                        value={gender}
+                        onValueChange={setGender}
+                        disabled={isProfessionalRole}
+                      >
+                        <SelectTrigger className="bg-[#121215] border-zinc-800 rounded-lg text-white">
+                          <SelectValue placeholder="Selecione o gênero" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#121215] border-zinc-800 text-white">
+                          <SelectItem value="none">Não informado</SelectItem>
+                          {CLIENT_GENDER_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -1080,5 +1139,29 @@ export default function ClientDetailsDrawer({
         </>
       )}
     </AnimatePresence>
+
+    {client && (
+      <GmailWorkspaceDialog
+        open={isGmailOpen}
+        onOpenChange={setIsGmailOpen}
+        initialTab={gmailInitialTab}
+        initialTo={client.email || ''}
+        initialSearchQuery={client.email || ''}
+        recipientLabel={client.name}
+        onEmailSent={async (sent: GmailSentEvent) => {
+          await addHistoryRecord(
+            'contact_logged',
+            'E-mail enviado via Gmail',
+            `Assunto: "${sent.subject}" — Para: ${sent.to}`
+          );
+          await updateDoc(doc(db, `salons/${salonId}/clients/${client.id}`), {
+            lastContactAt: new Date().toISOString().split('T')[0],
+            updatedAt: Date.now(),
+          });
+          onClientUpdated();
+        }}
+      />
+    )}
+    </>
   );
 }

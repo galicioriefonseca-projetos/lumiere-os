@@ -11,10 +11,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { 
+import {
   Loader2, Plus, Edit2, Users, Search, Kanban, List, Filter, Archive, Trash2,
   MessageSquare, User, Tag, Calendar, AlertCircle, Sparkles, FolderOpen, RotateCcw,
-  Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2, Download
+  Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2, Download, Mail
 } from 'lucide-react';
 import { useLumiLexicon } from '../../hooks/useLumiLexicon';
 import { logAuditEvent } from '../../lib/audit';
@@ -23,6 +23,21 @@ import {
   parseCurrencyOrNumberSafe,
   downloadClientTemplateXlsx,
 } from '../../lib/clientSpreadsheetParser';
+import {
+  CLIENT_GENDER_OPTIONS,
+  getClientGenderBadgeClasses,
+  getClientGenderLabel,
+  normalizeClientGender,
+} from '../../lib/clientGender';
+import {
+  SpreadsheetMetadata,
+  WorkspaceAuthError,
+  readSpreadsheetTabValues,
+  SheetCellValue,
+} from '../../services/googleWorkspaceService';
+import { GoogleSheetsPicker } from '../../components/workspace/GoogleSheetsPicker';
+import { GoogleSheetsSyncDialog } from '../../components/workspace/GoogleSheetsSyncDialog';
+import { GmailWorkspaceDialog } from '../../components/workspace/GmailWorkspaceDialog';
 
 import KanbanBoard from '../../components/crm/KanbanBoard';
 import ClientDetailsDrawer from '../../components/crm/ClientDetailsDrawer';
@@ -119,7 +134,11 @@ export default function ClientsPage() {
 
   // Import state
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importSourceTab, setImportSourceTab] = useState<'file' | 'google_sheets'>('file');
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [googleSpreadsheetMeta, setGoogleSpreadsheetMeta] = useState<SpreadsheetMetadata | null>(null);
+  const [selectedGoogleTab, setSelectedGoogleTab] = useState<string>('');
+  const [loadedGoogleSheetTitle, setLoadedGoogleSheetTitle] = useState<string | null>(null);
   const [importHeaders, setImportHeaders] = useState<string[]>([]);
   const [importRows, setImportRows] = useState<string[][]>([]);
   const [importSheetNames, setImportSheetNames] = useState<string[]>([]);
@@ -127,6 +146,7 @@ export default function ClientsPage() {
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [columnMappings, setColumnMappings] = useState<Record<string, number>>({
     name: -1,
+    gender: -1,
     phone: -1,
     email: -1,
     notes: -1,
@@ -140,8 +160,19 @@ export default function ClientsPage() {
   const [importProgress, setImportProgress] = useState(0);
   const [totalImported, setTotalImported] = useState(0);
 
+  // Google Sheets Export / Sync & Gmail modal state
+  const [isGoogleSheetsSyncOpen, setIsGoogleSheetsSyncOpen] = useState(false);
+  const [isGmailDialogOpen, setIsGmailDialogOpen] = useState(false);
+  const [gmailInitialTab, setGmailInitialTab] = useState<'inbox' | 'compose'>('inbox');
+  const [gmailInitialTo, setGmailInitialTo] = useState('');
+
+  const hasLoadedImportSource = Boolean(importFile || loadedGoogleSheetTitle);
+
   const resetImportState = () => {
     setImportFile(null);
+    setLoadedGoogleSheetTitle(null);
+    setGoogleSpreadsheetMeta(null);
+    setSelectedGoogleTab('');
     setImportHeaders([]);
     setImportRows([]);
     setImportSheetNames([]);
@@ -149,6 +180,7 @@ export default function ClientsPage() {
     setIsParsingFile(false);
     setColumnMappings({
       name: -1,
+      gender: -1,
       phone: -1,
       email: -1,
       notes: -1,
@@ -201,6 +233,7 @@ export default function ClientsPage() {
       }
 
       setImportFile(file);
+      setLoadedGoogleSheetTitle(null);
       setImportHeaders(parsed.headers);
       setImportRows(parsed.rows);
       setImportSheetNames(parsed.sheetNames);
@@ -219,14 +252,51 @@ export default function ClientsPage() {
     }
   };
 
+  const handleLoadGoogleSheetForImport = async (
+    metadata: SpreadsheetMetadata,
+    sheetTitle: string
+  ) => {
+    try {
+      setIsParsingFile(true);
+      const data = await readSpreadsheetTabValues(metadata.spreadsheetId, sheetTitle);
+      if (data.rows.length === 0) {
+        toast.error(`A aba "${sheetTitle}" não possui linhas de clientes para importar.`);
+        return;
+      }
+
+      setImportFile(null);
+      setGoogleSpreadsheetMeta(metadata);
+      setSelectedGoogleTab(sheetTitle);
+      setLoadedGoogleSheetTitle(`${metadata.title} (${sheetTitle})`);
+      setImportHeaders(data.headers);
+      setImportRows(data.rows);
+      setImportSheetNames(metadata.sheets.map((s) => s.title));
+      setSelectedImportSheet(sheetTitle);
+      setColumnMappings(autoDetectMappings(data.headers));
+    } catch (err) {
+      if (err instanceof WorkspaceAuthError && err.needsReauth) {
+        toast.error(err.message);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Erro ao ler dados do Google Sheets.';
+        toast.error(msg);
+      }
+    } finally {
+      setIsParsingFile(false);
+    }
+  };
+
   const handleSheetChange = (sheetName: string) => {
-    if (!importFile) return;
-    void handleFileLoad(importFile, sheetName);
+    if (importFile) {
+      void handleFileLoad(importFile, sheetName);
+    } else if (googleSpreadsheetMeta) {
+      void handleLoadGoogleSheetForImport(googleSpreadsheetMeta, sheetName);
+    }
   };
 
   const autoDetectMappings = (headers: string[]) => {
     const mapping: Record<string, number> = {
       name: -1,
+      gender: -1,
       phone: -1,
       email: -1,
       notes: -1,
@@ -244,6 +314,8 @@ export default function ClientsPage() {
       const cleaned = cleanString(hdr);
       if (cleaned.includes('nome') || cleaned.includes('name') || cleaned.includes('cliente')) {
         if (mapping.name === -1) mapping.name = idx;
+      } else if (cleaned.includes('genero') || cleaned.includes('sexo') || cleaned.includes('gender')) {
+        if (mapping.gender === -1) mapping.gender = idx;
       } else if (cleaned.includes('celular') || cleaned.includes('whatsapp') || cleaned.includes('telefone') || cleaned.includes('phone') || cleaned.includes('tel') || cleaned.includes('contato')) {
         if (mapping.phone === -1) mapping.phone = idx;
       } else if (cleaned.includes('email') || cleaned.includes('e-mail') || cleaned.includes('mail') || cleaned.includes('correio')) {
@@ -333,6 +405,8 @@ export default function ClientsPage() {
 
         const phoneVal = columnMappings.phone !== -1 ? row[columnMappings.phone]?.trim() || '' : '';
         const emailVal = columnMappings.email !== -1 ? row[columnMappings.email]?.trim() || '' : '';
+        const genderRawVal = columnMappings.gender !== -1 ? row[columnMappings.gender]?.trim() || '' : '';
+        const genderVal = normalizeClientGender(genderRawVal);
         const notesVal = columnMappings.notes !== -1 ? row[columnMappings.notes]?.trim() || '' : '';
 
         const rawStage = columnMappings.crmStage !== -1 ? row[columnMappings.crmStage]?.trim() || '' : '';
@@ -353,6 +427,7 @@ export default function ClientsPage() {
           name: nameVal,
           phone: phoneVal,
           email: emailVal,
+          gender: genderVal,
           notes: notesVal,
           crmStage: crmStageVal,
           source: sourceVal,
@@ -436,6 +511,7 @@ export default function ClientsPage() {
   // Filters state
   const [search, setSearch] = useState('');
   const [filterStage, setFilterStage] = useState<string>('all');
+  const [filterGender, setFilterGender] = useState<string>('all');
   const [filterSource, setFilterSource] = useState<string>('all');
   const [filterResponsible, setFilterResponsible] = useState<string>('all');
   const [filterOverdue, setFilterOverdue] = useState<boolean>(false);
@@ -448,6 +524,7 @@ export default function ClientsPage() {
     name: '',
     phone: '',
     email: '',
+    gender: 'none',
     notes: '',
     crmStage: 'new' as Client['crmStage'],
     source: 'whatsapp' as Client['source'],
@@ -554,6 +631,15 @@ export default function ClientsPage() {
       list = list.filter(c => (c.crmStage || 'new') === filterStage);
     }
 
+    // Filter Gender
+    if (filterGender && filterGender !== 'all') {
+      if (filterGender === 'unspecified') {
+        list = list.filter(c => !normalizeClientGender(c.gender));
+      } else {
+        list = list.filter(c => normalizeClientGender(c.gender) === filterGender);
+      }
+    }
+
     // Filter Source
     if (filterSource && filterSource !== 'all') {
       list = list.filter(c => c.source === filterSource);
@@ -586,7 +672,7 @@ export default function ClientsPage() {
 
     setFilteredClients(list);
   }, [
-    search, clients, filterStage, filterSource, filterResponsible, 
+    search, clients, filterStage, filterGender, filterSource, filterResponsible, 
     filterOverdue, filterNoAction, filterCreatedThisMonth, showArchived, userRole, userData
   ]);
 
@@ -652,6 +738,7 @@ export default function ClientsPage() {
         name: formData.name.trim(),
         phone: formData.phone.trim(),
         email: formData.email.trim() || '',
+        gender: formData.gender === 'none' ? '' : formData.gender,
         notes: formData.notes.trim() || '',
         crmStage: formData.crmStage,
         source: formData.source,
@@ -694,6 +781,7 @@ export default function ClientsPage() {
           name: formData.name.trim(),
           phone: formData.phone.trim(),
           email: formData.email.trim() || '',
+          gender: formData.gender === 'none' ? '' : formData.gender,
           notes: formData.notes.trim() || '',
           crmStage: formData.crmStage,
           source: formData.source,
@@ -740,6 +828,7 @@ export default function ClientsPage() {
       name: '',
       phone: '',
       email: '',
+      gender: 'none',
       notes: '',
       crmStage: 'new',
       source: 'whatsapp',
@@ -754,6 +843,7 @@ export default function ClientsPage() {
       name: c.name,
       phone: c.phone,
       email: c.email || '',
+      gender: normalizeClientGender(c.gender) || 'none',
       notes: c.notes || '',
       crmStage: c.crmStage || 'new',
       source: c.source || 'whatsapp',
@@ -1084,6 +1174,44 @@ export default function ClientsPage() {
     }
   };
 
+  const clientsForGoogleSheets = useMemo(() => {
+    if (selectedClientIds.length > 0) {
+      return clients.filter((c) => selectedIdSet.has(c.id));
+    }
+    return filteredClients;
+  }, [clients, filteredClients, selectedClientIds.length, selectedIdSet]);
+
+  const googleSheetsExportHeaders = useMemo(
+    () => [
+      'Nome Completo',
+      'Gênero',
+      'Celular / WhatsApp',
+      'E-mail',
+      'Etapa CRM',
+      'Origem',
+      'Observações',
+      'Tags',
+      'Valor Gasto (LTV)',
+      'Responsável',
+    ],
+    []
+  );
+
+  const googleSheetsExportRows = useMemo<SheetCellValue[][]>(() => {
+    return clientsForGoogleSheets.map((client) => [
+      client.name || '',
+      client.gender ? getClientGenderLabel(client.gender) : '',
+      client.phone || '',
+      client.email || '',
+      getStageLabel(client.crmStage || 'new'),
+      client.source === 'other' ? client.sourceLabel || 'Outro' : client.source || '',
+      client.notes || '',
+      Array.isArray(client.tags) ? client.tags.join(', ') : '',
+      Number(client.lifetimeValue || client.totalSpent || 0),
+      client.responsibleName || '',
+    ]);
+  }, [clientsForGoogleSheets]);
+
   // Compute stats card values
   const activeClients = clients.filter(c => !c.archived && c.status !== 'inactive');
   const countNew = activeClients.filter(c => (c.crmStage || 'new') === 'new').length;
@@ -1199,95 +1327,172 @@ export default function ClientsPage() {
             </button>
           </div>
 
+          {/* Gmail Quick Button */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const selectedEmails = clientsForGoogleSheets
+                .map((c) => c.email?.trim() || '')
+                .filter(Boolean);
+              setGmailInitialTo(selectedClientIds.length > 0 ? selectedEmails.join(', ') : '');
+              setGmailInitialTab(selectedClientIds.length > 0 && selectedEmails.length > 0 ? 'compose' : 'inbox');
+              setIsGmailDialogOpen(true);
+            }}
+            className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-[#171717] h-10 px-4 rounded-lg flex items-center gap-2 font-medium"
+          >
+            <Mail className="w-4 h-4 text-[#B89B5E]" /> Gmail
+          </Button>
+
+          {/* Google Sheets Sync / Export Button */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsGoogleSheetsSyncOpen(true)}
+            className="border-zinc-800 hover:border-emerald-500/60 text-zinc-300 hover:text-[#171717] h-10 px-4 rounded-lg flex items-center gap-2 font-medium"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Google Sheets
+          </Button>
+
           {/* Import List Dialog */}
           <Dialog open={isImportDialogOpen} onOpenChange={(open) => {
             setIsImportDialogOpen(open);
-            if (!open) resetImportState();
+            if (!open) {
+              resetImportState();
+              setImportSourceTab('file');
+            }
           }}>
             <DialogTrigger asChild>
               <Button variant="outline" className="border-zinc-800 hover:border-[#D4AF37]/50 text-zinc-300 hover:text-[#171717] h-10 px-4 rounded-lg flex items-center gap-2 font-medium">
                 <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" /> Importar Planilha
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[620px] bg-[#0c0c0e] border border-zinc-800 text-white shadow-2xl">
+            <DialogContent className="sm:max-w-[660px] bg-[#0c0c0e] border border-zinc-800 text-white shadow-2xl">
               <DialogHeader>
                 <DialogTitle className="font-heading font-normal text-zinc-100 flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" /> Importar Planilha de Clientes (XLSX / CSV)
+                  <FileSpreadsheet className="w-5 h-5 text-[#D4AF37]" /> Importar Clientes (XLSX / CSV / Google Sheets)
                 </DialogTitle>
               </DialogHeader>
 
-              {/* Step 1: Upload */}
-              {!importFile && (
-                <div className="space-y-4 py-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <p className="text-sm text-zinc-400">
-                      Carregue uma planilha <strong>Excel (.xlsx, .xls)</strong> ou <strong>CSV</strong> para importar seus clientes para o <strong>LumièreOS</strong>.
-                    </p>
-                    <Button
+              {/* Step 1: Escolher Origem (Arquivo Local ou Google Sheets) */}
+              {!hasLoadedImportSource && (
+                <div className="space-y-4 py-3">
+                  <div className="grid grid-cols-2 gap-2 rounded-xl bg-zinc-900/50 p-1 border border-zinc-800">
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => downloadClientTemplateXlsx()}
-                      className="border-zinc-800 hover:border-[#D4AF37]/50 text-zinc-300 hover:text-[#171717] h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs shrink-0"
+                      onClick={() => setImportSourceTab('file')}
+                      className={`py-2 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                        importSourceTab === 'file'
+                          ? 'bg-[#171717] text-white shadow-xs'
+                          : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
                     >
-                      <Download className="w-3.5 h-3.5 text-[#D4AF37]" /> Modelo (.xlsx)
-                    </Button>
+                      <Upload className="w-3.5 h-3.5" />
+                      Arquivo (.xlsx / .csv)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImportSourceTab('google_sheets')}
+                      className={`py-2 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                        importSourceTab === 'google_sheets'
+                          ? 'bg-[#171717] text-white shadow-xs'
+                          : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                      Google Sheets
+                    </button>
                   </div>
 
-                  <div
-                    onDragEnter={handleDrag}
-                    onDragOver={handleDrag}
-                    onDragLeave={handleDrag}
-                    onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 transition cursor-pointer ${
-                      dragActive 
-                        ? 'border-[#D4AF37] bg-[#D4AF37]/5' 
-                        : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/20'
-                    }`}
-                  >
-                    {isParsingFile ? (
-                      <Loader2 className="w-10 h-10 text-[#D4AF37] animate-spin" />
-                    ) : (
-                      <Upload className="w-10 h-10 text-zinc-500" />
-                    )}
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-zinc-200">
-                        {isParsingFile ? 'Lendo planilha...' : 'Arraste sua planilha XLSX ou CSV aqui'}
-                      </p>
-                      <p className="text-xs text-zinc-500 mt-1">
-                        Formatos aceitos: .xlsx, .xls e .csv (até 10 MB)
-                      </p>
+                  {importSourceTab === 'file' ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <p className="text-sm text-zinc-400">
+                          Carregue uma planilha <strong>Excel (.xlsx, .xls)</strong> ou <strong>CSV</strong> para importar seus clientes para o <strong>LumièreOS</strong>.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => downloadClientTemplateXlsx()}
+                          className="border-zinc-800 hover:border-[#D4AF37]/50 text-zinc-300 hover:text-[#171717] h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5 text-[#D4AF37]" /> Modelo (.xlsx)
+                        </Button>
+                      </div>
+
+                      <div
+                        onDragEnter={handleDrag}
+                        onDragOver={handleDrag}
+                        onDragLeave={handleDrag}
+                        onDrop={handleDrop}
+                        className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 transition cursor-pointer ${
+                          dragActive 
+                            ? 'border-[#D4AF37] bg-[#D4AF37]/5' 
+                            : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/20'
+                        }`}
+                      >
+                        {isParsingFile ? (
+                          <Loader2 className="w-10 h-10 text-[#D4AF37] animate-spin" />
+                        ) : (
+                          <Upload className="w-10 h-10 text-zinc-500" />
+                        )}
+                        <div className="text-center">
+                          <p className="text-sm font-semibold text-zinc-200">
+                            {isParsingFile ? 'Lendo planilha...' : 'Arraste sua planilha XLSX ou CSV aqui'}
+                          </p>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            Formatos aceitos: .xlsx, .xls e .csv (até 10 MB)
+                          </p>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                          onChange={handleFileChange}
+                          className="hidden"
+                          id="spreadsheet-upload"
+                        />
+                        <label htmlFor="spreadsheet-upload" className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-3.5 py-2 rounded-lg cursor-pointer transition font-medium">
+                          Procurar Arquivo (.xlsx / .csv)
+                        </label>
+                      </div>
+
+                      <div className="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800/50 text-xs text-zinc-400 space-y-1">
+                        <span className="font-semibold text-zinc-300 flex items-center gap-1.5 mb-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Dica de Reconhecimento
+                        </span>
+                        <p>Nosso sistema identifica automaticamente as colunas (Nome, Celular, E-mail, Origem, Etapas do Funil, Tags e Valor Gasto).</p>
+                        <p className="mt-1">Em planilhas Excel com várias abas, você poderá escolher qual aba deseja importar no próximo passo.</p>
+                      </div>
                     </div>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                      onChange={handleFileChange}
-                      className="hidden"
-                      id="spreadsheet-upload"
+                  ) : (
+                    <GoogleSheetsPicker
+                      selectedSpreadsheet={googleSpreadsheetMeta}
+                      selectedSheetTitle={selectedGoogleTab}
+                      onSelectSpreadsheet={(meta, defaultTab) => {
+                        setGoogleSpreadsheetMeta(meta);
+                        setSelectedGoogleTab(defaultTab);
+                      }}
+                      onSelectSheetTab={setSelectedGoogleTab}
+                      actionButtonLabel="Carregar Aba para Importação"
+                      onConfirmSelection={handleLoadGoogleSheetForImport}
+                      actionLoading={isParsingFile}
+                      emptyActionHint="A primeira linha será usada como cabeçalho"
                     />
-                    <label htmlFor="spreadsheet-upload" className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-3.5 py-2 rounded-lg cursor-pointer transition font-medium">
-                      Procurar Arquivo (.xlsx / .csv)
-                    </label>
-                  </div>
-
-                  <div className="bg-zinc-900/50 rounded-lg p-4 border border-zinc-800/50 text-xs text-zinc-400 space-y-1">
-                    <span className="font-semibold text-zinc-300 flex items-center gap-1.5 mb-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" /> Dica de Reconhecimento
-                    </span>
-                    <p>Nosso sistema identifica automaticamente as colunas (Nome, Celular, E-mail, Origem, Etapas do Funil, Tags e Valor Gasto).</p>
-                    <p className="mt-1">Em planilhas Excel com várias abas, você poderá escolher qual aba deseja importar no próximo passo.</p>
-                  </div>
+                  )}
                 </div>
               )}
 
               {/* Step 2: Mapping Columns & Preview */}
-              {importFile && !isImporting && (
+              {hasLoadedImportSource && !isImporting && (
                 <div className="space-y-4 py-3 max-h-[70vh] overflow-y-auto pr-1">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 bg-zinc-900/60 p-3 rounded-lg border border-zinc-800">
                     <div className="flex items-center gap-2">
                       <FileSpreadsheet className="w-4 h-4 text-[#D4AF37] shrink-0" />
                       <div className="text-left w-full">
-                        <p className="text-xs font-semibold text-zinc-200 truncate max-w-[280px]">{importFile.name}</p>
+                        <p className="text-xs font-semibold text-zinc-200 truncate max-w-[280px]">
+                          {importFile?.name || loadedGoogleSheetTitle}
+                        </p>
                         <p className="text-[10px] text-zinc-500">{importRows.length} linhas de clientes identificadas</p>
                       </div>
                     </div>
@@ -1307,7 +1512,7 @@ export default function ClientsPage() {
                         </Select>
                       )}
                       <Button variant="ghost" size="sm" onClick={resetImportState} className="text-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800">
-                        Trocar Arquivo
+                        Trocar Origem
                       </Button>
                     </div>
                   </div>
@@ -1326,6 +1531,25 @@ export default function ClientsPage() {
                         <Select 
                           value={String(columnMappings.name)} 
                           onValueChange={(val) => setColumnMappings(prev => ({ ...prev, name: Number(val) }))}
+                        >
+                          <SelectTrigger className="bg-[#121215] border-zinc-800 text-[12px] h-9 text-left">
+                            <SelectValue placeholder="Selecione..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
+                            <SelectItem value="-1">Não mapeado</SelectItem>
+                            {importHeaders.map((hdr, idx) => (
+                              <SelectItem key={hdr + idx} value={String(idx)}>{hdr}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Gender mapping */}
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-zinc-400">Gênero</Label>
+                        <Select 
+                          value={String(columnMappings.gender)} 
+                          onValueChange={(val) => setColumnMappings(prev => ({ ...prev, gender: Number(val) }))}
                         >
                           <SelectTrigger className="bg-[#121215] border-zinc-800 text-[12px] h-9 text-left">
                             <SelectValue placeholder="Selecione..." />
@@ -1485,6 +1709,7 @@ export default function ClientsPage() {
                           <tr className="border-b border-zinc-900 bg-zinc-900/50">
                             <th className="p-2 py-1.5 font-medium text-zinc-300">#</th>
                             <th className="p-2 py-1.5 font-medium text-zinc-300">Nome Mapeado</th>
+                            <th className="p-2 py-1.5 font-medium text-zinc-300">Gênero</th>
                             <th className="p-2 py-1.5 font-medium text-zinc-300">Celular</th>
                             <th className="p-2 py-1.5 font-medium text-zinc-300">CRM Stage</th>
                             <th className="p-2 py-1.5 font-medium text-zinc-300">Origem</th>
@@ -1493,6 +1718,7 @@ export default function ClientsPage() {
                         <tbody>
                           {importRows.slice(0, 3).map((row, idx) => {
                             const nameVal = columnMappings.name !== -1 ? row[columnMappings.name] : '';
+                            const genderVal = columnMappings.gender !== -1 ? row[columnMappings.gender] : '-';
                             const phoneVal = columnMappings.phone !== -1 ? row[columnMappings.phone] : '';
                             const stageVal = columnMappings.crmStage !== -1 ? row[columnMappings.crmStage] : '-';
                             const srcVal = columnMappings.source !== -1 ? row[columnMappings.source] : '-';
@@ -1500,6 +1726,7 @@ export default function ClientsPage() {
                               <tr key={idx} className="border-b border-zinc-900/50">
                                 <td className="p-2 py-1.5 text-zinc-600">{idx + 1}</td>
                                 <td className="p-2 py-1.5 text-zinc-200 font-semibold truncate max-w-[120px]">{nameVal || '(Sem nome - Ignorado)'}</td>
+                                <td className="p-2 py-1.5 text-zinc-300">{genderVal || '-'}</td>
                                 <td className="p-2 py-1.5 text-zinc-300">{phoneVal || '-'}</td>
                                 <td className="p-2 py-1.5 text-[#D4AF37]">{stageVal || '-'}</td>
                                 <td className="p-2 py-1.5">{srcVal || '-'}</td>
@@ -1578,6 +1805,21 @@ export default function ClientsPage() {
                     <Label htmlFor="email">E-mail (Opcional)</Label>
                     <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData(p => ({...p, email: e.target.value}))} className="bg-[#121215] border-zinc-800" />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Gênero</Label>
+                  <Select value={formData.gender} onValueChange={(val) => setFormData(p => ({...p, gender: val}))}>
+                    <SelectTrigger className="bg-[#121215] border-zinc-800 text-white rounded-lg">
+                      <SelectValue placeholder="Selecione o gênero" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
+                      <SelectItem value="none">Não informado</SelectItem>
+                      {CLIENT_GENDER_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1659,7 +1901,7 @@ export default function ClientsPage() {
           <Filter className="w-3.5 h-3.5 text-[#D4AF37]" /> Painel de Filtros Avançados
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Searching string */}
           <div className="space-y-1.5">
             <Label className="text-zinc-400 text-xs text-medium">Pesquisa Rápida</Label>
@@ -1682,6 +1924,23 @@ export default function ClientsPage() {
                 {CRM_STAGES.map(s => (
                   <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Filter Gender */}
+          <div className="space-y-1.5">
+            <Label className="text-zinc-400 text-xs text-medium">Filtrar por Gênero</Label>
+            <Select value={filterGender} onValueChange={setFilterGender}>
+              <SelectTrigger className="bg-[#121215] border-zinc-800 text-white rounded-lg">
+                <SelectValue placeholder="Todos os gêneros" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
+                <SelectItem value="all">Todos os gêneros</SelectItem>
+                {CLIENT_GENDER_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+                <SelectItem value="unspecified">Não informado</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1869,6 +2128,7 @@ export default function ClientsPage() {
                     </th>
                   )}
                   <th className={`p-4 ${canBulkDelete ? '' : 'pl-6'}`}>Cliente</th>
+                  <th className="p-4">Gênero</th>
                   <th className="p-4">Etapa CRM</th>
                   <th className="p-4">Celular</th>
                   <th className="p-4">Origem</th>
@@ -1912,6 +2172,19 @@ export default function ClientsPage() {
                             <span className="text-[10px] text-zinc-500 font-mono block mt-0.5">ID: {client.id.slice(0, 8)}...</span>
                           </div>
                         </div>
+                      </td>
+                      <td className="p-4">
+                        {client.gender ? (
+                          <span
+                            className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${getClientGenderBadgeClasses(
+                              client.gender
+                            )}`}
+                          >
+                            {getClientGenderLabel(client.gender)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-500">-</span>
+                        )}
                       </td>
                       <td className="p-4">
                         <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
@@ -2098,6 +2371,32 @@ export default function ClientsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <GoogleSheetsSyncDialog
+        open={isGoogleSheetsSyncOpen}
+        onOpenChange={setIsGoogleSheetsSyncOpen}
+        defaultSpreadsheetTitle={`Clientes ${salonData?.name || 'LumièreOS'} - ${new Date().toLocaleDateString('pt-BR')}`}
+        defaultSheetTabTitle="Clientes"
+        datasetLabel={
+          selectedClientIds.length > 0
+            ? `${selectedClientIds.length} contato(s) selecionado(s)`
+            : `${filteredClients.length} cliente(s) do CRM`
+        }
+        headers={googleSheetsExportHeaders}
+        rows={googleSheetsExportRows}
+      />
+
+      <GmailWorkspaceDialog
+        open={isGmailDialogOpen}
+        onOpenChange={setIsGmailDialogOpen}
+        initialTab={gmailInitialTab}
+        initialTo={gmailInitialTo}
+        recipientLabel={
+          selectedClientIds.length > 0 && gmailInitialTo
+            ? `${selectedClientIds.length} selecionado(s)`
+            : undefined
+        }
+      />
     </div>
   );
 }

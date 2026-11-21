@@ -11,6 +11,8 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { logAuthAuditEvent } from '@/lib/audit';
 
+import { clearWorkspaceToken } from './googleWorkspaceService';
+
 const DEMO_MODE_ENABLED = import.meta.env.VITE_ENABLE_DEMO_MODE === "true";
 const DEMO_USER_EMAIL = import.meta.env.VITE_DEMO_USER_EMAIL || "";
 const PENDING_OAUTH_KEY = "lumiere_pending_oauth_action";
@@ -179,6 +181,7 @@ export const AuthService = {
     try {
       localStorage.removeItem(PENDING_OAUTH_KEY);
     } catch {}
+    clearWorkspaceToken();
     await signOut(getAuth());
   },
 

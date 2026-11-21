@@ -12,6 +12,8 @@ import { DashboardShell } from './dashboard/DashboardShell';
 import { DashboardWorkspace } from './dashboard/DashboardWorkspace';
 import { DashboardDialogs } from './dashboard/DashboardDialogs';
 import { getNavigationByRole } from './dashboard/getNavigationByRole';
+import { GmailWorkspaceDialog } from '../workspace/GmailWorkspaceDialog';
+import { GoogleCalendarDialog } from '../workspace/GoogleCalendarDialog';
 
 export default function DashboardLayout() {
   const { userData, salonData, isPlatformAdmin, logout, currentUser } = useAuth();
@@ -25,6 +27,8 @@ export default function DashboardLayout() {
   const [hasNewVersionNotice, setHasNewVersionNotice] = useState(false);
   const [isDeletionRequestedOpen, setIsDeletionRequestedOpen] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isGmailOpen, setIsGmailOpen] = useState(false);
+  const [isGoogleCalendarOpen, setIsGoogleCalendarOpen] = useState(false);
 
   useEffect(() => {
     const lastSeenVersion = localStorage.getItem('lumiere_last_seen_version');
@@ -56,6 +60,8 @@ export default function DashboardLayout() {
           onOpenRoadmap={() => setIsRoadmapOpen(true)}
           onOpenFounderDetail={() => setIsFounderDetailOpen(true)}
           onOpenUpdates={() => setIsUpdatesDialogOpen(true)}
+          onOpenGmail={() => setIsGmailOpen(true)}
+          onOpenGoogleCalendar={() => setIsGoogleCalendarOpen(true)}
           navigation={navigation}
         />
       }
@@ -101,6 +107,19 @@ export default function DashboardLayout() {
         isPlatformAdmin={!!isPlatformAdmin}
         salonData={salonData}
         userData={userData}
+      />
+
+      <GmailWorkspaceDialog
+        open={isGmailOpen}
+        onOpenChange={setIsGmailOpen}
+        initialTab="inbox"
+      />
+
+      <GoogleCalendarDialog
+        open={isGoogleCalendarOpen}
+        onOpenChange={setIsGoogleCalendarOpen}
+        initialTab="events"
+        salonName={salonData?.name}
       />
 
       <InteractiveTour />

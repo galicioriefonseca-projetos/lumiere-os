@@ -1,14 +1,18 @@
-import { HelpCircle, Sparkles } from 'lucide-react';
+import { Calendar as CalendarIcon, HelpCircle, Mail, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface DashboardQuickActionsProps {
   onOpenGuide: () => void;
   onOpenRoadmap: () => void;
+  onOpenGmail?: () => void;
+  onOpenGoogleCalendar?: () => void;
 }
 
 export function DashboardQuickActions({
   onOpenGuide,
   onOpenRoadmap,
+  onOpenGmail,
+  onOpenGoogleCalendar,
 }: DashboardQuickActionsProps) {
   return (
     <div className="flex items-center gap-2">
@@ -17,6 +21,34 @@ export function DashboardQuickActions({
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
         WhatsApp Conectado 💬
       </div>
+
+      {/* Google Calendar Quick Access Button */}
+      {onOpenGoogleCalendar && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onOpenGoogleCalendar}
+          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+        >
+          <CalendarIcon className="w-4 h-4 text-[#D4AF37]" />
+          <span className="hidden sm:inline">Agenda</span>
+        </Button>
+      )}
+
+      {/* Gmail Quick Access Button */}
+      {onOpenGmail && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onOpenGmail}
+          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+        >
+          <Mail className="w-4 h-4 text-[#D4AF37]" />
+          <span>Gmail</span>
+        </Button>
+      )}
 
       {/* Guia do Sistema Button */}
       <Button

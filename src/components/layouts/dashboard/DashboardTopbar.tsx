@@ -13,10 +13,12 @@ interface DashboardTopbarProps {
   onOpenRoadmap: () => void;
   onOpenFounderDetail: () => void;
   onOpenUpdates: () => void;
+  onOpenGmail?: () => void;
+  onOpenGoogleCalendar?: () => void;
   navigation: NavigationCategory[];
 }
 
-export function DashboardTopbar({ onOpenMobileMenu, onOpenGuide, onOpenRoadmap, onOpenFounderDetail, onOpenUpdates, navigation }: DashboardTopbarProps) {
+export function DashboardTopbar({ onOpenMobileMenu, onOpenGuide, onOpenRoadmap, onOpenFounderDetail, onOpenUpdates, onOpenGmail, onOpenGoogleCalendar, navigation }: DashboardTopbarProps) {
   const { salonData, isPlatformAdmin } = useAuth();
   const planName = isPlatformAdmin ? 'MASTER' : (salonData?.plan === 'founder' ? 'FOUNDER' : (salonData?.plan || 'Premium'));
   const getStatusText = () => {
@@ -41,7 +43,7 @@ export function DashboardTopbar({ onOpenMobileMenu, onOpenGuide, onOpenRoadmap, 
       <div className="hidden md:flex items-center"><DashboardBreadcrumbs navigation={navigation} /></div>
 
       <div className="flex items-center gap-2 md:gap-3">
-        <DashboardQuickActions onOpenGuide={onOpenGuide} onOpenRoadmap={onOpenRoadmap} />
+        <DashboardQuickActions onOpenGuide={onOpenGuide} onOpenRoadmap={onOpenRoadmap} onOpenGmail={onOpenGmail} onOpenGoogleCalendar={onOpenGoogleCalendar} />
         <DashboardNotifications />
         <DashboardUserMenu onOpenUpdates={onOpenUpdates} />
         <button onClick={() => salonData?.plan === 'founder' && onOpenFounderDetail()} className={cn(

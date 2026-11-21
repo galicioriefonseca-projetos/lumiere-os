@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { 
-  Loader2, Plus, Calendar as CalendarIcon, Clock, Edit2, ShoppingBag, 
+  Loader2, Plus, Calendar as CalendarIcon, CalendarPlus, Clock, Edit2, ShoppingBag, 
   Scissors, FileText, Check, Trash2, ArrowRight, DollarSign, Sparkles, 
   UserPlus, Percent, CreditCard, ChevronRight, CheckCircle2, AlertCircle, ShoppingCart
 } from 'lucide-react';
@@ -20,6 +20,11 @@ import { triggerAppointmentPushNotification } from '../../lib/pushNotifications'
 import { motion, AnimatePresence } from 'motion/react';
 import { getAvailableSlots } from '../../lib/availability';
 import { useLexicon } from '../../hooks/useLexicon';
+import {
+  CalendarPrefillEvent,
+  GoogleCalendarDialog,
+} from '@/components/workspace/GoogleCalendarDialog';
+import { buildEventDescriptionFromAppointment } from '@/services/calendarService';
 
 interface ComandaItem {
   type: 'service' | 'product';
@@ -83,10 +88,42 @@ export default function AppointmentsPage() {
   const [isNewComandaOpen, setIsNewComandaOpen] = useState(false);
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isGoogleCalendarOpen, setIsGoogleCalendarOpen] = useState(false);
+  const [calendarDialogTab, setCalendarDialogTab] = useState<'events' | 'create' | 'sync'>('events');
+  const [calendarPrefillEvent, setCalendarPrefillEvent] = useState<CalendarPrefillEvent | null>(null);
 
   // States auxiliares de fluxo
   const [selectedComanda, setSelectedComanda] = useState<ComandaFlow | null>(null);
   const [editingItem, setEditingItem] = useState<Appointment | null>(null);
+
+  const openGoogleCalendarDialog = (tab: 'events' | 'create' | 'sync' = 'events') => {
+    setCalendarPrefillEvent(null);
+    setCalendarDialogTab(tab);
+    setIsGoogleCalendarOpen(true);
+  };
+
+  const openGoogleCalendarForAppointment = (app: Appointment) => {
+    const clientMatch = clients.find((c) => c.id === app.clientId);
+    const serviceMatch = services.find((s) => s.id === app.serviceId);
+    const duration = app.serviceDuration || serviceMatch?.durationMinutes || 60;
+    const attendeeEmail = app.clientEmail || clientMatch?.email || '';
+
+    setCalendarPrefillEvent({
+      summary: `${app.serviceName} — ${app.clientName}`,
+      date: app.date,
+      startTime: app.time || '09:00',
+      durationMinutes: duration >= 5 ? duration : 60,
+      location: salonData?.name || '',
+      description: buildEventDescriptionFromAppointment(
+        app,
+        clientMatch?.phone,
+        clientMatch?.email
+      ),
+      attendeesEmails: attendeeEmail,
+    });
+    setCalendarDialogTab('create');
+    setIsGoogleCalendarOpen(true);
+  };
 
   // Formulário Agenda Tradicional
   const [formData, setFormData] = useState({
@@ -764,29 +801,41 @@ export default function AppointmentsPage() {
           </p>
         </div>
 
-        {/* Escolha de Visualização */}
-        <div className="flex items-center gap-2 bg-[#121214] p-1 rounded-xl border border-zinc-800">
-          <button
-            onClick={() => setActivePageTab('traditional')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activePageTab === 'traditional'
-                ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                : 'text-zinc-400 hover:text-white border border-transparent'
-            }`}
+        {/* Escolha de Visualização + Google Agenda */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => openGoogleCalendarDialog('events')}
+            className="h-9 px-3.5 rounded-xl border-[#D4AF37]/30 bg-[#121214] text-[#D4AF37] hover:bg-[#D4AF37]/10 text-xs font-bold flex items-center gap-1.5"
           >
-            {lex.appointments || 'Agenda & Calendário'}
-          </button>
+            <CalendarIcon className="w-3.5 h-3.5" />
+            Google Agenda
+          </Button>
 
-          <button
-            onClick={() => setActivePageTab('flow')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-              activePageTab === 'flow'
-                ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
-                : 'text-zinc-400 hover:text-white border border-transparent'
-            }`}
-          >
-            {uiPreferences.enableComandasFlow ? 'Fluxo de Comandas (Salão)' : `Fluxo de ${flowItemTermPlural || 'Atendimentos'}`}
-          </button>
+          <div className="flex items-center gap-2 bg-[#121214] p-1 rounded-xl border border-zinc-800">
+            <button
+              onClick={() => setActivePageTab('traditional')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activePageTab === 'traditional'
+                  ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
+                  : 'text-zinc-400 hover:text-white border border-transparent'
+              }`}
+            >
+              {lex.appointments || 'Agenda & Calendário'}
+            </button>
+
+            <button
+              onClick={() => setActivePageTab('flow')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activePageTab === 'flow'
+                  ? 'bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25'
+                  : 'text-zinc-400 hover:text-white border border-transparent'
+              }`}
+            >
+              {uiPreferences.enableComandasFlow ? 'Fluxo de Comandas (Salão)' : `Fluxo de ${flowItemTermPlural || 'Atendimentos'}`}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1329,7 +1378,15 @@ export default function AppointmentsPage() {
               <div className="flex justify-between items-center flex-wrap gap-4">
                 <h3 className="text-lg font-bold font-heading text-white">Cronograma e Agendamentos Históricos</h3>
                 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => openGoogleCalendarDialog('sync')}
+                    className="border-zinc-800 text-zinc-300 hover:text-white hover:bg-white/[0.02] rounded-xl text-xs h-10 px-4 flex items-center gap-1.5"
+                  >
+                    <CalendarPlus className="w-4 h-4 text-[#D4AF37]" /> Sincronizar Google Agenda
+                  </Button>
                   
                   {/* Novo Agendamento */}
                   <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -1589,6 +1646,18 @@ export default function AppointmentsPage() {
                                 </Button>
                               </>
                             )}
+                            {app.status !== 'canceled' && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openGoogleCalendarForAppointment(app)}
+                                className="h-8 w-8"
+                                title="Enviar para Google Agenda"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5 text-[#D4AF37]" />
+                              </Button>
+                            )}
                             <Button variant="ghost" size="icon" onClick={() => openEdit(app)} className="h-8 w-8">
                               <Edit2 className="w-3.5 h-3.5 text-zinc-500 hover:text-white" />
                             </Button>
@@ -1606,6 +1675,21 @@ export default function AppointmentsPage() {
 
         </AnimatePresence>
       )}
+
+      <GoogleCalendarDialog
+        open={isGoogleCalendarOpen}
+        onOpenChange={(nextOpen) => {
+          setIsGoogleCalendarOpen(nextOpen);
+          if (!nextOpen) {
+            setCalendarPrefillEvent(null);
+          }
+        }}
+        initialTab={calendarDialogTab}
+        prefillEvent={calendarPrefillEvent}
+        appointments={appointments}
+        clients={clients}
+        salonName={salonData?.name}
+      />
 
     </div>
   );

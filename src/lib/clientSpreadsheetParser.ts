@@ -214,6 +214,7 @@ export function downloadClientTemplateXlsx(): void {
   const sampleRows = [
     [
       'Nome Completo',
+      'Gênero',
       'Celular / WhatsApp',
       'E-mail',
       'Etapa CRM',
@@ -224,6 +225,7 @@ export function downloadClientTemplateXlsx(): void {
     ],
     [
       'Mariana Silva',
+      'Feminino',
       '(11) 99999-1234',
       'mariana@email.com',
       'Cliente ativo',
@@ -234,6 +236,7 @@ export function downloadClientTemplateXlsx(): void {
     ],
     [
       'João Oliveira',
+      'Masculino',
       '(11) 98888-4321',
       'joao@email.com',
       'Novo contato',
@@ -247,6 +250,7 @@ export function downloadClientTemplateXlsx(): void {
   const worksheet = XLSX.utils.aoa_to_sheet(sampleRows);
   worksheet['!cols'] = [
     { wch: 24 },
+    { wch: 16 },
     { wch: 20 },
     { wch: 24 },
     { wch: 18 },
