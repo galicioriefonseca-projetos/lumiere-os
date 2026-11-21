@@ -349,13 +349,14 @@ export default function AccountPage() {
           getDocs(qck)
         ]);
 
-        // Filter active only for professionals
+        // Filter active only for professionals and non-deleted clients
         const activeProfs = pSnap.docs.map(d => d.data()).filter(p => p.isActive !== false).length;
+        const activeClientsCount = cSnap.docs.filter(d => !d.data()?.deletedAt).length;
 
         setStats({
           professionalsCount: activeProfs,
           servicesCount: sSnap.size,
-          clientsCount: cSnap.size,
+          clientsCount: activeClientsCount,
           appointmentsCount: aSnap.size,
           checklistsRunCount: ckSnap.size
         });

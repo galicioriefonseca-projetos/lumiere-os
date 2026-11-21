@@ -195,7 +195,7 @@ export default function AppointmentsPage() {
       const arr: Client[] = [];
       snap.forEach(d => {
         const item = d.data();
-        if (item.isActive !== false) {
+        if (item.isActive !== false && !item.deletedAt) {
           arr.push({ id: d.id, ...item } as Client);
         }
       });

@@ -482,7 +482,10 @@ export default function ClientsPage() {
     const unsubscribeClients = onSnapshot(qc, (snapshot) => {
       const cls: Client[] = [];
       snapshot.forEach((doc) => {
-        cls.push({ id: doc.id, ...doc.data() } as Client);
+        const data = doc.data();
+        if (!data?.deletedAt) {
+          cls.push({ id: doc.id, ...data } as Client);
+        }
       });
       const sorted = cls.sort((a, b) => b.createdAt - a.createdAt);
       setClients(sorted);
@@ -895,10 +898,13 @@ export default function ClientsPage() {
         clientChunks.push(idsToDelete.slice(i, i + CLIENT_BATCH_SIZE));
       }
 
-      let deletedClientsCount = 0;
-      for (let i = 0; i < clientChunks.length; i += CLIENT_CONCURRENCY) {
-        const wave = clientChunks.slice(i, i + CLIENT_CONCURRENCY);
-        try {
+      let hardDeletedClients = false;
+      let handledViaFallback = false;
+
+      try {
+        let deletedClientsCount = 0;
+        for (let i = 0; i < clientChunks.length; i += CLIENT_CONCURRENCY) {
+          const wave = clientChunks.slice(i, i + CLIENT_CONCURRENCY);
           await Promise.all(
             wave.map(async (chunk) => {
               const batch = writeBatch(db);
@@ -908,58 +914,123 @@ export default function ClientsPage() {
               await batch.commit();
             })
           );
-        } catch (batchErr) {
-          handleFirestoreError(batchErr, OperationType.DELETE, `salons/${salonData.id}/clients`);
+
+          deletedClientsCount += wave.reduce((acc, c) => acc + c.length, 0);
+          setBulkDeleteProgress(5 + Math.round((deletedClientsCount / idsToDelete.length) * 70));
+        }
+        hardDeletedClients = true;
+      } catch (primaryErr: any) {
+        const errMsg = String(primaryErr?.message || primaryErr || '').toLowerCase();
+        const isPermissionErr =
+          primaryErr?.code === 'permission-denied' || errMsg.includes('permission');
+
+        if (!isPermissionErr) {
+          handleFirestoreError(primaryErr, OperationType.DELETE, `salons/${salonData.id}/clients`);
         }
 
-        deletedClientsCount += wave.reduce((acc, c) => acc + c.length, 0);
-        setBulkDeleteProgress(5 + Math.round((deletedClientsCount / idsToDelete.length) * 70));
-      }
-
-      // Phase 2: Clean up history subcollections in parallel pools (best-effort so legacy rules never block client deletion)
-      const HISTORY_CONCURRENCY = 20;
-      const historyRefsToDelete: ReturnType<typeof doc>[] = [];
-
-      for (let i = 0; i < idsToDelete.length; i += HISTORY_CONCURRENCY) {
-        const pool = idsToDelete.slice(i, i + HISTORY_CONCURRENCY);
-        const snapshots = await Promise.all(
-          pool.map(async (clientId) => {
-            try {
-              return await getDocs(
-                collection(db, `salons/${salonData.id}/clients/${clientId}/history`)
-              );
-            } catch {
-              return null;
+        // Fallback A: Try authenticated backend endpoint (/api/clients/bulk-delete) if Admin SDK is active
+        try {
+          const token = await currentUser?.getIdToken?.();
+          if (token) {
+            const resp = await fetch('/api/clients/bulk-delete', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                salonId: salonData.id,
+                clientIds: idsToDelete,
+              }),
+            });
+            if (resp.ok) {
+              handledViaFallback = true;
+              setBulkDeleteProgress(100);
             }
-          })
-        );
-        snapshots.forEach((snap) => {
-          if (snap && !snap.empty) {
-            snap.forEach((histDoc) => historyRefsToDelete.push(histDoc.ref));
           }
-        });
-      }
-
-      if (historyRefsToDelete.length > 0) {
-        const HIST_BATCH_SIZE = 200;
-        const histChunks: ReturnType<typeof doc>[][] = [];
-        for (let i = 0; i < historyRefsToDelete.length; i += HIST_BATCH_SIZE) {
-          histChunks.push(historyRefsToDelete.slice(i, i + HIST_BATCH_SIZE));
+        } catch {
+          // Ignore network/unavailable backend and continue to Fallback B
         }
 
-        for (let i = 0; i < histChunks.length; i += CLIENT_CONCURRENCY) {
-          const wave = histChunks.slice(i, i + CLIENT_CONCURRENCY);
-          await Promise.all(
-            wave.map(async (chunk) => {
+        // Fallback B: Safe batched soft-delete via update (permitted for owner/manager/front-desk in Firestore rules)
+        if (!handledViaFallback) {
+          const now = Date.now();
+          let updatedCount = 0;
+          try {
+            for (let i = 0; i < clientChunks.length; i += CLIENT_CONCURRENCY) {
+              const wave = clientChunks.slice(i, i + CLIENT_CONCURRENCY);
+              await Promise.all(
+                wave.map(async (chunk) => {
+                  const batch = writeBatch(db);
+                  chunk.forEach((clientId) => {
+                    batch.update(doc(db, `salons/${salonData.id}/clients`, clientId), {
+                      deletedAt: now,
+                      archived: true,
+                      status: 'inactive',
+                      updatedAt: now,
+                      updatedBy: currentUser?.uid || '',
+                    });
+                  });
+                  await batch.commit();
+                })
+              );
+
+              updatedCount += wave.reduce((acc, c) => acc + c.length, 0);
+              setBulkDeleteProgress(10 + Math.round((updatedCount / idsToDelete.length) * 90));
+            }
+            handledViaFallback = true;
+          } catch (fallbackErr) {
+            handleFirestoreError(fallbackErr, OperationType.DELETE, `salons/${salonData.id}/clients`);
+          }
+        }
+      }
+
+      // Phase 2: Clean up history subcollections in parallel pools (only when direct hard-delete succeeded)
+      if (hardDeletedClients) {
+        const HISTORY_CONCURRENCY = 20;
+        const historyRefsToDelete: ReturnType<typeof doc>[] = [];
+
+        for (let i = 0; i < idsToDelete.length; i += HISTORY_CONCURRENCY) {
+          const pool = idsToDelete.slice(i, i + HISTORY_CONCURRENCY);
+          const snapshots = await Promise.all(
+            pool.map(async (clientId) => {
               try {
-                const batch = writeBatch(db);
-                chunk.forEach((ref) => batch.delete(ref));
-                await batch.commit();
-              } catch (histDelErr) {
-                console.warn('Aviso ao limpar subcoleção history:', histDelErr);
+                return await getDocs(
+                  collection(db, `salons/${salonData.id}/clients/${clientId}/history`)
+                );
+              } catch {
+                return null;
               }
             })
           );
+          snapshots.forEach((snap) => {
+            if (snap && !snap.empty) {
+              snap.forEach((histDoc) => historyRefsToDelete.push(histDoc.ref));
+            }
+          });
+        }
+
+        if (historyRefsToDelete.length > 0) {
+          const HIST_BATCH_SIZE = 200;
+          const histChunks: ReturnType<typeof doc>[][] = [];
+          for (let i = 0; i < historyRefsToDelete.length; i += HIST_BATCH_SIZE) {
+            histChunks.push(historyRefsToDelete.slice(i, i + HIST_BATCH_SIZE));
+          }
+
+          for (let i = 0; i < histChunks.length; i += CLIENT_CONCURRENCY) {
+            const wave = histChunks.slice(i, i + CLIENT_CONCURRENCY);
+            await Promise.all(
+              wave.map(async (chunk) => {
+                try {
+                  const batch = writeBatch(db);
+                  chunk.forEach((ref) => batch.delete(ref));
+                  await batch.commit();
+                } catch (histDelErr) {
+                  console.warn('Aviso ao limpar subcoleção history:', histDelErr);
+                }
+              })
+            );
+          }
         }
       }
 

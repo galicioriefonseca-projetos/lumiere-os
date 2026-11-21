@@ -271,6 +271,7 @@ export interface Client {
   createdBy?: string;
   updatedBy?: string;
   archived?: boolean;
+  deletedAt?: number | null;
 }
 
 export interface ClientHistory {

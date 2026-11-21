@@ -85,7 +85,7 @@ export class LumiIntelligenceEngine {
         inventory
       ] = await Promise.all([
         safeGetDocs(`salons/${salonId}/appointments`, d => ({ id: d.id, ...d.data() } as Appointment)),
-        safeGetDocs(`salons/${salonId}/clients`, d => ({ id: d.id, ...d.data() } as Client)),
+        safeGetDocs(`salons/${salonId}/clients`, d => ({ id: d.id, ...d.data() } as Client)).then(list => list.filter(c => !c.deletedAt)),
         safeGetDocs(`salons/${salonId}/services`, d => ({ id: d.id, ...d.data() } as Service)),
         safeGetDocs(`salons/${salonId}/professionals`, d => ({ id: d.id, ...d.data() } as Professional)),
         safeGetDocs(`salons/${salonId}/comandas`, d => ({ id: d.id, ...d.data() })),
