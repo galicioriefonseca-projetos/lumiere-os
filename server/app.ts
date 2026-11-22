@@ -29,6 +29,8 @@ import { pwaRoutes } from "./routes/pwa.js";
 import { clientsRoutes } from "./routes/clients.js";
 import { appointmentsRoutes } from "./routes/appointments.js";
 import { operationsRoutes } from "./routes/operations.js";
+import { inventoryRoutes } from "./routes/inventory.js";
+import { crmRoutes } from "./routes/crm.js";
 import { getFirebaseAdmin, getAdminDb, getAdminAuth, getAdminMessaging } from "./firebaseAdmin.js";
 
 // Carregar variáveis de ambiente
@@ -89,6 +91,12 @@ app.use("/appointments", appointmentsRoutes);
 
 app.use("/api/operations", operationsRoutes);
 app.use("/operations", operationsRoutes);
+
+app.use("/api/inventory", inventoryRoutes);
+app.use("/inventory", inventoryRoutes);
+
+app.use("/api/crm", crmRoutes);
+app.use("/crm", crmRoutes);
 
 app.get(["/api/health", "/health"], publicLimiter, (req, res) => {
   res.json({ status: "online", timestamp: Date.now(), service: "Lumiere Backend API" });

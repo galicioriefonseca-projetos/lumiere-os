@@ -77,16 +77,27 @@ service cloud.firestore {
       return isSignedIn() && exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 'role' in get(userDoc()).data && get(userDoc()).data.role == "professional";
     }
 
+    function isSalonOwnerByRecord(data) {
+      return (
+        ('ownerId' in data && data.ownerId == request.auth.uid) ||
+        (
+          (!('ownerId' in data) || data.ownerId == null || data.ownerId == "") &&
+          userEmail() != "" &&
+          'ownerEmail' in data &&
+          data.ownerEmail is string &&
+          data.ownerEmail != "" &&
+          data.ownerEmail.lower() == userEmail().lower()
+        )
+      );
+    }
+
     function isSalonMember(salonId) {
       return isSignedIn() && (
         canUseTutorialDemo(salonId) ||
         isPlatformAdmin() ||
         (exists(userDoc()) && 'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId) ||
         exists(/databases/$(database)/documents/salons/$(salonId)/professionals/$(request.auth.uid)) ||
-        (exists(/databases/$(database)/documents/salons/$(salonId)) && (
-          ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
-          ('ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail != "" && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
-        ))
+        (exists(/databases/$(database)/documents/salons/$(salonId)) && isSalonOwnerByRecord(get(/databases/$(database)/documents/salons/$(salonId)).data))
       );
     }
 
@@ -119,48 +130,53 @@ service cloud.firestore {
           'role' in get(userDoc()).data && 
           (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
         ) || (
-          exists(/databases/$(database)/documents/salons/$(salonId)) && (
-            ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid) ||
-            (userEmail() != "" && 'ownerEmail' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerEmail == userEmail())
-          )
+          exists(/databases/$(database)/documents/salons/$(salonId)) && isSalonOwnerByRecord(get(/databases/$(database)/documents/salons/$(salonId)).data)
         )
       );
     }
 
     function canOperateFrontDesk(salonId) {
-      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
-        exists(userDoc()) && 
-        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
-        'role' in get(userDoc()).data && 
-        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist" || get(userDoc()).data.role == "attendant")
+      return isSignedIn() && (
+        canManageSalon(salonId) || (
+          exists(userDoc()) && 
+          'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+          'role' in get(userDoc()).data && 
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist" || get(userDoc()).data.role == "attendant")
+        )
       );
     }
 
     function canModifyCrmStage(salonId) {
-      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
-        exists(userDoc()) && 
-        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
-        'role' in get(userDoc()).data && 
-        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist")
+      return isSignedIn() && (
+        canManageSalon(salonId) || (
+          exists(userDoc()) && 
+          'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+          'role' in get(userDoc()).data && 
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist")
+        )
       );
     }
 
     // --- End Permission gates ---
     function canEvaluateTeam(salonId) {
-      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
-        exists(userDoc()) && 
-        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
-        'role' in get(userDoc()).data && 
-        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+      return isSignedIn() && (
+        canManageSalon(salonId) || (
+          exists(userDoc()) && 
+          'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+          'role' in get(userDoc()).data && 
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager")
+        )
       );
     }
 
     function canRecordEvaluation(salonId) {
-      return canUseTutorialDemo(salonId) || isPlatformAdmin() || (
-        exists(userDoc()) && 
-        'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
-        'role' in get(userDoc()).data && 
-        (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist" || get(userDoc()).data.role == "attendant")
+      return isSignedIn() && (
+        canManageSalon(salonId) || (
+          exists(userDoc()) && 
+          'salonId' in get(userDoc()).data && get(userDoc()).data.salonId == salonId && 
+          'role' in get(userDoc()).data && 
+          (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin" || get(userDoc()).data.role == "manager" || get(userDoc()).data.role == "receptionist" || get(userDoc()).data.role == "attendant")
+        )
       );
     }
 
@@ -175,9 +191,7 @@ service cloud.firestore {
           (get(userDoc()).data.role == "owner" || get(userDoc()).data.role == "admin")
         ) ||
         (
-          exists(/databases/$(database)/documents/salons/$(salonId)) && (
-            ('ownerId' in get(/databases/$(database)/documents/salons/$(salonId)).data && get(/databases/$(database)/documents/salons/$(salonId)).data.ownerId == request.auth.uid)
-          )
+          exists(/databases/$(database)/documents/salons/$(salonId)) && isSalonOwnerByRecord(get(/databases/$(database)/documents/salons/$(salonId)).data)
         )
       );
     }
@@ -261,8 +275,7 @@ service cloud.firestore {
       // Access only for platform admin or salon members/owners, plus allow for tutorial demo user
       allow get: if canUseTutorialDemo(salonId) || isPlatformAdmin() || isSalonMember(salonId) || (
         isSignedIn() && (
-          (resource != null && resource.data.ownerId == request.auth.uid) || 
-          (resource != null && 'ownerEmail' in resource.data && resource.data.ownerEmail != "" && resource.data.ownerEmail == userEmail()) ||
+          (resource != null && isSalonOwnerByRecord(resource.data)) ||
           (exists(userDoc()) && userSalonId() == salonId)
         )
       );
@@ -271,8 +284,7 @@ service cloud.firestore {
       allow list: if isPlatformAdmin() || (
         isSignedIn() && (
           isTutorialDemoSalon(salonId) ||
-          resource.data.ownerId == request.auth.uid ||
-          resource.data.ownerEmail == request.auth.token.email
+          isSalonOwnerByRecord(resource.data)
         )
       );
       
@@ -454,7 +466,11 @@ service cloud.firestore {
     // 7. Clients
     match /salons/{salonId}/clients/{clientId} {
       allow get: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
-      allow list: if canOperateFrontDesk(salonId);
+      allow list: if canOperateFrontDesk(salonId) || (
+        isSalonProfessional(salonId) &&
+        resource != null &&
+        resource.data.responsibleId == request.auth.uid
+      );
       allow create: if canUseTutorialDemo(salonId) || canOperateFrontDesk(salonId);
       allow update: if canUseTutorialDemo(salonId) || (
         canOperateFrontDesk(salonId) && (
@@ -471,6 +487,71 @@ service cloud.firestore {
         allow create, update: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
         allow delete: if canManageSalon(salonId);
       }
+    }
+
+    // 7b. Client Custom Form Schemas (Anamnese & Prontuario)
+    match /salons/{salonId}/clientCustomFields/{fieldId} {
+      allow read: if isSalonMember(salonId);
+      allow create, update, delete: if canManageSalon(salonId);
+    }
+
+    // 7c. Client Notices & Atendimento Alerts
+    match /salons/{salonId}/clientNotices/{noticeId} {
+      allow read: if isSalonMember(salonId);
+      allow create, update, delete: if canOperateFrontDesk(salonId);
+    }
+
+    // 7d. CRM 360° Omnichannel Conversations & Nested Messages
+    match /salons/{salonId}/crmConversations/{conversationId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow create, update: if canOperateFrontDesk(salonId);
+      allow delete: if canManageSalon(salonId);
+
+      match /messages/{messageId} {
+        allow read: if canOperateFrontDesk(salonId);
+        allow create: if canOperateFrontDesk(salonId);
+        allow update, delete: if canManageSalon(salonId);
+      }
+    }
+
+    // 7e. CRM 360° Funnel Opportunities
+    match /salons/{salonId}/crmOpportunities/{opportunityId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow create, update: if canOperateFrontDesk(salonId);
+      allow delete: if canModifyCrmStage(salonId);
+    }
+
+    // 7f. CRM 360° Automated Campaigns & Dispatch Logs
+    match /salons/{salonId}/crmCampaigns/{campaignId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    match /salons/{salonId}/crmCampaignDispatches/{dispatchId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow create, update: if canOperateFrontDesk(salonId);
+      allow delete: if canManageSalon(salonId);
+    }
+
+    // 7g. CRM 360° Quick Replies (/atalho)
+    match /salons/{salonId}/crmQuickReplies/{replyId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow create, update, delete: if canOperateFrontDesk(salonId);
+    }
+
+    // 7h. CRM 360° Attendants & Team Settings
+    match /salons/{salonId}/crmAttendants/{attendantId} {
+      allow read: if isSalonMember(salonId);
+      allow create, delete: if canManageSalon(salonId);
+      allow update: if canManageSalon(salonId) || (
+        canOperateFrontDesk(salonId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOnline', 'lastSeenAt', 'updatedAt'])
+      );
+    }
+
+    match /salons/{salonId}/crmSettings/{settingId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
     }
 
     // 8. Services Catalogue
@@ -521,10 +602,52 @@ service cloud.firestore {
       allow create, update, delete: if canManageSalon(salonId);
     }
 
-    // 12. Inventory / Stock Management
+    // 12. Inventory / Stock Management & Supply Chain
     match /salons/{salonId}/inventory/{itemId} {
+      allow read: if isSalonMember(salonId);
+      allow create, delete: if canManageSalon(salonId);
+      allow update: if canManageSalon(salonId) || (
+        canOperateFrontDesk(salonId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt']) &&
+        request.resource.data.quantity is number &&
+        request.resource.data.quantity >= 0
+      );
+    }
+
+    // 12b. Suppliers
+    match /salons/{salonId}/suppliers/{supplierId} {
       allow read: if canOperateFrontDesk(salonId);
       allow write: if canManageSalon(salonId);
+    }
+
+    // 12c. Purchase Orders & NF-e Imports
+    match /salons/{salonId}/purchaseOrders/{orderId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 12d. Stock Movements (Kardex)
+    match /salons/{salonId}/stockMovements/{movementId} {
+      allow read: if isSalonMember(salonId);
+      allow create: if canOperateFrontDesk(salonId);
+      allow update, delete: if canManageSalon(salonId);
+    }
+
+    // 12e. Physical Stock Inventory Audits
+    match /salons/{salonId}/stockInventories/{inventoryId} {
+      allow read: if canOperateFrontDesk(salonId);
+      allow write: if canManageSalon(salonId);
+    }
+
+    // 12f. Staff Stock Requisitions (Solicitações de Saída)
+    match /salons/{salonId}/stockRequisitions/{requisitionId} {
+      allow read: if isSalonMember(salonId);
+      allow create: if isSalonMember(salonId) &&
+        request.resource.data.requesterId == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.quantity is number &&
+        request.resource.data.quantity > 0;
+      allow update, delete: if canManageSalon(salonId);
     }
 
     // 13. Marketing Coupons

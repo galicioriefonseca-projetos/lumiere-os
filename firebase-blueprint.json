@@ -290,6 +290,259 @@
         "createdAt": { "type": "integer" }
       },
       "required": ["id", "type", "title", "message", "read", "createdAt"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Produto ou insumo controlado no estoque do estabelecimento.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "brand": { "type": "string" },
+        "sku": { "type": "string" },
+        "barcode": { "type": "string" },
+        "category": { "type": "string" },
+        "stockLocation": { "type": "string", "enum": ["resale", "internal_use", "warehouse", "mixed"] },
+        "quantity": { "type": "number" },
+        "minQuantity": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "nextExpirationDate": { "type": "string" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["name", "quantity", "minQuantity", "updatedAt"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Fornecedor de produtos e insumos vinculado ao salão.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tradeName": { "type": "string" },
+        "companyName": { "type": "string" },
+        "document": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "tradeName", "isActive", "createdAt", "updatedAt"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Pedido de compra manual ou importado via XML de NF-e.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "ordered", "received", "canceled"] },
+        "origin": { "type": "string", "enum": ["manual", "nfe_xml", "auto_restock"] },
+        "orderDate": { "type": "string" },
+        "totalCost": { "type": "number" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "orderNumber", "supplierName", "status", "origin", "orderDate", "totalCost", "createdAt"]
+    },
+    "StockMovement": {
+      "title": "StockMovement",
+      "description": "Registro imutável de entrada, saída, venda ou ajuste no Kardex do produto.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "type": { "type": "string", "enum": ["in", "out", "inventory_adjustment", "comanda_sale", "purchase_order", "requisition"] },
+        "quantityDelta": { "type": "number" },
+        "previousQuantity": { "type": "number" },
+        "newQuantity": { "type": "number" },
+        "reason": { "type": "string" },
+        "movementDate": { "type": "string" },
+        "performedById": { "type": "string" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "productId", "productName", "type", "quantityDelta", "previousQuantity", "newQuantity", "reason", "movementDate", "performedById", "createdAt"]
+    },
+    "StockInventorySession": {
+      "title": "StockInventorySession",
+      "description": "Sessão de contagem física e auditoria por código de barras do estoque.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "completed"] },
+        "responsibleName": { "type": "string" },
+        "balanceImpactAmount": { "type": "number" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "sessionNumber", "date", "status", "responsibleName", "balanceImpactAmount", "createdAt"]
+    },
+    "StockRequisition": {
+      "title": "StockRequisition",
+      "description": "Solicitação de saída de produto ou insumo feita por profissional ou recepção.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "requesterId": { "type": "string" },
+        "requesterName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "productId", "productName", "quantity", "requesterId", "requesterName", "status", "createdAt"]
+    },
+    "ClientCustomField": {
+      "title": "ClientCustomField",
+      "description": "Definição de campo customizado das fichas de Anamnese e Prontuário.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scope": { "type": "string", "enum": ["anamnese", "prontuario"] },
+        "label": { "type": "string" },
+        "slug": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "textarea", "number", "date", "select", "boolean"] },
+        "order": { "type": "integer" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "scope", "label", "slug", "type", "order", "isActive", "createdAt", "updatedAt"]
+    },
+    "ClientNotice": {
+      "title": "ClientNotice",
+      "description": "Aviso operacional disparado ao selecionar cliente na agenda ou na comanda.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+        "targetType": { "type": "string", "enum": ["clients", "tags", "all"] },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "title", "message", "severity", "targetType", "isActive", "createdAt", "updatedAt"]
+    },
+    "CrmConversation": {
+      "title": "CrmConversation",
+      "description": "Thread de atendimento omnichannel via WhatsApp vinculada ao salão.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "status": { "type": "string", "enum": ["awaiting_reply", "in_service", "resolved"] },
+        "handlingMode": { "type": "string", "enum": ["ai", "human", "handoff"] },
+        "unreadCount": { "type": "integer" },
+        "lastMessageAt": { "type": "integer" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "clientName", "clientPhone", "status", "handlingMode", "lastMessageAt", "createdAt"]
+    },
+    "CrmMessage": {
+      "title": "CrmMessage",
+      "description": "Mensagem individual dentro de uma conversa WhatsApp do CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "direction": { "type": "string", "enum": ["inbound", "outbound", "system"] },
+        "senderType": { "type": "string", "enum": ["client", "attendant", "ai", "system"] },
+        "body": { "type": "string" },
+        "deliveryStatus": { "type": "string", "enum": ["sent", "delivered", "read", "queued", "failed"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "conversationId", "direction", "senderType", "body", "createdAt"]
+    },
+    "CrmOpportunity": {
+      "title": "CrmOpportunity",
+      "description": "Oportunidade comercial e card do funil de agendamentos do CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "opportunityNumber": { "type": "integer" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "stage": { "type": "string", "enum": ["awaiting_reply", "in_service", "interested", "scheduled", "lost", "other"] },
+        "origin": { "type": "string", "enum": ["receptivo", "confirmacao", "marketing", "attendant"] },
+        "estimatedValue": { "type": "number" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "opportunityNumber", "clientName", "stage", "origin", "estimatedValue", "createdAt"]
+    },
+    "CrmCampaign": {
+      "title": "CrmCampaign",
+      "description": "Campanha automática de WhatsApp (Confirmação, Aniversário, Retorno, Inativos, CSAT).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["confirmation", "birthday", "service_return", "inactive_clients", "post_service_csat"] },
+        "title": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "dailyLimit": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["id", "type", "title", "enabled", "dailyLimit", "updatedAt"]
+    },
+    "CrmCampaignDispatch": {
+      "title": "CrmCampaignDispatch",
+      "description": "Registro individual de disparo ou adiamento em campanhas automáticas do CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "campaignId": { "type": "string" },
+        "campaignType": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "status": { "type": "string", "enum": ["sent", "postponed", "replied", "converted", "failed"] },
+        "dispatchedAt": { "type": "integer" }
+      },
+      "required": ["id", "campaignId", "campaignType", "clientName", "status", "dispatchedAt"]
+    },
+    "CrmQuickReply": {
+      "title": "CrmQuickReply",
+      "description": "Resposta rápida acionada via /atalho no chat do CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "shortcut": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "scope": { "type": "string", "enum": ["salon", "personal"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "shortcut", "title", "body", "scope", "createdAt"]
+    },
+    "CrmAttendant": {
+      "title": "CrmAttendant",
+      "description": "Atendente autorizado no CRM com controle de assinatura, status online e permissões.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "permission": { "type": "string", "enum": ["admin", "attendant", "viewer"] },
+        "isOnline": { "type": "boolean" },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["id", "name", "email", "permission", "isOnline", "createdAt"]
+    },
+    "CrmSettings": {
+      "title": "CrmSettings",
+      "description": "Configurações globais de automação, regras de equipe e Lumi IA no CRM.",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["updatedAt"]
     }
   },
   "firestore": {
@@ -360,6 +613,70 @@
     "/salons/{salonId}/commissionPayouts/{payoutId}": {
       "schema": "CommissionPayout",
       "description": "Subcoleção de lotes de repasse e pagamento de comissões."
+    },
+    "/salons/{salonId}/inventory/{itemId}": {
+      "schema": "InventoryItem",
+      "description": "Subcoleção de produtos, insumos e itens controlados no estoque do salão."
+    },
+    "/salons/{salonId}/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Subcoleção de fornecedores cadastrados pelo salão."
+    },
+    "/salons/{salonId}/purchaseOrders/{orderId}": {
+      "schema": "PurchaseOrder",
+      "description": "Subcoleção de pedidos de compra manuais e importações de XML NF-e."
+    },
+    "/salons/{salonId}/stockMovements/{movementId}": {
+      "schema": "StockMovement",
+      "description": "Subcoleção do histórico Kardex de movimentações de estoque."
+    },
+    "/salons/{salonId}/stockInventories/{inventoryId}": {
+      "schema": "StockInventorySession",
+      "description": "Subcoleção de auditorias e contagens físicas de inventário."
+    },
+    "/salons/{salonId}/stockRequisitions/{requisitionId}": {
+      "schema": "StockRequisition",
+      "description": "Subcoleção de solicitações de saída de insumos da equipe."
+    },
+    "/salons/{salonId}/clientCustomFields/{fieldId}": {
+      "schema": "ClientCustomField",
+      "description": "Subcoleção de campos configuráveis das fichas de Anamnese e Prontuário."
+    },
+    "/salons/{salonId}/clientNotices/{noticeId}": {
+      "schema": "ClientNotice",
+      "description": "Subcoleção de avisos de atendimento exibidos na agenda e nas comandas."
+    },
+    "/salons/{salonId}/crmConversations/{conversationId}": {
+      "schema": "CrmConversation",
+      "description": "Subcoleção de conversas omnichannel do CRM."
+    },
+    "/salons/{salonId}/crmConversations/{conversationId}/messages/{messageId}": {
+      "schema": "CrmMessage",
+      "description": "Subcoleção de mensagens de uma conversa no CRM."
+    },
+    "/salons/{salonId}/crmOpportunities/{opportunityId}": {
+      "schema": "CrmOpportunity",
+      "description": "Subcoleção de cards/oportunidades do funil comercial do CRM."
+    },
+    "/salons/{salonId}/crmCampaigns/{campaignId}": {
+      "schema": "CrmCampaign",
+      "description": "Subcoleção de campanhas automáticas de retenção e confirmação."
+    },
+    "/salons/{salonId}/crmCampaignDispatches/{dispatchId}": {
+      "schema": "CrmCampaignDispatch",
+      "description": "Subcoleção de fila e logs de disparos das campanhas automáticas."
+    },
+    "/salons/{salonId}/crmQuickReplies/{replyId}": {
+      "schema": "CrmQuickReply",
+      "description": "Subcoleção de respostas rápidas por atalho / no chat."
+    },
+    "/salons/{salonId}/crmAttendants/{attendantId}": {
+      "schema": "CrmAttendant",
+      "description": "Subcoleção de atendentes habilitados no CRM."
+    },
+    "/salons/{salonId}/crmSettings/{settingId}": {
+      "schema": "CrmSettings",
+      "description": "Subcoleção de configurações do funil, equipe e Lumi IA no CRM."
     },
     "/coupons/{code}": {
       "schema": "Coupon",

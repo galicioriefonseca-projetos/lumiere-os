@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
+import { OperationType, reportFirestoreListenerError } from "@/lib/firestoreError";
 import {
   collection,
   query,
@@ -74,7 +75,7 @@ interface PdfParsedItem {
 type CatalogTab = "services" | "packages" | "resources";
 
 export default function ServicesPage() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, currentUser } = useAuth();
   const { segment } = useLexicon();
 
   const [activeCatalogTab, setActiveCatalogTab] = useState<CatalogTab>("services");
@@ -150,7 +151,14 @@ export default function ServicesPage() {
     userData?.role === "platform_admin";
 
   useEffect(() => {
-    if (!salonData?.id) return;
+    if (!salonData?.id || !currentUser?.uid) {
+      setServices([]);
+      setCategories([]);
+      setPackages([]);
+      setResources([]);
+      setLoading(false);
+      return;
+    }
 
     const qs = query(collection(db, `salons/${salonData.id}/services`));
     const unsubS = onSnapshot(
@@ -162,31 +170,49 @@ export default function ServicesPage() {
         setLoading(false);
       },
       (error) => {
-        console.error("Erro ao carregar serviços:", error);
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/services`);
         setLoading(false);
       }
     );
 
     const qc = query(collection(db, `salons/${salonData.id}/categories`));
-    const unsubC = onSnapshot(qc, (snapshot) => {
-      const cats: Category[] = [];
-      snapshot.forEach((d) => cats.push({ id: d.id, ...d.data() } as Category));
-      setCategories(cats);
-    });
+    const unsubC = onSnapshot(
+      qc,
+      (snapshot) => {
+        const cats: Category[] = [];
+        snapshot.forEach((d) => cats.push({ id: d.id, ...d.data() } as Category));
+        setCategories(cats);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/categories`);
+      }
+    );
 
     const qp = query(collection(db, `salons/${salonData.id}/packages`));
-    const unsubP = onSnapshot(qp, (snapshot) => {
-      const pkgs: ServicePackage[] = [];
-      snapshot.forEach((d) => pkgs.push({ id: d.id, ...d.data() } as ServicePackage));
-      setPackages(pkgs);
-    });
+    const unsubP = onSnapshot(
+      qp,
+      (snapshot) => {
+        const pkgs: ServicePackage[] = [];
+        snapshot.forEach((d) => pkgs.push({ id: d.id, ...d.data() } as ServicePackage));
+        setPackages(pkgs);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/packages`);
+      }
+    );
 
     const qr = query(collection(db, `salons/${salonData.id}/resources`));
-    const unsubR = onSnapshot(qr, (snapshot) => {
-      const resList: SalonResource[] = [];
-      snapshot.forEach((d) => resList.push({ id: d.id, ...d.data() } as SalonResource));
-      setResources(resList);
-    });
+    const unsubR = onSnapshot(
+      qr,
+      (snapshot) => {
+        const resList: SalonResource[] = [];
+        snapshot.forEach((d) => resList.push({ id: d.id, ...d.data() } as SalonResource));
+        setResources(resList);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/resources`);
+      }
+    );
 
     return () => {
       unsubS();
@@ -194,7 +220,7 @@ export default function ServicesPage() {
       unsubP();
       unsubR();
     };
-  }, [salonData]);
+  }, [salonData?.id, currentUser?.uid]);
 
   const allAvailableCategories = useMemo(() => {
     const listSet = new Set<string>();

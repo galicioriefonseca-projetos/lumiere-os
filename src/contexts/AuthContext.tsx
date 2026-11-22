@@ -1334,10 +1334,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setLoading(true);
     const userEmail = currentUser?.email || currentUser?.uid || 'Unknown';
-    await AuthService.logout(userEmail);
+    try {
+      sessionStorage.removeItem('demo_role');
+    } catch (e) {}
+    setDemoRole(null);
     setUserData(null);
     setSalonData(null);
     setIsPlatformAdmin(false);
+    await AuthService.logout(userEmail);
     setLoading(false);
   };
 
@@ -1387,9 +1391,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     currentUser?.email?.toLowerCase() === 'laismalacarne@hotmail.com'
   );
 
-  const effectiveDemoRole = isEssenzaSalon ? null : demoRole;
+  const effectiveDemoRole = (!currentUser || isEssenzaSalon) ? null : demoRole;
 
-  const isTargetDemo = !isEssenzaSalon && Boolean(
+  const isTargetDemo = Boolean(currentUser) && !isEssenzaSalon && Boolean(
     DEMO_MODE_ENABLED === true ||
     (DEMO_USER_EMAIL && currentUser?.email?.toLowerCase() === DEMO_USER_EMAIL.toLowerCase()) ||
     currentUser?.email?.toLowerCase() === 'leandropfonseca20@gmail.com' ||
@@ -1398,11 +1402,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     currentUser?.email?.toLowerCase() === 'demo@lumiereos.com.br'
   );
 
-  const simulatedUserData = effectiveDemoRole ? {
+  const simulatedUserData = !currentUser ? null : (effectiveDemoRole ? {
     ...(userData || {
-      id: currentUser?.uid || 'demo_user',
-      fullName: currentUser?.displayName || 'Administrador de Demonstração',
-      email: currentUser?.email || 'demo@lumiereos.com.br',
+      id: currentUser.uid,
+      fullName: currentUser.displayName || 'Administrador de Demonstração',
+      email: currentUser.email || 'demo@lumiereos.com.br',
       phone: '',
       salonId: salonData?.id || 'tutorial_lumiere_studio',
       isActive: true,
@@ -1412,7 +1416,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatedAt: Date.now(),
     }),
     role: effectiveDemoRole
-  } : (userData || (isTargetDemo && currentUser ? {
+  } : (userData || (isTargetDemo ? {
     id: currentUser.uid,
     fullName: currentUser.displayName || 'Administrador de Demonstração',
     email: currentUser.email || 'demo@lumiereos.com.br',
@@ -1424,9 +1428,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isDemoUser: true,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  } as User : null));
+  } as User : null)));
 
-  const effectiveSalonData = salonData || ((effectiveDemoRole || isTargetDemo) ? ({
+  const effectiveSalonData = !currentUser ? null : (salonData || ((effectiveDemoRole || isTargetDemo) ? ({
     id: 'tutorial_lumiere_studio',
     name: "Lumiere Beauty Studio — Demo",
     businessName: "Lumiere Beauty Studio — Demo",
@@ -1440,20 +1444,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isActive: true,
     isDemo: true,
     isTutorial: true,
-    ownerId: currentUser?.uid || 'demo_user',
-    ownerEmail: currentUser?.email || 'demo@lumiereos.com.br',
-    ownerName: currentUser?.displayName || 'Administrador de Demonstração',
+    ownerId: currentUser.uid,
+    ownerEmail: currentUser.email || 'demo@lumiereos.com.br',
+    ownerName: currentUser.displayName || 'Administrador de Demonstração',
     professionalsLimit: 22,
     professionalLimit: 22,
     maxProfessionals: 22,
     businessType: 'salon',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  } as unknown as Salon) : null);
+  } as unknown as Salon) : null));
 
-  const effectiveIsPlatformAdmin = demoRole 
-    ? (demoRole === 'platform_admin') 
-    : isPlatformAdmin;
+  const effectiveIsPlatformAdmin = !currentUser
+    ? false
+    : (effectiveDemoRole ? (effectiveDemoRole === 'platform_admin') : isPlatformAdmin);
 
   return (
     <AuthContext.Provider value={{
@@ -1462,13 +1466,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       salonData: effectiveSalonData,
       isPlatformAdmin: effectiveIsPlatformAdmin,
       loading,
-      syncError: (isTargetDemo || demoRole) ? null : syncError,
+      syncError: (isTargetDemo || effectiveDemoRole) ? null : syncError,
       logout,
       refreshUserData,
       signInWithGoogle,
       signInWithGoogleForRegister,
       signInWithGoogleForInvite,
-      demoRole,
+      demoRole: effectiveDemoRole,
       setDemoRole: handleSetDemoRole,
       diagnostics
     }}>

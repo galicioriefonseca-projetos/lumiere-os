@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, getAuth } from 'firebase/auth';
-import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence, doc, getDocFromServer } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 import firebaseConfigFallback from '../../firebase-applet-config.json';
 
@@ -40,6 +40,21 @@ try {
   }
 } catch (e) {
   console.error("Failed to initialize Firestore:", e);
+}
+
+export async function testFirestoreConnection(): Promise<void> {
+  if (!db) return;
+  try {
+    await getDocFromServer(doc(db, 'plans', 'starter'));
+  } catch (error) {
+    if (error instanceof Error && error.message.toLowerCase().includes('the client is offline')) {
+      console.error('Please check your Firebase configuration. Firestore client is offline.');
+    }
+  }
+}
+
+if (typeof window !== 'undefined' && db) {
+  void testFirestoreConnection();
 }
 
 export let analytics: any = null;

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
+import { OperationType, reportFirestoreListenerError } from '@/lib/firestoreError';
 import { toast } from 'sonner';
 import { Professional, Appointment, ProfessionalGoal, ChecklistRun } from '../types';
 
@@ -36,7 +37,11 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
 
   // 1. Fetch professionals, goals, checklist runs, and appointments dynamically
   useEffect(() => {
-    if (!salonId) {
+    if (!salonId || !auth?.currentUser) {
+      setProfessionals([]);
+      setGoals([]);
+      setChecklistRuns([]);
+      setAppointments([]);
       setLoading(false);
       return;
     }
@@ -44,7 +49,6 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
     setLoading(true);
 
     const qPros = query(collection(db, `salons/${salonId}/professionals`));
-    const qGoals = query(collection(db, `salons/${salonId}/professionalGoals`));
     const qRuns = query(collection(db, `salons/${salonId}/checklistRuns`));
     const qAppts = query(collection(db, `salons/${salonId}/appointments`));
 
@@ -54,15 +58,34 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
         list.push({ id: d.id, ...d.data() } as Professional);
       });
       setProfessionals(list);
-    }, (err) => console.error('[useAlerts] Error loaded professionals:', err));
+    }, (err) => reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionals`));
 
-    const unsubGoals = onSnapshot(qGoals, (snapshot) => {
-      const list: ProfessionalGoal[] = [];
-      snapshot.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as ProfessionalGoal);
-      });
-      setGoals(list);
-    }, (err) => console.error('[useAlerts] Error loaded goals:', err));
+    const isManagerRole = ['owner', 'admin', 'manager', 'platform_admin'].includes(userRole || '');
+    let unsubGoals: () => void = () => {};
+    if (isManagerRole) {
+      const qGoals = query(collection(db, `salons/${salonId}/professionalGoals`));
+      unsubGoals = onSnapshot(qGoals, (snapshot) => {
+        const list: ProfessionalGoal[] = [];
+        snapshot.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as ProfessionalGoal);
+        });
+        setGoals(list);
+      }, (err) => reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionalGoals`));
+    } else if (userRole === 'professional' && userId) {
+      const qOwnGoals = query(
+        collection(db, `salons/${salonId}/professionalGoals`),
+        where('professionalId', '==', userId)
+      );
+      unsubGoals = onSnapshot(qOwnGoals, (snapshot) => {
+        const list: ProfessionalGoal[] = [];
+        snapshot.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as ProfessionalGoal);
+        });
+        setGoals(list);
+      }, (err) => reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionalGoals`));
+    } else {
+      setGoals([]);
+    }
 
     const unsubRuns = onSnapshot(qRuns, (snapshot) => {
       const list: ChecklistRun[] = [];
@@ -70,7 +93,7 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
         list.push({ id: d.id, ...d.data() } as ChecklistRun);
       });
       setChecklistRuns(list);
-    }, (err) => console.error('[useAlerts] Error loaded checklist runs:', err));
+    }, (err) => reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/checklistRuns`));
 
     const unsubAppts = onSnapshot(qAppts, (snapshot) => {
       const list: Appointment[] = [];
@@ -80,7 +103,7 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
       setAppointments(list);
       setLoading(false);
     }, (err) => {
-      console.error('[useAlerts] Error loaded appointments:', err);
+      reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/appointments`);
       setLoading(false);
     });
 
@@ -90,7 +113,7 @@ export function useAlerts(salonId: string | undefined, userId: string | undefine
       unsubRuns();
       unsubAppts();
     };
-  }, [salonId]);
+  }, [salonId, userId, userRole]);
 
   // 2. Compute performance metrics for all professionals in the CURRENT MONTH
   const performanceData = useMemo(() => {

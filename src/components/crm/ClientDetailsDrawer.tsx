@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '@/lib/firebase';
 import { collection, query, getDocs, doc, setDoc, updateDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { Client, ClientHistory, Appointment } from '../../types';
+import { Client, ClientAddress, ClientCustomField, ClientFormResponseValue, ClientHistory, ClientNotice, Appointment } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import {
   X, Calendar, Phone, Mail, Clock, MessageSquare, Tag, UserCheck,
-  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2, Inbox
+  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2, Inbox, ClipboardList, Search, Loader2
 } from 'lucide-react';
 import { GmailWorkspaceDialog, GmailSentEvent } from '../workspace/GmailWorkspaceDialog';
 import {
@@ -19,6 +19,13 @@ import {
   getClientGenderLabel,
   normalizeClientGender,
 } from '@/lib/clientGender';
+import {
+  lookupBrazilianCep,
+  subscribeClientCustomFields,
+  subscribeClientNotices,
+} from '@/services/clientsService';
+import { DynamicFormFieldsRenderer } from '../clients/DynamicFormFieldsRenderer';
+import { ClientActiveNoticesBanner } from '../clients/ClientActiveNoticesBanner';
 
 interface ClientDetailsDrawerProps {
   isOpen: boolean;
@@ -29,6 +36,8 @@ interface ClientDetailsDrawerProps {
   userRole: string;
   professionals: any[];
   services: any[];
+  customFields?: ClientCustomField[];
+  notices?: ClientNotice[];
   onClientUpdated: () => void;
 }
 
@@ -41,26 +50,39 @@ export default function ClientDetailsDrawer({
   userRole,
   professionals,
   services,
+  customFields: propCustomFields,
+  notices: propNotices,
   onClientUpdated,
 }: ClientDetailsDrawerProps) {
-  const [activeTab, setActiveTab] = useState<'info' | 'actions' | 'appointments' | 'history'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'fichas' | 'actions' | 'appointments' | 'history'>('info');
   const [histories, setHistories] = useState<ClientHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loadingAppts, setLoadingAppts] = useState(false);
+  const [localCustomFields, setLocalCustomFields] = useState<ClientCustomField[]>([]);
+  const [localNotices, setLocalNotices] = useState<ClientNotice[]>([]);
 
   // Edit fields state
   const [crmStage, setCrmStage] = useState<Client['crmStage']>('new');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [secondaryPhone, setSecondaryPhone] = useState('');
   const [email, setEmail] = useState('');
   const [gender, setGender] = useState<string>('none');
+  const [birthDate, setBirthDate] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [rg, setRg] = useState('');
+  const [address, setAddress] = useState<ClientAddress>({});
+  const [searchingCep, setSearchingCep] = useState(false);
   const [notes, setNotes] = useState('');
   const [source, setSource] = useState<Client['source']>('whatsapp');
   const [sourceLabel, setSourceLabel] = useState('');
   const [responsibleId, setResponsibleId] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+  const [anamneseResponses, setAnamneseResponses] = useState<Record<string, ClientFormResponseValue>>({});
+  const [prontuarioResponses, setProntuarioResponses] = useState<Record<string, ClientFormResponseValue>>({});
+  const [savingFichas, setSavingFichas] = useState(false);
 
   // Quick Action / Action Logging State
   const [contactType, setContactType] = useState<'phone' | 'whatsapp' | 'email' | 'meeting' | 'note'>('whatsapp');
@@ -131,19 +153,47 @@ export default function ClientDetailsDrawer({
     }
   };
 
+  // Subscribe to custom fields & notices when not passed from parent
+  useEffect(() => {
+    if (!isOpen || !salonId) return;
+    if (propCustomFields && propNotices) return;
+    const unsubFields = propCustomFields
+      ? () => {}
+      : subscribeClientCustomFields(salonId, setLocalCustomFields, () => setLocalCustomFields([]));
+    const unsubNotices = propNotices
+      ? () => {}
+      : subscribeClientNotices(salonId, setLocalNotices, () => setLocalNotices([]));
+    return () => {
+      unsubFields();
+      unsubNotices();
+    };
+  }, [isOpen, salonId, propCustomFields, propNotices]);
+
+  const effectiveCustomFields = propCustomFields ?? localCustomFields;
+  const effectiveNotices = propNotices ?? localNotices;
+  const anamneseFields = effectiveCustomFields.filter((f) => f.scope === 'anamnese');
+  const prontuarioFields = effectiveCustomFields.filter((f) => f.scope === 'prontuario');
+
   // Pre-populate states
   useEffect(() => {
     if (client) {
       setCrmStage(client.crmStage || 'new');
       setName(client.name || '');
       setPhone(client.phone || '');
+      setSecondaryPhone(client.secondaryPhone || '');
       setEmail(client.email || '');
       setGender(normalizeClientGender(client.gender) || 'none');
+      setBirthDate(client.birthDate || '');
+      setCpf(client.cpf || '');
+      setRg(client.rg || '');
+      setAddress(client.address || {});
       setNotes(client.notes || '');
       setSource(client.source || 'whatsapp');
       setSourceLabel(client.sourceLabel || '');
       setResponsibleId(client.responsibleId || 'none');
       setTags(client.tags || []);
+      setAnamneseResponses(client.anamneseResponses || {});
+      setProntuarioResponses(client.prontuarioResponses || {});
       setNextActionType(client.nextActionType || 'whatsapp');
       setNextActionDate(client.nextActionAt || '');
       
@@ -228,6 +278,33 @@ export default function ClientDetailsDrawer({
     }
   };
 
+  const handleCepLookup = async () => {
+    const cep = address.zipCode || '';
+    if (cep.replace(/\D/g, '').length !== 8) {
+      toast.error('Informe um CEP com 8 dígitos.');
+      return;
+    }
+    setSearchingCep(true);
+    try {
+      const found = await lookupBrazilianCep(cep);
+      if (!found) {
+        toast.error('CEP não localizado.');
+        return;
+      }
+      setAddress((prev) => ({
+        ...prev,
+        zipCode: found.zipCode || prev.zipCode,
+        street: found.street || prev.street,
+        neighborhood: found.neighborhood || prev.neighborhood,
+        city: found.city || prev.city,
+        state: found.state || prev.state,
+      }));
+      toast.success('Endereço atualizado pelo CEP!');
+    } finally {
+      setSearchingCep(false);
+    }
+  };
+
   // Save changes handler
   const handleSaveChanges = async () => {
     if (!client || !salonId) return;
@@ -238,8 +315,13 @@ export default function ClientDetailsDrawer({
       const updatedPayload: Partial<Client> = {
         name,
         phone,
+        secondaryPhone: secondaryPhone.trim(),
         email,
         gender: gender === 'none' ? '' : gender,
+        birthDate: birthDate.trim(),
+        cpf: cpf.trim(),
+        rg: rg.trim(),
+        address,
         notes,
         crmStage,
         source,
@@ -275,6 +357,31 @@ export default function ClientDetailsDrawer({
     } catch (err) {
       console.error(err);
       toast.error('Erro ao atualizar dados.');
+    }
+  };
+
+  const handleSaveFichas = async () => {
+    if (!client || !salonId) return;
+    setSavingFichas(true);
+    try {
+      await updateDoc(doc(db, `salons/${salonId}/clients/${client.id}`), {
+        anamneseResponses,
+        prontuarioResponses,
+        updatedAt: Date.now(),
+        updatedBy: currentUser?.uid || '',
+      });
+      await addHistoryRecord(
+        'note_added',
+        'Fichas Técnicas Atualizadas',
+        'Respostas de Anamnese e/ou Prontuário atualizadas na ficha do cliente.'
+      );
+      toast.success('Fichas de Anamnese e Prontuário salvas!');
+      onClientUpdated();
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao salvar fichas.');
+    } finally {
+      setSavingFichas(false);
     }
   };
 
@@ -609,34 +716,42 @@ export default function ClientDetailsDrawer({
             </div>
 
             {/* Tab selection */}
-            <div className="flex border-b border-zinc-800 bg-[#0e0e11] shrink-0">
+            <div className="flex border-b border-zinc-800 bg-[#0e0e11] shrink-0 overflow-x-auto">
               <button
                 onClick={() => setActiveTab('info')}
-                className={`flex-1 py-3 text-sm font-medium border-b-2 transition ${
+                className={`flex-1 py-3 px-2 text-xs sm:text-sm font-medium border-b-2 transition whitespace-nowrap ${
                   activeTab === 'info' ? 'border-[#D4AF37] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Informações
+                Perfil
+              </button>
+              <button
+                onClick={() => setActiveTab('fichas')}
+                className={`flex-1 py-3 px-2 text-xs sm:text-sm font-medium border-b-2 transition whitespace-nowrap ${
+                  activeTab === 'fichas' ? 'border-[#D4AF37] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                Anamnese & Prontuário
               </button>
               <button
                 onClick={() => setActiveTab('actions')}
-                className={`flex-1 py-3 text-sm font-medium border-b-2 transition ${
+                className={`flex-1 py-3 px-2 text-xs sm:text-sm font-medium border-b-2 transition whitespace-nowrap ${
                   activeTab === 'actions' ? 'border-[#D4AF37] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Contatos & Próxima Ação
+                Ações
               </button>
               <button
                 onClick={() => setActiveTab('appointments')}
-                className={`flex-1 py-3 text-sm font-medium border-b-2 transition ${
+                className={`flex-1 py-3 px-2 text-xs sm:text-sm font-medium border-b-2 transition whitespace-nowrap ${
                   activeTab === 'appointments' ? 'border-[#D4AF37] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                Agendamentos
+                Visitas
               </button>
               <button
                 onClick={() => setActiveTab('history')}
-                className={`flex-1 py-3 text-sm font-medium border-b-2 transition ${
+                className={`flex-1 py-3 px-2 text-xs sm:text-sm font-medium border-b-2 transition whitespace-nowrap ${
                   activeTab === 'history' ? 'border-[#D4AF37] text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
                 }`}
               >
@@ -646,6 +761,13 @@ export default function ClientDetailsDrawer({
 
             {/* Scrollable contents */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <ClientActiveNoticesBanner
+                notices={effectiveNotices}
+                client={client}
+                trigger="all"
+                theme="dark"
+              />
+
               {activeTab === 'info' && (
                 <div className="space-y-6">
                   {/* Financial Statistics Card - Hidden for receptionists if restricted */}
@@ -701,10 +823,24 @@ export default function ClientDetailsDrawer({
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
                           placeholder="(00) 00000-0000"
-                          className="bg-[#121215] border-zinc-800 rounded-lg text-white"
+                          className="bg-[#121215] border-zinc-800 rounded-lg text-white font-mono"
                           disabled={isProfessionalRole}
                         />
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-sec-phone">Telefone Secundário</Label>
+                        <Input
+                          id="edit-sec-phone"
+                          value={secondaryPhone}
+                          onChange={(e) => setSecondaryPhone(e.target.value)}
+                          placeholder="(00) 00000-0000"
+                          className="bg-[#121215] border-zinc-800 rounded-lg text-white font-mono"
+                          disabled={isProfessionalRole}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="edit-email">E-mail (Opcional)</Label>
                         <Input
@@ -716,27 +852,154 @@ export default function ClientDetailsDrawer({
                           disabled={isProfessionalRole}
                         />
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-birth">Data de Aniversário</Label>
+                        <Input
+                          id="edit-birth"
+                          type="date"
+                          value={birthDate}
+                          onChange={(e) => setBirthDate(e.target.value)}
+                          className="bg-[#121215] border-zinc-800 rounded-lg text-white"
+                          disabled={isProfessionalRole}
+                        />
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>Gênero</Label>
-                      <Select
-                        value={gender}
-                        onValueChange={setGender}
-                        disabled={isProfessionalRole}
-                      >
-                        <SelectTrigger className="bg-[#121215] border-zinc-800 rounded-lg text-white">
-                          <SelectValue placeholder="Selecione o gênero" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-[#121215] border-zinc-800 text-white">
-                          <SelectItem value="none">Não informado</SelectItem>
-                          {CLIENT_GENDER_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-2">
+                        <Label>Gênero</Label>
+                        <Select
+                          value={gender}
+                          onValueChange={setGender}
+                          disabled={isProfessionalRole}
+                        >
+                          <SelectTrigger className="bg-[#121215] border-zinc-800 rounded-lg text-white">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#121215] border-zinc-800 text-white">
+                            <SelectItem value="none">Não informado</SelectItem>
+                            {CLIENT_GENDER_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-cpf">CPF</Label>
+                        <Input
+                          id="edit-cpf"
+                          value={cpf}
+                          onChange={(e) => setCpf(e.target.value)}
+                          placeholder="000.000.000-00"
+                          className="bg-[#121215] border-zinc-800 rounded-lg text-white font-mono"
+                          disabled={isProfessionalRole}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-rg">RG</Label>
+                        <Input
+                          id="edit-rg"
+                          value={rg}
+                          onChange={(e) => setRg(e.target.value)}
+                          placeholder="RG"
+                          className="bg-[#121215] border-zinc-800 rounded-lg text-white font-mono"
+                          disabled={isProfessionalRole}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Endereço */}
+                    <div className="bg-[#121215] border border-zinc-800/80 rounded-xl p-4 space-y-3">
+                      <h5 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                        Endereço
+                      </h5>
+                      <div className="grid grid-cols-12 gap-2 items-end">
+                        <div className="col-span-5 space-y-1">
+                          <Label className="text-[11px] text-zinc-400">CEP</Label>
+                          <div className="flex gap-1.5">
+                            <Input
+                              value={address.zipCode || ''}
+                              onChange={(e) => setAddress((p) => ({ ...p, zipCode: e.target.value }))}
+                              placeholder="00000-000"
+                              className="bg-[#0c0c0e] border-zinc-800 text-white font-mono h-9 text-xs"
+                              disabled={isProfessionalRole}
+                            />
+                            {!isProfessionalRole && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                disabled={searchingCep}
+                                onClick={handleCepLookup}
+                                className="h-9 w-9 border-zinc-800 bg-[#0c0c0e] shrink-0"
+                              >
+                                {searchingCep ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-5 space-y-1">
+                          <Label className="text-[11px] text-zinc-400">Cidade</Label>
+                          <Input
+                            value={address.city || ''}
+                            onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
+                            className="bg-[#0c0c0e] border-zinc-800 text-white h-9 text-xs"
+                            disabled={isProfessionalRole}
+                          />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <Label className="text-[11px] text-zinc-400">UF</Label>
+                          <Input
+                            maxLength={2}
+                            value={address.state || ''}
+                            onChange={(e) => setAddress((p) => ({ ...p, state: e.target.value.toUpperCase() }))}
+                            className="bg-[#0c0c0e] border-zinc-800 text-white h-9 text-xs uppercase"
+                            disabled={isProfessionalRole}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-12 gap-2">
+                        <div className="col-span-8 space-y-1">
+                          <Label className="text-[11px] text-zinc-400">Rua / Logradouro</Label>
+                          <Input
+                            value={address.street || ''}
+                            onChange={(e) => setAddress((p) => ({ ...p, street: e.target.value }))}
+                            className="bg-[#0c0c0e] border-zinc-800 text-white h-9 text-xs"
+                            disabled={isProfessionalRole}
+                          />
+                        </div>
+                        <div className="col-span-4 space-y-1">
+                          <Label className="text-[11px] text-zinc-400">Número</Label>
+                          <Input
+                            value={address.number || ''}
+                            onChange={(e) => setAddress((p) => ({ ...p, number: e.target.value }))}
+                            className="bg-[#0c0c0e] border-zinc-800 text-white h-9 text-xs"
+                            disabled={isProfessionalRole}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-zinc-400">Bairro</Label>
+                          <Input
+                            value={address.neighborhood || ''}
+                            onChange={(e) => setAddress((p) => ({ ...p, neighborhood: e.target.value }))}
+                            className="bg-[#0c0c0e] border-zinc-800 text-white h-9 text-xs"
+                            disabled={isProfessionalRole}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-zinc-400">Complemento</Label>
+                          <Input
+                            value={address.complement || ''}
+                            onChange={(e) => setAddress((p) => ({ ...p, complement: e.target.value }))}
+                            className="bg-[#0c0c0e] border-zinc-800 text-white h-9 text-xs"
+                            disabled={isProfessionalRole}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -867,6 +1130,79 @@ export default function ClientDetailsDrawer({
                       </Button>
                     )}
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'fichas' && (
+                <div className="space-y-6">
+                  {/* Anamnese Section */}
+                  <div className="bg-[#121215] border border-zinc-800 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <h4 className="text-sm font-semibold text-[#D4AF37] flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4" /> Ficha de Anamnese
+                      </h4>
+                      <span className="text-[11px] text-zinc-500">
+                        {anamneseFields.length} campo(s)
+                      </span>
+                    </div>
+                    {anamneseFields.length === 0 ? (
+                      <p className="text-xs text-zinc-400">
+                        Nenhum campo configurado na Ficha de Anamnese. Configure em Clientes &rarr; Anamnese.
+                      </p>
+                    ) : (
+                      <DynamicFormFieldsRenderer
+                        fields={anamneseFields}
+                        values={anamneseResponses}
+                        onChange={(slug, val) =>
+                          setAnamneseResponses((prev) => ({ ...prev, [slug]: val }))
+                        }
+                        theme="dark"
+                      />
+                    )}
+                  </div>
+
+                  {/* Prontuário Section */}
+                  <div className="bg-[#121215] border border-zinc-800 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <h4 className="text-sm font-semibold text-[#D4AF37] flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Ficha de Prontuário Técnico
+                      </h4>
+                      <span className="text-[11px] text-zinc-500">
+                        {prontuarioFields.length} campo(s)
+                      </span>
+                    </div>
+                    {prontuarioFields.length === 0 ? (
+                      <p className="text-xs text-zinc-400">
+                        Nenhum campo configurado na Ficha de Prontuário. Configure em Clientes &rarr; Prontuário.
+                      </p>
+                    ) : (
+                      <DynamicFormFieldsRenderer
+                        fields={prontuarioFields}
+                        values={prontuarioResponses}
+                        onChange={(slug, val) =>
+                          setProntuarioResponses((prev) => ({ ...prev, [slug]: val }))
+                        }
+                        theme="dark"
+                      />
+                    )}
+                  </div>
+
+                  {(anamneseFields.length > 0 || prontuarioFields.length > 0) && (
+                    <Button
+                      type="button"
+                      disabled={savingFichas}
+                      onClick={handleSaveFichas}
+                      className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold rounded-lg h-10"
+                    >
+                      {savingFichas ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> Salvando Fichas...
+                        </>
+                      ) : (
+                        'Salvar Respostas das Fichas'
+                      )}
+                    </Button>
+                  )}
                 </div>
               )}
 

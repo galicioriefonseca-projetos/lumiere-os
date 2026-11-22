@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
+import { OperationType, reportFirestoreListenerError } from "@/lib/firestoreError";
 import {
   collection,
   deleteDoc,
@@ -8,6 +9,7 @@ import {
   onSnapshot,
   query,
   setDoc,
+  where,
 } from "firebase/firestore";
 import {
   Appointment,
@@ -85,7 +87,7 @@ function monthToDateRange(ym: string): { start: string; end: string } {
 }
 
 export default function CommissionsPage() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, currentUser, isPlatformAdmin } = useAuth();
   const salonId = salonData?.id || "";
 
   const [activeTab, setActiveTab] = useState<CommissionsTab>("payable");
@@ -150,9 +152,23 @@ export default function CommissionsPage() {
   };
 
   useEffect(() => {
-    if (!salonId) return;
+    if (!salonId || !currentUser?.uid) {
+      setAppointments([]);
+      setProfessionals([]);
+      setServices([]);
+      setProfessionalGoals([]);
+      setAdjustments([]);
+      setPayouts([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const unsubs: (() => void)[] = [];
+    const role = userData?.role || "";
+    const targetUserId = userData?.id || currentUser.uid;
+    const canListAllGoals = Boolean(
+      isPlatformAdmin || ["owner", "admin", "manager", "platform_admin"].includes(role)
+    );
 
     unsubs.push(
       onSnapshot(
@@ -164,54 +180,121 @@ export default function CommissionsPage() {
           setLoading(false);
         },
         (err) => {
-          console.error("Erro ao carregar lançamentos para comissões:", err);
+          reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/appointments`);
           setLoading(false);
         }
       )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, `salons/${salonId}/professionals`)), (snap) => {
-        const arr: Professional[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Professional));
-        setProfessionals(arr);
-      })
+      onSnapshot(
+        query(collection(db, `salons/${salonId}/professionals`)),
+        (snap) => {
+          const arr: Professional[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Professional));
+          setProfessionals(arr);
+        },
+        (err) => {
+          reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionals`);
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, `salons/${salonId}/services`)), (snap) => {
-        const arr: Service[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Service));
-        setServices(arr);
-      })
+      onSnapshot(
+        query(collection(db, `salons/${salonId}/services`)),
+        (snap) => {
+          const arr: Service[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Service));
+          setServices(arr);
+        },
+        (err) => {
+          reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/services`);
+        }
+      )
+    );
+
+    if (canListAllGoals) {
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, `salons/${salonId}/professionalGoals`)),
+          (snap) => {
+            const arr: ProfessionalGoal[] = [];
+            snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+            setProfessionalGoals(arr);
+          },
+          (err) => {
+            reportFirestoreListenerError(
+              err,
+              OperationType.LIST,
+              `salons/${salonId}/professionalGoals`
+            );
+          }
+        )
+      );
+    } else if (role === "professional" && targetUserId) {
+      unsubs.push(
+        onSnapshot(
+          query(
+            collection(db, `salons/${salonId}/professionalGoals`),
+            where("professionalId", "==", targetUserId)
+          ),
+          (snap) => {
+            const arr: ProfessionalGoal[] = [];
+            snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
+            setProfessionalGoals(arr);
+          },
+          (err) => {
+            reportFirestoreListenerError(
+              err,
+              OperationType.LIST,
+              `salons/${salonId}/professionalGoals`
+            );
+          }
+        )
+      );
+    } else {
+      setProfessionalGoals([]);
+    }
+
+    unsubs.push(
+      onSnapshot(
+        query(collection(db, `salons/${salonId}/commissionAdjustments`)),
+        (snap) => {
+          const arr: CommissionAdjustment[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as CommissionAdjustment));
+          setAdjustments(arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        },
+        (err) => {
+          reportFirestoreListenerError(
+            err,
+            OperationType.LIST,
+            `salons/${salonId}/commissionAdjustments`
+          );
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, `salons/${salonId}/professionalGoals`)), (snap) => {
-        const arr: ProfessionalGoal[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
-        setProfessionalGoals(arr);
-      })
-    );
-
-    unsubs.push(
-      onSnapshot(query(collection(db, `salons/${salonId}/commissionAdjustments`)), (snap) => {
-        const arr: CommissionAdjustment[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as CommissionAdjustment));
-        setAdjustments(arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-      })
-    );
-
-    unsubs.push(
-      onSnapshot(query(collection(db, `salons/${salonId}/commissionPayouts`)), (snap) => {
-        const arr: CommissionPayout[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as CommissionPayout));
-        setPayouts(arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-      })
+      onSnapshot(
+        query(collection(db, `salons/${salonId}/commissionPayouts`)),
+        (snap) => {
+          const arr: CommissionPayout[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as CommissionPayout));
+          setPayouts(arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        },
+        (err) => {
+          reportFirestoreListenerError(
+            err,
+            OperationType.LIST,
+            `salons/${salonId}/commissionPayouts`
+          );
+        }
+      )
     );
 
     return () => unsubs.forEach((u) => u());
-  }, [salonId]);
+  }, [salonId, currentUser?.uid, userData?.role, userData?.id, isPlatformAdmin]);
 
   const availableMonths = useMemo(() => {
     const months = [];

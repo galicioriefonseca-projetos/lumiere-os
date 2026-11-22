@@ -17,7 +17,8 @@ import {
   Briefcase,
   Layers,
   Video,
-  Globe
+  Globe,
+  MessageSquare
 } from 'lucide-react';
 import { detectBusinessSegment, SEGMENTS } from '../../../config/segments';
 
@@ -120,7 +121,7 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
         items: [
           { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon },
           { name: lex.clients, href: '/dashboard/clientes', icon: Users },
-          { name: 'CRM', href: '/dashboard/crm', icon: Users },
+          { name: 'CRM 360°', href: '/dashboard/crm', icon: MessageSquare },
         ]
       },
       {
@@ -148,6 +149,7 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
           { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
           { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon },
           { name: lex.clients, href: '/dashboard/clientes', icon: Users },
+          { name: 'CRM 360°', href: '/dashboard/crm', icon: MessageSquare },
           { name: lex.professionals, href: '/dashboard/equipe', icon: Users },
           { name: lex.services, href: '/dashboard/servicos', icon: serviceIcon },
           { name: lex.checklists, href: '/dashboard/checklist', icon: CheckSquare },
@@ -169,6 +171,7 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
   const operationalItems: NavigationItem[] = [
     { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon, moduleId: 'appointments' },
     { name: lex.clients, href: '/dashboard/clientes', icon: Users, moduleId: 'clients' },
+    { name: 'CRM 360°', href: '/dashboard/crm', icon: MessageSquare, moduleId: 'crm' },
     ...(isAgencyAccount ? [
       { name: 'Área do Cliente (Portal)', href: '/dashboard/area-do-cliente', icon: Globe, moduleId: 'clientPortal' }
     ] : hasPortalActiveAsClient ? [

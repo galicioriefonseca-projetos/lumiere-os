@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { auth, db } from '@/lib/firebase';
+import { OperationType, reportFirestoreListenerError } from '@/lib/firestoreError';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { usePlans } from '../../hooks/usePlans';
 import { planCatalog } from '../../config/planPricing';
@@ -104,7 +105,7 @@ function formatPaymentStatus(status?: string) {
 
 export default function SubscriptionCenterPage() {
   const navigate = useNavigate();
-  const { salonData, userData, refreshUserData, isPlatformAdmin } = useAuth();
+  const { salonData, userData, currentUser, refreshUserData, isPlatformAdmin } = useAuth();
   const { plans, loading: plansLoading } = usePlans();
   const [tab, setTab] = useState<Tab>('overview');
   const [cycle, setCycle] = useState<BillingCycle>('MONTHLY');
@@ -143,26 +144,48 @@ export default function SubscriptionCenterPage() {
   }, [activeCycle]);
 
   useEffect(() => {
-    if (!salonData?.id || !canManage) return;
-    const unsub = onSnapshot(query(collection(db, `salons/${salonData.id}/payments`)), snap => {
-      const rows: any[] = [];
-      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
-      rows.sort((a, b) => parseDateToTimestamp(b.dueDate || b.createdAt || b.reportedAt) - parseDateToTimestamp(a.dueDate || a.createdAt || a.reportedAt));
-      setPayments(rows);
-    });
+    if (!salonData?.id || !currentUser?.uid || !canManage) {
+      setPayments([]);
+      return;
+    }
+    const path = `salons/${salonData.id}/payments`;
+    const unsub = onSnapshot(
+      query(collection(db, path)),
+      (snap) => {
+        const rows: any[] = [];
+        snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+        rows.sort((a, b) => parseDateToTimestamp(b.dueDate || b.createdAt || b.reportedAt) - parseDateToTimestamp(a.dueDate || a.createdAt || a.reportedAt));
+        setPayments(rows);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, path);
+        setPayments([]);
+      }
+    );
     return () => unsub();
-  }, [salonData?.id, canManage]);
+  }, [salonData?.id, currentUser?.uid, canManage]);
 
   useEffect(() => {
-    if (!salonData?.id || !canManage) return;
-    const unsub = onSnapshot(query(collection(db, `salons/${salonData.id}/billingHistory`)), snap => {
-      const rows: any[] = [];
-      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
-      rows.sort((a, b) => parseDateToTimestamp(b.timestamp || b.createdAt) - parseDateToTimestamp(a.timestamp || a.createdAt));
-      setHistory(rows);
-    });
+    if (!salonData?.id || !currentUser?.uid || !canManage) {
+      setHistory([]);
+      return;
+    }
+    const path = `salons/${salonData.id}/billingHistory`;
+    const unsub = onSnapshot(
+      query(collection(db, path)),
+      (snap) => {
+        const rows: any[] = [];
+        snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+        rows.sort((a, b) => parseDateToTimestamp(b.timestamp || b.createdAt) - parseDateToTimestamp(a.timestamp || a.createdAt));
+        setHistory(rows);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, path);
+        setHistory([]);
+      }
+    );
     return () => unsub();
-  }, [salonData?.id, canManage]);
+  }, [salonData?.id, currentUser?.uid, canManage]);
 
   useEffect(() => {
     if (!hasRealSubscription || !salonData?.id) {

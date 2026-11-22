@@ -19,17 +19,25 @@ import {
 import {
   Appointment,
   Client,
+  ClientCustomField,
+  ClientFormResponseValue,
   ClientHistory,
+  ClientNotice,
   ComandaFlow,
   ComandaItem,
   ComandaPaymentSplit,
+  InventoryItem,
   Professional,
   Service,
   ServicePackage,
 } from '@/types';
 import { db } from '@/lib/firebase';
-import { collection, deleteDoc, doc, getDocs, orderBy, query, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
 import { finalizeComandaApi } from '@/services/operationsService';
+import { subscribeInventoryItems } from '@/services/inventoryService';
+import { subscribeClientCustomFields, subscribeClientNotices } from '@/services/clientsService';
+import { ClientActiveNoticesBanner } from '@/components/clients/ClientActiveNoticesBanner';
+import { DynamicFormFieldsRenderer } from '@/components/clients/DynamicFormFieldsRenderer';
 import { cn, formatBRL } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -109,6 +117,10 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
   const [notes, setNotes] = useState('');
   const [clientHistory, setClientHistory] = useState<ClientHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [clientNotices, setClientNotices] = useState<ClientNotice[]>([]);
+  const [prontuarioFields, setProntuarioFields] = useState<ClientCustomField[]>([]);
+  const [prontuarioResponses, setProntuarioResponses] = useState<Record<string, ClientFormResponseValue>>({});
 
   // Quick Add Item draft
   const [newItemType, setNewItemType] = useState<'service' | 'product' | 'package'>('service');
@@ -159,6 +171,27 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
     }
   }, [open, comanda, initialTab, professionals]);
 
+  // Subscribe to stock inventory products, notices, and prontuario fields when modal is open
+  useEffect(() => {
+    if (!open || !salonId) return;
+    const unsubInv = subscribeInventoryItems(salonId, setInventoryItems, () =>
+      setInventoryItems([])
+    );
+    const unsubNotices = subscribeClientNotices(salonId, setClientNotices, () =>
+      setClientNotices([])
+    );
+    const unsubFields = subscribeClientCustomFields(
+      salonId,
+      (all) => setProntuarioFields(all.filter((f) => f.scope === 'prontuario')),
+      () => setProntuarioFields([])
+    );
+    return () => {
+      unsubInv();
+      unsubNotices();
+      unsubFields();
+    };
+  }, [open, salonId]);
+
   // Fetch client's past Prontuário / history when on Prontuário tab
   useEffect(() => {
     if (!open || !salonId || !clientId || clientId === 'consumidor-final') {
@@ -195,6 +228,10 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
     () => clients.find((c) => c.id === clientId) || null,
     [clients, clientId]
   );
+
+  useEffect(() => {
+    setProntuarioResponses(selectedClient?.prontuarioResponses || {});
+  }, [selectedClient?.id]);
 
   const clientDisplayName =
     clientId === 'consumidor-final'
@@ -279,6 +316,14 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
         setNewItemPrice(String(pkg.price));
       }
       return;
+    }
+    if (newItemType === 'product') {
+      const invItem = inventoryItems.find((i) => i.id === catalogId);
+      if (invItem) {
+        setNewItemCustomName(invItem.name);
+        setNewItemPrice(String(invItem.sellingPrice || invItem.costPrice || 0));
+        return;
+      }
     }
     const svc = services.find((s) => s.id === catalogId);
     if (svc) {
@@ -438,6 +483,12 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
         },
         { merge: true }
       );
+      if (clientId && clientId !== 'consumidor-final' && Object.keys(prontuarioResponses).length > 0) {
+        await updateDoc(doc(db, `salons/${salonId}/clients`, clientId), {
+          prontuarioResponses,
+          updatedAt: now,
+        }).catch(() => undefined);
+      }
       toast.success('Comanda atualizada com sucesso!');
     } catch (err) {
       console.error(err);
@@ -580,6 +631,13 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+          <ClientActiveNoticesBanner
+            notices={clientNotices}
+            client={selectedClient}
+            trigger="onComanda"
+            theme="light"
+          />
+
           {/* ================= TAB 1: ITENS ================= */}
           {activeTab === 'items' && (
             <div className="space-y-5">
@@ -849,17 +907,31 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
                                   {pkg.name} ({formatBRL(pkg.price)})
                                 </SelectItem>
                               ))
-                            : services
-                                .filter((s) =>
-                                  newItemType === 'product'
-                                    ? s.type === 'product'
-                                    : !s.type || s.type === 'service'
-                                )
-                                .map((s) => (
-                                  <SelectItem key={s.id} value={s.id}>
-                                    {s.name} ({formatBRL(s.price)})
-                                  </SelectItem>
-                                ))}
+                            : newItemType === 'product'
+                              ? (
+                                <>
+                                  {inventoryItems.map((inv) => (
+                                    <SelectItem key={inv.id} value={inv.id}>
+                                      {inv.name} · {inv.quantity} {inv.unit || 'un'} (
+                                      {formatBRL(inv.sellingPrice || inv.costPrice || 0)})
+                                    </SelectItem>
+                                  ))}
+                                  {services
+                                    .filter((s) => s.type === 'product')
+                                    .map((s) => (
+                                      <SelectItem key={s.id} value={s.id}>
+                                        {s.name} ({formatBRL(s.price)})
+                                      </SelectItem>
+                                    ))}
+                                </>
+                              )
+                              : services
+                                  .filter((s) => !s.type || s.type === 'service')
+                                  .map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                      {s.name} ({formatBRL(s.price)})
+                                    </SelectItem>
+                                  ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1216,6 +1288,24 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
                   className="w-full rounded-xl border border-[#E5E2DC] bg-white p-3 text-xs text-[#171717] focus:outline-none focus:ring-1 focus:ring-[#B89B5E]"
                 />
               </div>
+
+              {prontuarioFields.length > 0 && clientId !== 'consumidor-final' && (
+                <div className="border border-[#E5E2DC] rounded-xl p-4 bg-[#FAF9F7] space-y-3">
+                  <h4 className="text-xs font-semibold text-[#171717] flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#8A6D36]" />
+                    Campos Personalizados da Ficha de Prontuário
+                  </h4>
+                  <DynamicFormFieldsRenderer
+                    fields={prontuarioFields}
+                    values={prontuarioResponses}
+                    onChange={(slug, val) =>
+                      setProntuarioResponses((prev) => ({ ...prev, [slug]: val }))
+                    }
+                    disabled={isCompleted}
+                    theme="light"
+                  />
+                </div>
+              )}
 
               <div className="border border-[#E5E2DC] rounded-xl p-4 bg-[#FAF9F7] space-y-3">
                 <h4 className="text-xs font-semibold text-[#171717] flex items-center gap-1.5">

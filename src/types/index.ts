@@ -258,13 +258,32 @@ export interface Service {
 
 export type ClientGender = 'female' | 'male' | 'other' | 'prefer_not_to_say';
 
+export interface ClientAddress {
+  zipCode?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+}
+
+export type ClientFormResponseValue = string | number | boolean | string[];
+
 export interface Client {
   id: string;
   name: string;
   phone: string;
+  secondaryPhone?: string;
   email?: string;
   gender?: ClientGender | string;
+  birthDate?: string; // YYYY-MM-DD
+  cpf?: string;
+  rg?: string;
+  address?: ClientAddress;
   notes?: string;
+  anamneseResponses?: Record<string, ClientFormResponseValue>;
+  prontuarioResponses?: Record<string, ClientFormResponseValue>;
   createdAt: number;
   updatedAt: number;
 
@@ -283,10 +302,58 @@ export interface Client {
   totalSpent?: number;
   creditBalance?: number; // positive = crédito disponível, negative = saldo em aberto / fiado
   status?: 'active' | 'inactive';
+  mergedIntoClientId?: string;
   createdBy?: string;
   updatedBy?: string;
   archived?: boolean;
   deletedAt?: number | null;
+}
+
+export type ClientFormScope = 'anamnese' | 'prontuario';
+
+export type ClientCustomFieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'date'
+  | 'select'
+  | 'boolean';
+
+export interface ClientCustomField {
+  id: string;
+  scope: ClientFormScope;
+  label: string;
+  slug: string;
+  type: ClientCustomFieldType;
+  order: number;
+  defaultValue?: string;
+  placeholder?: string;
+  options?: string[];
+  required?: boolean;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ClientNoticeSeverity = 'info' | 'warning' | 'critical';
+
+export interface ClientNotice {
+  id: string;
+  title: string;
+  message: string;
+  severity: ClientNoticeSeverity;
+  triggers: {
+    onSchedule: boolean;
+    onComanda: boolean;
+  };
+  targetType: 'clients' | 'tags' | 'all';
+  clientIds: string[];
+  targetTags: string[];
+  isActive: boolean;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ClientHistory {
@@ -964,3 +1031,465 @@ export interface SalonNotification {
   readAt?: number;
   createdAt: number;
 }
+
+export type StockLocation = 'resale' | 'internal_use' | 'warehouse' | 'mixed';
+
+export interface ProductSupplierLink {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  supplierCode?: string;
+  supplierDescription?: string;
+  costPrice: number;
+}
+
+export interface InventoryItem {
+  id: string;
+  salonId?: string;
+  name: string;
+  brand: string;
+  line?: string;
+  sku: string; // Código interno
+  barcode?: string; // Código de barras EAN
+  category: string;
+  stockLocation?: StockLocation;
+  unit?: string; // un, ml, g, cx, kg, L
+  characteristics?: string;
+  description?: string;
+  quantity: number;
+  minQuantity: number;
+  idealQuantity?: number;
+  costPrice: number;
+  sellingPrice: number;
+  supplier: string;
+  supplierId?: string;
+  supplierLinks?: ProductSupplierLink[];
+  nextExpirationDate?: string; // YYYY-MM-DD
+  batchCode?: string;
+  createdAt?: number;
+  updatedAt: number;
+}
+
+export interface Supplier {
+  id: string;
+  salonId?: string;
+  tradeName: string; // Nome Fantasia
+  companyName?: string; // Razão Social
+  document?: string; // CNPJ ou CPF
+  contactName?: string; // Responsável
+  website?: string;
+  phone?: string;
+  mobile?: string;
+  email?: string;
+  zipCode?: string;
+  state?: string;
+  city?: string;
+  address?: string;
+  number?: string;
+  neighborhood?: string;
+  complement?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type PurchaseOrderStatus = 'draft' | 'ordered' | 'received' | 'canceled';
+
+export interface PurchaseOrderItem {
+  id: string;
+  productId?: string; // empty when creating a brand new product from NF-e
+  productName: string;
+  sku?: string;
+  barcode?: string;
+  brand?: string;
+  category?: string;
+  stockLocation?: StockLocation;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  expirationDate?: string;
+  createNewProduct?: boolean;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  salonId?: string;
+  orderNumber: string;
+  supplierId?: string;
+  supplierName: string;
+  supplierDocument?: string;
+  status: PurchaseOrderStatus;
+  origin: 'manual' | 'nfe_xml' | 'auto_restock';
+  invoiceNumber?: string;
+  invoiceKey?: string;
+  orderDate: string; // YYYY-MM-DD
+  expectedDeliveryDate?: string;
+  receivedDate?: string;
+  items: PurchaseOrderItem[];
+  totalCost: number;
+  recordFinancialExpense?: boolean;
+  notes?: string;
+  createdByName?: string;
+  receivedByName?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type StockMovementType =
+  | 'in'
+  | 'out'
+  | 'inventory_adjustment'
+  | 'comanda_sale'
+  | 'purchase_order'
+  | 'requisition';
+
+export interface StockMovement {
+  id: string;
+  salonId?: string;
+  productId: string;
+  productName: string;
+  productSku?: string;
+  type: StockMovementType;
+  quantityDelta: number; // positive for entries, negative for exits
+  previousQuantity: number;
+  newQuantity: number;
+  unitCost?: number;
+  totalCost?: number;
+  reason: string;
+  notes?: string;
+  expirationDate?: string;
+  supplierId?: string;
+  supplierName?: string;
+  professionalId?: string;
+  professionalName?: string;
+  comandaId?: string;
+  purchaseOrderId?: string;
+  inventorySessionId?: string;
+  requisitionId?: string;
+  movementDate: string; // YYYY-MM-DD
+  performedById: string;
+  performedByName: string;
+  createdAt: number;
+}
+
+export interface StockInventoryItemCount {
+  productId: string;
+  productName: string;
+  sku?: string;
+  barcode?: string;
+  stockLocation?: StockLocation;
+  systemQty: number;
+  countedQty: number;
+  diffQty: number;
+  unitCost: number;
+  financialImpact: number;
+  counted: boolean;
+}
+
+export interface StockInventoryScanLog {
+  id: string;
+  query: string;
+  productId: string;
+  productName: string;
+  delta: number;
+  scannedAt: number;
+}
+
+export interface StockInventorySession {
+  id: string;
+  salonId?: string;
+  sessionNumber: string;
+  date: string; // YYYY-MM-DD
+  stockLocationFilter: 'all' | StockLocation;
+  status: 'draft' | 'completed';
+  responsibleName: string;
+  items: StockInventoryItemCount[];
+  scanLogs: StockInventoryScanLog[];
+  missingUnitsTotal: number;
+  surplusUnitsTotal: number;
+  balanceImpactAmount: number;
+  notes?: string;
+  completedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type StockRequisitionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface StockRequisition {
+  id: string;
+  salonId?: string;
+  productId: string;
+  productName: string;
+  productSku?: string;
+  quantity: number;
+  requesterId: string;
+  requesterName: string;
+  professionalId?: string;
+  professionalName?: string;
+  serviceId?: string;
+  serviceName?: string;
+  comandaId?: string;
+  comandaNumber?: number;
+  notes?: string;
+  status: StockRequisitionStatus;
+  reviewedByName?: string;
+  reviewedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface NfeParsedItem {
+  code: string;
+  ean: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+}
+
+export interface NfeParsedInvoice {
+  invoiceNumber: string;
+  invoiceKey: string;
+  issueDate: string;
+  totalValue: number;
+  supplier: {
+    document: string;
+    companyName: string;
+    tradeName: string;
+    phone?: string;
+    zipCode?: string;
+    state?: string;
+    city?: string;
+    address?: string;
+    number?: string;
+    neighborhood?: string;
+  };
+  items: NfeParsedItem[];
+}
+
+// =====================================================
+// LUMIÈRE CRM 360° (OMNICHANNEL WHATSAPP, FUNIL & IA)
+// =====================================================
+
+export type CrmOrigin = 'receptivo' | 'confirmacao' | 'marketing' | 'attendant';
+
+export type CrmFunnelStage =
+  | 'awaiting_reply'
+  | 'in_service'
+  | 'interested'
+  | 'scheduled'
+  | 'lost'
+  | 'other';
+
+export type CrmHandlingMode = 'ai' | 'human' | 'handoff';
+
+export interface CrmConversation {
+  id: string;
+  salonId?: string;
+  clientId?: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail?: string;
+  channel: 'whatsapp';
+  status: 'awaiting_reply' | 'in_service' | 'resolved';
+  handlingMode: CrmHandlingMode;
+  assignedAttendantId?: string;
+  assignedAttendantName?: string;
+  aiPausedForClient?: boolean;
+  isPinned?: boolean;
+  unreadCount: number;
+  lastMessageText: string;
+  lastMessageAt: number;
+  lastMessageDirection: 'inbound' | 'outbound' | 'system';
+  lastInboundAt?: number;
+  firstResponseAt?: number;
+  firstResponseMs?: number;
+  origin: CrmOrigin;
+  opportunityId?: string;
+  opportunityNumber?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CrmMessage {
+  id: string;
+  conversationId: string;
+  direction: 'inbound' | 'outbound' | 'system';
+  senderType: 'client' | 'attendant' | 'ai' | 'system';
+  senderId?: string;
+  senderName?: string;
+  body: string;
+  mediaType?: 'text' | 'image' | 'audio' | 'document';
+  deliveryStatus: 'sent' | 'delivered' | 'read' | 'queued' | 'failed';
+  waMessageId?: string;
+  createdAt: number;
+}
+
+export interface CrmOpportunityNote {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  createdAt: number;
+}
+
+export interface CrmOpportunityHistoryEntry {
+  id: string;
+  action: string;
+  detail: string;
+  actorName: string;
+  createdAt: number;
+}
+
+export interface CrmOpportunity {
+  id: string;
+  opportunityNumber: number;
+  conversationId?: string;
+  clientId?: string;
+  clientName: string;
+  clientPhone: string;
+  stage: CrmFunnelStage;
+  origin: CrmOrigin;
+  assignedAttendantId?: string;
+  assignedAttendantName?: string;
+  estimatedValue: number;
+  valueSource: 'ai' | 'appointment' | 'manual';
+  serviceInterest?: string;
+  linkedAppointmentId?: string;
+  linkedAppointmentDate?: string;
+  linkedAppointmentTime?: string;
+  isRescheduled?: boolean;
+  closeReason?: string;
+  closeComment?: string;
+  waitingSince?: number;
+  movedManually?: boolean;
+  notes?: CrmOpportunityNote[];
+  history?: CrmOpportunityHistoryEntry[];
+  closedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type CrmCampaignType =
+  | 'confirmation'
+  | 'birthday'
+  | 'service_return'
+  | 'inactive_clients'
+  | 'post_service_csat';
+
+export interface CrmCampaign {
+  id: string;
+  type: CrmCampaignType;
+  title: string;
+  description: string;
+  enabled: boolean;
+  messageTemplate: string;
+  imageUrl?: string;
+  sendWindowStart: string;
+  sendWindowEnd: string;
+  dailyLimit: number;
+  config: {
+    daysBefore?: number;
+    inactiveMonths?: number;
+    blockBookedNextDays?: number;
+    defaultReturnDays?: number;
+    birthdayTiming?: 'on_day' | 'days_before' | 'month_start';
+    birthdayDaysBefore?: number;
+    activeRecentMonths?: number;
+  };
+  metrics: {
+    sentCount: number;
+    deliveredCount: number;
+    repliedCount: number;
+    convertedBookings: number;
+    recoveredRevenue: number;
+    csatSum: number;
+    csatCount: number;
+  };
+  lastRunAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CrmCampaignDispatch {
+  id: string;
+  campaignId: string;
+  campaignType: CrmCampaignType;
+  clientId?: string;
+  clientName: string;
+  clientPhone: string;
+  status: 'sent' | 'postponed' | 'replied' | 'converted' | 'failed';
+  statusReason?: string;
+  renderedMessage: string;
+  csatRating?: number;
+  convertedRevenue?: number;
+  dispatchedAt: number;
+  createdAt: number;
+}
+
+export interface CrmQuickReply {
+  id: string;
+  shortcut: string;
+  title: string;
+  body: string;
+  scope: 'salon' | 'personal';
+  ownerUid?: string;
+  ownerName?: string;
+  usageCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CrmAttendant {
+  id: string;
+  userId?: string;
+  professionalId?: string;
+  name: string;
+  email: string;
+  permission: 'admin' | 'attendant' | 'viewer';
+  isOnline: boolean;
+  useSignature: boolean;
+  canDeleteCards: boolean;
+  canAssumeConversations: boolean;
+  conversationsHandled: number;
+  messagesSent: number;
+  avgFirstResponseMs: number;
+  scheduledCount: number;
+  generatedRevenue: number;
+  lastSeenAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CrmSettings {
+  id?: string;
+  funnelRules: {
+    awaitingReplyAlertHours: number;
+    inServiceStalledDays: number;
+    autoLostDays: number;
+    aiHandoffTimeoutMinutes: number;
+    reopenWindowDays: number;
+    autoEstimateWithAi: boolean;
+    autoLinkClientByPhone: boolean;
+  };
+  teamRules: {
+    requireSignature: boolean;
+    privateConversations: boolean;
+    autoAssignOnReply: boolean;
+  };
+  aiConfig: {
+    enabled: boolean;
+    agentName: string;
+    tone: 'acolhedor' | 'sofisticado' | 'objetivo';
+    greetingMessage: string;
+    qualificationInstructions: string;
+    handoffOnPriceObjection: boolean;
+    handoffOnHumanRequest: boolean;
+    workingHoursOnly: boolean;
+  };
+  updatedAt: number;
+}
+

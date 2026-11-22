@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { CUSTOMER_COMPLAINT_PENALTY } from '../../shared/qualityEvents';
+import { useAuth } from '@/contexts/AuthContext';
+import { OperationType, reportFirestoreListenerError } from '@/lib/firestoreError';
 
 export interface PerformanceItem {
   id: string;
@@ -47,6 +49,7 @@ export interface AvailableMonthItem {
 }
 
 export function useSalonPerformanceRanking(salonId: string | undefined, selectedMonth: string) {
+  const { currentUser, userData, isPlatformAdmin } = useAuth();
   const [appointments, setAppointments] = useState<any[]>([]);
   const [professionals, setProfessionals] = useState<any[]>([]);
   const [checklistRuns, setChecklistRuns] = useState<any[]>([]);
@@ -54,8 +57,16 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
   const [professionalGoals, setProfessionalGoals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const userRole = userData?.role;
+  const userId = userData?.id || currentUser?.uid;
+
   useEffect(() => {
-    if (!salonId) {
+    if (!salonId || !currentUser?.uid) {
+      setAppointments([]);
+      setProfessionals([]);
+      setChecklistRuns([]);
+      setSalonGoals([]);
+      setProfessionalGoals([]);
       setLoading(false);
       return;
     }
@@ -80,7 +91,7 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       setAppointments(arr);
       markLoaded();
     }, (err) => {
-      console.warn("Erro ao carregar agendamentos:", err);
+      reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/appointments`);
       markLoaded();
     }));
 
@@ -97,7 +108,7 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       setProfessionals(arr);
       markLoaded();
     }, (err) => {
-      console.warn("Erro ao carregar colaboradores:", err);
+      reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionals`);
       markLoaded();
     }));
 
@@ -109,7 +120,7 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       setChecklistRuns(arr);
       markLoaded();
     }, (err) => {
-      console.warn("Erro ao carregar checklistRuns:", err);
+      reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/checklistRuns`);
       markLoaded();
     }));
 
@@ -121,24 +132,46 @@ export function useSalonPerformanceRanking(salonId: string | undefined, selected
       setSalonGoals(arr);
       markLoaded();
     }, (err) => {
-      console.warn("Erro ao carregar metas do salão:", err);
+      reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/goals`);
       markLoaded();
     }));
 
-    // 5. Metas dos Profissionais (salons/{salonId}/professionalGoals)
-    const qPg = query(collection(db, `salons/${salonId}/professionalGoals`));
-    unsubs.push(onSnapshot(qPg, (snapshot) => {
-      const arr: any[] = [];
-      snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
-      setProfessionalGoals(arr);
+    // 5. Metas dos Profissionais (salons/{salonId}/professionalGoals) — scoped por role
+    const canListAllGoals = Boolean(
+      isPlatformAdmin || ['owner', 'admin', 'manager', 'platform_admin'].includes(userRole || '')
+    );
+    if (canListAllGoals) {
+      const qPg = query(collection(db, `salons/${salonId}/professionalGoals`));
+      unsubs.push(onSnapshot(qPg, (snapshot) => {
+        const arr: any[] = [];
+        snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+        setProfessionalGoals(arr);
+        markLoaded();
+      }, (err) => {
+        reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionalGoals`);
+        markLoaded();
+      }));
+    } else if (userRole === 'professional' && userId) {
+      const qOwnPg = query(
+        collection(db, `salons/${salonId}/professionalGoals`),
+        where('professionalId', '==', userId)
+      );
+      unsubs.push(onSnapshot(qOwnPg, (snapshot) => {
+        const arr: any[] = [];
+        snapshot.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+        setProfessionalGoals(arr);
+        markLoaded();
+      }, (err) => {
+        reportFirestoreListenerError(err, OperationType.LIST, `salons/${salonId}/professionalGoals`);
+        markLoaded();
+      }));
+    } else {
+      setProfessionalGoals([]);
       markLoaded();
-    }, (err) => {
-      console.warn("Erro ao carregar metas profissionais:", err);
-      markLoaded();
-    }));
+    }
 
     return () => unsubs.forEach(fn => fn());
-  }, [salonId]);
+  }, [salonId, currentUser?.uid, userRole, userId, isPlatformAdmin]);
 
   // Lista dinâmica e completa de meses disponíveis a partir dos dados do salão e da janela de tempo
   const availableMonths = useMemo<AvailableMonthItem[]>(() => {

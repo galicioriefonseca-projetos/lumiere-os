@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db, auth } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, setDoc, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
-import { Client, ClientHistory } from '../../types';
+import { collection, query, onSnapshot, doc, setDoc, updateDoc, writeBatch, getDocs, where } from 'firebase/firestore';
+import { Client, ClientCustomField, ClientFormScope, ClientHistory, ClientNotice } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,11 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import {
   Loader2, Plus, Edit2, Users, Search, Kanban, List, Filter, Archive, Trash2,
-  MessageSquare, User, Tag, Calendar, AlertCircle, Sparkles, FolderOpen, RotateCcw,
-  Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2, Download, Mail
+  MessageSquare, MessageCircle, User, Tag, Calendar, AlertCircle, Sparkles, FolderOpen, RotateCcw,
+  Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2, Download, Mail,
+  Bell, ClipboardList, FileText, GitMerge, ChevronLeft, ChevronRight, Cake
 } from 'lucide-react';
 import { useLumiLexicon } from '../../hooks/useLumiLexicon';
 import { logAuditEvent } from '../../lib/audit';
+import { OperationType, handleFirestoreError, reportFirestoreListenerError } from '../../lib/firestoreError';
 import {
   parseClientSpreadsheet,
   parseCurrencyOrNumberSafe,
@@ -30,6 +33,18 @@ import {
   normalizeClientGender,
 } from '../../lib/clientGender';
 import {
+  findDuplicateClientPairs,
+  formatBirthDatePtBR,
+  formatWhatsAppHref,
+  isBirthdayThisMonth,
+  subscribeClientCustomFields,
+  subscribeClientNotices,
+} from '../../services/clientsService';
+import { ClientFormDialog, ClientFormSavePayload } from '../../components/clients/ClientFormDialog';
+import { ClientCustomFieldsModal } from '../../components/clients/ClientCustomFieldsModal';
+import { MergeClientsModal } from '../../components/clients/MergeClientsModal';
+import { ClientNoticesTab } from '../../components/clients/ClientNoticesTab';
+import {
   SpreadsheetMetadata,
   WorkspaceAuthError,
   readSpreadsheetTabValues,
@@ -41,59 +56,6 @@ import { GmailWorkspaceDialog } from '../../components/workspace/GmailWorkspaceD
 
 import KanbanBoard from '../../components/crm/KanbanBoard';
 import ClientDetailsDrawer from '../../components/crm/ClientDetailsDrawer';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
-}
-
-function handleFirestoreError(
-  error: unknown,
-  operationType: OperationType,
-  path: string | null
-): never {
-  const activeUser = auth?.currentUser;
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: activeUser?.uid,
-      email: activeUser?.email,
-      emailVerified: activeUser?.emailVerified,
-      isAnonymous: activeUser?.isAnonymous,
-      tenantId: activeUser?.tenantId,
-      providerInfo:
-        activeUser?.providerData?.map((provider: any) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
-    },
-    operationType,
-    path,
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 const CRM_STAGES = [
   { id: 'all', label: 'Todas as etapas' },
@@ -111,18 +73,34 @@ export default function ClientsPage() {
   const lex = useLumiLexicon();
   const userRole = userData?.role || 'professional';
   const canBulkDelete = ['owner', 'admin', 'manager', 'platform_admin'].includes(userRole);
+  const canConfigureSchemas = ['owner', 'admin', 'manager', 'platform_admin'].includes(userRole);
+  const canManageNotices = ['owner', 'admin', 'manager', 'receptionist', 'attendant', 'platform_admin'].includes(userRole);
 
-  const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+  const [workspaceTab, setWorkspaceTab] = useState<'clients' | 'notices'>('clients');
+  const [viewMode, setViewMode] = useState<'kanban' | 'list'>('list');
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [professionals, setProfessionals] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
+  const [customFields, setCustomFields] = useState<ClientCustomField[]>([]);
+  const [notices, setNotices] = useState<ClientNotice[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [quickAddStage, setQuickAddStage] = useState<Client['crmStage']>('new');
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Schemas (Anamnese / Prontuário) & Duplicate Merge modals
+  const [isCustomFieldsModalOpen, setIsCustomFieldsModalOpen] = useState(false);
+  const [customFieldsScope, setCustomFieldsScope] = useState<ClientFormScope>('anamnese');
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+
+  // List sorting & pagination
+  const [listSort, setListSort] = useState<'recent' | 'name_asc' | 'birthday'>('recent');
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState(10);
 
   // Bulk selection & delete state
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
@@ -519,19 +497,6 @@ export default function ClientsPage() {
   const [filterCreatedThisMonth, setFilterCreatedThisMonth] = useState<boolean>(false);
   const [showArchived, setShowArchived] = useState<boolean>(false);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    gender: 'none',
-    notes: '',
-    crmStage: 'new' as Client['crmStage'],
-    source: 'whatsapp' as Client['source'],
-    sourceLabel: '',
-    responsibleId: 'none',
-  });
-
   const todayStr = new Date().toISOString().split('T')[0];
 
   // Helper translations
@@ -548,14 +513,28 @@ export default function ClientsPage() {
     return maps[stageId] || stageId;
   };
 
-  // 1. Fetch Clients, Professionals, and Services
+  // 1. Fetch Clients, Professionals, Services, Custom Fields & Notices
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData?.id || !currentUser?.uid) {
+      setClients([]);
+      setProfessionals([]);
+      setServices([]);
+      setCustomFields([]);
+      setNotices([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
-    // Clients Listener
-    const qc = query(collection(db, `salons/${salonData.id}/clients`));
+    // Clients Listener (role-scoped per firestore.rules)
+    const qc =
+      userRole === 'professional' && userData?.id
+        ? query(
+            collection(db, `salons/${salonData.id}/clients`),
+            where('responsibleId', '==', userData.id)
+          )
+        : query(collection(db, `salons/${salonData.id}/clients`));
     const unsubscribeClients = onSnapshot(qc, (snapshot) => {
       const cls: Client[] = [];
       snapshot.forEach((doc) => {
@@ -568,37 +547,54 @@ export default function ClientsPage() {
       setClients(sorted);
       setLoading(false);
     }, (error) => {
-      console.error("Error loading clients:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/clients`);
       toast.error('Erro ao carregar clientes do salão.');
       setLoading(false);
     });
 
     // Professionals Listener
     const qp = query(collection(db, `salons/${salonData.id}/professionals`));
-    const unsubscribeProfs = onSnapshot(qp, (snapshot) => {
-      const profsList: any[] = [];
-      snapshot.forEach(d => {
-        profsList.push({ id: d.id, ...d.data() });
-      });
-      setProfessionals(profsList);
-    });
+    const unsubscribeProfs = onSnapshot(
+      qp,
+      (snapshot) => {
+        const profsList: any[] = [];
+        snapshot.forEach(d => {
+          profsList.push({ id: d.id, ...d.data() });
+        });
+        setProfessionals(profsList);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/professionals`);
+      }
+    );
 
     // Services Listener
     const qs = query(collection(db, `salons/${salonData.id}/services`));
-    const unsubscribeSvcs = onSnapshot(qs, (snapshot) => {
-      const svcsList: any[] = [];
-      snapshot.forEach(d => {
-        svcsList.push({ id: d.id, ...d.data() });
-      });
-      setServices(svcsList);
-    });
+    const unsubscribeSvcs = onSnapshot(
+      qs,
+      (snapshot) => {
+        const svcsList: any[] = [];
+        snapshot.forEach(d => {
+          svcsList.push({ id: d.id, ...d.data() });
+        });
+        setServices(svcsList);
+      },
+      (error) => {
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/services`);
+      }
+    );
+
+    const unsubscribeCustomFields = subscribeClientCustomFields(salonData.id, setCustomFields);
+    const unsubscribeNotices = subscribeClientNotices(salonData.id, setNotices);
 
     return () => {
       unsubscribeClients();
       unsubscribeProfs();
       unsubscribeSvcs();
+      unsubscribeCustomFields();
+      unsubscribeNotices();
     };
-  }, [salonData]);
+  }, [salonData?.id, currentUser?.uid, userRole, userData?.id]);
 
   // 2. Perform Filtering
   useEffect(() => {
@@ -616,13 +612,17 @@ export default function ClientsPage() {
       list = list.filter(c => c.archived || c.status === 'inactive');
     }
 
-    // Search query: name, phone, email
-    const s = search.toLowerCase();
+    // Search query: name, phone, secondaryPhone, cpf, email, tags, notes
+    const s = search.trim().toLowerCase();
     if (s) {
-      list = list.filter(c => 
-        c.name.toLowerCase().includes(s) || 
-        c.phone.includes(s) || 
-        (c.email && c.email.toLowerCase().includes(s))
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(s) ||
+        (c.phone || '').toLowerCase().includes(s) ||
+        (c.secondaryPhone || '').toLowerCase().includes(s) ||
+        (c.cpf || '').toLowerCase().includes(s) ||
+        (c.email && c.email.toLowerCase().includes(s)) ||
+        (c.notes && c.notes.toLowerCase().includes(s)) ||
+        (Array.isArray(c.tags) && c.tags.some(t => t.toLowerCase().includes(s)))
       );
     }
 
@@ -725,26 +725,37 @@ export default function ClientsPage() {
     setSelectedClientIds([]);
   };
 
-  // Save or Create Client
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Reset pagination when filters change
+  useEffect(() => {
+    setListPage(1);
+  }, [search, filterStage, filterGender, filterSource, filterResponsible, filterOverdue, filterNoAction, filterCreatedThisMonth, showArchived, listSort, listPageSize]);
+
+  // Save or Create Client via ClientFormDialog
+  const handleSaveClientForm = async (payload: ClientFormSavePayload) => {
     if (!salonData) return;
 
     try {
-      const selectedProfObj = professionals.find(p => p.id === formData.responsibleId);
+      const selectedProfObj = professionals.find(p => p.id === payload.responsibleId);
       const responsibleName = selectedProfObj ? selectedProfObj.name : '';
 
       const updatedPayload: Partial<Client> = {
-        name: formData.name.trim(),
-        phone: formData.phone.trim(),
-        email: formData.email.trim() || '',
-        gender: formData.gender === 'none' ? '' : formData.gender,
-        notes: formData.notes.trim() || '',
-        crmStage: formData.crmStage,
-        source: formData.source,
-        sourceLabel: formData.sourceLabel.trim() || '',
-        responsibleId: formData.responsibleId === 'none' ? '' : formData.responsibleId,
-        responsibleName: formData.responsibleId === 'none' ? '' : responsibleName,
+        name: payload.name.trim(),
+        phone: payload.phone.trim(),
+        secondaryPhone: payload.secondaryPhone.trim() || '',
+        email: payload.email.trim() || '',
+        gender: payload.gender === 'none' ? '' : payload.gender,
+        birthDate: payload.birthDate.trim() || '',
+        cpf: payload.cpf.trim() || '',
+        rg: payload.rg.trim() || '',
+        address: payload.address,
+        notes: payload.notes.trim() || '',
+        crmStage: payload.crmStage,
+        source: payload.source,
+        sourceLabel: payload.sourceLabel.trim() || '',
+        responsibleId: payload.responsibleId === 'none' ? '' : payload.responsibleId,
+        responsibleName: payload.responsibleId === 'none' ? '' : responsibleName,
+        tags: payload.tags,
+        anamneseResponses: payload.anamneseResponses,
         status: 'active',
         archived: false,
         updatedAt: Date.now(),
@@ -752,20 +763,18 @@ export default function ClientsPage() {
       };
 
       if (editingClient) {
-        // Edit Profile
         const ref = doc(db, `salons/${salonData.id}/clients`, editingClient.id);
         await updateDoc(ref, updatedPayload);
 
-        // Record standard history logs if stage changed
-        if (formData.crmStage !== editingClient.crmStage) {
+        if (payload.crmStage !== editingClient.crmStage) {
           const histId = doc(collection(db, `salons/${salonData.id}/clients/${editingClient.id}/history`)).id;
           await setDoc(doc(db, `salons/${salonData.id}/clients/${editingClient.id}/history`, histId), {
             id: histId,
             type: 'stage_changed',
             title: 'Etapa alterada manualmente',
-            description: `Cliente movido de "${getStageLabel(editingClient.crmStage || 'new')}" para "${getStageLabel(formData.crmStage)}" via formulário de edição.`,
+            description: `Cliente movido de "${getStageLabel(editingClient.crmStage || 'new')}" para "${getStageLabel(payload.crmStage)}" via formulário de edição.`,
             previousValue: editingClient.crmStage || 'new',
-            newValue: formData.crmStage,
+            newValue: payload.crmStage,
             createdBy: currentUser?.uid || '',
             createdByName: currentUser?.displayName || currentUser?.email || 'Membro',
             createdAt: Date.now()
@@ -774,23 +783,28 @@ export default function ClientsPage() {
 
         toast.success('Cliente atualizado!');
       } else {
-        // Create Profile
         const ref = doc(collection(db, `salons/${salonData.id}/clients`));
         const fullPayload: Client = {
           id: ref.id,
-          name: formData.name.trim(),
-          phone: formData.phone.trim(),
-          email: formData.email.trim() || '',
-          gender: formData.gender === 'none' ? '' : formData.gender,
-          notes: formData.notes.trim() || '',
-          crmStage: formData.crmStage,
-          source: formData.source,
-          sourceLabel: formData.sourceLabel.trim() || '',
-          responsibleId: formData.responsibleId === 'none' ? '' : formData.responsibleId,
-          responsibleName: formData.responsibleId === 'none' ? '' : responsibleName,
+          name: payload.name.trim(),
+          phone: payload.phone.trim(),
+          secondaryPhone: payload.secondaryPhone.trim() || '',
+          email: payload.email.trim() || '',
+          gender: payload.gender === 'none' ? '' : payload.gender,
+          birthDate: payload.birthDate.trim() || '',
+          cpf: payload.cpf.trim() || '',
+          rg: payload.rg.trim() || '',
+          address: payload.address,
+          notes: payload.notes.trim() || '',
+          crmStage: payload.crmStage,
+          source: payload.source,
+          sourceLabel: payload.sourceLabel.trim() || '',
+          responsibleId: payload.responsibleId === 'none' ? '' : payload.responsibleId,
+          responsibleName: payload.responsibleId === 'none' ? '' : responsibleName,
           status: 'active',
           archived: false,
-          tags: [],
+          tags: payload.tags,
+          anamneseResponses: payload.anamneseResponses,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           createdBy: currentUser?.uid || '',
@@ -799,13 +813,12 @@ export default function ClientsPage() {
 
         await setDoc(ref, fullPayload);
 
-        // Created activity history entry
         const histId = doc(collection(db, `salons/${salonData.id}/clients/${ref.id}/history`)).id;
         await setDoc(doc(db, `salons/${salonData.id}/clients/${ref.id}/history`, histId), {
           id: histId,
           type: 'created',
           title: 'Cliente Cadastrado',
-          description: `Novo cadastro efetuado e direcionado à etapa "${getStageLabel(formData.crmStage)}".`,
+          description: `Novo cadastro efetuado e direcionado à etapa "${getStageLabel(payload.crmStage)}".`,
           createdBy: currentUser?.uid || '',
           createdByName: currentUser?.displayName || currentUser?.email || 'Membro',
           createdAt: Date.now()
@@ -815,41 +828,18 @@ export default function ClientsPage() {
       }
 
       setIsDialogOpen(false);
-      resetForm();
       setEditingClient(null);
+      setQuickAddStage('new');
     } catch (error) {
       console.error(error);
       toast.error('Erro ao salvar cliente.');
+      throw error;
     }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      phone: '',
-      email: '',
-      gender: 'none',
-      notes: '',
-      crmStage: 'new',
-      source: 'whatsapp',
-      sourceLabel: '',
-      responsibleId: 'none',
-    });
   };
 
   const openEdit = (c: Client) => {
     setEditingClient(c);
-    setFormData({
-      name: c.name,
-      phone: c.phone,
-      email: c.email || '',
-      gender: normalizeClientGender(c.gender) || 'none',
-      notes: c.notes || '',
-      crmStage: c.crmStage || 'new',
-      source: c.source || 'whatsapp',
-      sourceLabel: c.sourceLabel || '',
-      responsibleId: c.responsibleId || 'none',
-    });
+    setQuickAddStage(c.crmStage || 'new');
     setIsDialogOpen(true);
   };
 
@@ -860,9 +850,8 @@ export default function ClientsPage() {
 
   // Fast quick add at target stage from Kanban card click
   const handleQuickAddClient = (targetStage: Client['crmStage']) => {
-    resetForm();
-    setFormData(prev => ({ ...prev, crmStage: targetStage }));
     setEditingClient(null);
+    setQuickAddStage(targetStage || 'new');
     setIsDialogOpen(true);
   };
 
@@ -1186,6 +1175,8 @@ export default function ClientsPage() {
       'Nome Completo',
       'Gênero',
       'Celular / WhatsApp',
+      'Data de Aniversário',
+      'CPF',
       'E-mail',
       'Etapa CRM',
       'Origem',
@@ -1202,6 +1193,8 @@ export default function ClientsPage() {
       client.name || '',
       client.gender ? getClientGenderLabel(client.gender) : '',
       client.phone || '',
+      formatBirthDatePtBR(client.birthDate) || '',
+      client.cpf || '',
       client.email || '',
       getStageLabel(client.crmStage || 'new'),
       client.source === 'other' ? client.sourceLabel || 'Outro' : client.source || '',
@@ -1212,12 +1205,63 @@ export default function ClientsPage() {
     ]);
   }, [clientsForGoogleSheets]);
 
+  // Duplicate Radar & Custom Form Fields
+  const duplicatePairs = useMemo(() => findDuplicateClientPairs(clients), [clients]);
+  const anamneseFields = useMemo(
+    () => customFields.filter((f) => f.scope === 'anamnese'),
+    [customFields]
+  );
+  const prontuarioFields = useMemo(
+    () => customFields.filter((f) => f.scope === 'prontuario'),
+    [customFields]
+  );
+  const activeNoticesCount = useMemo(
+    () => notices.filter((n) => n.isActive).length,
+    [notices]
+  );
+
+  // List sorting & pagination
+  const sortedListClients = useMemo(() => {
+    const arr = [...filteredClients];
+    if (listSort === 'name_asc') {
+      arr.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    } else if (listSort === 'birthday') {
+      const currentMonth = new Date().getMonth() + 1;
+      arr.sort((a, b) => {
+        const aMonth = isBirthdayThisMonth(a.birthDate) ? 0 : 1;
+        const bMonth = isBirthdayThisMonth(b.birthDate) ? 0 : 1;
+        if (aMonth !== bMonth) return aMonth - bMonth;
+        const aMd = a.birthDate ? a.birthDate.slice(5) : '99-99';
+        const bMd = b.birthDate ? b.birthDate.slice(5) : '99-99';
+        if (aMd !== bMd) {
+          // Put upcoming birthdays near current month first when neither is this month
+          const aDiff = (Number(aMd.slice(0, 2)) - currentMonth + 12) % 12;
+          const bDiff = (Number(bMd.slice(0, 2)) - currentMonth + 12) % 12;
+          if (aDiff !== bDiff) return aDiff - bDiff;
+          return aMd.localeCompare(bMd);
+        }
+        return a.name.localeCompare(b.name, 'pt-BR');
+      });
+    } else {
+      arr.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    }
+    return arr;
+  }, [filteredClients, listSort]);
+
+  const totalListPages = Math.max(1, Math.ceil(sortedListClients.length / listPageSize));
+  const safeListPage = Math.min(listPage, totalListPages);
+  const paginatedListClients = useMemo(() => {
+    const start = (safeListPage - 1) * listPageSize;
+    return sortedListClients.slice(start, start + listPageSize);
+  }, [sortedListClients, safeListPage, listPageSize]);
+
   // Compute stats card values
   const activeClients = clients.filter(c => !c.archived && c.status !== 'inactive');
   const countNew = activeClients.filter(c => (c.crmStage || 'new') === 'new').length;
   const countScheduled = activeClients.filter(c => c.crmStage === 'scheduled').length;
   const countDelayed = activeClients.filter(c => c.nextActionAt && c.nextActionAt < todayStr).length;
   const countReturn = activeClients.filter(c => c.crmStage === 'future_return').length;
+  const countBirthdaysMonth = activeClients.filter(c => isBirthdayThisMonth(c.birthDate)).length;
 
   if (loading) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" /></div>;
@@ -1284,48 +1328,166 @@ export default function ClientsPage() {
 
         <Card className="border-border bg-[#0b0b0d] flex flex-col justify-between p-4 rounded-xl shadow-lg">
           <div className="text-zinc-500 text-xs font-semibold flex items-center justify-between">
-            <span>Arquivados</span>
-            <FolderOpen className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Aniversariantes</span>
+            <Cake className="w-3.5 h-3.5 text-[#D4AF37]" />
           </div>
-          <div className="text-xl font-bold text-zinc-400 mt-2 font-mono">
-            {clients.filter(c => c.archived || c.status === 'inactive').length}
+          <div className="text-xl font-bold text-[#D4AF37] mt-2 font-mono tabular-nums">
+            {countBirthdaysMonth}
           </div>
-          <div className="text-[10px] text-zinc-500 mt-1">Registros silenciados</div>
+          <div className="text-[10px] text-zinc-500 mt-1">Celebram este mês</div>
         </Card>
       </div>
 
+      {/* ⚠️ Sub-tabs: Lista/CRM de Clientes vs Avisos de Atendimento */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0b0b0d] border border-zinc-800/80 p-1.5 rounded-2xl">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setWorkspaceTab('clients')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+              workspaceTab === 'clients'
+                ? 'bg-[#D4AF37] text-black shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-[#121215]'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            Base de {lex.clients} ({activeClients.length})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setWorkspaceTab('notices')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+              workspaceTab === 'notices'
+                ? 'bg-[#D4AF37] text-black shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-[#121215]'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            Avisos de Atendimento
+            {activeNoticesCount > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${
+                  workspaceTab === 'notices'
+                    ? 'bg-black/20 text-black'
+                    : 'bg-[#D4AF37]/15 text-[#D4AF37]'
+                }`}
+              >
+                {activeNoticesCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {canManageNotices && duplicatePairs.length > 0 && workspaceTab === 'clients' && (
+          <button
+            type="button"
+            onClick={() => setIsMergeModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+          >
+            <GitMerge className="w-3.5 h-3.5" />
+            {duplicatePairs.length} {duplicatePairs.length === 1 ? 'duplicado detectado' : 'duplicados detectados'} • Unificar
+          </button>
+        )}
+      </div>
+
+      {workspaceTab === 'notices' ? (
+        <ClientNoticesTab
+          salonId={salonData?.id || ''}
+          notices={notices}
+          clients={clients}
+          currentUserId={currentUser?.uid || ''}
+          currentUserName={userData?.fullName || currentUser?.displayName || currentUser?.email || 'Equipe'}
+        />
+      ) : (
+        <>
       {/* ⚠️ Page main title and top actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-zinc-800 pb-5">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 border-b border-zinc-800 pb-5">
         <div>
           <h2 className="text-3xl font-heading font-light text-zinc-100 flex items-center gap-2">
             CRM de {lex.clients}
-            <span className="text-xs bg-[#D4AF37]/10 text-[#D4AF37] border border-[#D4AF37]/25 px-2.5 py-0.5 rounded-full font-medium">LumièreOS</span>
           </h2>
           <p className="text-zinc-400 text-sm mt-1">
-            Organize {lex.clients.toLowerCase()}, retornos e oportunidades em um fluxo de trabalho visual.
+            Cadastros completos, anamnese, prontuário técnico, radar de duplicados e pipeline visual.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+        <div className="flex flex-wrap gap-2 items-center w-full xl:w-auto">
+          <Link
+            to="/dashboard/crm"
+            className="border border-[#B89B5E]/60 bg-[#F5F1E9] hover:bg-[#EDE6D6] text-[#7A5E29] h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs transition"
+          >
+            <MessageCircle className="w-4 h-4 text-[#9F844A]" />
+            CRM 360° · Inbox WhatsApp
+          </Link>
           {/* View switch buttons */}
-          <div className="bg-[#121215] border border-zinc-c rounded-lg p-1 flex items-center">
+          <div className="bg-[#121215] border border-zinc-800 rounded-lg p-1 flex items-center">
             <button
-              onClick={() => setViewMode('kanban')}
-              className={`p-2 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
-                viewMode === 'kanban' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              <Kanban className="w-3.5 h-3.5" /> Quadro
-            </button>
-            <button
+              type="button"
               onClick={() => setViewMode('list')}
-              className={`p-2 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+              className={`p-2 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer ${
                 viewMode === 'list' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
               <List className="w-3.5 h-3.5" /> Lista
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('kanban')}
+              className={`p-2 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition cursor-pointer ${
+                viewMode === 'kanban' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              <Kanban className="w-3.5 h-3.5" /> Quadro
+            </button>
           </div>
+
+          {canManageNotices && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsMergeModalOpen(true)}
+              className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
+            >
+              <GitMerge className="w-4 h-4 text-[#D4AF37]" />
+              Unificar Cadastros
+              {duplicatePairs.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold tabular-nums">
+                  {duplicatePairs.length}
+                </span>
+              )}
+            </Button>
+          )}
+
+          {canConfigureSchemas && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCustomFieldsScope('anamnese');
+                  setIsCustomFieldsModalOpen(true);
+                }}
+                className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
+              >
+                <ClipboardList className="w-4 h-4 text-[#D4AF37]" />
+                Anamnese ({anamneseFields.length})
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCustomFieldsScope('prontuario');
+                  setIsCustomFieldsModalOpen(true);
+                }}
+                className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
+              >
+                <FileText className="w-4 h-4 text-[#D4AF37]" />
+                Prontuário ({prontuarioFields.length})
+              </Button>
+            </>
+          )}
 
           {/* Gmail Quick Button */}
           <Button
@@ -1339,7 +1501,7 @@ export default function ClientsPage() {
               setGmailInitialTab(selectedClientIds.length > 0 && selectedEmails.length > 0 ? 'compose' : 'inbox');
               setIsGmailDialogOpen(true);
             }}
-            className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-[#171717] h-10 px-4 rounded-lg flex items-center gap-2 font-medium"
+            className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
           >
             <Mail className="w-4 h-4 text-[#B89B5E]" /> Gmail
           </Button>
@@ -1349,9 +1511,9 @@ export default function ClientsPage() {
             type="button"
             variant="outline"
             onClick={() => setIsGoogleSheetsSyncOpen(true)}
-            className="border-zinc-800 hover:border-emerald-500/60 text-zinc-300 hover:text-[#171717] h-10 px-4 rounded-lg flex items-center gap-2 font-medium"
+            className="border-zinc-800 hover:border-emerald-500/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Google Sheets
+            <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Google Sheets
           </Button>
 
           {/* Import List Dialog */}
@@ -1775,123 +1937,17 @@ export default function ClientsPage() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) { setEditingClient(null); resetForm(); }
-          }}>
-            <DialogTrigger asChild>
-              <Button className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-10 px-5 rounded-lg flex items-center gap-2 grow md:grow-0">
-                <Plus className="w-4 h-4" /> Novo Cliente
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[480px] bg-[#0c0c0e] border border-zinc-800 text-white shadow-2xl">
-              <DialogHeader>
-                <DialogTitle className="font-heading font-normal text-zinc-100">
-                  {editingClient ? 'Editar Cadastro de Cliente' : 'Cadastrar no CRM'}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nome Completo</Label>
-                  <Input id="name" required value={formData.name} onChange={(e) => setFormData(p => ({...p, name: e.target.value}))} className="bg-[#121215] border-zinc-800" />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Celular (WhatsApp)</Label>
-                    <Input id="phone" required placeholder="(00) 00000-0000" value={formData.phone} onChange={(e) => setFormData(p => ({...p, phone: e.target.value}))} className="bg-[#121215] border-zinc-800" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">E-mail (Opcional)</Label>
-                    <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData(p => ({...p, email: e.target.value}))} className="bg-[#121215] border-zinc-800" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Gênero</Label>
-                  <Select value={formData.gender} onValueChange={(val) => setFormData(p => ({...p, gender: val}))}>
-                    <SelectTrigger className="bg-[#121215] border-zinc-800 text-white rounded-lg">
-                      <SelectValue placeholder="Selecione o gênero" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
-                      <SelectItem value="none">Não informado</SelectItem>
-                      {CLIENT_GENDER_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Fase de Entrada</Label>
-                    <Select value={formData.crmStage} onValueChange={(val: any) => setFormData(p => ({...p, crmStage: val}))}>
-                      <SelectTrigger className="bg-[#121215] border-zinc-800 text-white rounded-lg">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
-                        <SelectItem value="new">Novo contato</SelectItem>
-                        <SelectItem value="in_service">Em atendimento</SelectItem>
-                        <SelectItem value="scheduled">Agendado</SelectItem>
-                        <SelectItem value="follow_up">Em acompanhamento</SelectItem>
-                        <SelectItem value="future_return">Retorno futuro</SelectItem>
-                        <SelectItem value="active">Cliente ativo</SelectItem>
-                        <SelectItem value="inactive_lost">Inativo / Perdido</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Origem do Leads</Label>
-                    <Select value={formData.source} onValueChange={(val: any) => setFormData(p => ({...p, source: val}))}>
-                      <SelectTrigger className="bg-[#121215] border-zinc-800 text-white rounded-lg">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
-                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                        <SelectItem value="instagram">Instagram</SelectItem>
-                        <SelectItem value="google">Google Maps</SelectItem>
-                        <SelectItem value="indication">Indicação</SelectItem>
-                        <SelectItem value="walk_in">Atendimento Direto</SelectItem>
-                        <SelectItem value="other">Outro</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {formData.source === 'other' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="sourceLabel">Descrição da Origem</Label>
-                    <Input id="sourceLabel" placeholder="Escreva a origem" value={formData.sourceLabel} onChange={(e) => setFormData(p => ({...p, sourceLabel: e.target.value}))} className="bg-[#121215] border-zinc-800" />
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Responsável pelo CRM</Label>
-                  <Select value={formData.responsibleId} onValueChange={(val) => setFormData(p => ({...p, responsibleId: val}))}>
-                    <SelectTrigger className="bg-[#121215] border-zinc-800 text-white rounded-lg">
-                      <SelectValue placeholder="Selecione um profissional" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#121215] border border-zinc-800 text-white">
-                      <SelectItem value="none">Nenhum (Livre recepção)</SelectItem>
-                      {professionals.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Observações Iniciais</Label>
-                  <Input id="notes" placeholder="Alergias, preferências, cortes, etc." value={formData.notes} onChange={(e) => setFormData(p => ({...p, notes: e.target.value}))} className="bg-[#121215] border-zinc-800" />
-                </div>
-
-                <Button type="submit" className="w-full bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-11 rounded-lg">
-                  {editingClient ? 'Salvar Alterações' : 'Criar Conta no CRM'}
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button
+            type="button"
+            onClick={() => {
+              setEditingClient(null);
+              setQuickAddStage('new');
+              setIsDialogOpen(true);
+            }}
+            className="bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold h-10 px-5 rounded-lg flex items-center gap-2 grow md:grow-0"
+          >
+            <Plus className="w-4 h-4" /> Novo Cliente
+          </Button>
         </div>
       </div>
 
@@ -2111,6 +2167,49 @@ export default function ClientsPage() {
       ) : (
         /* Structured List View */
         <div className="bg-[#0b0b0d] border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl">
+          {/* Table Top Controls: Page size, Sort & Record count */}
+          <div className="px-5 py-3 bg-[#121215]/70 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-zinc-400">
+              <span>Mostrar</span>
+              <Select
+                value={String(listPageSize)}
+                onValueChange={(v) => setListPageSize(Number(v))}
+              >
+                <SelectTrigger className="h-8 w-[72px] bg-[#0b0b0d] border-zinc-800 text-zinc-200 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#121215] border-zinc-800 text-white">
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+              <span>por página</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500">Ordenar:</span>
+                <Select
+                  value={listSort}
+                  onValueChange={(v) => setListSort(v as 'recent' | 'name_asc' | 'birthday')}
+                >
+                  <SelectTrigger className="h-8 w-[170px] bg-[#0b0b0d] border-zinc-800 text-zinc-200 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#121215] border-zinc-800 text-white">
+                    <SelectItem value="recent">Mais recentes</SelectItem>
+                    <SelectItem value="name_asc">Nome (A–Z)</SelectItem>
+                    <SelectItem value="birthday">Aniversariantes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <span className="text-zinc-500 tabular-nums">
+                {sortedListClients.length} {sortedListClients.length === 1 ? 'registro' : 'registros'}
+              </span>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-zinc-300">
               <thead>
@@ -2128,19 +2227,22 @@ export default function ClientsPage() {
                     </th>
                   )}
                   <th className={`p-4 ${canBulkDelete ? '' : 'pl-6'}`}>Cliente</th>
+                  <th className="p-4">Celular & WhatsApp</th>
+                  <th className="p-4">Aniversário</th>
                   <th className="p-4">Gênero</th>
                   <th className="p-4">Etapa CRM</th>
-                  <th className="p-4">Celular</th>
-                  <th className="p-4">Origem</th>
-                  <th className="p-4">Tags</th>
+                  <th className="p-4">Observação</th>
                   <th className="p-4">Responsável</th>
                   <th className="p-4 pr-6 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/50">
-                {filteredClients.map((client) => {
-                  const isActionOverdue = client.nextActionAt && client.nextActionAt < todayStr;
+                {paginatedListClients.map((client) => {
                   const isSelected = selectedIdSet.has(client.id);
+                  const waHref = formatWhatsAppHref(client.phone);
+                  const birthFormatted = formatBirthDatePtBR(client.birthDate);
+                  const birthdayMonthMatch = isBirthdayThisMonth(client.birthDate);
+
                   return (
                     <tr 
                       key={client.id} 
@@ -2162,16 +2264,57 @@ export default function ClientsPage() {
                       )}
                       <td className={`p-4 ${canBulkDelete ? '' : 'pl-6'}`}>
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-[#15151a] border border-[#D4AF37]/10 flex items-center justify-center text-[#D4AF37] font-semibold text-xs text-center shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-[#15151a] border border-[#D4AF37]/15 flex items-center justify-center text-[#D4AF37] font-semibold text-xs text-center shrink-0">
                             {client.name.charAt(0).toUpperCase()}
                           </div>
-                          <div>
-                            <span className="font-semibold text-sm text-white block group-hover:text-[#D4AF37] transition">
+                          <div className="min-w-0">
+                            <span className="font-semibold text-sm text-white block group-hover:text-[#D4AF37] transition truncate max-w-[200px]">
                               {client.name}
                             </span>
-                            <span className="text-[10px] text-zinc-500 font-mono block mt-0.5">ID: {client.id.slice(0, 8)}...</span>
+                            <span className="text-[11px] text-zinc-500 block mt-0.5 truncate max-w-[200px]">
+                              {client.email || (client.cpf ? `CPF ${client.cpf}` : 'Sem e-mail')}
+                            </span>
                           </div>
                         </div>
+                      </td>
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-zinc-200 tabular-nums">
+                            {client.phone || '—'}
+                          </span>
+                          {waHref && (
+                            <a
+                              href={waHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Chamar no WhatsApp"
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition shrink-0"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                        {client.secondaryPhone && (
+                          <span className="text-[10px] text-zinc-500 font-mono block mt-0.5 tabular-nums">
+                            Alt: {client.secondaryPhone}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        {birthFormatted ? (
+                          <div className="flex items-center gap-1.5 text-xs">
+                            <span className={birthdayMonthMatch ? 'text-[#D4AF37] font-semibold' : 'text-zinc-300'}>
+                              {birthFormatted}
+                            </span>
+                            {birthdayMonthMatch && (
+                              <span title="Aniversariante do mês">
+                                <Cake className="w-3.5 h-3.5 text-[#D4AF37]" />
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-zinc-500">—</span>
+                        )}
                       </td>
                       <td className="p-4">
                         {client.gender ? (
@@ -2183,7 +2326,7 @@ export default function ClientsPage() {
                             {getClientGenderLabel(client.gender)}
                           </span>
                         ) : (
-                          <span className="text-xs text-zinc-500">-</span>
+                          <span className="text-xs text-zinc-500">—</span>
                         )}
                       </td>
                       <td className="p-4">
@@ -2199,18 +2342,23 @@ export default function ClientsPage() {
                           {getStageLabel(client.crmStage || 'new')}
                         </span>
                       </td>
-                      <td className="p-4 font-mono text-xs">{client.phone || '-'}</td>
-                      <td className="p-4 capitalize text-xs text-zinc-400">
-                        {client.source === 'other' ? (client.sourceLabel || 'Outro') : (client.source || '-')}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-wrap gap-1">
-                          {client.tags && client.tags.slice(0, 2).map(t => (
-                            <span key={t} className="text-[9px] bg-zinc-900 border border-zinc-800 text-[#D4AF37] px-1 py-0.5 rounded capitalize">
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
+                      <td className="p-4 max-w-[200px]">
+                        {client.notes ? (
+                          <p className="text-xs text-zinc-400 line-clamp-1" title={client.notes}>
+                            {client.notes}
+                          </p>
+                        ) : (
+                          <span className="text-xs text-zinc-600">—</span>
+                        )}
+                        {client.tags && client.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {client.tags.slice(0, 2).map((t) => (
+                              <span key={t} className="text-[9px] bg-zinc-900 border border-zinc-800 text-[#D4AF37] px-1 py-0.5 rounded capitalize">
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="p-4 text-xs font-semibold text-zinc-300">
                         {client.responsibleName || 'Sem responsável'}
@@ -2257,7 +2405,48 @@ export default function ClientsPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Footer */}
+          {sortedListClients.length > 0 && (
+            <div className="px-5 py-3 bg-[#121215]/70 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-400">
+              <span className="tabular-nums">
+                Mostrando {(safeListPage - 1) * listPageSize + 1} a{' '}
+                {Math.min(safeListPage * listPageSize, sortedListClients.length)} de{' '}
+                <strong className="text-zinc-200">{sortedListClients.length}</strong> registros
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeListPage <= 1}
+                  onClick={() => setListPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-2.5 border-zinc-800 bg-[#0b0b0d] text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-40"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+                  Anterior
+                </Button>
+                <span className="px-2.5 font-mono text-[11px] text-zinc-300 tabular-nums">
+                  Página {safeListPage} / {totalListPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={safeListPage >= totalListPages}
+                  onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+                  className="h-8 px-2.5 border-zinc-800 bg-[#0b0b0d] text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-40"
+                >
+                  Próximo
+                  <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
+      )}
+        </>
       )}
 
       {/* ⚠️ Side Drawer for client history/timeline detail sheet */}
@@ -2270,9 +2459,54 @@ export default function ClientsPage() {
         userRole={userRole}
         professionals={professionals}
         services={services}
+        customFields={customFields}
+        notices={notices}
         onClientUpdated={() => {
-          // No need to manually refetch since the onSnapshot handles it perfectly
+          // Live via onSnapshot
         }}
+      />
+
+      {/* ⚠️ Enriched Client Registration / Edit Modal (Dados, Endereço & Docs, Anamnese, CRM) */}
+      <ClientFormDialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingClient(null);
+            setQuickAddStage('new');
+          }
+        }}
+        editingClient={editingClient}
+        initialCrmStage={quickAddStage}
+        professionals={professionals}
+        anamneseFields={anamneseFields}
+        onOpenAnamneseConfig={() => {
+          if (!canConfigureSchemas) {
+            toast.info('Apenas gestores podem configurar campos da Anamnese.');
+            return;
+          }
+          setCustomFieldsScope('anamnese');
+          setIsCustomFieldsModalOpen(true);
+        }}
+        onSave={handleSaveClientForm}
+      />
+
+      {/* ⚠️ Custom Fields Builder Modal (Anamnese & Prontuário) */}
+      <ClientCustomFieldsModal
+        open={isCustomFieldsModalOpen}
+        onOpenChange={setIsCustomFieldsModalOpen}
+        salonId={salonData?.id || ''}
+        initialScope={customFieldsScope}
+        fields={customFields}
+      />
+
+      {/* ⚠️ Smart Duplicate Client Unification Modal */}
+      <MergeClientsModal
+        open={isMergeModalOpen}
+        onOpenChange={setIsMergeModalOpen}
+        salonId={salonData?.id || ''}
+        clients={clients}
+        duplicatePairs={duplicatePairs}
       />
 
       {/* ⚠️ Permanent Bulk Delete Confirmation Dialog */}

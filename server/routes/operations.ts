@@ -305,6 +305,42 @@ router.post("/comandas/finalize", adminLimiter, async (req: Request, res: Respon
           updatedAt: now,
         });
       }
+
+      if (item.type === "product" && SAFE_ID_REGEX.test(item.id)) {
+        const invRef = adminDb.doc(`salons/${input.salonId}/inventory/${item.id}`);
+        const invSnap = await invRef.get();
+        if (invSnap.exists) {
+          const invData = invSnap.data() || {};
+          const prevQty = Number(invData.quantity || 0);
+          const soldQty = Number(item.quantity || 1);
+          const nextQty = Math.max(0, Number((prevQty - soldQty).toFixed(3)));
+          batch.set(invRef, { quantity: nextQty, updatedAt: now }, { merge: true });
+
+          const movRef = adminDb.collection(`salons/${input.salonId}/stockMovements`).doc();
+          batch.set(movRef, {
+            id: movRef.id,
+            salonId: input.salonId,
+            productId: item.id,
+            productName: String(invData.name || item.name),
+            productSku: String(invData.sku || ""),
+            type: "comanda_sale",
+            quantityDelta: -soldQty,
+            previousQuantity: prevQty,
+            newQuantity: nextQty,
+            unitCost: Number(invData.costPrice || 0),
+            totalCost: Number((Number(invData.costPrice || 0) * soldQty).toFixed(2)),
+            reason: `Venda · Comanda #${comandaNum} (${input.clientName})`,
+            notes: `Venda realizada por ${item.professionalName}`,
+            professionalId: item.professionalId,
+            professionalName: item.professionalName,
+            comandaId: input.comandaId,
+            movementDate: todayStr,
+            performedById: auth.ctx.uid,
+            performedByName: auth.ctx.name,
+            createdAt: now,
+          });
+        }
+      }
     }
 
     // 3. Create Financial Transactions (Entradas) per split

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '@/lib/firebase';
+import { OperationType, reportFirestoreListenerError } from '@/lib/firestoreError';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import {
   FileText,
@@ -69,7 +70,7 @@ interface Service {
 const GOLD_PALETTE = ['#D4AF37', '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899', '#06B6D4'];
 
 export default function ReportsPage() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, currentUser } = useAuth();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -90,43 +91,88 @@ export default function ReportsPage() {
   });
 
   useEffect(() => {
-    if (!salonData) return;
+    if (!salonData?.id || !currentUser?.uid) {
+      setAppointments([]);
+      setProfessionals([]);
+      setServices([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     const unsubs: (() => void)[] = [];
 
     // Load Appointments
     const qa = query(collection(db, `salons/${salonData.id}/appointments`));
-    unsubs.push(onSnapshot(qa, (snap) => {
-      const arr: Appointment[] = [];
-      snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
-      setAppointments(arr);
-    }));
+    unsubs.push(
+      onSnapshot(
+        qa,
+        (snap) => {
+          const arr: Appointment[] = [];
+          snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Appointment));
+          setAppointments(arr);
+        },
+        (error) => {
+          reportFirestoreListenerError(
+            error,
+            OperationType.LIST,
+            `salons/${salonData.id}/appointments`
+          );
+        }
+      )
+    );
 
     // Load Professionals
     const qp = query(collection(db, `salons/${salonData.id}/professionals`));
-    unsubs.push(onSnapshot(qp, (snap) => {
-      const arr: Professional[] = [];
-      snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Professional));
-      
-      const filteredPros = arr.filter(p => p.isActive !== false && (p.role === 'professional' || p.role === 'manager'));
-      setProfessionals(filteredPros);
-    }));
+    unsubs.push(
+      onSnapshot(
+        qp,
+        (snap) => {
+          const arr: Professional[] = [];
+          snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Professional));
+
+          const filteredPros = arr.filter(p => p.isActive !== false && (p.role === 'professional' || p.role === 'manager'));
+          setProfessionals(filteredPros);
+        },
+        (error) => {
+          reportFirestoreListenerError(
+            error,
+            OperationType.LIST,
+            `salons/${salonData.id}/professionals`
+          );
+        }
+      )
+    );
 
     // Load Services
     const qs = query(collection(db, `salons/${salonData.id}/services`));
-    unsubs.push(onSnapshot(qs, (snap) => {
-      const arr: Service[] = [];
-      snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
-      setServices(arr);
-    }));
+    unsubs.push(
+      onSnapshot(
+        qs,
+        (snap) => {
+          const arr: Service[] = [];
+          snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
+          setServices(arr);
+        },
+        (error) => {
+          reportFirestoreListenerError(
+            error,
+            OperationType.LIST,
+            `salons/${salonData.id}/services`
+          );
+        }
+      )
+    );
 
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setLoading(false);
     }, 800);
 
-    return () => unsubs.forEach(u => u());
-  }, [salonData]);
+    return () => {
+      clearTimeout(timer);
+      unsubs.forEach(u => u());
+    };
+  }, [salonData?.id, currentUser?.uid]);
 
   // Lista de meses que possuem agendamentos registrados
   const availableMonths = useMemo(() => {

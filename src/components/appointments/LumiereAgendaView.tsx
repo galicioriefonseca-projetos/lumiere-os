@@ -29,11 +29,13 @@ import {
   Appointment,
   AppointmentStatus,
   Client,
+  ClientNotice,
   Professional,
   ProfessionalGoal,
   Salon,
   Service,
 } from '@/types';
+import { ClientActiveNoticesBanner } from '@/components/clients/ClientActiveNoticesBanner';
 import {
   APPOINTMENT_STATUS_META,
   getAppointmentStatusMeta,
@@ -68,6 +70,7 @@ interface LumiereAgendaViewProps {
   professionals: Professional[];
   services: Service[];
   goals: ProfessionalGoal[];
+  notices?: ClientNotice[];
   userRole: string;
   currentUserId?: string;
   canManageGoals?: boolean;
@@ -135,6 +138,7 @@ export const LumiereAgendaView: React.FC<LumiereAgendaViewProps> = ({
   professionals,
   services,
   goals,
+  notices = [],
   userRole,
   currentUserId,
   canManageGoals = true,
@@ -1334,7 +1338,15 @@ export const LumiereAgendaView: React.FC<LumiereAgendaViewProps> = ({
                       </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-4 pt-2 text-xs">
+                      <div className="space-y-4 pt-2 text-xs">
+                      {!activeAppointment.isBlock && (
+                        <ClientActiveNoticesBanner
+                          notices={notices}
+                          client={matchedClient}
+                          trigger="onSchedule"
+                          theme="light"
+                        />
+                      )}
                       <div className="bg-[#FAF9F7] border border-[#E5E2DC] rounded-xl p-3.5 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-[#6B6B6B] inline-flex items-center gap-1.5">

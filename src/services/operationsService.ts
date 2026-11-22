@@ -124,6 +124,42 @@ export async function finalizeComandaApi(
         },
         { merge: true }
       );
+
+      if (item.type === 'product' && item.id) {
+        const invRef = doc(db, `salons/${payload.salonId}/inventory/${item.id}`);
+        const invSnap = await getDoc(invRef);
+        if (invSnap.exists()) {
+          const invData = invSnap.data();
+          const prevQty = Number(invData.quantity || 0);
+          const soldQty = Number(item.quantity || 1);
+          const nextQty = Math.max(0, Number((prevQty - soldQty).toFixed(3)));
+          batch.set(invRef, { quantity: nextQty, updatedAt: now }, { merge: true });
+
+          const movRef = doc(collection(db, `salons/${payload.salonId}/stockMovements`));
+          batch.set(movRef, {
+            id: movRef.id,
+            salonId: payload.salonId,
+            productId: item.id,
+            productName: String(invData.name || item.name),
+            productSku: String(invData.sku || ''),
+            type: 'comanda_sale',
+            quantityDelta: -soldQty,
+            previousQuantity: prevQty,
+            newQuantity: nextQty,
+            unitCost: Number(invData.costPrice || 0),
+            totalCost: Number((Number(invData.costPrice || 0) * soldQty).toFixed(2)),
+            reason: `Venda · Comanda #${comandaNum} (${payload.clientName})`,
+            notes: `Venda realizada por ${item.professionalName}`,
+            professionalId: item.professionalId,
+            professionalName: item.professionalName,
+            comandaId: payload.comandaId,
+            movementDate: todayStr,
+            performedById: auth.currentUser?.uid || 'system',
+            performedByName: item.professionalName || 'Caixa',
+            createdAt: now,
+          });
+        }
+      }
     }
 
     const splits = validSplits.length > 0 ? validSplits : [{ id: 'auto', method: 'pix' as const, amount: finalTotal }];

@@ -6,6 +6,7 @@ import {
   isFirebaseAdminCredentialError,
 } from "../shared/firebaseAdmin.js";
 import { dispatchAppointmentPush } from "../services/fcmNotifications.js";
+import { recordInboundWhatsAppToCrm } from "../services/crmWebhookSync.js";
 import { verifyIdToken, resolvePlatformAdmin } from "../shared/auth.js";
 import { adminLimiter, publicLimiter } from "../middleware/rateLimiter.js";
 
@@ -1389,10 +1390,7 @@ async function handleWebhookEvents(req: Request, res: Response) {
         continue;
       }
 
-      // B. Resposta por texto ("SIM", "CONFIRMO", "NAO", "CANCELAR") ou payload explícito
-      const decision = ev.explicitDecision || classifyWhatsAppReply(ev.textBody);
-      if (!decision) continue;
-
+      // B. Resposta por texto ("SIM", "CONFIRMO", "NAO", "CANCELAR") ou conversa receptiva no CRM
       const resolvedSalonId = await resolveSalonIdForPhoneNumberId(
         adminDb,
         ev.phoneNumberId,
@@ -1403,37 +1401,59 @@ async function handleWebhookEvents(req: Request, res: Response) {
       const secretOk = await validateSalonWebhookSecretIfConfigured(adminDb, resolvedSalonId, req);
       if (!secretOk) continue;
 
+      const decision = ev.explicitDecision || classifyWhatsAppReply(ev.textBody);
       let matchedDoc: FirebaseFirestore.DocumentSnapshot | null = null;
 
-      if (ev.explicitAppointmentId && SAFE_ID_REGEX.test(ev.explicitAppointmentId)) {
-        const directSnap = await adminDb
-          .doc(`salons/${resolvedSalonId}/appointments/${ev.explicitAppointmentId}`)
-          .get();
-        if (directSnap.exists) matchedDoc = directSnap;
-      } else {
-        const senderDigits = normalizeBrazilPhone(ev.senderPhone);
-        matchedDoc = await matchAppointmentByPhone(adminDb, resolvedSalonId, senderDigits);
+      if (decision) {
+        if (ev.explicitAppointmentId && SAFE_ID_REGEX.test(ev.explicitAppointmentId)) {
+          const directSnap = await adminDb
+            .doc(`salons/${resolvedSalonId}/appointments/${ev.explicitAppointmentId}`)
+            .get();
+          if (directSnap.exists) matchedDoc = directSnap;
+        } else {
+          const senderDigits = normalizeBrazilPhone(ev.senderPhone);
+          matchedDoc = await matchAppointmentByPhone(adminDb, resolvedSalonId, senderDigits);
+        }
+
+        if (matchedDoc && matchedDoc.exists) {
+          const d = matchedDoc.data() || {};
+          if (d.status !== "completed" && d.status !== "blocked") {
+            await applyWebhookAppointmentDecision({
+              adminDb,
+              salonId: resolvedSalonId,
+              apptRef: matchedDoc.ref,
+              apptData: d,
+              decision,
+              channel: ev.phoneNumberId ? "whatsapp_cloud" : "whatsapp_webhook",
+              provider: ev.provider,
+              senderPhone: normalizeBrazilPhone(ev.senderPhone),
+            });
+            updatedAppointments.push({
+              salonId: resolvedSalonId,
+              appointmentId: matchedDoc.id,
+              status: decision === "confirm" ? "confirmed" : "canceled",
+            });
+          }
+        }
       }
 
-      if (matchedDoc && matchedDoc.exists) {
-        const d = matchedDoc.data() || {};
-        if (d.status === "completed" || d.status === "blocked") continue;
-
-        await applyWebhookAppointmentDecision({
-          adminDb,
+      // Sempre registrar a mensagem recebida na Caixa de Entrada e Funil do CRM
+      if (ev.senderPhone || ev.textBody) {
+        const matchedData = matchedDoc?.data();
+        await recordInboundWhatsAppToCrm(adminDb, {
           salonId: resolvedSalonId,
-          apptRef: matchedDoc.ref,
-          apptData: d,
-          decision,
-          channel: ev.phoneNumberId ? "whatsapp_cloud" : "whatsapp_webhook",
-          provider: ev.provider,
-          senderPhone: normalizeBrazilPhone(ev.senderPhone),
-        });
-        updatedAppointments.push({
-          salonId: resolvedSalonId,
-          appointmentId: matchedDoc.id,
-          status: decision === "confirm" ? "confirmed" : "canceled",
-        });
+          senderPhone: normalizeBrazilPhone(ev.senderPhone) || ev.senderPhone,
+          textBody: ev.textBody || (decision === "confirm" ? "Confirmado" : "Mensagem recebida"),
+          origin: matchedDoc ? "confirmacao" : "receptivo",
+          linkedAppointmentId: matchedDoc?.id,
+          linkedAppointmentDate: matchedData?.date ? String(matchedData.date) : undefined,
+          linkedAppointmentTime: matchedData?.time ? String(matchedData.time) : undefined,
+          linkedAppointmentPrice:
+            typeof matchedData?.price === "number" ? matchedData.price : undefined,
+          linkedAppointmentService: matchedData?.serviceName
+            ? String(matchedData.serviceName)
+            : undefined,
+        }).catch(() => null);
       }
     }
 

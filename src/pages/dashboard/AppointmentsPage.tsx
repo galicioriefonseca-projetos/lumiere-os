@@ -6,6 +6,7 @@ import {
   Appointment,
   AppointmentStatus,
   Client,
+  ClientNotice,
   ComandaFlow,
   ComandaItem,
   Professional,
@@ -42,6 +43,8 @@ import { WhatsAppSettingsDialog } from '@/components/appointments/WhatsAppSettin
 import { ComandaModal360 } from '@/components/comandas/ComandaModal360';
 import { OpenComandasModal } from '@/components/comandas/OpenComandasModal';
 import { updateAppointmentStatusApi } from '@/services/appointmentsService';
+import { subscribeClientNotices } from '@/services/clientsService';
+import { ClientActiveNoticesBanner } from '@/components/clients/ClientActiveNoticesBanner';
 
 export default function AppointmentsPage() {
   const { salonData, userData } = useAuth();
@@ -77,6 +80,7 @@ export default function AppointmentsPage() {
   const [packages, setPackages] = useState<ServicePackage[]>([]);
   const [resources, setResources] = useState<SalonResource[]>([]);
   const [professionalGoals, setProfessionalGoals] = useState<ProfessionalGoal[]>([]);
+  const [clientNotices, setClientNotices] = useState<ClientNotice[]>([]);
   
   const [loading, setLoading] = useState(true);
   
@@ -289,6 +293,9 @@ export default function AppointmentsPage() {
         console.error("Erro ao carregar metas do profissional:", error);
       }));
     }
+
+    // Carregar Avisos de Atendimento de Clientes
+    unsubs.push(subscribeClientNotices(salonData.id, setClientNotices));
 
     return () => unsubs.forEach(u => u());
   }, [salonData, userRole, userData?.id]);
@@ -954,6 +961,13 @@ export default function AppointmentsPage() {
                         </Select>
                       </div>
 
+                      <ClientActiveNoticesBanner
+                        notices={clientNotices}
+                        client={clients.find((c) => c.id === comandaFormData.clientId)}
+                        trigger="onComanda"
+                        theme="light"
+                      />
+
                       <div className="space-y-1.5">
                         <Label className="text-[#171717]">Profissional Inicial</Label>
                         <Select required value={comandaFormData.professionalId} onValueChange={(v) => setComandaFormData(p => ({ ...p, professionalId: v }))}>
@@ -1350,6 +1364,12 @@ export default function AppointmentsPage() {
                             </SelectContent>
                           </Select>
                         </div>
+                        <ClientActiveNoticesBanner
+                          notices={clientNotices}
+                          client={clients.find((c) => c.id === formData.clientId)}
+                          trigger="onSchedule"
+                          theme="light"
+                        />
                         <div className="space-y-1.5">
                           <Label className="text-[#171717]">Serviço</Label>
                           <Select required value={formData.serviceId} onValueChange={(v) => setFormData(p => ({ ...p, serviceId: v }))}>
@@ -1486,6 +1506,7 @@ export default function AppointmentsPage() {
                 professionals={professionals}
                 services={services}
                 goals={professionalGoals}
+                notices={clientNotices}
                 userRole={userRole}
                 currentUserId={userData?.id}
                 canManageGoals={['owner', 'admin', 'manager', 'platform_admin', 'professional'].includes(userRole)}

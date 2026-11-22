@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "@/lib/firebase";
+import { OperationType, reportFirestoreListenerError } from "@/lib/firestoreError";
 import { logAuditEvent } from "../../lib/audit";
 import {
   addDoc,
@@ -135,7 +136,17 @@ export default function FinancialPage() {
   }, [type]);
 
   useEffect(() => {
-    if (!salonId) return;
+    if (!salonId || !currentUser?.uid) {
+      setTransactions([]);
+      setComandas([]);
+      setClients([]);
+      setProfessionals([]);
+      setServices([]);
+      setPackages([]);
+      setAppointments([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const unsubs: (() => void)[] = [];
 
@@ -154,67 +165,111 @@ export default function FinancialPage() {
           setLoading(false);
         },
         (error) => {
-          console.error("Erro ao sincronizar financeiro:", error);
+          reportFirestoreListenerError(
+            error,
+            OperationType.LIST,
+            `salons/${salonId}/financialTransactions`
+          );
           setLoading(false);
         }
       )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, "salons", salonId, "comandas")), (snap) => {
-        const list: ComandaFlow[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...d.data() } as ComandaFlow));
-        setComandas(list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
-      })
+      onSnapshot(
+        query(collection(db, "salons", salonId, "comandas")),
+        (snap) => {
+          const list: ComandaFlow[] = [];
+          snap.forEach((d) => list.push({ id: d.id, ...d.data() } as ComandaFlow));
+          setComandas(list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+        },
+        (error) => {
+          reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonId}/comandas`);
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, "salons", salonId, "clients")), (snap) => {
-        const arr: Client[] = [];
-        snap.forEach((d) => {
-          const data = d.data();
-          if (data.isActive !== false && !data.deletedAt) {
-            arr.push({ id: d.id, ...data } as Client);
-          }
-        });
-        setClients(arr);
-      })
+      onSnapshot(
+        query(collection(db, "salons", salonId, "clients")),
+        (snap) => {
+          const arr: Client[] = [];
+          snap.forEach((d) => {
+            const data = d.data();
+            if (data.isActive !== false && !data.deletedAt) {
+              arr.push({ id: d.id, ...data } as Client);
+            }
+          });
+          setClients(arr);
+        },
+        (error) => {
+          reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonId}/clients`);
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, "salons", salonId, "professionals")), (snap) => {
-        const arr: Professional[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Professional));
-        setProfessionals(arr.filter((p) => p.isActive));
-      })
+      onSnapshot(
+        query(collection(db, "salons", salonId, "professionals")),
+        (snap) => {
+          const arr: Professional[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Professional));
+          setProfessionals(arr.filter((p) => p.isActive));
+        },
+        (error) => {
+          reportFirestoreListenerError(
+            error,
+            OperationType.LIST,
+            `salons/${salonId}/professionals`
+          );
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, "salons", salonId, "services")), (snap) => {
-        const arr: Service[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Service));
-        setServices(arr.filter((s) => s.isActive));
-      })
+      onSnapshot(
+        query(collection(db, "salons", salonId, "services")),
+        (snap) => {
+          const arr: Service[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Service));
+          setServices(arr.filter((s) => s.isActive));
+        },
+        (error) => {
+          reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonId}/services`);
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, "salons", salonId, "packages")), (snap) => {
-        const arr: ServicePackage[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as ServicePackage));
-        setPackages(arr.filter((p) => p.isActive));
-      })
+      onSnapshot(
+        query(collection(db, "salons", salonId, "packages")),
+        (snap) => {
+          const arr: ServicePackage[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as ServicePackage));
+          setPackages(arr.filter((p) => p.isActive));
+        },
+        (error) => {
+          reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonId}/packages`);
+        }
+      )
     );
 
     unsubs.push(
-      onSnapshot(query(collection(db, "salons", salonId, "appointments")), (snap) => {
-        const arr: Appointment[] = [];
-        snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Appointment));
-        setAppointments(arr);
-      })
+      onSnapshot(
+        query(collection(db, "salons", salonId, "appointments")),
+        (snap) => {
+          const arr: Appointment[] = [];
+          snap.forEach((d) => arr.push({ id: d.id, ...d.data() } as Appointment));
+          setAppointments(arr);
+        },
+        (error) => {
+          reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonId}/appointments`);
+        }
+      )
     );
 
     return () => unsubs.forEach((u) => u());
-  }, [salonId]);
+  }, [salonId, currentUser?.uid]);
 
   const openComandas = useMemo(
     () => comandas.filter((c) => c.status !== "completed" && c.status !== "canceled"),
