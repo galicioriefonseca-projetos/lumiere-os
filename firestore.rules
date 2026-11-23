@@ -101,6 +101,10 @@ service cloud.firestore {
       );
     }
 
+    function isSalonStaff(salonId) {
+      return isSalonMember(salonId) && (!exists(userDoc()) || userRole() != "client");
+    }
+
     // --- Demo/Tutorial User Helpers ---
     function isTutorialDemoSalon(salonId) {
       return salonId == "tutorial_lumiere_studio";
@@ -491,13 +495,13 @@ service cloud.firestore {
 
     // 7b. Client Custom Form Schemas (Anamnese & Prontuario)
     match /salons/{salonId}/clientCustomFields/{fieldId} {
-      allow read: if isSalonMember(salonId);
+      allow read: if isSalonStaff(salonId);
       allow create, update, delete: if canManageSalon(salonId);
     }
 
     // 7c. Client Notices & Atendimento Alerts
     match /salons/{salonId}/clientNotices/{noticeId} {
-      allow read: if isSalonMember(salonId);
+      allow read: if isSalonStaff(salonId);
       allow create, update, delete: if canOperateFrontDesk(salonId);
     }
 
@@ -556,25 +560,25 @@ service cloud.firestore {
 
     // 8. Services Catalogue
     match /salons/{salonId}/services/{serviceId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ;
+      allow read: if isSalonStaff(salonId);
       allow create, update, delete: if canManageSalon(salonId);
     }
 
     // 8b. Service Packages & Combos
     match /salons/{salonId}/packages/{packageId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow read: if isSalonStaff(salonId);
       allow create, update, delete: if canManageSalon(salonId);
     }
 
     // 8c. Rooms, Cabins & Equipment Resources
     match /salons/{salonId}/resources/{resourceId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId);
+      allow read: if isSalonStaff(salonId);
       allow create, update, delete: if canManageSalon(salonId);
     }
 
     // 9. Categories
     match /salons/{salonId}/categories/{categoryId} {
-      allow read: if canOperateFrontDesk(salonId) || isSalonProfessional(salonId) ;
+      allow read: if isSalonStaff(salonId);
       allow create, update, delete: if canManageSalon(salonId);
     }
 

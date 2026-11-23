@@ -45,9 +45,10 @@ import { OpenComandasModal } from '@/components/comandas/OpenComandasModal';
 import { updateAppointmentStatusApi } from '@/services/appointmentsService';
 import { subscribeClientNotices } from '@/services/clientsService';
 import { ClientActiveNoticesBanner } from '@/components/clients/ClientActiveNoticesBanner';
+import { OperationType, reportFirestoreListenerError } from '@/lib/firestoreError';
 
 export default function AppointmentsPage() {
-  const { salonData, userData } = useAuth();
+  const { salonData, userData, currentUser } = useAuth();
   const { 
     segment, 
     lex, 
@@ -190,7 +191,10 @@ export default function AppointmentsPage() {
 
   // Carregar Dados do Salão
   useEffect(() => {
-    if (!salonData?.id) return;
+    if (!salonData?.id || !currentUser?.uid) {
+      setLoading(false);
+      return;
+    }
 
     const unsubs: (() => void)[] = [];
 
@@ -202,7 +206,7 @@ export default function AppointmentsPage() {
       setAppointments(arr.sort((a, b) => new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime()));
       setLoading(false);
     }, (error) => {
-      console.error("Erro ao carregar agendamentos:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/appointments`);
       setLoading(false);
     }));
 
@@ -214,11 +218,17 @@ export default function AppointmentsPage() {
       // Ordenar por data de criação (mais novos primeiro)
       setComandas(arr.sort((a, b) => b.createdAt - a.createdAt));
     }, (error) => {
-      console.error("Erro ao carregar comandas:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/comandas`);
     }));
 
-    // Carregar Clientes
-    const qc = query(collection(db, `salons/${salonData.id}/clients`));
+    // Carregar Clientes (respeitando escopo de profissional em firestore.rules)
+    const qc =
+      userRole === 'professional' && userData?.id
+        ? query(
+            collection(db, `salons/${salonData.id}/clients`),
+            where('responsibleId', '==', userData.id)
+          )
+        : query(collection(db, `salons/${salonData.id}/clients`));
     unsubs.push(onSnapshot(qc, snap => {
       const arr: Client[] = [];
       snap.forEach(d => {
@@ -229,7 +239,7 @@ export default function AppointmentsPage() {
       });
       setClients(arr);
     }, (error) => {
-      console.error("Erro ao carregar clientes:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/clients`);
     }));
 
     // Carregar Profissionais
@@ -239,7 +249,7 @@ export default function AppointmentsPage() {
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Professional));
       setProfessionals(arr.filter(p => p.isActive));
     }, (error) => {
-      console.error("Erro ao carregar profissionais:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/professionals`);
     }));
 
     // Carregar Serviços
@@ -249,7 +259,7 @@ export default function AppointmentsPage() {
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as Service));
       setServices(arr.filter(s => s.isActive));
     }, (error) => {
-      console.error("Erro ao carregar serviços:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/services`);
     }));
 
     // Carregar Pacotes
@@ -259,7 +269,7 @@ export default function AppointmentsPage() {
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ServicePackage));
       setPackages(arr.filter(p => p.isActive));
     }, (error) => {
-      console.error("Erro ao carregar pacotes:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/packages`);
     }));
 
     // Carregar Salas e Equipamentos
@@ -269,7 +279,7 @@ export default function AppointmentsPage() {
       snap.forEach(d => arr.push({ id: d.id, ...d.data() } as SalonResource));
       setResources(arr.filter(r => r.isActive));
     }, (error) => {
-      console.error("Erro ao carregar recursos:", error);
+      reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/resources`);
     }));
 
     // Carregar Metas dos Profissionais para Previsibilidade na Agenda (respeitando firestore.rules)
@@ -280,7 +290,7 @@ export default function AppointmentsPage() {
         snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
         setProfessionalGoals(arr);
       }, (error) => {
-        console.error("Erro ao carregar metas para previsibilidade:", error);
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/professionalGoals`);
       }));
     } else if (userRole === 'professional' && userData?.id) {
       const qOwnGoals = query(
@@ -292,7 +302,7 @@ export default function AppointmentsPage() {
         snap.forEach(d => arr.push({ id: d.id, ...d.data() } as ProfessionalGoal));
         setProfessionalGoals(arr);
       }, (error) => {
-        console.error("Erro ao carregar metas do profissional:", error);
+        reportFirestoreListenerError(error, OperationType.LIST, `salons/${salonData.id}/professionalGoals`);
       }));
     }
 
@@ -300,7 +310,7 @@ export default function AppointmentsPage() {
     unsubs.push(subscribeClientNotices(salonData.id, setClientNotices));
 
     return () => unsubs.forEach(u => u());
-  }, [salonData, userRole, userData?.id]);
+  }, [salonData?.id, userRole, userData?.id, currentUser?.uid]);
 
   // Handler para trocar status de agendamento tradicional
   const changeStatus = async (id: string, newStatus: AppointmentStatus) => {
