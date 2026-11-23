@@ -53,7 +53,10 @@ interface ProfDoc {
 export default function CrmHubPage() {
   const { salonData, currentUser, userData } = useAuth();
   const salonId = salonData?.id || '';
-  const userRole = userData?.role || 'professional';
+  const userRole = userData?.role || '';
+  const hasCrmAccess = ['owner', 'admin', 'manager', 'receptionist', 'attendant', 'platform_admin'].includes(
+    userRole
+  );
   const currentUserName =
     userData?.fullName || currentUser?.displayName || currentUser?.email || 'Equipe';
 
@@ -76,12 +79,11 @@ export default function CrmHubPage() {
   const [professionals, setProfessionals] = useState<ProfDoc[]>([]);
   const [services, setServices] = useState<Array<{ id: string; name: string; price: number }>>([]);
 
-  // Embedded ClientDetailsDrawer for unified 360° flow (zero tab switching)
   const [drawerClient, setDrawerClient] = useState<Client | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   useEffect(() => {
-    if (!salonId) return;
+    if (!salonId || !hasCrmAccess) return;
 
     const unsubConvs = subscribeCrmConversations(salonId, setConversations);
     const unsubOpps = subscribeCrmOpportunities(salonId, setOpportunities);
@@ -157,7 +159,7 @@ export default function CrmHubPage() {
       unsubProfs();
       unsubServices();
     };
-  }, [salonId]);
+  }, [salonId, hasCrmAccess]);
 
   const unreadCount = useMemo(
     () => conversations.filter((c) => c.unreadCount > 0 || c.status === 'awaiting_reply').length,
@@ -188,9 +190,16 @@ export default function CrmHubPage() {
     );
   }
 
+  if (userRole && !hasCrmAccess) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        O CRM 360° é exclusivo para gestão e recepção do salão.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      {/* Cabeçalho Unificado Lumière CRM 360° */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-border pb-4">
         <div>
           <h2 className="text-2xl font-heading font-semibold text-foreground tracking-tight">
@@ -202,7 +211,6 @@ export default function CrmHubPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Segmented Navigation */}
           <div className="flex flex-wrap items-center gap-1 bg-secondary p-1 rounded-xl border border-border">
             {(
               [
@@ -269,7 +277,6 @@ export default function CrmHubPage() {
         </div>
       </div>
 
-      {/* Conteúdo das abas */}
       {activeTab === 'inbox' && (
         <CrmInboxView
           salonId={salonId}
@@ -343,7 +350,6 @@ export default function CrmHubPage() {
         />
       )}
 
-      {/* Drawer integrado do cliente (Anamnese, Prontuário, Histórico e Agendamento Rápido) */}
       <ClientDetailsDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}

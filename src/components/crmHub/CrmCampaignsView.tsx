@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   BarChart3,
   CalendarClock,
-  CheckCircle2,
   ExternalLink,
   Megaphone,
   PauseCircle,
@@ -177,7 +176,6 @@ export function CrmCampaignsView({
 
   return (
     <div className="space-y-4">
-      {/* Sub-navegação */}
       <div className="bg-card border border-border rounded-xl p-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg border border-border">
           {(
@@ -206,7 +204,6 @@ export function CrmCampaignsView({
 
       {subTab === 'configure' && activeCampaign && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Seletor das 5 campanhas */}
           <div className="lg:col-span-4 space-y-2">
             {campaigns.map((camp) => {
               const isSelected = camp.id === activeCampaign.id;
@@ -256,7 +253,6 @@ export function CrmCampaignsView({
             })}
           </div>
 
-          {/* Editor da campanha selecionada */}
           <div className="lg:col-span-8 bg-card border border-border rounded-xl p-5 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-border">
               <div>
@@ -274,7 +270,6 @@ export function CrmCampaignsView({
               </Button>
             </div>
 
-            {/* Regras e limites */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs">Janela inicial</Label>
@@ -373,7 +368,6 @@ export function CrmCampaignsView({
               </div>
             )}
 
-            {/* Template */}
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label className="text-xs">Mensagem modelo</Label>
@@ -409,7 +403,6 @@ export function CrmCampaignsView({
               </div>
             </div>
 
-            {/* Avaliação de Público & Disparo */}
             <div className="pt-3 border-t border-border space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>

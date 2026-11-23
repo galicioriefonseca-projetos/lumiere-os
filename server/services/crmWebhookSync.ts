@@ -1,35 +1,24 @@
 import type { Firestore } from "firebase-admin/firestore";
 
-function normalizeDigits(raw?: string | null): string {
-  return String(raw || "").replace(/\D/g, "");
-}
-
-function normalizePhoneKey(raw?: string | null): string {
-  const digits = normalizeDigits(raw);
+export function formatBrazilPhoneE164(raw: string): string {
+  const digits = String(raw || "").replace(/\D/g, "");
   if (!digits) return "";
-  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
-    return digits.slice(2);
-  }
-  return digits.length >= 8 ? digits : "";
-}
-
-export function formatBrazilPhoneE164(raw?: string | null): string {
-  const digits = normalizeDigits(raw);
-  if (!digits) return "";
-  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
-    return digits;
-  }
-  if (digits.length === 10 || digits.length === 11) {
-    return `55${digits}`;
-  }
+  if (digits.startsWith("55") && digits.length >= 12) return digits;
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
   return digits;
 }
 
-export interface InboundCrmSyncInput {
+function phoneKey(raw: string): string {
+  const digits = String(raw || "").replace(/\D/g, "");
+  return digits.length >= 8 ? digits.slice(-8) : digits;
+}
+
+export interface InboundWhatsAppCrmPayload {
   salonId: string;
   senderPhone: string;
   senderName?: string;
   textBody: string;
+  waMessageId?: string;
   origin?: "receptivo" | "confirmacao" | "marketing" | "attendant";
   linkedAppointmentId?: string;
   linkedAppointmentDate?: string;
@@ -40,78 +29,72 @@ export interface InboundCrmSyncInput {
 
 export async function recordInboundWhatsAppToCrm(
   adminDb: Firestore,
-  input: InboundCrmSyncInput
+  payload: InboundWhatsAppCrmPayload
 ): Promise<{ conversationId: string; opportunityId: string }> {
   const now = Date.now();
-  const cleanDigits = formatBrazilPhoneE164(input.senderPhone);
-  const phoneKey = normalizePhoneKey(input.senderPhone);
-  const convId = phoneKey ? `wa_${phoneKey}` : `wa_${now}`;
+  const normalizedPhone = formatBrazilPhoneE164(payload.senderPhone) || payload.senderPhone.trim();
+  const pKey = phoneKey(normalizedPhone);
+  const convId = pKey ? `wa_${pKey}` : `wa_${now}`;
 
-  const convRef = adminDb.doc(`salons/${input.salonId}/crmConversations/${convId}`);
-  const convSnap = await convRef.get().catch(() => null);
-  const existingConv = convSnap?.exists ? convSnap.data() || {} : null;
+  // Auto-match existing salon client by phone tail
+  let matchedClientId = "";
+  let matchedClientName = payload.senderName?.trim() || "";
+  let matchedClientEmail = "";
 
-  // Try matching a client by phone if not yet linked
-  let matchedClientId = String(existingConv?.clientId || "");
-  let matchedClientName = String(existingConv?.clientName || input.senderName || "");
-  if (!matchedClientId && phoneKey) {
+  if (pKey) {
     const clientsSnap = await adminDb
-      .collection(`salons/${input.salonId}/clients`)
-      .limit(300)
-      .get()
-      .catch(() => null);
-    if (clientsSnap && !clientsSnap.empty) {
-      for (const cDoc of clientsSnap.docs) {
-        const cData = cDoc.data();
-        if (cData.deletedAt || cData.archived) continue;
-        const cKey = normalizePhoneKey(String(cData.phone || ""));
-        const cSecKey = normalizePhoneKey(String(cData.secondaryPhone || ""));
-        if (
-          (cKey && (cKey === phoneKey || cKey.slice(-8) === phoneKey.slice(-8))) ||
-          (cSecKey && (cSecKey === phoneKey || cSecKey.slice(-8) === phoneKey.slice(-8)))
-        ) {
-          matchedClientId = cDoc.id;
-          matchedClientName = String(cData.name || matchedClientName || "Contato WhatsApp");
-          break;
-        }
+      .collection(`salons/${payload.salonId}/clients`)
+      .limit(400)
+      .get();
+    for (const cDoc of clientsSnap.docs) {
+      const cData = cDoc.data();
+      if (cData.deletedAt) continue;
+      if (phoneKey(String(cData.phone || "")) === pKey) {
+        matchedClientId = cDoc.id;
+        matchedClientName = String(cData.name || matchedClientName || "Cliente WhatsApp");
+        matchedClientEmail = String(cData.email || "");
+        break;
       }
     }
   }
 
-  const displayName = matchedClientName || input.senderName || (cleanDigits ? `+${cleanDigits}` : "Cliente WhatsApp");
-  const displayPhone = cleanDigits || input.senderPhone;
+  const displayName = matchedClientName || `Contato ${normalizedPhone.slice(-4) || "WhatsApp"}`;
+  const convRef = adminDb.doc(`salons/${payload.salonId}/crmConversations/${convId}`);
+  const convSnap = await convRef.get();
+  const existingConv = convSnap.exists ? convSnap.data() : null;
 
-  // Ensure an active opportunity exists or create one
   let opportunityId = String(existingConv?.opportunityId || "");
   let opportunityNumber = Number(existingConv?.opportunityNumber || 0);
 
   if (!opportunityId) {
-    const oppRef = adminDb.collection(`salons/${input.salonId}/crmOpportunities`).doc();
+    const oppRef = adminDb.collection(`salons/${payload.salonId}/crmOpportunities`).doc();
     opportunityId = oppRef.id;
     opportunityNumber = Math.floor(1000 + (now % 8999));
 
     await oppRef.set({
-      id: oppRef.id,
+      id: opportunityId,
       opportunityNumber,
       conversationId: convId,
-      clientId: matchedClientId || "",
+      clientId: matchedClientId,
       clientName: displayName,
-      clientPhone: displayPhone,
-      stage: input.linkedAppointmentId ? "scheduled" : "awaiting_reply",
-      origin: input.origin || (input.linkedAppointmentId ? "confirmacao" : "receptivo"),
-      estimatedValue: Number(input.linkedAppointmentPrice || 0),
-      valueSource: input.linkedAppointmentPrice ? "appointment" : "ai",
-      serviceInterest: input.linkedAppointmentService || "",
-      linkedAppointmentId: input.linkedAppointmentId || "",
-      linkedAppointmentDate: input.linkedAppointmentDate || "",
-      linkedAppointmentTime: input.linkedAppointmentTime || "",
-      waitingSince: now,
+      clientPhone: normalizedPhone,
+      stage: payload.linkedAppointmentId ? "scheduled" : "awaiting_reply",
+      origin: payload.origin || "receptivo",
+      assignedAttendantId: "",
+      assignedAttendantName: "",
+      estimatedValue: Number(payload.linkedAppointmentPrice || 0),
+      valueSource: payload.linkedAppointmentPrice ? "appointment" : "ai",
+      serviceInterest: payload.linkedAppointmentService || "",
+      linkedAppointmentId: payload.linkedAppointmentId || "",
+      linkedAppointmentDate: payload.linkedAppointmentDate || "",
+      linkedAppointmentTime: payload.linkedAppointmentTime || "",
+      waitingSince: payload.linkedAppointmentId ? 0 : now,
       notes: [],
       history: [
         {
           id: `hist_${now}`,
-          action: "created",
-          detail: "Oportunidade aberta automaticamente via WhatsApp",
+          action: "inbound_created",
+          detail: `Oportunidade #${opportunityNumber} criada via WhatsApp`,
           actorName: "Webhook WhatsApp",
           createdAt: now,
         },
@@ -120,65 +103,73 @@ export async function recordInboundWhatsAppToCrm(
       updatedAt: now,
     });
   } else {
-    const oppPatch: Record<string, unknown> = {
-      waitingSince: now,
-      updatedAt: now,
-    };
-    if (matchedClientId) oppPatch.clientId = matchedClientId;
-    if (matchedClientName) oppPatch.clientName = matchedClientName;
-    if (input.linkedAppointmentId) {
-      oppPatch.linkedAppointmentId = input.linkedAppointmentId;
-      oppPatch.linkedAppointmentDate = input.linkedAppointmentDate || "";
-      oppPatch.linkedAppointmentTime = input.linkedAppointmentTime || "";
-      if (input.linkedAppointmentPrice) {
-        oppPatch.estimatedValue = input.linkedAppointmentPrice;
-        oppPatch.valueSource = "appointment";
-      }
-      oppPatch.stage = "scheduled";
-    }
-    await adminDb
-      .doc(`salons/${input.salonId}/crmOpportunities/${opportunityId}`)
-      .set(oppPatch, { merge: true });
+    await adminDb.doc(`salons/${payload.salonId}/crmOpportunities/${opportunityId}`).set(
+      {
+        ...(matchedClientId ? { clientId: matchedClientId, clientName: displayName } : {}),
+        ...(payload.linkedAppointmentId
+          ? {
+              stage: "scheduled",
+              linkedAppointmentId: payload.linkedAppointmentId,
+              linkedAppointmentDate: payload.linkedAppointmentDate || "",
+              linkedAppointmentTime: payload.linkedAppointmentTime || "",
+              estimatedValue: Number(payload.linkedAppointmentPrice || 0),
+              valueSource: "appointment",
+              waitingSince: 0,
+            }
+          : {
+              stage: "awaiting_reply",
+              waitingSince: now,
+            }),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
   }
 
-  // Upsert conversation
   await convRef.set(
     {
       id: convId,
-      salonId: input.salonId,
-      clientId: matchedClientId || "",
-      clientName: displayName,
-      clientPhone: displayPhone,
+      salonId: payload.salonId,
+      clientId: matchedClientId || existingConv?.clientId || "",
+      clientName: existingConv?.clientName || displayName,
+      clientPhone: normalizedPhone,
+      clientEmail: matchedClientEmail || existingConv?.clientEmail || "",
       channel: "whatsapp",
       status: "awaiting_reply",
-      handlingMode: existingConv?.handlingMode || "handoff",
+      handlingMode: existingConv?.handlingMode || "ai",
+      assignedAttendantId: existingConv?.assignedAttendantId || "",
+      assignedAttendantName: existingConv?.assignedAttendantName || "",
       aiPausedForClient: Boolean(existingConv?.aiPausedForClient),
       isPinned: Boolean(existingConv?.isPinned),
       unreadCount: Number(existingConv?.unreadCount || 0) + 1,
-      lastMessageText: input.textBody.slice(0, 500),
+      lastMessageText: payload.textBody.slice(0, 500),
       lastMessageAt: now,
       lastMessageDirection: "inbound",
       lastInboundAt: now,
-      origin: existingConv?.origin || input.origin || "receptivo",
+      origin: existingConv?.origin || payload.origin || "receptivo",
       opportunityId,
       opportunityNumber,
-      createdAt: existingConv?.createdAt || now,
+      createdAt: Number(existingConv?.createdAt || now),
       updatedAt: now,
     },
     { merge: true }
   );
 
-  // Append message doc
-  const msgRef = convRef.collection("messages").doc();
+  const msgRef = adminDb
+    .collection(`salons/${payload.salonId}/crmConversations/${convId}/messages`)
+    .doc();
+
   await msgRef.set({
     id: msgRef.id,
     conversationId: convId,
     direction: "inbound",
     senderType: "client",
+    senderId: matchedClientId || normalizedPhone,
     senderName: displayName,
-    body: input.textBody,
+    body: payload.textBody,
     mediaType: "text",
     deliveryStatus: "delivered",
+    ...(payload.waMessageId ? { waMessageId: payload.waMessageId } : {}),
     createdAt: now,
   });
 

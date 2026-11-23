@@ -1,10 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  AlertCircle,
   CalendarCheck,
-  Clock,
-  DollarSign,
-  ExternalLink,
   MessageSquare,
   Plus,
   Search,
@@ -111,7 +107,6 @@ export function CrmFunnelBoard({
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<CrmFunnelStage | null>(null);
 
-  // Close Won/Lost/Other modal
   const [closeModalTarget, setCloseModalTarget] = useState<{
     opportunity: CrmOpportunity;
     targetStage: 'scheduled' | 'lost' | 'other';
@@ -120,14 +115,12 @@ export function CrmFunnelBoard({
   const [closeComment, setCloseComment] = useState('');
   const [movingStage, setMovingStage] = useState(false);
 
-  // Detail modal state
   const [detailTab, setDetailTab] = useState<'summary' | 'notes' | 'history'>('summary');
   const [editValueInput, setEditValueInput] = useState('');
   const [newNoteText, setNewNoteText] = useState('');
   const [savingDetail, setSavingDetail] = useState(false);
   const [qualifyingAi, setQualifyingAi] = useState(false);
 
-  // Quick New Opportunity dialog
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createPhone, setCreatePhone] = useState('');
@@ -343,7 +336,6 @@ export function CrmFunnelBoard({
 
   return (
     <div className="space-y-4">
-      {/* Barra de filtros */}
       <div className="bg-card border border-border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -406,7 +398,6 @@ export function CrmFunnelBoard({
         </Button>
       </div>
 
-      {/* Board Kanban 6 colunas */}
       <div className="overflow-x-auto pb-2">
         <div className="grid grid-cols-6 gap-3 min-w-[1180px]">
           {ORDERED_STAGES.map((stageId) => {
@@ -441,7 +432,6 @@ export function CrmFunnelBoard({
                     : 'border-border bg-secondary/45'
                 }`}
               >
-                {/* Header da coluna */}
                 <div className="p-3 bg-card rounded-t-xl border-b border-border space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -462,7 +452,6 @@ export function CrmFunnelBoard({
                   </p>
                 </div>
 
-                {/* Cards da coluna */}
                 <div className="p-2.5 space-y-2.5 flex-1 overflow-y-auto max-h-[620px]">
                   {columnOpps.length === 0 ? (
                     <div className="py-10 text-center text-[11px] text-muted-foreground">
@@ -547,7 +536,6 @@ export function CrmFunnelBoard({
         </div>
       </div>
 
-      {/* MODAL DETALHE DO CARD */}
       <Dialog
         open={Boolean(selectedOpp)}
         onOpenChange={(open) => {
@@ -574,7 +562,6 @@ export function CrmFunnelBoard({
                 </div>
               </DialogHeader>
 
-              {/* Abas do detalhe */}
               <div className="flex items-center gap-1 border-b border-border pb-2">
                 {(
                   [
@@ -789,7 +776,6 @@ export function CrmFunnelBoard({
         </DialogContent>
       </Dialog>
 
-      {/* MODAL MOTIVO DE FECHAMENTO (AGENDADO / PERDIDO / OUTROS) */}
       <Dialog
         open={Boolean(closeModalTarget)}
         onOpenChange={(open) => {
@@ -852,7 +838,6 @@ export function CrmFunnelBoard({
         </DialogContent>
       </Dialog>
 
-      {/* MODAL NOVA OPORTUNIDADE */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>

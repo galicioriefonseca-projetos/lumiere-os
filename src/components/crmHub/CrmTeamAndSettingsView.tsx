@@ -109,7 +109,6 @@ export function CrmTeamAndSettingsView({
   const [draftSettings, setDraftSettings] = useState<CrmSettings>(settings);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Add attendant modal
   const [isAddAttOpen, setIsAddAttOpen] = useState(false);
   const [selectedProfId, setSelectedProfId] = useState('');
   const [attName, setAttName] = useState('');
@@ -117,7 +116,6 @@ export function CrmTeamAndSettingsView({
   const [attPerm, setAttPerm] = useState<'admin' | 'attendant' | 'viewer'>('attendant');
   const [savingAtt, setSavingAtt] = useState(false);
 
-  // Quick reply modal
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [qrEditingId, setQrEditingId] = useState<string | undefined>(undefined);
   const [qrShortcut, setQrShortcut] = useState('');
@@ -214,12 +212,11 @@ export function CrmTeamAndSettingsView({
 
   return (
     <div className="space-y-4">
-      {/* Navegação interna */}
       <div className="bg-card border border-border rounded-xl p-2 flex flex-wrap items-center gap-1">
         {(
           [
             { id: 'attendants', label: 'Atendentes & Equipe', icon: Users },
-            { id: 'quick_replies', label: `Respostas Rápidas (/)`, icon: Zap },
+            { id: 'quick_replies', label: 'Respostas Rápidas (/)', icon: Zap },
             { id: 'automations', label: 'Regras & Automações', icon: Settings },
             { id: 'ai', label: 'Lumi IA no CRM', icon: Bot },
             { id: 'guide', label: 'Guia do CRM', icon: BookOpen },
@@ -241,7 +238,6 @@ export function CrmTeamAndSettingsView({
         ))}
       </div>
 
-      {/* TAB 1: ATENDENTES & EQUIPE */}
       {tab === 'attendants' && (
         <div className="space-y-4">
           <div className="bg-card border border-border rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
@@ -348,7 +344,6 @@ export function CrmTeamAndSettingsView({
             )}
           </div>
 
-          {/* Regras Globais de Equipe */}
           <div className="bg-card border border-border rounded-xl p-5 space-y-3">
             <h4 className="text-sm font-semibold text-foreground">Regras da Equipe no Inbox</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
@@ -419,7 +414,6 @@ export function CrmTeamAndSettingsView({
         </div>
       )}
 
-      {/* TAB 2: RESPOSTAS RÁPIDAS */}
       {tab === 'quick_replies' && (
         <div className="space-y-4">
           <div className="bg-card border border-border rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
@@ -526,7 +520,6 @@ export function CrmTeamAndSettingsView({
         </div>
       )}
 
-      {/* TAB 3: REGRAS & AUTOMAÇÕES DO FUNIL */}
       {tab === 'automations' && (
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
           <div>
@@ -648,7 +641,6 @@ export function CrmTeamAndSettingsView({
         </div>
       )}
 
-      {/* TAB 4: LUMI IA NO CRM */}
       {tab === 'ai' && (
         <div className="bg-card border border-border rounded-xl p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
@@ -753,7 +745,6 @@ export function CrmTeamAndSettingsView({
         </div>
       )}
 
-      {/* TAB 5: GUIA DO CRM */}
       {tab === 'guide' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {GUIDE_SECTIONS.map((sec) => (
@@ -770,7 +761,6 @@ export function CrmTeamAndSettingsView({
         </div>
       )}
 
-      {/* MODAL VINCULAR ATENDENTE */}
       <Dialog open={isAddAttOpen} onOpenChange={setIsAddAttOpen}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>
@@ -847,7 +837,6 @@ export function CrmTeamAndSettingsView({
         </DialogContent>
       </Dialog>
 
-      {/* MODAL RESPOSTA RÁPIDA */}
       <Dialog open={isQrOpen} onOpenChange={setIsQrOpen}>
         <DialogContent className="sm:max-w-md bg-card border-border">
           <DialogHeader>

@@ -4,8 +4,6 @@ import {
   ArrowRight,
   Bot,
   Clock,
-  MessageSquare,
-  TrendingUp,
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -56,7 +54,6 @@ export function CrmAnalyticsDashboard({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
       <div className="bg-card border border-border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg border border-border">
           {(
@@ -94,7 +91,6 @@ export function CrmAnalyticsDashboard({
         </select>
       </div>
 
-      {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { label: 'Atendimentos', value: String(stats.totalConversations), sub: 'Conversas no período' },
@@ -136,7 +132,6 @@ export function CrmAnalyticsDashboard({
 
       {subTab === 'summary' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Distribuição IA x Humano + Origem */}
           <div className="lg:col-span-7 bg-card border border-border rounded-xl p-5 space-y-5">
             <div>
               <h4 className="text-sm font-semibold text-foreground">
@@ -194,7 +189,6 @@ export function CrmAnalyticsDashboard({
             </div>
           </div>
 
-          {/* Fila Esperando Resposta Agora */}
           <div className="lg:col-span-5 bg-card border border-border rounded-xl p-5 flex flex-col">
             <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
               <div>
@@ -321,7 +315,7 @@ export function CrmAnalyticsDashboard({
           </div>
           {stats.attendantStats.length === 0 ? (
             <div className="p-8 text-center text-xs text-muted-foreground">
-              Nenhum atendente vinculado ao CRM ainda. Adicione profissionais na aba Configurações &amp; Equipe.
+              Nenhum atendente vinculado ao CRM ainda. Adicione profissionais na aba Equipe &amp; IA.
             </div>
           ) : (
             <div className="overflow-x-auto">

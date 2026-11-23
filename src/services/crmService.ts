@@ -18,7 +18,6 @@ import type {
   CrmAttendant,
   CrmCampaign,
   CrmCampaignDispatch,
-  CrmCampaignType,
   CrmConversation,
   CrmFunnelStage,
   CrmMessage,
@@ -682,7 +681,6 @@ export async function sendCrmMessageApi(params: {
     }
   }
 
-  // Fallback when Firebase Admin SDK is unavailable in local sandbox
   const now = Date.now();
   const formattedBody =
     params.useSignature && (params.senderType || 'attendant') === 'attendant' && params.attendantName
@@ -698,8 +696,7 @@ export async function sendCrmMessageApi(params: {
     direction: 'outbound',
     senderType: params.senderType || 'attendant',
     senderId: params.attendantId || '',
-    senderName:
-      params.senderType === 'ai' ? 'Lumi IA' : params.attendantName || 'Equipe',
+    senderName: params.senderType === 'ai' ? 'Lumi IA' : params.attendantName || 'Equipe',
     body: formattedBody,
     mediaType: 'text',
     deliveryStatus: 'queued',
@@ -1019,10 +1016,7 @@ export async function deleteOpportunity(salonId: string, opportunityId: string):
 // CAMPAIGNS & AUDIENCE EVALUATION
 // =====================================================
 
-export async function saveCrmCampaign(
-  salonId: string,
-  campaign: CrmCampaign
-): Promise<void> {
+export async function saveCrmCampaign(salonId: string, campaign: CrmCampaign): Promise<void> {
   const now = Date.now();
   await setDoc(
     doc(db, `salons/${salonId}/crmCampaigns`, campaign.id),
@@ -1088,7 +1082,6 @@ export async function evaluateCampaignAudienceApi(params: {
     }
   }
 
-  // Client-side exact Firestore state evaluation fallback when Admin SDK returns 503
   const today = new Date();
   const todayYmd = today.toISOString().slice(0, 10);
   const tomorrowYmd = new Date(today.getTime() + 86400000).toISOString().slice(0, 10);
@@ -1253,7 +1246,6 @@ export async function dispatchCampaignApi(params: {
     }
   }
 
-  // Sandbox fallback
   const now = Date.now();
   const waLinks: Array<{ clientName: string; waLink: string }> = [];
   for (const r of eligible.slice(0, 50)) {
@@ -1388,10 +1380,7 @@ export async function removeCrmAttendant(salonId: string, attendantId: string): 
   await deleteDoc(doc(db, `salons/${salonId}/crmAttendants`, attendantId));
 }
 
-export async function saveCrmSettings(
-  salonId: string,
-  settings: CrmSettings
-): Promise<void> {
+export async function saveCrmSettings(salonId: string, settings: CrmSettings): Promise<void> {
   await setDoc(
     doc(db, `salons/${salonId}/crmSettings`, 'config'),
     {
@@ -1476,9 +1465,7 @@ export function computeFunnelAnalytics(
   const conversionRatePct =
     conversionBase > 0 ? Math.round((stageCounts.scheduled / conversionBase) * 100) : 0;
 
-  const responseSamples = convs
-    .map((c) => c.firstResponseMs || 0)
-    .filter((ms) => ms > 0);
+  const responseSamples = convs.map((c) => c.firstResponseMs || 0).filter((ms) => ms > 0);
   const avgFirstResponseMin =
     responseSamples.length > 0
       ? Math.round(responseSamples.reduce((acc, v) => acc + v, 0) / responseSamples.length / 60000)
@@ -1487,7 +1474,6 @@ export function computeFunnelAnalytics(
   const aiConvs = convs.filter((c) => c.handlingMode === 'ai').length;
   const aiHandledPct = convs.length > 0 ? Math.round((aiConvs / convs.length) * 100) : 0;
 
-  // Drop-off diagnosis
   const dropoffAwaiting =
     opps.length > 0 && stageCounts.awaiting_reply > stageCounts.in_service
       ? Math.round((stageCounts.awaiting_reply / opps.length) * 100)
