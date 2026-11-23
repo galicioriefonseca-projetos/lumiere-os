@@ -302,26 +302,26 @@ export default function DashboardHome() {
               </button>
            </div>
          </div>
-          <div className={cn("grid gap-3.5", 
+          <div className={cn("grid gap-3 sm:gap-3.5", 
             isReceptionistOrAttendant 
-              ? "grid-cols-3" 
+              ? "grid-cols-2 sm:grid-cols-3" 
               : (isAgency || isModuleEnabled('clientPortal')) 
                 ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-7" 
                 : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
           )}>
-            <Link to="/dashboard/agendamentos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
+            <Link to="/dashboard/agendamentos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
                <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                  <CalendarPlus className="w-5 h-5 text-primary" />
                </div>
                <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.appointments || 'Agenda'}</span>
             </Link>
-            <Link to="/dashboard/clientes" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
+            <Link to="/dashboard/clientes" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
                <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                  <Users className="w-5 h-5 text-primary" />
                </div>
                <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.clients || 'Clientes'}</span>
             </Link>
-            <Link to="/dashboard/servicos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
+            <Link to="/dashboard/servicos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
                <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
                  {segment === 'beauty' ? (
                    <Scissors className="w-5 h-5 text-primary" />
@@ -335,11 +335,11 @@ export default function DashboardHome() {
             </Link>
 
             {(isAgency || isModuleEnabled('clientPortal')) && (
-              <Link to="/dashboard/area-do-cliente" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-emerald-500/20 hover:border-emerald-500/40 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
-                 <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 group-hover:border-emerald-500/40 group-hover:scale-105 transition-all duration-300 text-emerald-400">
+              <Link to="/dashboard/area-do-cliente" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-emerald-500/20 hover:border-emerald-500/40 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
+                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 group-hover:border-emerald-300 group-hover:scale-105 transition-all duration-300 text-emerald-700">
                    <Globe className="w-5 h-5" />
                  </div>
-                 <span className="text-xs font-semibold text-white line-clamp-1">Portal Clientes</span>
+                 <span className="text-xs font-semibold text-foreground line-clamp-1">Portal Clientes</span>
               </Link>
             )}
 

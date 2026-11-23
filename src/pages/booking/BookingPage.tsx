@@ -26,9 +26,11 @@ import {
   Mail, 
   FileText, 
   ArrowLeft,
-  CalendarDays
+  CalendarDays,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 
 // Help helper for UUIDs/nanoids for public creations
 function generateSimpleId() {
@@ -68,6 +70,7 @@ export default function BookingPage() {
 
   // Auto-calculated fields during check-out
   const [savingAppointment, setSavingAppointment] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [successAppointment, setSuccessAppointment] = useState<Appointment | null>(null);
 
   // Local calendar helper state
@@ -263,8 +266,11 @@ export default function BookingPage() {
   ];
 
   const handleConfirmAppointment = async () => {
-    if (!salon || !selectedService || !selectedDate || !selectedTime || !clientName || !clientPhone) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
+    setSubmitError(null);
+    if (!salon || !selectedService || !selectedDate || !selectedTime || !clientName.trim() || !clientPhone.trim()) {
+      const msg = 'Por favor, preencha seu nome completo e telefone para confirmar.';
+      setSubmitError(msg);
+      toast.error(msg);
       return;
     }
 
@@ -316,10 +322,13 @@ export default function BookingPage() {
       await setDoc(appRef, apptData);
 
       setSuccessAppointment(apptData);
+      toast.success('Agendamento confirmado com sucesso!');
       setStep(6); // Success screen
     } catch (err: any) {
       console.error('Erro ao agendar compromisso:', err);
-      alert('Não foi possível realizar seu agendamento. Por favor, tente novamente.');
+      const msg = 'Não foi possível realizar seu agendamento. Verifique sua conexão e tente novamente.';
+      setSubmitError(msg);
+      toast.error(msg);
     } finally {
       setSavingAppointment(false);
     }
@@ -328,9 +337,9 @@ export default function BookingPage() {
   // Render Loader
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white flex flex-col justify-center items-center p-6 font-sans select-none" id="booking_page_loading">
-        <div className="w-12 h-12 border-4 border-zinc-800 border-t-white rounded-full animate-spin"></div>
-        <p className="mt-4 text-zinc-400 font-medium text-sm">Carregando portal de agendamentos...</p>
+      <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex flex-col justify-center items-center p-6 font-sans select-none" id="booking_page_loading">
+        <div className="w-11 h-11 border-4 border-[#E5E2DC] border-t-[#171717] rounded-full animate-spin"></div>
+        <p className="mt-4 text-[#6B6B6B] font-medium text-sm">Carregando portal de agendamentos...</p>
       </div>
     );
   }
@@ -338,18 +347,18 @@ export default function BookingPage() {
   // Render Booking Error (e.g., Disabled, Not found, Server Issues)
   if (errorMsg) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-white flex flex-col justify-center items-center p-6 font-sans text-center max-w-sm mx-auto" id="booking_page_error">
-        <CalendarDays className="w-16 h-16 text-zinc-600 mb-4 stroke-[1.5]" />
-        <h1 className="text-xl font-bold tracking-tight mb-2">Agendamento Online</h1>
+      <div className="min-h-screen bg-[#F6F5F2] text-[#171717] flex flex-col justify-center items-center p-6 font-sans text-center max-w-sm mx-auto" id="booking_page_error">
+        <CalendarDays className="w-14 h-14 text-[#8A6D36] mb-4 stroke-[1.5]" />
+        <h1 className="text-xl font-bold tracking-tight text-[#171717] mb-2">Agendamento Online</h1>
         {salon && (
-          <p className="text-lg text-emerald-400 font-semibold mb-3">{salon.name}</p>
+          <p className="text-base text-emerald-700 font-semibold mb-3">{salon.name}</p>
         )}
-        <div className="p-4 bg-zinc-900/50 border border-zinc-800/80 rounded-2xl mb-6">
-          <p className="text-zinc-400 text-sm leading-relaxed">{errorMsg}</p>
+        <div className="p-4 bg-white border border-[#E5E2DC] rounded-2xl mb-6 shadow-xs">
+          <p className="text-[#6B6B6B] text-sm leading-relaxed">{errorMsg}</p>
         </div>
         <button 
           onClick={() => navigate('/')} 
-          className="px-6 py-2.5 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 active:bg-zinc-800 rounded-xl transition font-medium text-sm flex items-center gap-2"
+          className="px-6 py-3 bg-[#171717] text-white hover:bg-[#2B2B2B] rounded-xl transition font-semibold text-sm flex items-center gap-2 cursor-pointer"
           id="btn_back_home"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -362,29 +371,31 @@ export default function BookingPage() {
   const progressPct = ((step - 1) / 4) * 100;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white font-sans selection:bg-zinc-800 select-none" id="booking_page_container">
+    <div className="min-h-screen bg-[#F6F5F2] text-[#171717] font-sans select-none" id="booking_page_container">
       {/* Wizard Centered Card */}
-      <div className="max-w-md mx-auto min-h-screen bg-zinc-950 flex flex-col justify-between py-6 px-4" id="booking_page_card">
+      <div className="max-w-md mx-auto min-h-screen flex flex-col justify-between py-6 px-4" id="booking_page_card">
         
         {/* Progress header & Back actions (steps 2 to 5) */}
         {step > 1 && step < 6 && (
-          <div className="flex items-center gap-4 mb-4" id="booking_header">
+          <div className="flex items-center gap-3.5 mb-5" id="booking_header">
             <button 
+              type="button"
               onClick={prevStep} 
-              className="p-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 active:scale-95 rounded-xl transition text-zinc-400 hover:text-white"
+              className="p-2.5 bg-white border border-[#E5E2DC] hover:bg-[#FAF9F7] active:scale-95 rounded-xl transition text-[#171717] shadow-xs cursor-pointer"
               id="booking_back_btn"
               title="Voltar"
+              aria-label="Voltar passo"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <div className="flex justify-between items-center text-xs text-zinc-500 font-mono mb-1">
+              <div className="flex justify-between items-center text-xs text-[#6B6B6B] font-medium mb-1.5">
                 <span>Passo {step - 1} de 4</span>
-                <span>{Math.round(progressPct)}% concluído</span>
+                <span className="tabular-nums">{Math.round(progressPct)}% concluído</span>
               </div>
-              <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden">
+              <div className="w-full bg-[#E5E2DC] h-1.5 rounded-full overflow-hidden">
                 <div 
-                  className="bg-zinc-400 h-full rounded-full transition-all duration-300" 
+                  className="bg-[#171717] h-full rounded-full transition-all duration-300" 
                   style={{ width: `${progressPct}%` }}
                 ></div>
               </div>
@@ -407,30 +418,35 @@ export default function BookingPage() {
                 id="booking_step_1"
               >
                 {/* Salon Initials Avatar Logo */}
-                <div className="w-20 h-20 bg-gradient-to-br from-zinc-700 to-zinc-900 border border-zinc-700 hover:border-zinc-500 text-white flex items-center justify-center rounded-3xl mx-auto mb-6 text-3xl font-extrabold tracking-tight shadow-xl" id="salon_welcome_logo">
+                <div className="w-20 h-20 bg-white border border-[#B89B5E]/40 text-[#8A6D36] flex items-center justify-center rounded-3xl mx-auto mb-6 text-2xl font-extrabold tracking-tight shadow-sm" id="salon_welcome_logo">
                   {salon?.name ? salon.name.substring(0, 2).toUpperCase() : 'LM'}
                 </div>
 
-                <p className="text-xs font-semibold tracking-wider text-emerald-400 uppercase mb-1 font-mono">{salon?.businessType === 'barbershop' ? 'Barbearia' : salon?.businessType === 'clinic' ? 'Clínica de Estética' : 'Salão de Beleza'}</p>
-                <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2 leading-tight">{salon?.name}</h1>
-                <p className="text-zinc-500 font-mono text-xs mb-8">{salon?.city} • {salon?.state}</p>
+                <p className="text-[11px] font-bold tracking-widest text-[#8A6D36] uppercase mb-1.5">
+                  {salon?.businessType === 'barbershop' ? 'Barbearia' : salon?.businessType === 'clinic' ? 'Clínica de Estética' : 'Salão de Beleza'}
+                </p>
+                <h1 className="text-3xl font-extrabold tracking-tight text-[#171717] mb-2 leading-tight">{salon?.name}</h1>
+                {(salon?.city || salon?.state) && (
+                  <p className="text-[#6B6B6B] text-xs mb-7">{[salon?.city, salon?.state].filter(Boolean).join(' • ')}</p>
+                )}
 
-                <div className="p-5 bg-zinc-900/40 border border-zinc-900 hover:border-zinc-800/80 rounded-2xl mb-8 text-left leading-relaxed">
-                  <p className="text-sm text-zinc-300">
+                <div className="p-5 bg-white border border-[#E5E2DC] rounded-2xl mb-8 text-left leading-relaxed shadow-xs">
+                  <p className="text-sm text-[#171717]/90">
                     {salon?.bookingMessage || 'Seja muito bem-vindo ao nosso agendamento online! Escolha o seu serviço e reserve o seu horário em menos de um minuto de forma fácil e automatizada.'}
                   </p>
                 </div>
 
                 <div className="space-y-3">
                   <button 
+                    type="button"
                     onClick={nextStep} 
-                    className="w-full py-3.5 bg-zinc-100 hover:bg-white active:bg-zinc-200 text-black font-semibold rounded-2xl shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition duration-200 text-sm flex items-center justify-center gap-2"
+                    className="w-full py-3.5 bg-[#171717] hover:bg-[#2B2B2B] active:scale-[0.99] text-white font-semibold rounded-2xl shadow-md transition duration-200 text-sm flex items-center justify-center gap-2 cursor-pointer"
                     id="btn_start_booking"
                   >
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="w-4 h-4 text-[#D8C79F]" />
                     Agendar Horário
                   </button>
-                  <p className="text-[10px] text-zinc-600 font-mono">LumièreOS • Seguro & Criptografado</p>
+                  <p className="text-[10px] text-[#6B6B6B]">LumièreOS • Agendamento Online Oficial</p>
                 </div>
               </motion.div>
             )}
@@ -445,35 +461,35 @@ export default function BookingPage() {
                 className="py-2 flex-1 flex flex-col justify-start"
                 id="booking_step_2"
               >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold tracking-tight text-white mb-1">Escolha o serviço</h2>
-                  <p className="text-xs text-zinc-500">Selecione o procedimento que deseja realizar atualmente.</p>
+                <div className="mb-5">
+                  <h2 className="text-xl font-bold tracking-tight text-[#171717] mb-1">Escolha o serviço</h2>
+                  <p className="text-xs text-[#6B6B6B]">Selecione o procedimento que deseja realizar.</p>
                 </div>
 
                 {/* Search query */}
-                <div className="relative mb-6">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <div className="relative mb-5">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B6B6B]" />
                   <input 
                     type="text" 
                     placeholder="Buscar serviço..." 
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full bg-zinc-900/60 hover:bg-zinc-900/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 pl-10 pr-4 py-2.5 rounded-xl font-medium text-sm focus:outline-none placeholder-zinc-500 text-white transition"
+                    className="w-full bg-white border border-[#E5E2DC] focus:border-[#B89B5E] pl-10 pr-4 py-3 rounded-xl font-medium text-sm focus:outline-none placeholder-[#8B8881] text-[#171717] transition"
                     id="service_search_input"
                   />
                 </div>
 
                 {/* Services List grouped by Category */}
-                <div className="flex-1 overflow-y-auto pr-1 max-h-[58vh] space-y-6" id="services_catalog_list">
+                <div className="flex-1 overflow-y-auto pr-1 max-h-[60vh] space-y-5" id="services_catalog_list">
                   {Object.keys(groupedServices).length === 0 ? (
-                    <div className="text-center py-10">
-                      <p className="text-zinc-500 text-sm">Nenhum serviço disponível com o filtro atual.</p>
+                    <div className="text-center py-10 bg-white rounded-2xl border border-[#E5E2DC]">
+                      <p className="text-[#6B6B6B] text-sm">Nenhum serviço disponível com o filtro atual.</p>
                     </div>
                   ) : (
                     Object.keys(groupedServices).map(category => (
                       <div key={category} className="space-y-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 font-mono flex items-center gap-1.5 px-1">
-                          <span className="w-1.5 h-1.5 bg-zinc-600 rounded-full"></span>
+                        <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#6B6B6B] flex items-center gap-1.5 px-1">
+                          <span className="w-1.5 h-1.5 bg-[#B89B5E] rounded-full"></span>
                           {category}
                         </h3>
                         <div className="space-y-2">
@@ -481,30 +497,31 @@ export default function BookingPage() {
                             const isSelected = selectedService?.id === service.id;
                             return (
                               <button
+                                type="button"
                                 key={service.id}
                                 onClick={() => handleSelectService(service)}
-                                className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex justify-between items-center group relative overflow-hidden ${
+                                className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center gap-3 group cursor-pointer ${
                                   isSelected 
-                                    ? 'bg-zinc-900 border-white ring-1 ring-white'
-                                    : 'bg-zinc-900/40 border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/60'
+                                    ? 'bg-[#F5F1E9] border-[#B89B5E] ring-1 ring-[#B89B5E]'
+                                    : 'bg-white border-[#E5E2DC] hover:border-[#B89B5E]/60 hover:bg-[#FAF9F7]'
                                 }`}
                                 id={`service_item_${service.id}`}
                               >
-                                <div className="flex-1 pr-3">
-                                  <h4 className="font-bold text-sm text-white group-hover:text-zinc-200 transition">{service.name}</h4>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-bold text-sm text-[#171717]">{service.name}</h4>
                                   {service.description && (
-                                    <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{service.description}</p>
+                                    <p className="text-xs text-[#6B6B6B] mt-1 line-clamp-2 leading-relaxed">{service.description}</p>
                                   )}
-                                  <div className="flex items-center gap-2 mt-2 font-mono text-[10px] text-zinc-400">
-                                    <span className="flex items-center gap-1"><Clock className="w-3 h-3 text-zinc-500" /> {service.durationMinutes} min</span>
+                                  <div className="flex items-center gap-2 mt-2 text-[11px] text-[#6B6B6B]">
+                                    <span className="flex items-center gap-1 tabular-nums"><Clock className="w-3 h-3 text-[#8A6D36]" /> {service.durationMinutes} min</span>
                                     <span>•</span>
                                     <span>Preço Fixo</span>
                                   </div>
                                 </div>
-                                <div className="text-right flex flex-col justify-center items-end h-full">
-                                  <span className="font-extrabold text-sm text-zinc-100 font-mono tracking-tight">{formatBRL(service.price)}</span>
+                                <div className="text-right flex flex-col justify-center items-end shrink-0">
+                                  <span className="font-extrabold text-sm text-[#171717] tabular-nums">{formatBRL(service.price)}</span>
                                   {isSelected && (
-                                    <span className="text-[10px] bg-white text-black font-semibold rounded-full px-2 py-0.5 mt-2 shadow flex items-center gap-1">
+                                    <span className="text-[10px] bg-[#171717] text-white font-semibold rounded-full px-2 py-0.5 mt-1.5 flex items-center gap-1">
                                       <CheckCircle className="w-2.5 h-2.5" /> Selecionado
                                     </span>
                                   )}
@@ -530,38 +547,39 @@ export default function BookingPage() {
                 className="py-2"
                 id="booking_step_3"
               >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold tracking-tight text-white mb-1">Qual é o profissional?</h2>
-                  <p className="text-xs text-zinc-500">Escolha o membro de nossa equipe para realizar o procedimento.</p>
+                <div className="mb-5">
+                  <h2 className="text-xl font-bold tracking-tight text-[#171717] mb-1">Qual é o profissional?</h2>
+                  <p className="text-xs text-[#6B6B6B]">Escolha o membro da equipe para o atendimento.</p>
                 </div>
 
                 <div className="space-y-3 max-h-[64vh] overflow-y-auto pr-1" id="professionals_list">
                   {/* Option 1: No Preference */}
                   <button
+                    type="button"
                     onClick={() => handleSelectProfessional('any')}
-                    className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center gap-4 group ${
+                    className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex items-center gap-3.5 group cursor-pointer ${
                       selectedProfessional === 'any'
-                        ? 'bg-zinc-900 border-white ring-1 ring-white'
-                        : 'bg-zinc-900/40 border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/60'
+                        ? 'bg-[#F5F1E9] border-[#B89B5E] ring-1 ring-[#B89B5E]'
+                        : 'bg-white border-[#E5E2DC] hover:border-[#B89B5E]/60 hover:bg-[#FAF9F7]'
                     }`}
                     id="professional_item_any"
                   >
-                    <div className="w-12 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center border border-white/5 shadow-inner">
-                      <Sparkles className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition duration-300" />
+                    <div className="w-12 h-12 bg-[#F5F1E9] text-[#8A6D36] rounded-2xl flex items-center justify-center border border-[#B89B5E]/30 shrink-0">
+                      <Sparkles className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h4 className="font-bold text-sm text-white flex items-center gap-1.5">
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-sm text-[#171717] flex flex-wrap items-center gap-1.5">
                         Qualquer Profissional
-                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-900/50">Recomendado</span>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">Recomendado</span>
                       </h4>
-                      <p className="text-xs text-zinc-500 mt-0.5">Atribuiremos o horário livre mais rápido a um profissional disponível.</p>
+                      <p className="text-xs text-[#6B6B6B] mt-0.5">Atribuiremos o horário livre mais rápido disponível.</p>
                     </div>
                   </button>
 
-                  <div className="text-xs font-semibold font-mono text-zinc-600 uppercase pt-2 px-1 tracking-wider">Membros da Equipe</div>
+                  <div className="text-[11px] font-bold text-[#6B6B6B] uppercase pt-2 px-1 tracking-wider">Membros da Equipe</div>
 
                   {professionals.length === 0 ? (
-                    <p className="text-zinc-500 text-sm px-1">Nenhum profissional cadastrado.</p>
+                    <p className="text-[#6B6B6B] text-sm px-1">Nenhum profissional cadastrado.</p>
                   ) : (
                     professionals.map(p => {
                       const isSelected = selectedProfessional && (selectedProfessional as Professional).id === p.id;
@@ -569,12 +587,13 @@ export default function BookingPage() {
 
                       return (
                         <button
+                          type="button"
                           key={p.id}
                           onClick={() => handleSelectProfessional(p)}
-                          className={`w-full text-left p-4 rounded-xl border transition-all duration-200 flex items-center gap-4 group ${
+                          className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex items-center gap-3.5 group cursor-pointer ${
                             isSelected
-                              ? 'bg-zinc-900 border-white ring-1 ring-white'
-                              : 'bg-zinc-900/40 border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/60'
+                              ? 'bg-[#F5F1E9] border-[#B89B5E] ring-1 ring-[#B89B5E]'
+                              : 'bg-white border-[#E5E2DC] hover:border-[#B89B5E]/60 hover:bg-[#FAF9F7]'
                           }`}
                           id={`professional_item_${p.id}`}
                         >
@@ -582,16 +601,17 @@ export default function BookingPage() {
                             <img 
                               src={p.photoURL || p.avatarUrl} 
                               alt={p.name}
-                              className="w-12 h-12 rounded-2xl object-cover border border-[#D4AF37]/30 shadow-inner group-hover:scale-105 transition"
+                              referrerPolicy="no-referrer"
+                              className="w-12 h-12 rounded-2xl object-cover border border-[#B89B5E]/40 shrink-0"
                             />
                           ) : (
-                            <div className="w-12 h-12 rounded-2xl bg-zinc-850 border border-zinc-800 text-white font-mono text-sm font-extrabold flex items-center justify-center shadow-inner group-hover:scale-105 transition">
+                            <div className="w-12 h-12 rounded-2xl bg-[#FAF9F7] border border-[#E5E2DC] text-[#8A6D36] text-sm font-extrabold flex items-center justify-center shrink-0">
                               {avatarLetters}
                             </div>
                           )}
-                          <div className="flex-1">
-                            <h4 className="font-bold text-sm text-white group-hover:text-zinc-200 transition">{p.name}</h4>
-                            <p className="text-xs text-zinc-500 mt-0.5 font-mono">{p.professionalFunction || p.role || 'Especialista'}</p>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-sm text-[#171717] truncate">{p.name}</h4>
+                            <p className="text-xs text-[#6B6B6B] mt-0.5 truncate">{p.professionalFunction || p.role || 'Especialista'}</p>
                           </div>
                         </button>
                       );
@@ -611,81 +631,81 @@ export default function BookingPage() {
                 className="py-2"
                 id="booking_step_4"
               >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold tracking-tight text-white mb-1">Data e Horário</h2>
-                  <p className="text-xs text-zinc-500">Selecione o momento ideal para a sua realização.</p>
+                <div className="mb-5">
+                  <h2 className="text-xl font-bold tracking-tight text-[#171717] mb-1">Data e Horário</h2>
+                  <p className="text-xs text-[#6B6B6B]">Selecione o momento ideal para o seu atendimento.</p>
                 </div>
 
                 {/* Date Navigator & Picker */}
-                <div className="p-4 bg-zinc-900/40 border border-zinc-900 hover:border-zinc-800 rounded-2xl mb-6" id="calendar_box">
+                <div className="p-4 bg-white border border-[#E5E2DC] rounded-2xl mb-5 shadow-xs" id="calendar_box">
                   <div className="flex justify-between items-center mb-4">
                     <button 
+                      type="button"
                       onClick={handlePrevMonth} 
-                      className="p-1.5 hover:bg-zinc-800 active:scale-95 rounded-lg transition text-zinc-400"
+                      className="p-2 hover:bg-[#FAF9F7] active:scale-95 rounded-lg transition text-[#6B6B6B] hover:text-[#171717] cursor-pointer"
                       title="Mês Anterior"
+                      aria-label="Mês Anterior"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <h3 className="text-sm font-bold tracking-tight font-mono uppercase text-zinc-300">
+                    <h3 className="text-sm font-bold tracking-tight uppercase text-[#171717]">
                       {monthNames[currentMonth - 1]} {currentYear}
                     </h3>
                     <button 
+                      type="button"
                       onClick={handleNextMonth} 
-                      className="p-1.5 hover:bg-zinc-800 active:scale-95 rounded-lg transition text-zinc-400"
+                      className="p-2 hover:bg-[#FAF9F7] active:scale-95 rounded-lg transition text-[#6B6B6B] hover:text-[#171717] cursor-pointer"
                       title="Próximo Mês"
+                      aria-label="Próximo Mês"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
 
                   {/* Calendar list grid of days */}
-                  <div className="grid grid-cols-7 gap-1.5 text-center mb-2 text-[10px] font-mono font-bold text-zinc-500 uppercase">
+                  <div className="grid grid-cols-7 gap-1.5 text-center mb-2 text-[10px] font-bold text-[#6B6B6B] uppercase">
                     <span>D</span><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span>
                   </div>
 
                   <div className="grid grid-cols-7 gap-1.5">
-                    {/* Placeholder empty spaces for start padding */}
                     {Array.from({ length: new Date(currentYear, currentMonth - 1, 1).getDay() }).map((_, idx) => (
                       <div key={`empty-${idx}`} />
                     ))}
 
-                    {/* Rendering real days */}
                     {daysInMonthList().map((rawDate, idx) => {
                       const yr = rawDate.getFullYear();
                       const mn = String(rawDate.getMonth() + 1).padStart(2, '0');
                       const dy = String(rawDate.getDate()).padStart(2, '0');
                       const dayStr = `${yr}-${mn}-${dy}`;
 
-                      // Check is it in the past
                       const rawToday = new Date();
                       rawToday.setHours(0,0,0,0);
                       const isPast = rawDate.getTime() < rawToday.getTime();
 
-                      // Check slots availability size
                       const slotsAvailable = isPast ? [] : getSlotsForDate(dayStr);
                       const hasAvailableSlots = slotsAvailable.length > 0;
-
                       const isSelected = selectedDate === dayStr;
 
                       return (
                         <button
+                          type="button"
                           key={`day-${idx}`}
                           disabled={isPast || !hasAvailableSlots}
                           onClick={() => {
                             setSelectedDate(dayStr);
                             setSelectedTime('');
                           }}
-                          className={`aspect-square max-h-10 text-xs rounded-xl flex flex-col justify-center items-center font-bold relative transition ${
+                          className={`aspect-square min-h-[40px] max-h-11 text-xs rounded-xl flex flex-col justify-center items-center font-bold relative transition tabular-nums ${
                             isPast || !hasAvailableSlots
-                              ? 'text-zinc-700 bg-transparent cursor-not-allowed font-medium'
+                              ? 'text-[#B5B0A6] bg-transparent cursor-not-allowed font-medium'
                               : isSelected
-                                ? 'bg-white text-black font-extrabold shadow'
-                                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200'
+                                ? 'bg-[#171717] text-white font-extrabold shadow-sm cursor-pointer'
+                                : 'bg-[#FAF9F7] hover:bg-[#F5F1E9] text-[#171717] border border-[#E5E2DC] cursor-pointer'
                           }`}
                         >
                           <span>{rawDate.getDate()}</span>
                           {!isPast && hasAvailableSlots && !isSelected && (
-                            <span className="w-1 h-1 bg-zinc-400 rounded-full mt-0.5"></span>
+                            <span className="w-1 h-1 bg-[#B89B5E] rounded-full mt-0.5"></span>
                           )}
                         </button>
                       );
@@ -696,28 +716,29 @@ export default function BookingPage() {
                 {/* Time Selection Grid */}
                 {selectedDate ? (
                   <div className="space-y-3" id="time_grid_section">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 font-mono px-1 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#6B6B6B] px-1 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-[#8A6D36]" />
                       Horários em {selectedDate.split('-').reverse().join('/')}
                     </h3>
 
                     {getSlotsForDate(selectedDate).length === 0 ? (
-                      <p className="text-zinc-500 text-xs px-1">Infelizmente todos os horários estão agendados para este dia.</p>
+                      <p className="text-[#6B6B6B] text-xs px-1">Infelizmente todos os horários estão agendados para este dia.</p>
                     ) : (
-                      <div className="grid grid-cols-4 gap-2 max-h-[22vh] overflow-y-auto pr-1">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[26vh] overflow-y-auto pr-1">
                         {getSlotsForDate(selectedDate).map(t => {
                           const isSelectedT = selectedTime === t;
                           return (
                             <button
+                              type="button"
                               key={t}
                               onClick={() => {
                                 setSelectedTime(t);
                                 nextStep();
                               }}
-                              className={`py-2 rounded-xl transition text-xs font-mono font-bold ${
+                              className={`min-h-[42px] py-2 rounded-xl transition text-xs font-bold tabular-nums cursor-pointer ${
                                 isSelectedT
-                                  ? 'bg-zinc-100 text-black shadow-md'
-                                  : 'bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-900 hover:border-zinc-800'
+                                  ? 'bg-[#171717] text-white shadow-sm'
+                                  : 'bg-white hover:bg-[#F5F1E9] text-[#171717] border border-[#E5E2DC] hover:border-[#B89B5E]'
                               }`}
                             >
                               {t}
@@ -728,8 +749,8 @@ export default function BookingPage() {
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-6 p-4 bg-zinc-900/10 border border-zinc-900 border-dashed rounded-2xl text-zinc-600 font-medium text-xs">
-                    Escolha uma data assinalada acima no calendário para carregar horários disponíveis.
+                  <div className="text-center py-6 p-4 bg-white/70 border border-[#E5E2DC] border-dashed rounded-2xl text-[#6B6B6B] font-medium text-xs">
+                    Escolha uma data disponível acima no calendário para carregar os horários.
                   </div>
                 )}
               </motion.div>
@@ -746,38 +767,38 @@ export default function BookingPage() {
                 id="booking_step_5"
               >
                 <div className="mb-5">
-                  <h2 className="text-xl font-bold tracking-tight text-white mb-1">Seus Dados & Confirmação</h2>
-                  <p className="text-xs text-zinc-500">Última etapa! Por favor, informe seus dados para finalizar.</p>
+                  <h2 className="text-xl font-bold tracking-tight text-[#171717] mb-1">Seus Dados & Confirmação</h2>
+                  <p className="text-xs text-[#6B6B6B]">Última etapa! Informe seus dados para finalizar.</p>
                 </div>
 
                 {/* Resume Card summary */}
-                <div className="p-4 bg-zinc-900/40 border border-zinc-900 rounded-2xl mb-5 space-y-3" id="booking_resume_card">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">Resumo da Reserva</div>
+                <div className="p-4 bg-white border border-[#E5E2DC] rounded-2xl mb-5 space-y-3 shadow-xs" id="booking_resume_card">
+                  <div className="text-[10px] uppercase tracking-wider text-[#8A6D36] font-bold">Resumo da Reserva</div>
                   
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-baseline">
-                      <span className="font-bold text-sm text-zinc-100">{selectedService?.name}</span>
-                      <span className="font-bold text-sm text-zinc-100 font-mono">{formatBRL(selectedService?.price || 0)}</span>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-baseline gap-2">
+                      <span className="font-bold text-sm text-[#171717]">{selectedService?.name}</span>
+                      <span className="font-bold text-sm text-[#171717] tabular-nums shrink-0">{formatBRL(selectedService?.price || 0)}</span>
                     </div>
-                    <div className="text-xs text-zinc-400 flex items-center gap-1.5 leading-none">
-                      <Clock className="w-3.5 h-3.5 text-zinc-500" /> Duração: {selectedService?.durationMinutes} min • Preço Fixo
+                    <div className="text-xs text-[#6B6B6B] flex items-center gap-1.5 leading-none">
+                      <Clock className="w-3.5 h-3.5 text-[#8A6D36]" /> Duração: {selectedService?.durationMinutes} min • Preço Fixo
                     </div>
                   </div>
 
-                  <div className="h-[1px] bg-zinc-900 my-1"></div>
+                  <div className="h-[1px] bg-[#E5E2DC] my-1"></div>
 
                   <div className="grid grid-cols-2 gap-3 pb-1 text-xs">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-mono text-zinc-500 uppercase">Profissional</span>
-                      <p className="font-bold text-zinc-300 flex items-center gap-1">
-                        <UserIcon className="w-3.5 h-3.5 text-zinc-500" />
-                        {selectedProfessional === 'any' ? 'Atribuído Automaticamente' : selectedProfessional?.name}
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-[10px] text-[#6B6B6B] uppercase font-semibold">Profissional</span>
+                      <p className="font-bold text-[#171717] flex items-center gap-1 truncate">
+                        <UserIcon className="w-3.5 h-3.5 text-[#8A6D36] shrink-0" />
+                        <span className="truncate">{selectedProfessional === 'any' ? 'Automático' : selectedProfessional?.name}</span>
                       </p>
                     </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold">Horário Marcado</span>
-                      <p className="font-bold text-zinc-300 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-[10px] text-[#6B6B6B] uppercase font-semibold">Horário Marcado</span>
+                      <p className="font-bold text-[#171717] flex items-center gap-1 tabular-nums">
+                        <Calendar className="w-3.5 h-3.5 text-[#8A6D36] shrink-0" />
                         {selectedDate.split('-').reverse().join('/')} às {selectedTime}
                       </p>
                     </div>
@@ -787,78 +808,92 @@ export default function BookingPage() {
                 {/* Form Field Entries */}
                 <form onSubmit={e => e.preventDefault()} className="space-y-3" id="guests_booking_form">
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400 font-medium">Seu Nome Completo <span className="text-red-400">*</span></label>
+                    <label className="text-xs text-[#171717] font-medium">Seu Nome Completo <span className="text-rose-600">*</span></label>
                     <input 
                       required
                       type="text" 
-                      placeholder="Ex: João da Silva" 
+                      placeholder="Ex: Maria da Silva" 
                       value={clientName}
-                      onChange={e => setClientName(e.target.value)}
-                      className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-700 p-2.5 rounded-xl text-sm focus:outline-none placeholder-zinc-500 text-white font-medium"
+                      onChange={e => {
+                        setClientName(e.target.value);
+                        if (submitError) setSubmitError(null);
+                      }}
+                      className="w-full bg-white border border-[#E5E2DC] focus:border-[#B89B5E] p-3 rounded-xl text-sm focus:outline-none placeholder-[#8B8881] text-[#171717] font-medium"
                       id="input_client_name"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400 font-medium">WhatsApp / Telefone <span className="text-red-400">*</span></label>
+                    <label className="text-xs text-[#171717] font-medium">WhatsApp / Telefone <span className="text-rose-600">*</span></label>
                     <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B6B6B]" />
                       <input 
                         required
                         type="tel" 
                         placeholder="Ex: (11) 99999-9999" 
                         value={clientPhone}
-                        onChange={e => setClientPhone(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-700 pl-10 pr-4 p-2.5 rounded-xl text-sm focus:outline-none placeholder-zinc-500 text-white font-mono"
+                        onChange={e => {
+                          setClientPhone(e.target.value);
+                          if (submitError) setSubmitError(null);
+                        }}
+                        className="w-full bg-white border border-[#E5E2DC] focus:border-[#B89B5E] pl-10 pr-4 p-3 rounded-xl text-sm focus:outline-none placeholder-[#8B8881] text-[#171717] tabular-nums"
                         id="input_client_phone"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400 font-medium">E-mail <span className="text-zinc-500">(Opcional)</span></label>
+                    <label className="text-xs text-[#171717] font-medium">E-mail <span className="text-[#6B6B6B]">(Opcional)</span></label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6B6B6B]" />
                       <input 
                         type="email" 
-                        placeholder="Ex: joao@gmail.com" 
+                        placeholder="Ex: cliente@email.com" 
                         value={clientEmail}
                         onChange={e => setClientEmail(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-700 pl-10 pr-4 p-2.5 rounded-xl text-sm focus:outline-none placeholder-zinc-500 text-white font-medium"
+                        className="w-full bg-white border border-[#E5E2DC] focus:border-[#B89B5E] pl-10 pr-4 p-3 rounded-xl text-sm focus:outline-none placeholder-[#8B8881] text-[#171717] font-medium"
                         id="input_client_email"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-zinc-400 font-medium">Observações especiais <span className="text-zinc-500">(Opcional)</span></label>
+                    <label className="text-xs text-[#171717] font-medium">Observações especiais <span className="text-[#6B6B6B]">(Opcional)</span></label>
                     <div className="relative">
-                      <FileText className="absolute left-3 top-3.5 w-4 h-4 text-zinc-500" />
+                      <FileText className="absolute left-3.5 top-3.5 w-4 h-4 text-[#6B6B6B]" />
                       <textarea 
                         rows={2}
                         placeholder="Ex: Alergia a algum tipo de produto, cabelo sensível, etc." 
                         value={notes}
                         onChange={e => setNotes(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-700 pl-10 pr-4 p-2.5 rounded-xl text-sm focus:outline-none placeholder-zinc-500 text-white font-medium resize-none leading-relaxed"
+                        className="w-full bg-white border border-[#E5E2DC] focus:border-[#B89B5E] pl-10 pr-4 p-3 rounded-xl text-sm focus:outline-none placeholder-[#8B8881] text-[#171717] font-medium resize-none leading-relaxed"
                         id="input_booking_notes"
                       />
                     </div>
                   </div>
 
+                  {submitError && (
+                    <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{submitError}</span>
+                    </div>
+                  )}
+
                   <button 
-                    disabled={savingAppointment || !clientName || !clientPhone}
+                    type="button"
+                    disabled={savingAppointment}
                     onClick={handleConfirmAppointment}
-                    className="w-full mt-4 py-3 bg-white text-black font-extrabold hover:bg-zinc-100 active:scale-[0.99] rounded-2xl transition shadow-lg flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full mt-4 py-3.5 bg-[#171717] text-white font-bold hover:bg-[#2B2B2B] active:scale-[0.99] rounded-2xl transition shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     id="btn_submit_booking"
                   >
                     {savingAppointment ? (
                       <>
-                        <div className="w-5 h-5 border-2 border-zinc-800 border-t-black rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                         Enviando agendamento...
                       </>
                     ) : (
                       <>
-                        <CheckCircle className="w-4 h-4" />
+                        <CheckCircle className="w-4 h-4 text-[#D8C79F]" />
                         Finalizar e Confirmar
                       </>
                     )}
@@ -876,43 +911,43 @@ export default function BookingPage() {
                 className="text-center py-6"
                 id="booking_success_screen"
               >
-                <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center rounded-3xl mx-auto mb-6 shadow-inner animate-pulse">
+                <div className="w-16 h-16 bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center rounded-3xl mx-auto mb-6 shadow-xs">
                   <CheckCircle className="w-8 h-8" />
                 </div>
 
-                <h1 className="text-2xl font-extrabold tracking-tight text-white mb-2">Agendamento Confirmado!</h1>
-                <p className="text-zinc-400 text-xs leading-relaxed max-w-xs mx-auto mb-6">
-                  Sua reserva foi concluída com sucesso no LumièreOS do estabelecimento. Aguardamos sua visita!
+                <h1 className="text-2xl font-extrabold tracking-tight text-[#171717] mb-2">Agendamento Confirmado!</h1>
+                <p className="text-[#6B6B6B] text-xs leading-relaxed max-w-xs mx-auto mb-6">
+                  Sua reserva foi concluída com sucesso no LumièreOS. Aguardamos sua visita!
                 </p>
 
                 {/* receipt details box */}
-                <div className="p-4 bg-zinc-900/50 border border-zinc-900 rounded-2xl mb-8 text-left space-y-3.5" id="receipt_summary">
-                  <div className="flex justify-between items-baseline">
-                    <span className="font-bold text-sm text-white">{selectedService?.name}</span>
-                    <span className="font-bold text-sm text-zinc-100 font-mono">{formatBRL(selectedService?.price || 0)}</span>
+                <div className="p-4 bg-white border border-[#E5E2DC] rounded-2xl mb-7 text-left space-y-3.5 shadow-xs" id="receipt_summary">
+                  <div className="flex justify-between items-baseline gap-2">
+                    <span className="font-bold text-sm text-[#171717]">{selectedService?.name}</span>
+                    <span className="font-bold text-sm text-[#171717] tabular-nums shrink-0">{formatBRL(selectedService?.price || 0)}</span>
                   </div>
 
-                  <div className="h-[1px] bg-zinc-850"></div>
+                  <div className="h-[1px] bg-[#E5E2DC]"></div>
 
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <span className="text-[10px] font-mono text-zinc-500 uppercase">Profissional</span>
-                      <p className="font-bold text-zinc-300 mt-0.5">{successAppointment?.professionalName}</p>
+                      <span className="text-[10px] text-[#6B6B6B] uppercase font-semibold">Profissional</span>
+                      <p className="font-bold text-[#171717] mt-0.5">{successAppointment?.professionalName}</p>
                     </div>
                     <div>
-                      <span className="text-[10px] font-mono text-zinc-500 uppercase">Horário Reservado</span>
-                      <p className="font-bold text-zinc-300 mt-0.5 font-mono">{selectedDate.split('-').reverse().join('/')} às {selectedTime}</p>
+                      <span className="text-[10px] text-[#6B6B6B] uppercase font-semibold">Horário Reservado</span>
+                      <p className="font-bold text-[#171717] mt-0.5 tabular-nums">{selectedDate.split('-').reverse().join('/')} às {selectedTime}</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <span className="text-[10px] font-mono text-zinc-500 uppercase">Cliente</span>
-                      <p className="font-bold text-zinc-300 mt-0.5">{clientName}</p>
+                      <span className="text-[10px] text-[#6B6B6B] uppercase font-semibold">Cliente</span>
+                      <p className="font-bold text-[#171717] mt-0.5">{clientName}</p>
                     </div>
                     <div>
-                      <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold">Origem</span>
-                      <span className="inline-block mt-0.5 px-2 py-0.5 bg-emerald-950/40 text-emerald-400 font-mono text-[9px] font-bold rounded-full border border-emerald-900/40">Online / Client</span>
+                      <span className="text-[10px] text-[#6B6B6B] uppercase font-semibold">Origem</span>
+                      <span className="inline-block mt-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200">Online / Cliente</span>
                     </div>
                   </div>
                 </div>
@@ -922,11 +957,11 @@ export default function BookingPage() {
                   {/* WhatsApp redirect w/ pre-configured invoice format */}
                   <a
                     href={`https://wa.me/${salon?.phone ? salon.phone.replace(/\D/g, '') : ''}?text=${encodeURIComponent(
-                      `Olá! Acabo de fazer um agendamento online no LumièreOS completo:\n\n*Serviço:* ${selectedService?.name}\n*Profissional:* ${successAppointment?.professionalName}\n*Data:* ${selectedDate.split('-').reverse().join('/')}\n*Horário:* ${selectedTime}\n*Cliente:* ${clientName}\n\nGostaria de confirmar meu compromisso!`
+                      `Olá! Acabo de fazer um agendamento online no LumièreOS:\n\n*Serviço:* ${selectedService?.name}\n*Profissional:* ${successAppointment?.professionalName}\n*Data:* ${selectedDate.split('-').reverse().join('/')}\n*Horário:* ${selectedTime}\n*Cliente:* ${clientName}\n\nGostaria de confirmar meu compromisso!`
                     )}`}
                     target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold rounded-xl transition shadow flex items-center justify-center gap-2 text-sm"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold rounded-2xl transition shadow-sm flex items-center justify-center gap-2 text-sm"
                     id="btn_whatsapp_confirm"
                   >
                     <Phone className="w-4 h-4" />
@@ -934,8 +969,8 @@ export default function BookingPage() {
                   </a>
 
                   <button
+                    type="button"
                     onClick={() => {
-                      // Reset and rerun wizard back to page 1
                       setStep(1);
                       setSelectedService(null);
                       setSelectedProfessional(null);
@@ -945,8 +980,9 @@ export default function BookingPage() {
                       setClientPhone('');
                       setClientEmail('');
                       setNotes('');
+                      setSubmitError(null);
                     }}
-                    className="w-full py-2.5 bg-zinc-850 hover:bg-zinc-800 text-zinc-200 hover:text-white font-bold rounded-xl transition text-xs border border-zinc-800 hover:border-zinc-700"
+                    className="w-full py-3 bg-white hover:bg-[#FAF9F7] text-[#171717] font-bold rounded-2xl transition text-xs border border-[#E5E2DC] cursor-pointer"
                     id="btn_restart_booking"
                   >
                     Fazer outro agendamento

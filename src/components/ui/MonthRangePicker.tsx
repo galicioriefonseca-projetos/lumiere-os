@@ -230,21 +230,21 @@ export default function MonthRangePicker({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all shadow-sm ${
+        className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
           isOpen
-            ? 'border-[#DFC498] bg-[#0A261E] text-white ring-2 ring-[#DFC498]/20'
-            : 'border-[#17473A] bg-[#061A14] text-white hover:border-[#DFC498]/60 hover:bg-[#0A261E]'
+            ? 'border-[#B89B5E] bg-[#F5F1E9] text-[#171717] ring-2 ring-[#B89B5E]/20'
+            : 'border-[#E5E2DC] bg-white text-[#171717] hover:border-[#B89B5E]/60 hover:bg-[#FAF9F7]'
         }`}
       >
-        <CalendarIcon className="w-4 h-4 text-[#DFC498] shrink-0" />
-        <span className="truncate max-w-[210px] sm:max-w-[260px]">{triggerLabel}</span>
+        <CalendarIcon className="w-4 h-4 text-[#8A6D36] shrink-0" />
+        <span className="truncate max-w-[190px] sm:max-w-[260px]">{triggerLabel}</span>
         {(value.startMonth || value.endMonth) && (
           <span
             onClick={(e) => {
               e.stopPropagation();
               handleClear();
             }}
-            className="p-0.5 rounded-md hover:bg-white/10 text-[#8FAEA2] hover:text-white ml-1"
+            className="p-0.5 rounded-md hover:bg-[#E5E2DC]/60 text-[#6B6B6B] hover:text-[#171717] ml-1"
             title="Limpar filtro de data"
           >
             <X className="w-3.5 h-3.5" />
@@ -252,149 +252,154 @@ export default function MonthRangePicker({
         )}
       </button>
 
-      {/* Popover Calendar Modal */}
+      {/* Popover / Mobile Bottom Sheet */}
       {isOpen && (
-        <div className="absolute left-0 sm:left-auto right-auto sm:right-0 mt-2 z-50 w-[320px] sm:w-[360px] bg-[#061A14] border border-[#17473A] rounded-2xl shadow-[0_12px_45px_rgba(0,0,0,0.85)] p-4 text-white animate-in fade-in zoom-in-95 duration-200">
-          {/* Quick Presets row */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-3 border-b border-[#17473A]/80 scrollbar-none">
-            <button
-              type="button"
-              onClick={() => applyPreset('all')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition shrink-0 ${
-                !value.startMonth && !value.endMonth ? 'bg-[#DFC498] text-black font-bold' : 'bg-white/5 text-[#8FAEA2] hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset('current')}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/5 text-[#8FAEA2] hover:bg-white/10 hover:text-white transition shrink-0"
-            >
-              Este Mês
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset('last3')}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/5 text-[#8FAEA2] hover:bg-white/10 hover:text-white transition shrink-0"
-            >
-              Últimos 3
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset('last6')}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/5 text-[#8FAEA2] hover:bg-white/10 hover:text-white transition shrink-0"
-            >
-              Últimos 6
-            </button>
-            <button
-              type="button"
-              onClick={() => applyPreset('year')}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/5 text-[#8FAEA2] hover:bg-white/10 hover:text-white transition shrink-0"
-            >
-              Ano Todo
-            </button>
-          </div>
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40 sm:hidden"
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="fixed inset-x-3 bottom-4 z-50 sm:bottom-auto sm:inset-x-auto sm:absolute sm:right-0 sm:mt-2 w-auto sm:w-[360px] bg-white border border-[#E5E2DC] rounded-2xl shadow-2xl p-4 text-[#171717] animate-in fade-in zoom-in-95 duration-200">
+            {/* Quick Presets row */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-3 mb-3 border-b border-[#E5E2DC] scrollbar-none">
+              <button
+                type="button"
+                onClick={() => applyPreset('all')}
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition shrink-0 ${
+                  !value.startMonth && !value.endMonth ? 'bg-[#171717] text-white font-bold' : 'bg-[#FAF9F7] text-[#6B6B6B] hover:bg-[#F5F1E9] hover:text-[#171717] border border-[#E5E2DC]'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('current')}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[#FAF9F7] text-[#6B6B6B] hover:bg-[#F5F1E9] hover:text-[#171717] border border-[#E5E2DC] transition shrink-0"
+              >
+                Este Mês
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('last3')}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[#FAF9F7] text-[#6B6B6B] hover:bg-[#F5F1E9] hover:text-[#171717] border border-[#E5E2DC] transition shrink-0"
+              >
+                Últimos 3
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('last6')}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[#FAF9F7] text-[#6B6B6B] hover:bg-[#F5F1E9] hover:text-[#171717] border border-[#E5E2DC] transition shrink-0"
+              >
+                Últimos 6
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('year')}
+                className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[#FAF9F7] text-[#6B6B6B] hover:bg-[#F5F1E9] hover:text-[#171717] border border-[#E5E2DC] transition shrink-0"
+              >
+                Ano Todo
+              </button>
+            </div>
 
-          {/* Year Switcher Header */}
-          <div className="flex items-center justify-between px-2 mb-3">
-            <button
-              type="button"
-              onClick={() => setViewYear(viewYear - 1)}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-[#8FAEA2] hover:text-white transition"
-              title="Ano anterior"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="font-heading font-bold text-base tracking-wide text-[#DFC498]">
-              {viewYear}
-            </span>
-            <button
-              type="button"
-              onClick={() => setViewYear(viewYear + 1)}
-              className="p-1.5 rounded-lg hover:bg-white/10 text-[#8FAEA2] hover:text-white transition"
-              title="Próximo ano"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+            {/* Year Switcher Header */}
+            <div className="flex items-center justify-between px-2 mb-3">
+              <button
+                type="button"
+                onClick={() => setViewYear(viewYear - 1)}
+                className="p-2 rounded-lg hover:bg-[#F5F1E9] text-[#6B6B6B] hover:text-[#171717] transition"
+                title="Ano anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="font-heading font-bold text-base tracking-wide text-[#8A6D36] tabular-nums">
+                {viewYear}
+              </span>
+              <button
+                type="button"
+                onClick={() => setViewYear(viewYear + 1)}
+                className="p-2 rounded-lg hover:bg-[#F5F1E9] text-[#6B6B6B] hover:text-[#171717] transition"
+                title="Próximo ano"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
 
-          {/* 12 Months Grid */}
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            {MONTH_NAMES_SHORT.map((name, idx) => {
-              const cellYm = getYm(viewYear, idx);
-              const isStart = tempStart === cellYm;
-              const isEnd = tempEnd === cellYm;
-              const isInRange = tempStart && tempEnd && cellYm > tempStart && cellYm < tempEnd;
-              const hasData = availableMonths.includes(cellYm);
-              const isSelected = isStart || isEnd;
+            {/* 12 Months Grid */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {MONTH_NAMES_SHORT.map((name, idx) => {
+                const cellYm = getYm(viewYear, idx);
+                const isStart = tempStart === cellYm;
+                const isEnd = tempEnd === cellYm;
+                const isInRange = tempStart && tempEnd && cellYm > tempStart && cellYm < tempEnd;
+                const hasData = availableMonths.includes(cellYm);
+                const isSelected = isStart || isEnd;
 
-              return (
-                <button
-                  key={cellYm}
+                return (
+                  <button
+                    key={cellYm}
+                    type="button"
+                    onClick={() => handleMonthClick(cellYm)}
+                    className={`relative py-2.5 px-2 rounded-xl text-xs font-semibold transition flex flex-col items-center justify-center ${
+                      isSelected
+                        ? 'bg-[#171717] text-white font-bold shadow-xs'
+                        : isInRange
+                        ? 'bg-[#F5F1E9] text-[#8A6D36] border border-[#B89B5E]/40'
+                        : 'bg-[#FAF9F7] text-[#171717] hover:bg-[#F5F1E9] border border-[#E5E2DC]'
+                    }`}
+                  >
+                    <span>{name}</span>
+                    {hasData && (
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full mt-1 ${
+                          isSelected ? 'bg-[#D8C79F]' : 'bg-[#B89B5E]'
+                        }`}
+                        title="Possui relatórios/dados computados"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Current Selection Summary & Actions */}
+            <div className="pt-3 border-t border-[#E5E2DC] flex items-center justify-between gap-2 text-xs">
+              <div className="text-[11px] text-[#6B6B6B] truncate pr-1">
+                {tempStart && !tempEnd && (
+                  <span>Início: <strong className="text-[#171717]">{formatMonthYearLabel(tempStart)}</strong> (clique no fim)</span>
+                )}
+                {tempStart && tempEnd && tempStart === tempEnd && (
+                  <span>Mês: <strong className="text-[#171717]">{formatMonthYearLabel(tempStart)}</strong></span>
+                )}
+                {tempStart && tempEnd && tempStart !== tempEnd && (
+                  <span>De <strong className="text-[#171717]">{formatMonthYearLabel(tempStart)}</strong> até <strong className="text-[#171717]">{formatMonthYearLabel(tempEnd)}</strong></span>
+                )}
+                {!tempStart && !tempEnd && (
+                  <span className="italic text-[#6B6B6B]">Clique para selecionar o mês</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
                   type="button"
-                  onClick={() => handleMonthClick(cellYm)}
-                  className={`relative py-2.5 px-2 rounded-xl text-xs font-semibold transition flex flex-col items-center justify-center ${
-                    isSelected
-                      ? 'bg-[#DFC498] text-[#051611] font-bold shadow-md scale-102'
-                      : isInRange
-                      ? 'bg-[#DFC498]/20 text-[#DFC498] border border-[#DFC498]/40'
-                      : 'bg-black/30 text-zinc-300 hover:bg-white/10 hover:text-white border border-transparent'
-                  }`}
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClear}
+                  className="h-8 text-[11px] text-[#6B6B6B] hover:text-[#171717] px-2.5"
                 >
-                  <span>{name}</span>
-                  {/* Indicator dot if data exists for this month */}
-                  {hasData && (
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full mt-1 ${
-                        isSelected ? 'bg-[#051611]' : 'bg-[#DFC498]'
-                      }`}
-                      title="Possui relatórios/dados computados"
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Current Selection Summary & Actions */}
-          <div className="pt-3 border-t border-[#17473A]/80 flex items-center justify-between text-xs">
-            <div className="text-[11px] text-[#8FAEA2] truncate pr-2">
-              {tempStart && !tempEnd && (
-                <span>Início: <strong className="text-white">{formatMonthYearLabel(tempStart)}</strong> (clique no fim)</span>
-              )}
-              {tempStart && tempEnd && tempStart === tempEnd && (
-                <span>Mês: <strong className="text-white">{formatMonthYearLabel(tempStart)}</strong></span>
-              )}
-              {tempStart && tempEnd && tempStart !== tempEnd && (
-                <span>De <strong className="text-white">{formatMonthYearLabel(tempStart)}</strong> até <strong className="text-white">{formatMonthYearLabel(tempEnd)}</strong></span>
-              )}
-              {!tempStart && !tempEnd && (
-                <span className="italic text-zinc-400">Clique para selecionar o mês</span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleClear}
-                className="h-7 text-[11px] text-zinc-400 hover:text-white px-2"
-              >
-                Limpar
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleApply}
-                className="h-7 text-[11px] bg-[#DFC498] hover:bg-[#C5A880] text-black font-bold px-3 rounded-lg"
-              >
-                Aplicar
-              </Button>
+                  Limpar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleApply}
+                  className="h-8 text-[11px] bg-[#171717] hover:bg-[#2B2B2B] text-white font-bold px-3 rounded-lg"
+                >
+                  Aplicar
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

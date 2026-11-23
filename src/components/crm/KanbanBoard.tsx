@@ -137,7 +137,7 @@ export default function KanbanBoard({
 
       {/* Desktop side-by-side / Mobile single-column Kanban Grid */}
       <div className="overflow-x-auto pb-4 select-none scrollbar-thin">
-        <div className="flex gap-4 min-w-[1240px] md:min-w-0 md:grid md:grid-cols-7">
+        <div className="flex flex-col md:grid md:grid-cols-7 gap-4">
           {CRM_STAGES.map((stage) => {
             const list = getClientsInStage(stage.id);
             const isHovered = activeDragOverStage === stage.id;
@@ -149,7 +149,7 @@ export default function KanbanBoard({
                 onDragOver={(e) => handleDragOver(e, stage.id)}
                 onDragLeave={(e) => handleDragLeave(e, stage.id)}
                 onDrop={(e) => handleDrop(e, stage.id)}
-                className={`flex-1 min-w-[240px] md:min-w-0 md:flex md:flex-col bg-[#0b0b0d] border border-zinc-800/60 rounded-xl max-h-[80vh] flex flex-col p-3 transition-colors duration-300 ${
+                className={`flex-1 w-full md:min-w-0 md:flex md:flex-col bg-[#0b0b0d] border border-zinc-800/60 rounded-xl max-h-[80vh] flex flex-col p-3 transition-colors duration-300 ${
                   isHovered ? 'bg-[#121217]/60 border-amber-400/40' : ''
                 } ${showOnMobile ? 'flex' : 'hidden md:flex'}`}
               >
@@ -226,12 +226,14 @@ export default function KanbanBoard({
                               </div>
                               {!isProfessionalRole && (
                                 <button
+                                  type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onArchiveClient(c);
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 absolute right-2.5 top-2.5 text-zinc-500 hover:text-red-400 p-0.5 rounded transition"
+                                  className="opacity-100 md:opacity-0 md:group-hover:opacity-100 absolute right-2 top-2 text-zinc-500 hover:text-red-400 p-1.5 rounded-lg transition cursor-pointer"
                                   title="Arquivar cliente"
+                                  aria-label={`Arquivar ${c.name}`}
                                 >
                                   <Archive className="w-3.5 h-3.5" />
                                 </button>
@@ -303,6 +305,35 @@ export default function KanbanBoard({
                                   {c.nextActionAt.split('-').reverse().slice(0, 2).join('/')}
                                   {isOverdue ? ' ⚠️' : ''}
                                 </span>
+                              </div>
+                            )}
+
+                            {/* Mobile 1-tap stage switcher */}
+                            {canUserMove && (
+                              <div
+                                className="md:hidden pt-1.5 border-t border-zinc-800/40"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <label className="sr-only" htmlFor={`kanban-stage-${c.id}`}>
+                                  Mover etapa de {c.name}
+                                </label>
+                                <select
+                                  id={`kanban-stage-${c.id}`}
+                                  value={getClientStage(c)}
+                                  onChange={(e) => {
+                                    const nextStage = e.target.value as Client['crmStage'];
+                                    if (nextStage !== getClientStage(c)) {
+                                      onMoveClient(c.id, nextStage);
+                                    }
+                                  }}
+                                  className="w-full h-9 rounded-lg border border-[#E5E2DC] bg-white text-[#171717] px-2.5 text-xs font-medium"
+                                >
+                                  {CRM_STAGES.map((st) => (
+                                    <option key={st.id} value={st.id}>
+                                      Etapa: {st.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                             )}
                           </div>

@@ -20,6 +20,7 @@ import { SearchBar } from "@/components/ui/search-bar";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -96,6 +97,7 @@ export default function ServicesPage() {
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<"all" | "service" | "product">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -427,13 +429,12 @@ export default function ServicesPage() {
   };
 
   const runBulkAction = async (
-    action: "online_on" | "online_off" | "activate" | "deactivate" | "delete"
+    action: "online_on" | "online_off" | "activate" | "deactivate" | "delete",
+    skipConfirm = false
   ) => {
     if (!salonData || !isOwnerOrManager || selectedIds.size === 0) return;
-    if (
-      action === "delete" &&
-      !window.confirm(`Deseja excluir ${selectedIds.size} item(ns) selecionados permanentemente?`)
-    ) {
+    if (action === "delete" && !skipConfirm) {
+      setIsBulkDeleteConfirmOpen(true);
       return;
     }
 
@@ -2099,6 +2100,53 @@ export default function ServicesPage() {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isBulkDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !bulkProcessing) setIsBulkDeleteConfirmOpen(false);
+        }}
+      >
+        <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-[#171717]">
+              Excluir itens selecionados
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#6B6B6B]">
+              Deseja excluir permanentemente {selectedIds.size} {selectedIds.size === 1 ? "item selecionado" : "itens selecionados"}? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={bulkProcessing}
+              onClick={() => setIsBulkDeleteConfirmOpen(false)}
+              className="border-[#E5E2DC] bg-white text-[#171717] rounded-xl h-10"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={bulkProcessing}
+              onClick={async () => {
+                await runBulkAction("delete", true);
+                setIsBulkDeleteConfirmOpen(false);
+              }}
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-10 font-semibold"
+            >
+              {bulkProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                  Excluindo...
+                </>
+              ) : (
+                "Excluir Permanentemente"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

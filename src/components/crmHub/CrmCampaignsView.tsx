@@ -177,7 +177,7 @@ export function CrmCampaignsView({
   return (
     <div className="space-y-4">
       <div className="bg-card border border-border rounded-xl p-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg border border-border">
+        <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg border border-border overflow-x-auto flex-nowrap max-w-full scrollbar-none">
           {(
             [
               { id: 'configure', label: 'Configurar & Disparar', icon: Megaphone },
@@ -189,13 +189,13 @@ export function CrmCampaignsView({
               key={t.id}
               type="button"
               onClick={() => setSubTab(t.id)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
                 subTab === t.id
                   ? 'bg-card text-foreground shadow-xs border border-border'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <t.icon className="w-3.5 h-3.5 text-[#9F844A]" />
+              <t.icon className="w-3.5 h-3.5 text-[#9F844A] shrink-0" />
               {t.label}
             </button>
           ))}
@@ -608,7 +608,8 @@ export function CrmCampaignsView({
           </div>
 
           <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-border bg-secondary/50 text-muted-foreground">
                   <th className="py-2.5 px-4 font-medium">Campanha</th>
@@ -646,7 +647,8 @@ export function CrmCampaignsView({
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </div>
       )}

@@ -851,19 +851,21 @@ export default function CommissionsPage() {
                 </Select>
               </div>
 
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-9 w-34 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
-              />
-              <span className="text-[#6B6B6B]">até</span>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-9 w-34 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
-              />
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5 w-full sm:w-auto sm:flex">
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-9 w-full sm:w-36 min-w-0 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
+                />
+                <span className="text-[#6B6B6B] text-center">até</span>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-9 w-full sm:w-36 min-w-0 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
+                />
+              </div>
 
               {availableRoles.length > 0 && (
                 <Select value={selectedRoleFilter} onValueChange={setSelectedRoleFilter}>

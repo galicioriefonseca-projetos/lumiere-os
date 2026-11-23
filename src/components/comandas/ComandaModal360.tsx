@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -102,6 +103,8 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
   const [saving, setSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [showImportAppts, setShowImportAppts] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deletingComanda, setDeletingComanda] = useState(false);
 
   // Editable Comanda state
   const [clientId, setClientId] = useState('consumidor-final');
@@ -551,15 +554,23 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!comanda || !salonId) return;
-    if (!window.confirm('Deseja cancelar e excluir esta comanda permanentemente?')) return;
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteComanda = async () => {
+    if (!comanda || !salonId) return;
+    setDeletingComanda(true);
     try {
       await deleteDoc(doc(db, `salons/${salonId}/comandas`, comanda.id));
       toast.success('Comanda excluída.');
+      setIsDeleteConfirmOpen(false);
       onOpenChange(false);
     } catch {
       toast.error('Erro ao excluir comanda.');
+    } finally {
+      setDeletingComanda(false);
     }
   };
 
@@ -569,10 +580,11 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
   const isCompleted = comanda.status === 'completed';
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-white border-[#E5E2DC] text-[#171717] sm:max-w-4xl max-h-[92vh] overflow-hidden flex flex-col p-0 rounded-2xl shadow-xl">
         {/* Top Modal Header + Tabs */}
-        <DialogHeader className="px-6 pt-5 pb-0 border-b border-[#E5E2DC] bg-[#FAF9F7] shrink-0">
+        <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-5 pb-0 border-b border-[#E5E2DC] bg-[#FAF9F7] shrink-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3">
             <div>
               <DialogTitle className="font-heading text-base font-bold text-[#171717] flex items-center gap-2">
@@ -1402,7 +1414,7 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
         </div>
 
         {/* Sticky Footer */}
-        <div className="px-6 py-4 border-t border-[#E5E2DC] bg-[#FAF9F7] flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-[#E5E2DC] bg-[#FAF9F7] flex flex-wrap items-center justify-between gap-2 sm:gap-3 shrink-0">
           <div className="flex items-center gap-2">
             {!isCompleted && (
               <Button
@@ -1422,7 +1434,7 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {!isCompleted && (
               <Button
                 type="button"
@@ -1463,5 +1475,50 @@ export const ComandaModal360: React.FC<ComandaModal360Props> = ({
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog
+      open={isDeleteConfirmOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !deletingComanda) setIsDeleteConfirmOpen(false);
+      }}
+    >
+      <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-[#171717]">
+            Excluir comanda #{comandaNumberDisplay}
+          </DialogTitle>
+          <DialogDescription className="text-sm text-[#6B6B6B]">
+            Deseja cancelar e excluir esta comanda permanentemente? Esta ação não pode ser desfeita.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={deletingComanda}
+            onClick={() => setIsDeleteConfirmOpen(false)}
+            className="border-[#E5E2DC] bg-white text-[#171717] rounded-xl h-10"
+          >
+            Voltar
+          </Button>
+          <Button
+            type="button"
+            disabled={deletingComanda}
+            onClick={confirmDeleteComanda}
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-10 font-semibold"
+          >
+            {deletingComanda ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                Excluindo...
+              </>
+            ) : (
+              'Excluir Comanda'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };

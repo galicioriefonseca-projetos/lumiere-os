@@ -210,8 +210,8 @@ export default function CrmHubPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-1 bg-secondary p-1 rounded-xl border border-border">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1 bg-secondary p-1 rounded-xl border border-border overflow-x-auto flex-nowrap max-w-full scrollbar-none">
             {(
               [
                 {
@@ -250,13 +250,13 @@ export default function CrmHubPage() {
                 key={t.id}
                 type="button"
                 onClick={() => setActiveTab(t.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === t.id
                     ? 'bg-card text-foreground shadow-xs border border-border'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <t.icon className="w-3.5 h-3.5 text-[#9F844A]" />
+                <t.icon className="w-3.5 h-3.5 text-[#9F844A] shrink-0" />
                 <span>{t.label}</span>
                 {t.badge !== null && (
                   <span className="ml-0.5 px-1.5 py-0.5 rounded bg-[#171717] text-white text-[10px] font-semibold tabular-nums leading-none">
@@ -269,9 +269,9 @@ export default function CrmHubPage() {
 
           <Link
             to="/dashboard/clientes"
-            className="h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary text-xs font-medium text-foreground inline-flex items-center gap-1.5 transition-colors"
+            className="h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary text-xs font-medium text-foreground inline-flex items-center justify-center gap-1.5 transition-colors shrink-0 whitespace-nowrap"
           >
-            <Users className="w-3.5 h-3.5 text-[#9F844A]" />
+            <Users className="w-3.5 h-3.5 text-[#9F844A] shrink-0" />
             Base de Clientes &amp; Fichas
           </Link>
         </div>

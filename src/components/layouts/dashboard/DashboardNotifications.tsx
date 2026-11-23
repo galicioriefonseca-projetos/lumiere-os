@@ -153,8 +153,8 @@ export function DashboardNotifications() {
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-          <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white border border-[#E5E2DC] shadow-xl p-3.5 z-40 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
+          <div className="fixed inset-0 z-30 bg-black/20 sm:bg-transparent" onClick={() => setIsOpen(false)} />
+          <div className="fixed inset-x-3 top-[68px] w-auto sm:inset-x-auto sm:top-auto sm:absolute sm:right-0 sm:mt-2 sm:w-96 rounded-2xl bg-white border border-[#E5E2DC] shadow-xl p-3.5 z-40 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
             <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[#E5E2DC]">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-[#171717]">

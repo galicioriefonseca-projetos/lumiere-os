@@ -212,7 +212,7 @@ export function CrmTeamAndSettingsView({
 
   return (
     <div className="space-y-4">
-      <div className="bg-card border border-border rounded-xl p-2 flex flex-wrap items-center gap-1">
+      <div className="bg-card border border-border rounded-xl p-2 flex items-center gap-1 overflow-x-auto flex-nowrap max-w-full scrollbar-none">
         {(
           [
             { id: 'attendants', label: 'Atendentes & Equipe', icon: Users },
@@ -226,13 +226,13 @@ export function CrmTeamAndSettingsView({
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
               tab === t.id
                 ? 'bg-[#F5F1E9] text-[#8A6D36] border border-[#D8C79F]'
                 : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
             }`}
           >
-            <t.icon className="w-3.5 h-3.5" />
+            <t.icon className="w-3.5 h-3.5 shrink-0" />
             {t.label}
           </button>
         ))}

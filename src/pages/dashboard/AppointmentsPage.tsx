@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { 
@@ -99,6 +99,8 @@ export default function AppointmentsPage() {
   // States auxiliares de fluxo
   const [selectedComanda, setSelectedComanda] = useState<ComandaFlow | null>(null);
   const [editingItem, setEditingItem] = useState<Appointment | null>(null);
+  const [comandaToDeleteId, setComandaToDeleteId] = useState<string | null>(null);
+  const [deletingComanda, setDeletingComanda] = useState(false);
 
   const openGoogleCalendarDialog = (tab: 'events' | 'create' | 'sync' = 'events') => {
     setCalendarPrefillEvent(null);
@@ -818,15 +820,22 @@ export default function AppointmentsPage() {
   };
 
   // Cancelar/Descartar Comanda por completo
-  const handleDeleteComanda = async (comandaId: string) => {
+  const handleDeleteComanda = (comandaId: string) => {
     if (!salonData) return;
-    if (!window.confirm("Deseja realmente cancelar e descartar esta comanda?")) return;
+    setComandaToDeleteId(comandaId);
+  };
 
+  const confirmDeleteComanda = async () => {
+    if (!salonData || !comandaToDeleteId) return;
+    setDeletingComanda(true);
     try {
-      await deleteDoc(doc(db, `salons/${salonData.id}/comandas`, comandaId));
+      await deleteDoc(doc(db, `salons/${salonData.id}/comandas`, comandaToDeleteId));
       toast.success('Comanda cancelada!');
+      setComandaToDeleteId(null);
     } catch (err) {
       toast.error('Erro ao cancelar comanda.');
+    } finally {
+      setDeletingComanda(false);
     }
   };
 
@@ -1589,6 +1598,50 @@ export default function AppointmentsPage() {
         clients={clients}
         salonName={salonData?.name}
       />
+
+      <Dialog
+        open={Boolean(comandaToDeleteId)}
+        onOpenChange={(open) => {
+          if (!open && !deletingComanda) setComandaToDeleteId(null);
+        }}
+      >
+        <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-[#171717]">
+              Cancelar e descartar comanda
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#6B6B6B]">
+              Deseja realmente cancelar e descartar esta comanda permanentemente? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deletingComanda}
+              onClick={() => setComandaToDeleteId(null)}
+              className="border-[#E5E2DC] bg-white text-[#171717] rounded-xl h-10"
+            >
+              Manter Comanda
+            </Button>
+            <Button
+              type="button"
+              disabled={deletingComanda}
+              onClick={confirmDeleteComanda}
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-10 font-semibold"
+            >
+              {deletingComanda ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                  Descartando...
+                </>
+              ) : (
+                'Descartar Comanda'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

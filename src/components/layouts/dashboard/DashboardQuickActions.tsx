@@ -15,11 +15,11 @@ export function DashboardQuickActions({
   onOpenGoogleCalendar,
 }: DashboardQuickActionsProps) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 sm:gap-2">
       {/* WhatsApp Integration Status badge */}
-      <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-sans text-[11px] font-bold rounded-xl h-8.5 shrink-0 select-none">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        WhatsApp Conectado 💬
+      <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 font-sans text-[11px] font-bold rounded-xl h-8.5 shrink-0 select-none">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+        WhatsApp Conectado
       </div>
 
       {/* Google Calendar Quick Access Button */}
@@ -29,9 +29,10 @@ export function DashboardQuickActions({
           size="sm"
           variant="outline"
           onClick={onOpenGoogleCalendar}
-          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+          aria-label="Abrir Google Agenda"
+          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#8A6D36] hover:bg-[#F5F1E9] transition-all font-semibold rounded-xl bg-white flex items-center gap-1.5 shrink-0 px-2 sm:px-3"
         >
-          <CalendarIcon className="w-4 h-4 text-[#D4AF37]" />
+          <CalendarIcon className="w-4 h-4 text-[#8A6D36]" />
           <span className="hidden sm:inline">Agenda</span>
         </Button>
       )}
@@ -43,10 +44,11 @@ export function DashboardQuickActions({
           size="sm"
           variant="outline"
           onClick={onOpenGmail}
-          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#D4AF37] hover:bg-[#D4AF37]/10 transition-all font-semibold rounded-xl bg-white/[0.02] flex items-center gap-1.5 shrink-0 px-3"
+          aria-label="Abrir Gmail"
+          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#8A6D36] hover:bg-[#F5F1E9] transition-all font-semibold rounded-xl bg-white flex items-center gap-1.5 shrink-0 px-2 sm:px-3"
         >
-          <Mail className="w-4 h-4 text-[#D4AF37]" />
-          <span>Gmail</span>
+          <Mail className="w-4 h-4 text-[#8A6D36]" />
+          <span className="hidden sm:inline">Gmail</span>
         </Button>
       )}
 

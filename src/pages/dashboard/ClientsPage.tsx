@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
@@ -107,6 +107,8 @@ export default function ClientsPage() {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [bulkDeleteProgress, setBulkDeleteProgress] = useState(0);
+  const [archiveTargetClient, setArchiveTargetClient] = useState<Client | null>(null);
+  const [isArchivingSingleClient, setIsArchivingSingleClient] = useState(false);
   const selectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
   const tableSelectAllCheckboxRef = useRef<HTMLInputElement | null>(null);
 
@@ -895,12 +897,16 @@ export default function ClientsPage() {
   };
 
   // Soft Delete / Arquivar
-  const handleSoftArchive = async (client: Client) => {
+  const handleSoftArchive = (client: Client) => {
     if (!salonData) return;
-    if (!window.confirm(`Mover o cliente "${client.name}" para os Arquivados?`)) return;
+    setArchiveTargetClient(client);
+  };
 
+  const confirmSoftArchive = async () => {
+    if (!salonData || !archiveTargetClient) return;
+    setIsArchivingSingleClient(true);
     try {
-      await updateDoc(doc(db, `salons/${salonData.id}/clients/${client.id}`), {
+      await updateDoc(doc(db, `salons/${salonData.id}/clients/${archiveTargetClient.id}`), {
         status: 'inactive',
         archived: true,
         updatedAt: Date.now(),
@@ -908,8 +914,8 @@ export default function ClientsPage() {
       });
 
       // Record History
-      const histId = doc(collection(db, `salons/${salonData.id}/clients/${client.id}/history`)).id;
-      await setDoc(doc(db, `salons/${salonData.id}/clients/${client.id}/history`, histId), {
+      const histId = doc(collection(db, `salons/${salonData.id}/clients/${archiveTargetClient.id}/history`)).id;
+      await setDoc(doc(db, `salons/${salonData.id}/clients/${archiveTargetClient.id}/history`, histId), {
         id: histId,
         type: 'data_updated',
         title: 'Arquivado',
@@ -920,9 +926,12 @@ export default function ClientsPage() {
       });
 
       toast.success('Cliente arquivado!');
+      setArchiveTargetClient(null);
     } catch (err) {
       console.error(err);
       toast.error('Erro ao arquivar.');
+    } finally {
+      setIsArchivingSingleClient(false);
     }
   };
 
@@ -2631,6 +2640,50 @@ export default function ClientsPage() {
             : undefined
         }
       />
+
+      <Dialog
+        open={Boolean(archiveTargetClient)}
+        onOpenChange={(open) => {
+          if (!open && !isArchivingSingleClient) setArchiveTargetClient(null);
+        }}
+      >
+        <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-[#171717]">
+              Arquivar cliente
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#6B6B6B]">
+              Mover "{archiveTargetClient?.name}" para os Arquivados? Você poderá restaurá-lo a qualquer momento.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isArchivingSingleClient}
+              onClick={() => setArchiveTargetClient(null)}
+              className="border-[#E5E2DC] bg-white text-[#171717] rounded-xl h-10"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={isArchivingSingleClient}
+              onClick={confirmSoftArchive}
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-10 font-semibold"
+            >
+              {isArchivingSingleClient ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                  Arquivando...
+                </>
+              ) : (
+                'Mover para Arquivados'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

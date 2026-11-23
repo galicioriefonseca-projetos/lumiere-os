@@ -106,6 +106,7 @@ export function CrmFunnelBoard({
   const [attendantFilter, setAttendantFilter] = useState<string>('all');
   const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<CrmFunnelStage | null>(null);
+  const [mobileStage, setMobileStage] = useState<CrmFunnelStage>('awaiting_reply');
 
   const [closeModalTarget, setCloseModalTarget] = useState<{
     opportunity: CrmOpportunity;
@@ -337,8 +338,8 @@ export function CrmFunnelBoard({
   return (
     <div className="space-y-4">
       <div className="bg-card border border-border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:flex-1 sm:min-w-[260px]">
+          <div className="relative w-full sm:flex-1 sm:min-w-[200px] sm:max-w-xs">
             <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <Input
               value={search}
@@ -352,7 +353,7 @@ export function CrmFunnelBoard({
             aria-label="Filtrar por origem"
             value={originFilter}
             onChange={(e) => setOriginFilter(e.target.value as 'all' | CrmOrigin)}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+            className="h-9 flex-1 sm:flex-initial min-w-[130px] rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
           >
             <option value="all">Todas as origens</option>
             <option value="receptivo">Receptivo</option>
@@ -365,7 +366,7 @@ export function CrmFunnelBoard({
             aria-label="Filtrar por período"
             value={periodDays}
             onChange={(e) => setPeriodDays(Number(e.target.value))}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+            className="h-9 flex-1 sm:flex-initial min-w-[130px] rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
           >
             <option value={7}>Últimos 7 dias</option>
             <option value={30}>Últimos 30 dias</option>
@@ -377,7 +378,7 @@ export function CrmFunnelBoard({
             aria-label="Filtrar por atendente"
             value={attendantFilter}
             onChange={(e) => setAttendantFilter(e.target.value)}
-            className="h-9 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
+            className="h-9 w-full sm:w-auto sm:flex-initial rounded-lg border border-border bg-background px-2.5 text-xs text-foreground"
           >
             <option value="all">Todos os atendentes</option>
             {attendants.map((a) => (
@@ -392,14 +393,44 @@ export function CrmFunnelBoard({
           type="button"
           size="sm"
           onClick={() => setIsCreateOpen(true)}
-          className="h-9 px-3.5 bg-[#171717] hover:bg-[#2A2A2A] text-white text-xs font-medium rounded-lg gap-1.5"
+          className="h-9 w-full sm:w-auto px-3.5 bg-[#171717] hover:bg-[#2A2A2A] text-white text-xs font-medium rounded-lg gap-1.5"
         >
           <Plus className="w-3.5 h-3.5" /> Nova oportunidade
         </Button>
       </div>
 
-      <div className="overflow-x-auto pb-2">
-        <div className="grid grid-cols-6 gap-3 min-w-[1180px]">
+      {/* Mobile Stage Selector Strip */}
+      <div className="flex md:hidden items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {ORDERED_STAGES.map((stageId) => {
+          const meta = FUNNEL_STAGE_META[stageId];
+          const count = filteredOpps.filter((o) => o.stage === stageId).length;
+          const isActive = mobileStage === stageId;
+          return (
+            <button
+              key={stageId}
+              type="button"
+              onClick={() => setMobileStage(stageId)}
+              className={`px-3 py-2 rounded-xl border text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                isActive
+                  ? 'bg-[#171717] text-white border-[#171717]'
+                  : 'bg-card text-foreground border-border'
+              }`}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: meta.dotColor }}
+              />
+              <span>{meta.shortLabel}</span>
+              <span className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded-md ${isActive ? 'bg-white/15 text-white' : 'bg-secondary text-muted-foreground'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="md:overflow-x-auto pb-2">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 md:min-w-[1180px]">
           {ORDERED_STAGES.map((stageId) => {
             const meta = FUNNEL_STAGE_META[stageId];
             const columnOpps = filteredOpps.filter((o) => o.stage === stageId);
@@ -426,7 +457,9 @@ export function CrmFunnelBoard({
                   if (opp) void requestStageTransition(opp, stageId);
                   setDraggedOppId(null);
                 }}
-                className={`rounded-xl border transition-colors flex flex-col min-h-[540px] ${
+                className={`rounded-xl border transition-colors flex-col min-h-[420px] md:min-h-[540px] ${
+                  mobileStage === stageId ? 'flex' : 'hidden md:flex'
+                } ${
                   dragOverStage === stageId
                     ? 'border-[#B89B5E] bg-[#F5F1E9]/60'
                     : 'border-border bg-secondary/45'
@@ -455,7 +488,7 @@ export function CrmFunnelBoard({
                 <div className="p-2.5 space-y-2.5 flex-1 overflow-y-auto max-h-[620px]">
                   {columnOpps.length === 0 ? (
                     <div className="py-10 text-center text-[11px] text-muted-foreground">
-                      Arraste oportunidades para cá
+                      Nenhuma oportunidade nesta etapa
                     </div>
                   ) : (
                     columnOpps.map((opp) => {
@@ -525,6 +558,29 @@ export function CrmFunnelBoard({
                               {opp.linkedAppointmentTime}
                             </div>
                           )}
+
+                          {/* Quick 1-tap stage switcher for touchscreens */}
+                          <div
+                            className="md:hidden pt-1.5 border-t border-border/60 flex items-center justify-between gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-[10px] text-muted-foreground font-medium">Mover etapa:</span>
+                            <select
+                              aria-label={`Mover etapa de ${opp.clientName}`}
+                              value={opp.stage}
+                              onChange={(e) => {
+                                const nextStage = e.target.value as CrmFunnelStage;
+                                void requestStageTransition(opp, nextStage);
+                              }}
+                              className="h-7 rounded-md border border-border bg-secondary px-2 text-[11px] text-foreground"
+                            >
+                              {ORDERED_STAGES.map((st) => (
+                                <option key={st} value={st}>
+                                  {FUNNEL_STAGE_META[st].shortLabel}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       );
                     })

@@ -55,7 +55,7 @@ export function CrmAnalyticsDashboard({
   return (
     <div className="space-y-4">
       <div className="bg-card border border-border rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg border border-border">
+        <div className="flex items-center gap-1 bg-secondary p-1 rounded-lg border border-border overflow-x-auto flex-nowrap max-w-full scrollbar-none">
           {(
             [
               { id: 'summary', label: 'Resumo Executivo' },
@@ -67,7 +67,7 @@ export function CrmAnalyticsDashboard({
               key={t.id}
               type="button"
               onClick={() => setSubTab(t.id)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
                 subTab === t.id
                   ? 'bg-card text-foreground shadow-xs border border-border'
                   : 'text-muted-foreground hover:text-foreground'

@@ -29,20 +29,20 @@ export function DashboardTopbar({ onOpenMobileMenu, onOpenGuide, onOpenRoadmap, 
   };
 
   return (
-    <header className="h-16 md:h-20 border-b border-border/80 bg-card/90 backdrop-blur-xl flex items-center justify-between px-4 md:px-8 sticky top-0 z-10">
-      <div className="flex items-center gap-3.5 md:hidden">
-        <button onClick={onOpenMobileMenu} className="p-2 rounded-lg border border-border bg-secondary hover:border-primary/30 transition-colors">
+    <header className="h-16 md:h-20 border-b border-border/80 bg-card/90 backdrop-blur-xl flex items-center justify-between gap-2 px-3 sm:px-4 md:px-8 sticky top-0 z-10">
+      <div className="flex items-center gap-2.5 sm:gap-3.5 md:hidden min-w-0">
+        <button onClick={onOpenMobileMenu} aria-label="Abrir menu" className="p-2 rounded-lg border border-border bg-secondary hover:border-primary/30 transition-colors shrink-0">
           <Menu className="w-5 h-5 text-foreground" />
         </button>
-        <div className="flex items-center gap-2">
-          <img src="/pwa-192x192.png" alt="Logo" className="w-6 h-6 rounded-md object-cover border border-primary/30" />
-          <span className="font-bold tracking-[0.16em] text-primary text-sm uppercase leading-none">Lumiere<span className="text-foreground">OS</span></span>
+        <div className="flex items-center gap-2 min-w-0">
+          <img src="/pwa-192x192.png" alt="Logo" className="w-6 h-6 rounded-md object-cover border border-primary/30 shrink-0" />
+          <span className="font-bold tracking-[0.14em] sm:tracking-[0.16em] text-primary text-xs sm:text-sm uppercase leading-none truncate">Lumiere<span className="text-foreground">OS</span></span>
         </div>
       </div>
 
       <div className="hidden md:flex items-center"><DashboardBreadcrumbs navigation={navigation} /></div>
 
-      <div className="flex items-center gap-2 md:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 shrink-0">
         <DashboardQuickActions onOpenGuide={onOpenGuide} onOpenRoadmap={onOpenRoadmap} onOpenGmail={onOpenGmail} onOpenGoogleCalendar={onOpenGoogleCalendar} />
         <DashboardNotifications />
         <DashboardUserMenu onOpenUpdates={onOpenUpdates} />
@@ -52,8 +52,8 @@ export function DashboardTopbar({ onOpenMobileMenu, onOpenGuide, onOpenRoadmap, 
         )}>
           <span className="uppercase tracking-wider mr-2 font-bold text-primary">{planName}</span>
           <span className="opacity-40 mr-2">|</span><span>Status:</span>
-          <span className={cn('ml-1 font-semibold capitalize', isPlatformAdmin || salonData?.subscriptionStatus === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary')}>{getStatusText()}</span>
-          {salonData?.plan === 'founder' && !isPlatformAdmin && <Sparkles className="w-3.5 h-3.5 text-primary ml-1.5 animate-pulse shrink-0" />}
+          <span className={cn('ml-1 font-semibold capitalize', isPlatformAdmin || salonData?.subscriptionStatus === 'active' ? 'text-emerald-600' : 'text-primary')}>{getStatusText()}</span>
+          {salonData?.plan === 'founder' && !isPlatformAdmin && <Sparkles className="w-3.5 h-3.5 text-primary ml-1.5 shrink-0" />}
         </button>
       </div>
     </header>

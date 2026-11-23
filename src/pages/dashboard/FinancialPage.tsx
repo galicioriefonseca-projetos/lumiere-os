@@ -26,6 +26,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   Activity,
@@ -112,6 +120,14 @@ export default function FinancialPage() {
   const [filterType, setFilterType] = useState<"all" | "revenue" | "expense">("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "paid" | "pending">("all");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [confirmDialogAction, setConfirmDialogAction] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    tone: "danger" | "warning";
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   // Batch selection
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
@@ -451,10 +467,8 @@ export default function FinancialPage() {
     }
   };
 
-  const handleDelete = async (tx: FinancialTransaction) => {
+  const executeDeleteTransaction = async (tx: FinancialTransaction) => {
     if (!salonId) return;
-    if (!window.confirm(`Excluir transação "${tx.description}" permanentemente?`)) return;
-
     try {
       await deleteDoc(doc(db, "salons", salonId, "financialTransactions", tx.id));
       await logAuditEvent(
@@ -474,6 +488,17 @@ export default function FinancialPage() {
     } catch {
       toast.error("Erro ao excluir transação.");
     }
+  };
+
+  const handleDelete = (tx: FinancialTransaction) => {
+    if (!salonId) return;
+    setConfirmDialogAction({
+      title: "Excluir transação",
+      description: `Deseja excluir permanentemente a transação "${tx.description}" (${formatBRL(tx.amount)})?`,
+      confirmLabel: "Excluir transação",
+      tone: "danger",
+      onConfirm: () => executeDeleteTransaction(tx),
+    });
   };
 
   const toggleSelectTx = (id: string) => {
@@ -496,14 +521,8 @@ export default function FinancialPage() {
     }
   };
 
-  const runBatchAction = async (action: "mark_paid" | "delete") => {
+  const executeBatchAction = async (action: "mark_paid" | "delete") => {
     if (!salonId || selectedTxIds.size === 0) return;
-    if (
-      action === "delete" &&
-      !window.confirm(`Deseja excluir ${selectedTxIds.size} transação(ões)?`)
-    ) {
-      return;
-    }
 
     setBatchBusy(true);
     try {
@@ -527,6 +546,22 @@ export default function FinancialPage() {
     }
   };
 
+  const runBatchAction = (action: "mark_paid" | "delete") => {
+    if (!salonId || selectedTxIds.size === 0) return;
+    if (action === "delete") {
+      const count = selectedTxIds.size;
+      setConfirmDialogAction({
+        title: "Excluir transações em lote",
+        description: `Deseja excluir permanentemente ${count} ${count === 1 ? "transação selecionada" : "transações selecionadas"}?`,
+        confirmLabel: "Excluir selecionadas",
+        tone: "danger",
+        onConfirm: () => executeBatchAction("delete"),
+      });
+      return;
+    }
+    void executeBatchAction(action);
+  };
+
   const handleExportExcel = () => {
     try {
       const rows = filteredTransactions.map((t) => ({
@@ -548,16 +583,8 @@ export default function FinancialPage() {
     }
   };
 
-  const handleReopenComanda = async (comanda: ComandaFlow) => {
+  const executeReopenComanda = async (comanda: ComandaFlow) => {
     if (!salonId) return;
-    if (
-      !window.confirm(
-        `Reabrir a comanda #${comanda.comandaNumber || comanda.id.substring(0, 5)} de ${comanda.clientName}? Os lançamentos vinculados serão revertidos.`
-      )
-    ) {
-      return;
-    }
-
     setReopeningId(comanda.id);
     try {
       await reopenComandaApi(salonId, comanda.id);
@@ -568,6 +595,18 @@ export default function FinancialPage() {
     } finally {
       setReopeningId(null);
     }
+  };
+
+  const handleReopenComanda = (comanda: ComandaFlow) => {
+    if (!salonId) return;
+    const comandaLabel = `#${comanda.comandaNumber || comanda.id.substring(0, 5)}`;
+    setConfirmDialogAction({
+      title: `Reabrir comanda ${comandaLabel}`,
+      description: `Deseja reabrir a comanda ${comandaLabel} de ${comanda.clientName}? Os lançamentos financeiros vinculados serão revertidos.`,
+      confirmLabel: "Reabrir comanda",
+      tone: "warning",
+      onConfirm: () => executeReopenComanda(comanda),
+    });
   };
 
   const openComanda360 = (comanda: ComandaFlow) => {
@@ -612,12 +651,12 @@ export default function FinancialPage() {
 
         {/* Navigation Tabs + Date Range */}
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-t border-[#E5E2DC] pt-3">
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto flex-nowrap max-w-full pb-1 sm:pb-0 scrollbar-none">
             <button
               type="button"
               onClick={() => setActiveTab("overview")}
               className={cn(
-                "px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer",
+                "px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 cursor-pointer",
                 activeTab === "overview"
                   ? "bg-[#171717] text-white"
                   : "bg-[#FAF9F7] text-[#6B6B6B] hover:text-[#171717] border border-[#E5E2DC]"
@@ -630,7 +669,7 @@ export default function FinancialPage() {
               type="button"
               onClick={() => setActiveTab("open_comandas")}
               className={cn(
-                "px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer",
+                "px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 cursor-pointer",
                 activeTab === "open_comandas"
                   ? "bg-[#171717] text-white"
                   : "bg-[#FAF9F7] text-[#6B6B6B] hover:text-[#171717] border border-[#E5E2DC]"
@@ -643,7 +682,7 @@ export default function FinancialPage() {
               type="button"
               onClick={() => setActiveTab("completed_comandas")}
               className={cn(
-                "px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer",
+                "px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 cursor-pointer",
                 activeTab === "completed_comandas"
                   ? "bg-[#171717] text-white"
                   : "bg-[#FAF9F7] text-[#6B6B6B] hover:text-[#171717] border border-[#E5E2DC]"
@@ -653,8 +692,8 @@ export default function FinancialPage() {
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <div className="flex items-center gap-1 bg-[#FAF9F7] border border-[#E5E2DC] rounded-xl p-1">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 text-xs w-full xl:w-auto">
+            <div className="flex items-center gap-1 bg-[#FAF9F7] border border-[#E5E2DC] rounded-xl p-1 overflow-x-auto max-w-full scrollbar-none">
               {(
                 [
                   { id: "today", label: "Hoje" },
@@ -667,25 +706,25 @@ export default function FinancialPage() {
                   key={p.id}
                   type="button"
                   onClick={() => applyDatePreset(p.id)}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[#6B6B6B] hover:text-[#171717] hover:bg-white transition-colors cursor-pointer whitespace-nowrap"
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[#6B6B6B] hover:text-[#171717] hover:bg-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   {p.label}
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5 w-full sm:w-auto sm:flex">
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="h-8 w-34 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
+                className="h-9 sm:h-8 w-full sm:w-36 min-w-0 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
               />
-              <span className="text-[#6B6B6B]">até</span>
+              <span className="text-[#6B6B6B] text-center">até</span>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="h-8 w-34 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
+                className="h-9 sm:h-8 w-full sm:w-36 min-w-0 bg-[#FAF9F7] border-[#E5E2DC] text-xs rounded-xl tabular-nums"
               />
             </div>
           </div>
@@ -1340,6 +1379,64 @@ export default function FinancialPage() {
           onFinalized={() => setSelectedComanda(null)}
         />
       )}
+
+      <Dialog
+        open={Boolean(confirmDialogAction)}
+        onOpenChange={(open) => {
+          if (!open && !confirmBusy) setConfirmDialogAction(null);
+        }}
+      >
+        <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-[#171717]">
+              {confirmDialogAction?.title}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#6B6B6B]">
+              {confirmDialogAction?.description}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={confirmBusy}
+              onClick={() => setConfirmDialogAction(null)}
+              className="border-[#E5E2DC] bg-white text-[#171717] rounded-xl h-10"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={confirmBusy}
+              onClick={async () => {
+                if (!confirmDialogAction) return;
+                setConfirmBusy(true);
+                try {
+                  await confirmDialogAction.onConfirm();
+                  setConfirmDialogAction(null);
+                } finally {
+                  setConfirmBusy(false);
+                }
+              }}
+              className={cn(
+                "rounded-xl h-10 font-semibold text-white",
+                confirmDialogAction?.tone === "warning"
+                  ? "bg-amber-600 hover:bg-amber-700"
+                  : "bg-red-600 hover:bg-red-700"
+              )}
+            >
+              {confirmBusy ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                  Processando...
+                </>
+              ) : (
+                confirmDialogAction?.confirmLabel || "Confirmar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

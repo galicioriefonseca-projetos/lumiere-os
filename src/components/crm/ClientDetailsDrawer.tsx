@@ -6,6 +6,14 @@ import { Client, ClientAddress, ClientCustomField, ClientFormResponseValue, Clie
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
@@ -103,6 +111,8 @@ export default function ClientDetailsDrawer({
   const isProfessionalRole = userRole === 'professional';
   const isReceptionistRole = userRole === 'receptionist' || userRole === 'attendant';
   const isManagerOrOwner = userRole === 'owner' || userRole === 'manager' || userRole === 'platform_admin';
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
+  const [isArchivingClient, setIsArchivingClient] = useState(false);
 
   // Format WhatsApp Link
   const formatWhatsAppLink = (phoneNum: string) => {
@@ -560,10 +570,14 @@ export default function ClientDetailsDrawer({
   };
 
   // Archive (Soft delete)
-  const handleArchiveClient = async () => {
+  const handleArchiveClient = () => {
     if (!client || !salonId) return;
-    if (!window.confirm(`Tem certeza de que deseja ARQUIVAR o cliente "${client.name}"?`)) return;
+    setIsArchiveConfirmOpen(true);
+  };
 
+  const confirmArchiveClient = async () => {
+    if (!client || !salonId) return;
+    setIsArchivingClient(true);
     try {
       await updateDoc(doc(db, `salons/${salonId}/clients/${client.id}`), {
         status: 'inactive',
@@ -579,11 +593,14 @@ export default function ClientDetailsDrawer({
       );
 
       toast.success('Cliente arquivado com sucesso!');
+      setIsArchiveConfirmOpen(false);
       onClose();
       onClientUpdated();
     } catch (err) {
       console.error(err);
       toast.error('Erro ao arquivar cliente.');
+    } finally {
+      setIsArchivingClient(false);
     }
   };
 
@@ -625,7 +642,7 @@ export default function ClientDetailsDrawer({
             className="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-[#0c0c0e] border-l border-zinc-800 shadow-2xl z-50 flex flex-col h-full text-zinc-100 overflow-hidden"
           >
             {/* Header */}
-            <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-[#121215]">
+            <div className="p-4 sm:p-6 border-b border-zinc-800 flex items-center justify-between bg-[#121215]">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-[#1b1b22] border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] font-bold text-lg">
                   {client.name.charAt(0).toUpperCase()}
@@ -658,7 +675,7 @@ export default function ClientDetailsDrawer({
             </div>
 
             {/* Quick action triggers */}
-            <div className="px-6 py-3 border-b border-zinc-800 bg-[#121215]/50 flex gap-2 overflow-x-auto">
+            <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 bg-[#121215]/50 flex gap-2 overflow-x-auto">
               {client.phone && (
                 <a
                   href={formatWhatsAppLink(client.phone)}
@@ -760,7 +777,7 @@ export default function ClientDetailsDrawer({
             </div>
 
             {/* Scrollable contents */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
               <ClientActiveNoticesBanner
                 notices={effectiveNotices}
                 client={client}
@@ -772,7 +789,7 @@ export default function ClientDetailsDrawer({
                 <div className="space-y-6">
                   {/* Financial Statistics Card - Hidden for receptionists if restricted */}
                   {isManagerOrOwner && (
-                    <div className="grid grid-cols-3 gap-4 bg-[#121215] border border-zinc-800 p-4 rounded-xl">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 bg-[#121215] border border-zinc-800 p-3.5 sm:p-4 rounded-xl">
                       <div>
                         <div className="text-zinc-500 text-xs flex items-center gap-1">
                           <TrendingUp className="w-3 h-3" /> LTV Bruto
@@ -1498,6 +1515,50 @@ export default function ClientDetailsDrawer({
         }}
       />
     )}
+
+    <Dialog
+      open={isArchiveConfirmOpen}
+      onOpenChange={(open) => {
+        if (!open && !isArchivingClient) setIsArchiveConfirmOpen(false);
+      }}
+    >
+      <DialogContent className="bg-white border border-[#E5E2DC] text-[#171717] max-w-md rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold text-[#171717]">
+            Arquivar cliente
+          </DialogTitle>
+          <DialogDescription className="text-sm text-[#6B6B6B]">
+            Tem certeza de que deseja arquivar "{client?.name}"? O histórico completo continuará preservado para consultas futuras.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isArchivingClient}
+            onClick={() => setIsArchiveConfirmOpen(false)}
+            className="border-[#E5E2DC] bg-white text-[#171717] rounded-xl h-10"
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            disabled={isArchivingClient}
+            onClick={confirmArchiveClient}
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl h-10 font-semibold"
+          >
+            {isArchivingClient ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                Arquivando...
+              </>
+            ) : (
+              'Confirmar Arquivamento'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }

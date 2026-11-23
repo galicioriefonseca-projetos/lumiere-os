@@ -1249,14 +1249,14 @@ export const LumiereAgendaView: React.FC<LumiereAgendaViewProps> = ({
                           setViewMode('day');
                         }}
                         className={cn(
-                          'min-h-[84px] sm:min-h-[96px] p-2 text-left flex flex-col justify-between transition-colors hover:bg-[#FAF9F7] cursor-pointer',
+                          'min-h-[60px] sm:min-h-[96px] p-1 sm:p-2 text-left flex flex-col justify-between transition-colors hover:bg-[#FAF9F7] cursor-pointer overflow-hidden',
                           heatBg
                         )}
                       >
-                        <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center justify-between w-full gap-0.5">
                           <span
                             className={cn(
-                              'w-6 h-6 rounded-full text-xs font-semibold flex items-center justify-center tabular-nums',
+                              'w-5 h-5 sm:w-6 sm:h-6 rounded-full text-[11px] sm:text-xs font-semibold flex items-center justify-center tabular-nums shrink-0',
                               isToday
                                 ? 'bg-[#171717] text-white'
                                 : cell.inMonth
@@ -1267,21 +1267,26 @@ export const LumiereAgendaView: React.FC<LumiereAgendaViewProps> = ({
                             {cell.day}
                           </span>
                           {stats && stats.confirmed > 0 && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 tabular-nums">
+                            <span className="hidden sm:inline text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 tabular-nums">
                               {stats.confirmed} conf.
                             </span>
                           )}
                         </div>
 
                         {count > 0 ? (
-                          <div className="space-y-0.5 pt-2">
-                            <p className="text-xs font-bold text-[#171717] tabular-nums">
-                              {count} {count === 1 ? 'reserva' : 'reservas'}
-                            </p>
-                            <p className="text-[10px] font-semibold text-[#8A6D36] tabular-nums">
-                              {formatBRL(stats?.revenue || 0)}
-                            </p>
-                          </div>
+                          <>
+                            <span className="sm:hidden inline-flex items-center justify-center px-1.5 py-0.5 rounded-md bg-[#171717] text-white text-[10px] font-bold tabular-nums self-start mt-1">
+                              {count}
+                            </span>
+                            <div className="hidden sm:block space-y-0.5 pt-2">
+                              <p className="text-xs font-bold text-[#171717] tabular-nums">
+                                {count} {count === 1 ? 'reserva' : 'reservas'}
+                              </p>
+                              <p className="text-[10px] font-semibold text-[#8A6D36] tabular-nums">
+                                {formatBRL(stats?.revenue || 0)}
+                              </p>
+                            </div>
+                          </>
                         ) : (
                           <span className="text-[10px] text-[#B5B0A6]">—</span>
                         )}
