@@ -16,7 +16,7 @@ import {
   Loader2, Plus, Edit2, Users, Search, Kanban, List, Filter, Archive, Trash2,
   MessageSquare, MessageCircle, User, Tag, Calendar, AlertCircle, Sparkles, FolderOpen, RotateCcw,
   Upload, FileSpreadsheet, Check, CheckCircle2, ArrowRight, AlertTriangle, Settings2, Download, Mail,
-  Bell, ClipboardList, FileText, GitMerge, ChevronLeft, ChevronRight, Cake
+  Bell, ClipboardList, FileText, GitMerge, ChevronLeft, ChevronRight, Cake, BookUser
 } from 'lucide-react';
 import { useLumiLexicon } from '../../hooks/useLumiLexicon';
 import { logAuditEvent } from '../../lib/audit';
@@ -53,6 +53,12 @@ import {
 import { GoogleSheetsPicker } from '../../components/workspace/GoogleSheetsPicker';
 import { GoogleSheetsSyncDialog } from '../../components/workspace/GoogleSheetsSyncDialog';
 import { GmailWorkspaceDialog } from '../../components/workspace/GmailWorkspaceDialog';
+import { GoogleContactsDialog } from '../../components/workspace/GoogleContactsDialog';
+import {
+  GoogleContactPerson,
+  googleContactToClientDraft,
+  normalizeContactPhoneKey,
+} from '../../services/contactsService';
 
 import KanbanBoard from '../../components/crm/KanbanBoard';
 import ClientDetailsDrawer from '../../components/crm/ClientDetailsDrawer';
@@ -140,11 +146,12 @@ export default function ClientsPage() {
   const [importProgress, setImportProgress] = useState(0);
   const [totalImported, setTotalImported] = useState(0);
 
-  // Google Sheets Export / Sync & Gmail modal state
+  // Google Sheets Export / Sync, Gmail & Contacts modal state
   const [isGoogleSheetsSyncOpen, setIsGoogleSheetsSyncOpen] = useState(false);
   const [isGmailDialogOpen, setIsGmailDialogOpen] = useState(false);
   const [gmailInitialTab, setGmailInitialTab] = useState<'inbox' | 'compose'>('inbox');
   const [gmailInitialTo, setGmailInitialTo] = useState('');
+  const [isGoogleContactsOpen, setIsGoogleContactsOpen] = useState(false);
 
   const hasLoadedImportSource = Boolean(importFile || loadedGoogleSheetTitle);
 
@@ -1172,6 +1179,121 @@ export default function ClientsPage() {
     }
   };
 
+  const handleImportGoogleContactsToCrm = async (
+    googleContactsToImport: GoogleContactPerson[]
+  ): Promise<{ imported: number; skipped: number }> => {
+    if (!salonData?.id) {
+      throw new Error('Salão não identificado para importar contatos.');
+    }
+    if (!canManageNotices) {
+      throw new Error('Seu perfil atual não tem permissão para cadastrar clientes.');
+    }
+
+    const existingPhoneKeys = new Set<string>();
+    const existingEmails = new Set<string>();
+    clients.forEach((existing) => {
+      const p1 = normalizeContactPhoneKey(existing.phone);
+      const p2 = normalizeContactPhoneKey(existing.secondaryPhone);
+      if (p1.length >= 8) existingPhoneKeys.add(p1);
+      if (p2.length >= 8) existingPhoneKeys.add(p2);
+      if (existing.email?.trim()) {
+        existingEmails.add(existing.email.trim().toLowerCase());
+      }
+    });
+
+    const newDrafts: Array<ReturnType<typeof googleContactToClientDraft>> = [];
+    let skipped = 0;
+
+    for (const person of googleContactsToImport) {
+      const draft = googleContactToClientDraft(person);
+      const phoneKey = normalizeContactPhoneKey(draft.phone);
+      const emailKey = draft.email.trim().toLowerCase();
+
+      const duplicateByPhone = phoneKey.length >= 8 && existingPhoneKeys.has(phoneKey);
+      const duplicateByEmail = Boolean(emailKey) && existingEmails.has(emailKey);
+
+      if (duplicateByPhone || duplicateByEmail) {
+        skipped += 1;
+        continue;
+      }
+
+      if (phoneKey.length >= 8) existingPhoneKeys.add(phoneKey);
+      if (emailKey) existingEmails.add(emailKey);
+      newDrafts.push(draft);
+    }
+
+    if (newDrafts.length === 0) {
+      return { imported: 0, skipped };
+    }
+
+    const CHUNK_SIZE = 150;
+    const now = Date.now();
+
+    for (let i = 0; i < newDrafts.length; i += CHUNK_SIZE) {
+      const chunk = newDrafts.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+
+      chunk.forEach((draft) => {
+        const ref = doc(collection(db, `salons/${salonData.id}/clients`));
+        const clientPayload: Client = {
+          id: ref.id,
+          name: draft.name,
+          phone: draft.phone,
+          secondaryPhone: draft.secondaryPhone,
+          email: draft.email,
+          gender: draft.gender,
+          birthDate: draft.birthDate,
+          address: draft.address,
+          notes: draft.notes,
+          crmStage: 'new',
+          source: 'google',
+          sourceLabel: 'Google Contatos',
+          status: 'active',
+          archived: false,
+          tags: ['Google Contatos'],
+          createdAt: now,
+          updatedAt: now,
+          createdBy: currentUser?.uid || '',
+          updatedBy: currentUser?.uid || '',
+        };
+        batch.set(ref, clientPayload);
+
+        const histRef = doc(collection(db, `salons/${salonData.id}/clients/${ref.id}/history`));
+        batch.set(histRef, {
+          id: histRef.id,
+          type: 'created',
+          title: 'Importado do Google Contatos',
+          description: 'Cadastro criado via integração oficial Google Contacts.',
+          createdBy: currentUser?.uid || '',
+          createdByName: currentUser?.displayName || currentUser?.email || 'Membro',
+          createdAt: now,
+        });
+      });
+
+      await batch.commit();
+    }
+
+    void logAuditEvent(
+      salonData.id,
+      currentUser?.uid || '',
+      userData?.fullName || currentUser?.displayName || 'Membro',
+      currentUser?.email || '',
+      userRole,
+      {
+        action: 'create',
+        targetEntity: 'clients',
+        targetId: 'google_contacts_import',
+        description: `${newDrafts.length} contato(s) importado(s) do Google Contatos (${skipped} ignorado(s)).`,
+        details: {
+          imported: newDrafts.length,
+          skipped,
+        },
+      }
+    );
+
+    return { imported: newDrafts.length, skipped };
+  };
+
   const clientsForGoogleSheets = useMemo(() => {
     if (selectedClientIds.length > 0) {
       return clients.filter((c) => selectedIdSet.has(c.id));
@@ -1523,6 +1645,16 @@ export default function ClientsPage() {
             className="border-zinc-800 hover:border-emerald-500/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-500" /> Google Sheets
+          </Button>
+
+          {/* Google Contacts Button */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsGoogleContactsOpen(true)}
+            className="border-zinc-800 hover:border-[#D4AF37]/60 text-zinc-300 hover:text-white hover:bg-zinc-900 h-10 px-3.5 rounded-lg flex items-center gap-2 font-medium text-xs"
+          >
+            <BookUser className="w-4 h-4 text-[#B89B5E]" /> Google Contatos
           </Button>
 
           {/* Import List Dialog */}
@@ -2639,6 +2771,16 @@ export default function ClientsPage() {
             ? `${selectedClientIds.length} selecionado(s)`
             : undefined
         }
+      />
+
+      <GoogleContactsDialog
+        open={isGoogleContactsOpen}
+        onOpenChange={setIsGoogleContactsOpen}
+        initialTab="google"
+        clients={clients}
+        canImportToCrm={canManageNotices}
+        onImportContactsToCrm={handleImportGoogleContactsToCrm}
+        salonName={salonData?.name}
       />
 
       <Dialog

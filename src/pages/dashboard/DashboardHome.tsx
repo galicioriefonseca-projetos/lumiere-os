@@ -1,38 +1,112 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { 
-  Loader2, 
-  Users, 
-  Scissors, 
-  UserPlus, 
-  CalendarPlus, 
-  ListTodo, 
-  Crown, 
-  Briefcase, 
-  FileText, 
-  Compass, 
-  Globe,
+import { Progress } from '@/components/ui/progress';
+import {
   Activity,
+  AlertTriangle,
+  ArrowRight,
+  Award,
+  Briefcase,
+  Calendar,
+  CalendarPlus,
+  CheckCircle2,
+  Clock,
+  Crown,
+  FileText,
+  Globe,
+  ListTodo,
+  Loader2,
+  MessageSquareText,
+  Package,
+  Scissors,
+  Sparkles,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  UserPlus,
+  Users,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatBRL } from '@/lib/utils';
 import { useLexicon } from '../../hooks/useLexicon';
 import ProfessionalDashboard from './ProfessionalDashboard';
 import { useLumi } from '../../lumi/hooks/useLumi';
 import { useSalonPerformanceRanking } from '../../hooks/useSalonPerformanceRanking';
-import { LumiExecutiveAdvisor } from '../../components/lumi/LumiExecutiveAdvisor';
 import { LumiInsightsList } from '../../components/lumi/LumiInsightsList';
 import { LumiRecommendationsList } from '../../components/lumi/LumiRecommendationsList';
 import { LumiAlertsList } from '../../components/lumi/LumiAlertsList';
 import { BusinessPulse } from '../../components/lumi/BusinessPulse';
-import { DailyPriorityCard } from '../../components/lumi/DailyPriorityCard';
-import { LumiTimeline } from '../../components/lumi/LumiTimeline';
-import { LumiOpportunitySuite } from '../../components/lumi/LumiOpportunitySuite';
+import { LumiTimeline, type TimelineEvent } from '../../components/lumi/LumiTimeline';
 import { LumiDailySummary } from '../../components/lumi/LumiDailySummary';
 import { LumiereIAInsights } from '../../components/dashboard/LumiereIAInsights';
 import { LumiSystemReadinessAlert } from '../../components/lumi/LumiSystemReadinessAlert';
 import { SubscriptionBanner } from '@/components/dashboard/SubscriptionBanner';
+import type { Appointment, ChecklistRun, ComandaFlow, InventoryItem } from '../../types';
+
+type TimeRangeKey = 'today' | '7d' | 'month';
+type DashboardDensity = 'operational' | 'detailed';
+
+function toLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function shiftDays(base: Date, deltaDays: number): Date {
+  const next = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  next.setDate(next.getDate() + deltaDays);
+  return next;
+}
+
+function getPreviousYm(ym: string): string {
+  const [yStr, mStr] = ym.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return ym;
+  const d = new Date(year, month - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function computeDeltaPct(current: number, previous: number): number | null {
+  if (previous <= 0) return null;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function extractRecordYmd(record: { date?: string; createdAt?: unknown }): string {
+  if (typeof record.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.date)) {
+    return record.date.substring(0, 10);
+  }
+  if (typeof record.createdAt === 'number') {
+    return toLocalYmd(new Date(record.createdAt));
+  }
+  if (typeof record.createdAt === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.createdAt)) {
+    return record.createdAt.substring(0, 10);
+  }
+  return '';
+}
+
+function getAppointmentStatusMeta(status: Appointment['status']): {
+  label: string;
+  toneClass: string;
+} {
+  switch (status) {
+    case 'confirmed':
+      return { label: 'Confirmado', toneClass: 'text-emerald-700' };
+    case 'in_service':
+      return { label: 'Em atendimento', toneClass: 'text-[#8A6D36]' };
+    case 'waiting':
+      return { label: 'Aguardando', toneClass: 'text-amber-700' };
+    case 'completed':
+      return { label: 'Concluído', toneClass: 'text-[#6B6B6B]' };
+    case 'canceled':
+    case 'no_show':
+      return { label: 'Cancelado', toneClass: 'text-red-700' };
+    default:
+      return { label: 'Pendente', toneClass: 'text-amber-700' };
+  }
+}
 
 export default function DashboardHome() {
   const { salonData, userData, isPlatformAdmin } = useAuth();
@@ -40,141 +114,286 @@ export default function DashboardHome() {
   const isPaymentPending = salonData?.billing?.status !== 'ACTIVE';
   const navigate = useNavigate();
   const location = useLocation();
+
   const isProfessionalView =
     userData?.role === 'professional' ||
     location.pathname.endsWith('/meu-painel') ||
     location.pathname.endsWith('/profissional');
 
-  const { 
-    loading: lumiLoading, 
+  const {
+    loading: lumiLoading,
     context,
-    metrics: lumiMetrics, 
-    healthScore: lumiHealthScore, 
-    alerts: lumiAlerts, 
-    insights: lumiInsights, 
-    recommendations: lumiRecommendations, 
-    aiNarrative, 
-    runAnalysis, 
-    activeProvider, 
-    providerType, 
-    switchProvider 
+    metrics: lumiMetrics,
+    healthScore: lumiHealthScore,
+    alerts: lumiAlerts,
+    insights: lumiInsights,
+    recommendations: lumiRecommendations,
   } = useLumi(isProfessionalView ? undefined : salonData?.id);
-  
-  const [viewMode, setViewMode] = useState<'detailed' | 'minimalist'>('detailed');
 
-  const currentMonthStr = useMemo(() => new Date().toISOString().substring(0, 7), []);
-  const [activeRankingMonth, setActiveRankingMonth] = useState<string>(currentMonthStr);
-  const { professionalsPerformance, latestActiveMonth, loading: rankingLoading } = useSalonPerformanceRanking(
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>('today');
+  const [viewMode, setViewMode] = useState<DashboardDensity>('operational');
+
+  const todayYmd = useMemo(() => toLocalYmd(new Date()), []);
+  const currentMonthYm = useMemo(() => todayYmd.substring(0, 7), [todayYmd]);
+
+  const [activeRankingMonth, setActiveRankingMonth] = useState<string>(currentMonthYm);
+  const {
+    professionalsPerformance,
+    latestActiveMonth,
+    loading: rankingLoading,
+  } = useSalonPerformanceRanking(
     isProfessionalView ? undefined : salonData?.id,
     activeRankingMonth
   );
 
   useEffect(() => {
-    if (latestActiveMonth && activeRankingMonth === currentMonthStr && !rankingLoading) {
-      const hasActive = professionalsPerformance.some(p => p.totalRevenue > 0 || p.totalChecklists > 0 || p.totalGoals > 0);
-      if (!hasActive && latestActiveMonth !== currentMonthStr) {
+    if (latestActiveMonth && activeRankingMonth === currentMonthYm && !rankingLoading) {
+      const hasActive = professionalsPerformance.some(
+        (p) => p.totalRevenue > 0 || p.totalChecklists > 0 || p.totalGoals > 0
+      );
+      if (!hasActive && latestActiveMonth !== currentMonthYm) {
         setActiveRankingMonth(latestActiveMonth);
       }
     }
-  }, [latestActiveMonth, activeRankingMonth, currentMonthStr, professionalsPerformance, rankingLoading]);
+  }, [latestActiveMonth, activeRankingMonth, currentMonthYm, professionalsPerformance, rankingLoading]);
 
-  const topProfessionalName = useMemo(() => {
-    if (professionalsPerformance && professionalsPerformance.length > 0) {
-      const activePros = professionalsPerformance.filter(p => p.totalRevenue > 0 || p.totalChecklists > 0 || p.totalGoals > 0);
-      if (activePros.length > 0) {
-        return activePros[0].name || activePros[0].fullName || 'Sem dados suficientes';
-      }
-    }
-    return 'Sem dados suficientes';
-  }, [professionalsPerformance]);
+  const windowAnalytics = useMemo(() => {
+    const now = new Date();
+    const today = toLocalYmd(now);
+    const yesterday = toLocalYmd(shiftDays(now, -1));
+    const last7Start = toLocalYmd(shiftDays(now, -6));
+    const prev7Start = toLocalYmd(shiftDays(now, -13));
+    const prev7End = toLocalYmd(shiftDays(now, -7));
+    const currentYm = today.substring(0, 7);
+    const prevYm = getPreviousYm(currentYm);
 
-  const topOpportunityText = useMemo(() => {
-    if (lumiRecommendations && lumiRecommendations.length > 0) {
-      return lumiRecommendations[0].title;
-    }
-    return 'Sem dados suficientes';
-  }, [lumiRecommendations]);
+    const isInCurrentWindow = (ymd: string): boolean => {
+      if (!ymd) return false;
+      if (timeRange === 'today') return ymd === today;
+      if (timeRange === '7d') return ymd >= last7Start && ymd <= today;
+      return ymd.startsWith(currentYm);
+    };
 
-  const topAttentionText = useMemo(() => {
-    if (lumiAlerts && lumiAlerts.length > 0) {
-      return lumiAlerts[0].title;
-    }
-    return 'Sem dados suficientes';
-  }, [lumiAlerts]);
+    const isInPreviousWindow = (ymd: string): boolean => {
+      if (!ymd) return false;
+      if (timeRange === 'today') return ymd === yesterday;
+      if (timeRange === '7d') return ymd >= prev7Start && ymd <= prev7End;
+      return ymd.startsWith(prevYm);
+    };
 
-  const timelineEvents = useMemo(() => {
-    const events: any[] = [];
-    events.push({
-      id: 'welcome',
-      type: 'welcome',
-      title: 'Sistema iniciado.',
-      description: 'Lumi Intelligence Engine ativa e monitorando a operação.',
-      time: '08:00'
-    });
-    if (lumiAlerts && lumiAlerts.length > 0) {
-      events.push({
-        id: 'alert_1',
-        type: 'alert',
-        title: lumiAlerts[0].title,
-        description: lumiAlerts[0].description,
-        time: '09:15'
+    const appointments = (context?.appointments || []) as Appointment[];
+    const comandas = (context?.comandas || []) as ComandaFlow[];
+
+    const calcRevenueAndCount = (predicate: (ymd: string) => boolean) => {
+      let revenue = 0;
+      let count = 0;
+
+      appointments.forEach((ap) => {
+        if (ap.status !== 'completed') return;
+        const ymd = extractRecordYmd(ap);
+        if (!predicate(ymd)) return;
+        revenue += Number(ap.price) || 0;
+        count += 1;
       });
-    }
-    if (lumiInsights && lumiInsights.length > 0) {
-      events.push({
-        id: 'insight_1',
-        type: 'insight',
-        title: lumiInsights[0].title,
-        description: lumiInsights[0].description,
-        time: '10:30'
+
+      comandas.forEach((c) => {
+        if (c.status !== 'completed') return;
+        const ymd = extractRecordYmd(c);
+        if (!predicate(ymd)) return;
+        revenue += Number(c.finalTotal ?? c.totalAmount ?? 0) || 0;
+        count += 1;
       });
-    }
-    return events;
-  }, [lumiAlerts, lumiInsights]);
+
+      return {
+        revenue,
+        count,
+        avgTicket: count > 0 ? revenue / count : 0,
+      };
+    };
+
+    const currentStats = calcRevenueAndCount(isInCurrentWindow);
+    const previousStats = calcRevenueAndCount(isInPreviousWindow);
+    const monthStats = calcRevenueAndCount((ymd) => ymd.startsWith(currentYm));
+    const prevMonthStats = calcRevenueAndCount((ymd) => ymd.startsWith(prevYm));
+    const todayStats = calcRevenueAndCount((ymd) => ymd === today);
+
+    // Goal target proportional to selected window
+    const monthGoals = (context?.goals || []).filter((g) => g.month === currentYm);
+    const monthlyGoal = monthGoals.reduce((sum, g) => sum + (Number(g.targetAmount) || 0), 0);
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const dailyGoal = monthlyGoal > 0 ? monthlyGoal / daysInMonth : 0;
+
+    const windowGoalTarget =
+      monthlyGoal <= 0
+        ? 0
+        : timeRange === 'today'
+          ? dailyGoal
+          : timeRange === '7d'
+            ? dailyGoal * 7
+            : monthlyGoal;
+
+    const goalProgressPct =
+      windowGoalTarget > 0 ? Math.round((currentStats.revenue / windowGoalTarget) * 100) : 0;
+
+    // Today's agenda breakdown (timezone-safe local YYYY-MM-DD)
+    const todayAppointments = appointments
+      .filter((ap) => ap.date === today && !ap.isBlock && ap.status !== 'canceled' && ap.status !== 'no_show')
+      .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+    const scheduledTodayCount = todayAppointments.filter(
+      (ap) => ap.status === 'scheduled' || ap.status === 'confirmed' || ap.status === 'waiting' || ap.status === 'in_service'
+    ).length;
+    const pendingConfirmationCount = todayAppointments.filter(
+      (ap) => ap.status === 'scheduled' && ap.confirmationStatus !== 'confirmed_by_client'
+    ).length;
+    const completedTodayCount = todayAppointments.filter((ap) => ap.status === 'completed').length;
+
+    return {
+      currentStats,
+      previousStats,
+      revenueDeltaPct: computeDeltaPct(currentStats.revenue, previousStats.revenue),
+      ticketDeltaPct: computeDeltaPct(currentStats.avgTicket, previousStats.avgTicket),
+      monthComparison: {
+        revenueDeltaPct: computeDeltaPct(monthStats.revenue, prevMonthStats.revenue),
+        ticketDeltaPct: computeDeltaPct(monthStats.avgTicket, prevMonthStats.avgTicket),
+        periodLabel: 'Comparado ao mês anterior',
+      },
+      monthlyGoal,
+      dailyGoal: Math.round(dailyGoal),
+      windowGoalTarget,
+      goalProgressPct,
+      todayRevenue: todayStats.revenue,
+      monthRevenue: monthStats.revenue,
+      todayAppointments,
+      scheduledTodayCount,
+      pendingConfirmationCount,
+      completedTodayCount,
+      comparisonLabel:
+        timeRange === 'today'
+          ? 'vs ontem'
+          : timeRange === '7d'
+            ? 'vs 7 dias anteriores'
+            : 'vs mês anterior',
+    };
+  }, [context?.appointments, context?.comandas, context?.goals, timeRange]);
+
+  const checklistRunsToday = useMemo(() => {
+    const runs = (context?.checklistRuns || []) as ChecklistRun[];
+    return runs.filter((r) => (r.date || r.evaluationDate) === todayYmd);
+  }, [context?.checklistRuns, todayYmd]);
+
+  const lowStockItems = useMemo(() => {
+    const items = (context?.inventory || []) as InventoryItem[];
+    return items.filter((item) => Number(item.quantity) <= Number(item.minQuantity ?? 0));
+  }, [context?.inventory]);
 
   const clientMetrics = useMemo(() => {
     if (!salonData?.id) return undefined;
-    const todayStr = new Date().toISOString().substring(0, 10);
-    const currentMonthStr = todayStr.substring(0, 7);
-
-    const todayAppts = (context?.appointments || []).filter(a => a.date === todayStr);
-    const scheduledCount = todayAppts.filter(a => a.status === 'scheduled' || a.status === 'confirmed').length;
-    const completedCount = todayAppts.filter(a => a.status === 'completed').length;
-    const pendingCount = todayAppts.filter(a => a.status === 'scheduled').length;
-
-    const currentMonthGoals = (context?.goals || []).filter(g => g.month === currentMonthStr);
-    const monthlyGoal = currentMonthGoals.reduce((sum, g) => sum + (g.targetAmount || 0), 0);
-
-    const todayChecklists = (context?.checklistRuns || []).filter(c => c.date === todayStr);
-
     return {
-      monthRevenue: lumiMetrics?.totalRevenue || 0,
-      monthlyGoal: monthlyGoal > 0 ? monthlyGoal : undefined,
-      scheduledAppointments: scheduledCount,
-      completedAppointments: completedCount,
-      pendingAppointments: pendingCount,
-      checklistRunsCount: todayChecklists.length,
+      todayRevenue: windowAnalytics.todayRevenue,
+      monthRevenue: windowAnalytics.monthRevenue,
+      dailyGoal: windowAnalytics.dailyGoal > 0 ? windowAnalytics.dailyGoal : undefined,
+      monthlyGoal: windowAnalytics.monthlyGoal > 0 ? windowAnalytics.monthlyGoal : undefined,
+      scheduledAppointments: windowAnalytics.scheduledTodayCount,
+      completedAppointments: windowAnalytics.completedTodayCount,
+      pendingAppointments: windowAnalytics.pendingConfirmationCount,
+      checklistRunsCount: checklistRunsToday.length,
     };
-  }, [salonData?.id, context, lumiMetrics]);
+  }, [salonData?.id, windowAnalytics, checklistRunsToday.length]);
+
+  const timelineEvents = useMemo<TimelineEvent[]>(() => {
+    const events: TimelineEvent[] = [];
+
+    windowAnalytics.todayAppointments.slice(0, 3).forEach((ap) => {
+      const statusMeta = getAppointmentStatusMeta(ap.status);
+      events.push({
+        id: `appt-${ap.id}`,
+        type: 'appointment',
+        title: `${ap.clientName || 'Cliente'} · ${ap.serviceName || 'Atendimento'}`,
+        description: `${ap.professionalName || 'Equipe'} (${statusMeta.label})`,
+        time: ap.time || 'Hoje',
+        href: '/dashboard/agendamentos',
+      });
+    });
+
+    checklistRunsToday.slice(0, 2).forEach((run) => {
+      const score = run.percentage ?? run.completionPercentage ?? 0;
+      events.push({
+        id: `chk-${run.id}`,
+        type: 'checklist',
+        title: run.checklistTitle || 'Checklist Diário',
+        description: run.evaluatedProfessionalName
+          ? `${run.evaluatedProfessionalName} · ${Math.round(score)}% de conformidade`
+          : `${Math.round(score)}% concluído`,
+        time: 'Hoje',
+        href: '/dashboard/checklist',
+      });
+    });
+
+    if (lumiAlerts.length > 0) {
+      const topAlert = lumiAlerts[0];
+      events.push({
+        id: `alert-${topAlert.id}`,
+        type: 'alert',
+        title: topAlert.title,
+        description: topAlert.description,
+        time: new Date(topAlert.createdAt).toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        href: topAlert.actionUrl
+          ? topAlert.actionUrl.startsWith('/dashboard')
+            ? topAlert.actionUrl
+            : `/dashboard${topAlert.actionUrl.startsWith('/') ? '' : '/'}${topAlert.actionUrl}`
+          : undefined,
+      });
+    }
+
+    if (lumiInsights.length > 0 && lumiInsights[0].id !== 'insight_insufficient_data') {
+      const topInsight = lumiInsights[0];
+      events.push({
+        id: `insight-${topInsight.id}`,
+        type: 'insight',
+        title: topInsight.title,
+        description: topInsight.description,
+        time: new Date(topInsight.createdAt).toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      });
+    }
+
+    return events.slice(0, 6);
+  }, [windowAnalytics.todayAppointments, checklistRunsToday, lumiAlerts, lumiInsights]);
 
   if (isPlatformAdmin) {
     return (
-      <div className="bg-[#0c0c0e] p-8 text-center border border-[#D4AF37]/20 rounded-3xl max-w-lg mx-auto mt-12">
-        <Crown className="w-12 h-12 text-[#D4AF37] mx-auto mb-4 animate-pulse filter drop-shadow-[0_0_8px_rgba(212,175,55,0.4)]" />
-        <h2 className="text-xl font-heading mb-2 text-white">Painel Master Ativo</h2>
-        <p className="text-xs text-[#a1a1aa] mb-6 leading-relaxed">Você está autenticado como Administrador Global da LumiereOS. Acesse a área de gerenciamento para administrar os salões afiliados.</p>
-        <Button onClick={() => navigate('/master')} className="bg-[#D4AF37] hover:bg-gold-550 text-black font-semibold rounded-xl text-xs h-10 px-6">
+      <div className="rounded-2xl border border-[#E5E2DC] bg-white p-8 text-center max-w-lg mx-auto mt-12 space-y-4">
+        <Crown className="w-10 h-10 text-[#8A6D36] mx-auto" />
+        <div className="space-y-1.5">
+          <h2 className="text-xl font-heading font-semibold text-[#171717]">Painel Master Ativo</h2>
+          <p className="text-xs text-[#4A4A4A] leading-relaxed">
+            Você está autenticado como Administrador Global da plataforma. Acesse a central master
+            para gerenciar os estabelecimentos afiliados.
+          </p>
+        </div>
+        <Button
+          onClick={() => navigate('/master')}
+          className="bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold rounded-lg text-xs h-10 px-6"
+        >
           Ir para o Painel Master
         </Button>
       </div>
     );
   }
 
-  if (!salonData?.id || !userData) {
+  if (!salonData?.id || !userData || lumiLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-24 gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
-        <span className="text-xs text-[#a1a1aa] tracking-widest font-mono uppercase animate-pulse">Sincronizando LumiereOS...</span>
+      <div className="flex flex-col items-center justify-center py-24 gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-[#8A6D36]" />
+        <span className="text-xs font-medium text-[#6B6B6B]">
+          Sincronizando dados do estabelecimento...
+        </span>
       </div>
     );
   }
@@ -183,260 +402,656 @@ export default function DashboardHome() {
     return <ProfessionalDashboard />;
   }
 
-  if (lumiLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-24 gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-[#D4AF37]" />
-        <span className="text-xs text-[#a1a1aa] tracking-widest font-mono uppercase animate-pulse">Sincronizando LumiereOS...</span>
-      </div>
-    );
-  }
+  const isOwnerOrManager =
+    userData?.role === 'owner' ||
+    userData?.role === 'manager' ||
+    userData?.role === 'platform_admin';
+  const isReceptionistOrAttendant =
+    userData?.role === 'receptionist' || userData?.role === 'attendant';
 
-  const isOwnerOrManager = userData?.role === 'owner' || userData?.role === 'manager' || userData?.role === 'platform_admin';
-  const isReceptionistOrAttendant = userData?.role === 'receptionist' || userData?.role === 'attendant';
-
-  const roleDisplayInfo: Record<string, { label: string; badgeClass: string; desc: string }> = {
-    owner: { 
-      label: 'Proprietário', 
-      badgeClass: 'text-amber-300 bg-amber-500/10 border-amber-400/40',
-      desc: 'Visualização integral do salão: faturamento, equipe, checklists Lumière, metas e relatórios executivos.'
+  const roleDisplayInfo: Record<string, { label: string; desc: string }> = {
+    owner: {
+      label: 'Proprietário',
+      desc: 'Visão completa de faturamento, agenda, equipe, CRM e metas do dia.',
     },
-    manager: { 
-      label: 'Gerente', 
-      badgeClass: 'text-blue-300 bg-blue-500/10 border-blue-400/40',
-      desc: 'Gestão da operação diária: acompanhamento de metas, equipe, agendamentos, estoque e comissões.'
+    manager: {
+      label: 'Gerente',
+      desc: 'Acompanhamento de operação diária, equipe, agenda e metas.',
     },
-    receptionist: { 
-      label: 'Recepcionista', 
-      badgeClass: 'text-purple-300 bg-purple-500/10 border-purple-400/40',
-      desc: 'Atendimento & Recepção: controle de agenda, fluxo de clientes, checklists operacionais e serviços.'
+    receptionist: {
+      label: 'Recepcionista',
+      desc: 'Controle de agenda, confirmações de clientes, checklists e recepção.',
     },
-    attendant: { 
-      label: 'Atendente', 
-      badgeClass: 'text-emerald-300 bg-emerald-500/10 border-emerald-400/40',
-      desc: 'Apoio Operacional: consulta de agenda, cadastro ágil de clientes e conferência de checklists.'
+    attendant: {
+      label: 'Atendente',
+      desc: 'Consulta rápida de agenda, cadastro de clientes e checklists.',
     },
-    professional: { 
-      label: 'Profissional', 
-      badgeClass: 'text-rose-300 bg-rose-500/10 border-rose-400/40',
-      desc: 'Meu Painel Individual: agenda pessoal, histórico de atendimentos e comissões.'
+    professional: {
+      label: 'Profissional',
+      desc: 'Agenda pessoal, atendimentos e comissões.',
     },
-    platform_admin: { 
-      label: 'Master Admin', 
-      badgeClass: 'text-amber-300 bg-amber-500/20 border-amber-400/50',
-      desc: 'Acesso global da plataforma LumiereOS.'
-    }
+    platform_admin: {
+      label: 'Master Admin',
+      desc: 'Administração global da plataforma.',
+    },
   };
-  const activeRoleBadge = roleDisplayInfo[userData?.role || 'owner'] || roleDisplayInfo.owner;
+  const activeRole = roleDisplayInfo[userData?.role || 'owner'] || roleDisplayInfo.owner;
+
+  const topRankingPros = professionalsPerformance
+    .filter((p) => p.totalRevenue > 0 || p.totalChecklists > 0 || p.totalGoals > 0)
+    .slice(0, 5);
+
+  const timeRangeLabels: Record<TimeRangeKey, string> = {
+    today: 'Hoje',
+    '7d': '7 dias',
+    month: 'Este mês',
+  };
 
   return (
-    <div className="space-y-6 md:space-y-8 font-sans pb-12 animate-fade-in">
+    <div className="space-y-6 font-sans pb-12 text-[#171717]">
       {isPaymentPending && <SubscriptionBanner />}
-      
-      {/* Header Profile - Premium Luxury Styling */}
-      <div className="relative overflow-hidden bg-card rounded-3xl border border-primary/20 p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm">
-        <div className="absolute top-0 right-0 -translate-y-12 translate-x-12 w-80 h-80 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {salonData?.plan === 'founder' ? (
-              <span className="text-[10px] uppercase font-bold tracking-widest text-primary bg-primary/10 border border-primary/25 px-3 py-1.5 rounded-full flex items-center gap-2 leading-none shadow-sm">
-                <Crown className="w-3.5 h-3.5" /> PLANO FOUNDER • ACESSO COMPLETO • ATUALIZAÇÕES INCLUÍDAS
-              </span>
-            ) : (
-              <span className="text-[10px] uppercase font-bold tracking-widest text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-full flex items-center gap-1 leading-none shadow-sm">
-                 <Crown className="w-3.5 h-3.5" /> ESTABELECIMENTO PARCEIRO LUMIÈRE
-              </span>
-            )}
-            <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border flex items-center gap-1.5", activeRoleBadge.badgeClass)}>
-              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-              Modo: {activeRoleBadge.label}
+
+      {/* Hero Header */}
+      <section className="rounded-2xl border border-[#E5E2DC] bg-white p-5 md:p-7 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div className="space-y-1.5 min-w-0">
+          <p className="text-xs font-medium text-[#6B6B6B]">
+            <span className="text-[#8A6D36] font-semibold">
+              {salonData?.plan === 'founder' ? 'Plano Founder' : 'Estabelecimento Parceiro'}
             </span>
-          </div>
-          <h1 className="text-2xl md:text-3xl font-light tracking-tight text-foreground font-heading">
-            <span className="font-semibold text-foreground">{salonData.name}</span>
+            <span aria-hidden="true"> · </span>
+            <span>Perfil {activeRole.label}</span>
+          </p>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#171717] font-heading truncate">
+            {salonData.name}
           </h1>
-          <p className="text-xs text-muted-foreground max-w-xl leading-relaxed">
-            Olá, <span className="text-foreground font-semibold">{userData?.fullName}</span>. {activeRoleBadge.desc}
+          <p className="text-xs text-[#4A4A4A] max-w-2xl leading-relaxed">
+            Olá, <span className="font-semibold text-[#171717]">{userData?.fullName}</span>.{' '}
+            {activeRole.desc}
           </p>
         </div>
-        
-        <div className="flex flex-wrap gap-2.5 relative z-10">
-           <Button onClick={() => navigate('/dashboard/agendamentos')} className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-10 px-5 shadow-sm select-none">
-             <CalendarPlus className="w-4 h-4 mr-2" />
-             Novo Agendamento
-           </Button>
-           <Button onClick={() => navigate('/dashboard/clientes')} variant="outline" className="rounded-xl border-border hover:border-primary/40 text-foreground bg-secondary/50 text-xs h-10 px-5 font-medium">
-             <UserPlus className="w-4 h-4 mr-2 text-primary" />
-             Novo Cliente
-           </Button>
-        </div>
-      </div>
 
-      {/* Quick Access Shortcuts - Beautiful grid custom aligned for roles */}
-      <div className="space-y-3.5">
-         <div className="flex items-center justify-between">
-           <div className="flex items-center gap-2">
-              <Compass className="w-4 h-4 text-primary" />
-              <span className="text-xs uppercase tracking-widest font-bold text-muted-foreground">Módulos de Acesso Rápido</span>
-           </div>
-           
-           {/* View Toggle */}
-           <div className="flex items-center bg-secondary border border-border rounded-xl p-0.5">
-              <button 
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <Button
+            onClick={() => navigate('/dashboard/agendamentos')}
+            className="rounded-lg bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-xs h-10 px-4 gap-2"
+          >
+            <CalendarPlus className="w-4 h-4 text-[#D8C79F]" />
+            Novo Agendamento
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate('/dashboard/clientes')}
+            className="rounded-lg border-[#E5E2DC] bg-white hover:bg-[#FAF9F7] text-[#171717] text-xs h-10 px-4 font-medium gap-2"
+          >
+            <UserPlus className="w-4 h-4 text-[#8A6D36]" />
+            Novo Cliente
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate('/dashboard/lumi-ia')}
+            className="rounded-lg border-[#E5E2DC] bg-[#FAF9F7] hover:border-[#8A6D36]/50 text-[#171717] text-xs h-10 px-4 font-medium gap-2"
+          >
+            <Sparkles className="w-4 h-4 text-[#8A6D36]" />
+            Lumi IA
+          </Button>
+        </div>
+      </section>
+
+      {/* Quick Access Modules */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B6B6B]">
+            Acesso Rápido
+          </h2>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Timeframe Selector */}
+            <div
+              role="group"
+              aria-label="Recorte de tempo"
+              className="inline-flex items-center rounded-lg border border-[#E5E2DC] bg-[#FAF9F7] p-0.5"
+            >
+              {(['today', '7d', 'month'] as TimeRangeKey[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTimeRange(key)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                    timeRange === key
+                      ? 'bg-white text-[#171717] shadow-xs border border-[#E5E2DC]'
+                      : 'text-[#6B6B6B] hover:text-[#171717]'
+                  )}
+                >
+                  {timeRangeLabels[key]}
+                </button>
+              ))}
+            </div>
+
+            {/* Density Toggle */}
+            <div
+              role="group"
+              aria-label="Nível de detalhe do painel"
+              className="inline-flex items-center rounded-lg border border-[#E5E2DC] bg-[#FAF9F7] p-0.5"
+            >
+              <button
+                type="button"
+                onClick={() => setViewMode('operational')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                  viewMode === 'operational'
+                    ? 'bg-white text-[#171717] shadow-xs border border-[#E5E2DC]'
+                    : 'text-[#6B6B6B] hover:text-[#171717]'
+                )}
+              >
+                Operacional
+              </button>
+              <button
+                type="button"
                 onClick={() => setViewMode('detailed')}
                 className={cn(
-                  "px-3 py-1.5 text-[10px] font-semibold rounded-lg uppercase tracking-wider transition-all",
-                  viewMode === 'detailed' ? "bg-card text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground"
+                  'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
+                  viewMode === 'detailed'
+                    ? 'bg-white text-[#171717] shadow-xs border border-[#E5E2DC]'
+                    : 'text-[#6B6B6B] hover:text-[#171717]'
                 )}
               >
-                Detalhada
+                Análise Completa
               </button>
-              <button 
-                onClick={() => setViewMode('minimalist')}
-                className={cn(
-                  "px-3 py-1.5 text-[10px] font-semibold rounded-lg uppercase tracking-wider transition-all",
-                  viewMode === 'minimalist' ? "bg-card text-foreground shadow-sm border border-border" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Minimalista
-              </button>
-           </div>
-         </div>
-          <div className={cn("grid gap-3 sm:gap-3.5", 
-            isReceptionistOrAttendant 
-              ? "grid-cols-2 sm:grid-cols-3" 
-              : (isAgency || isModuleEnabled('clientPortal')) 
-                ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-7" 
-                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
-          )}>
-            <Link to="/dashboard/agendamentos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
-               <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                 <CalendarPlus className="w-5 h-5 text-primary" />
-               </div>
-               <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.appointments || 'Agenda'}</span>
-            </Link>
-            <Link to="/dashboard/clientes" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
-               <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                 <Users className="w-5 h-5 text-primary" />
-               </div>
-               <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.clients || 'Clientes'}</span>
-            </Link>
-            <Link to="/dashboard/servicos" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
-               <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                 {segment === 'beauty' ? (
-                   <Scissors className="w-5 h-5 text-primary" />
-                 ) : segment === 'health' ? (
-                   <Activity className="w-5 h-5 text-primary" />
-                 ) : (
-                   <Briefcase className="w-5 h-5 text-primary" />
-                 )}
-               </div>
-               <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.services || 'Serviços'}</span>
-            </Link>
+            </div>
+          </div>
+        </div>
 
-            {(isAgency || isModuleEnabled('clientPortal')) && (
-              <Link to="/dashboard/area-do-cliente" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-emerald-500/20 hover:border-emerald-500/40 p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-2.5 sm:gap-3 shadow-sm group">
-                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 group-hover:border-emerald-300 group-hover:scale-105 transition-all duration-300 text-emerald-700">
-                   <Globe className="w-5 h-5" />
-                 </div>
-                 <span className="text-xs font-semibold text-foreground line-clamp-1">Portal Clientes</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <Link
+            to="/dashboard/agendamentos"
+            className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+          >
+            <Calendar className="w-4 h-4 text-[#8A6D36]" />
+            <span className="text-xs font-medium text-[#171717] truncate w-full">
+              {lex.appointments || 'Agenda'}
+            </span>
+          </Link>
+
+          <Link
+            to="/dashboard/clientes"
+            className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+          >
+            <Users className="w-4 h-4 text-[#8A6D36]" />
+            <span className="text-xs font-medium text-[#171717] truncate w-full">
+              {lex.clients || 'Clientes'}
+            </span>
+          </Link>
+
+          <Link
+            to="/dashboard/crm"
+            className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+          >
+            <MessageSquareText className="w-4 h-4 text-[#8A6D36]" />
+            <span className="text-xs font-medium text-[#171717] truncate w-full">CRM 360°</span>
+          </Link>
+
+          <Link
+            to="/dashboard/lumi-ia"
+            className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+          >
+            <Sparkles className="w-4 h-4 text-[#8A6D36]" />
+            <span className="text-xs font-medium text-[#171717] truncate w-full">Lumi IA</span>
+          </Link>
+
+          <Link
+            to="/dashboard/servicos"
+            className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+          >
+            {segment === 'beauty' ? (
+              <Scissors className="w-4 h-4 text-[#8A6D36]" />
+            ) : segment === 'health' ? (
+              <Activity className="w-4 h-4 text-[#8A6D36]" />
+            ) : (
+              <Briefcase className="w-4 h-4 text-[#8A6D36]" />
+            )}
+            <span className="text-xs font-medium text-[#171717] truncate w-full">
+              {lex.services || 'Serviços'}
+            </span>
+          </Link>
+
+          {(isOwnerOrManager || !isReceptionistOrAttendant) && (
+            <>
+              <Link
+                to="/dashboard/equipe"
+                className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+              >
+                <Briefcase className="w-4 h-4 text-[#8A6D36]" />
+                <span className="text-xs font-medium text-[#171717] truncate w-full">
+                  {salonData?.managementMode === 'liberal'
+                    ? 'Meu Perfil'
+                    : lex.professionals || 'Equipe'}
+                </span>
               </Link>
+
+              <Link
+                to="/dashboard/checklist"
+                className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+              >
+                <ListTodo className="w-4 h-4 text-[#8A6D36]" />
+                <span className="text-xs font-medium text-[#171717] truncate w-full">
+                  {lex.checklists || 'Checklists'}
+                </span>
+              </Link>
+
+              <Link
+                to="/dashboard/relatorios"
+                className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+              >
+                <FileText className="w-4 h-4 text-[#8A6D36]" />
+                <span className="text-xs font-medium text-[#171717] truncate w-full">
+                  Relatórios
+                </span>
+              </Link>
+            </>
+          )}
+
+          {(isAgency || isModuleEnabled('clientPortal')) && (
+            <Link
+              to="/dashboard/area-do-cliente"
+              className="rounded-xl border border-[#E5E2DC] bg-white hover:border-[#8A6D36]/50 hover:bg-[#FAF9F7] p-3.5 flex flex-col items-center justify-center text-center gap-2 transition-colors"
+            >
+              <Globe className="w-4 h-4 text-emerald-700" />
+              <span className="text-xs font-medium text-[#171717] truncate w-full">
+                Portal Clientes
+              </span>
+            </Link>
+          )}
+        </div>
+      </section>
+
+      {/* Primary KPI Grid (Real Calculations + Real Comparison Deltas) */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: Revenue */}
+        <div className="rounded-xl border border-[#E5E2DC] bg-white p-5 space-y-2">
+          <div className="flex items-center justify-between text-xs text-[#6B6B6B]">
+            <span>Faturamento ({timeRangeLabels[timeRange]})</span>
+            <TrendingUp className="w-4 h-4 text-[#8A6D36]" />
+          </div>
+          <p className="text-2xl font-bold text-[#171717] tabular-nums">
+            {formatBRL(windowAnalytics.currentStats.revenue)}
+          </p>
+          <div className="flex items-center justify-between text-[11px] pt-1">
+            {windowAnalytics.revenueDeltaPct !== null ? (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 font-semibold tabular-nums',
+                  windowAnalytics.revenueDeltaPct >= 0 ? 'text-emerald-700' : 'text-red-700'
+                )}
+              >
+                {windowAnalytics.revenueDeltaPct >= 0 ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : (
+                  <TrendingDown className="w-3 h-3" />
+                )}
+                {windowAnalytics.revenueDeltaPct >= 0
+                  ? `+${windowAnalytics.revenueDeltaPct}%`
+                  : `${windowAnalytics.revenueDeltaPct}%`}{' '}
+                {windowAnalytics.comparisonLabel}
+              </span>
+            ) : (
+              <span className="text-[#6B6B6B]">
+                {windowAnalytics.currentStats.count} atendimento(s) concluído(s)
+              </span>
             )}
+          </div>
+        </div>
 
-            {isOwnerOrManager && (
-              <>
-                <Link to="/dashboard/equipe" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
-                   <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                     <Briefcase className="w-5 h-5 text-primary" />
-                   </div>
-                   <span className="text-xs font-semibold text-foreground line-clamp-1">
-                     {salonData?.managementMode === 'liberal' ? 'Meu Perfil' : (lex.professionals || 'Equipe')}
-                   </span>
-                </Link>
-                <Link to="/dashboard/checklist" className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group">
-                   <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                     <ListTodo className="w-5 h-5 text-primary" />
-                   </div>
-                   <span className="text-xs font-semibold text-foreground line-clamp-1">{lex.checklists || 'Checklists'}</span>
-                </Link>
-                <button onClick={() => {
-                  navigate('/dashboard/relatorios');
-                }} className="bg-card hover:bg-secondary/70 transition-all duration-300 border border-border hover:border-primary/35 p-5 rounded-2xl flex flex-col items-center justify-center text-center gap-3 shadow-sm group w-full cursor-pointer">
-                   <div className="p-3 bg-accent rounded-xl border border-primary/15 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-300">
-                     <FileText className="w-5 h-5 text-primary" />
-                   </div>
-                   <span className="text-xs font-semibold text-foreground flex items-center justify-center gap-1.5 line-clamp-1">
-                     Relatórios
-                   </span>
-                </button>
-              </>
+        {/* KPI 2: Goal Progress */}
+        <div className="rounded-xl border border-[#E5E2DC] bg-white p-5 space-y-2.5">
+          <div className="flex items-center justify-between text-xs text-[#6B6B6B]">
+            <span>Progresso da Meta ({timeRangeLabels[timeRange]})</span>
+            <Target className="w-4 h-4 text-[#8A6D36]" />
+          </div>
+          {windowAnalytics.windowGoalTarget > 0 ? (
+            <>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-2xl font-bold text-[#171717] tabular-nums">
+                  {windowAnalytics.goalProgressPct}%
+                </p>
+                <span className="text-[11px] text-[#6B6B6B] tabular-nums">
+                  Meta {formatBRL(Math.round(windowAnalytics.windowGoalTarget))}
+                </span>
+              </div>
+              <Progress
+                value={Math.min(100, windowAnalytics.goalProgressPct)}
+                className="h-1.5 bg-[#F2EFE9]"
+              />
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-lg font-semibold text-[#171717]">Sem meta definida</p>
+              <Link
+                to="/dashboard/metas"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#8A6D36] hover:underline"
+              >
+                Definir meta mensal <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* KPI 3: Average Ticket */}
+        <div className="rounded-xl border border-[#E5E2DC] bg-white p-5 space-y-2">
+          <div className="flex items-center justify-between text-xs text-[#6B6B6B]">
+            <span>Ticket Médio ({timeRangeLabels[timeRange]})</span>
+            <Activity className="w-4 h-4 text-[#8A6D36]" />
+          </div>
+          <p className="text-2xl font-bold text-[#171717] tabular-nums">
+            {formatBRL(windowAnalytics.currentStats.avgTicket)}
+          </p>
+          <div className="text-[11px] pt-1">
+            {windowAnalytics.ticketDeltaPct !== null ? (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 font-semibold tabular-nums',
+                  windowAnalytics.ticketDeltaPct >= 0 ? 'text-emerald-700' : 'text-red-700'
+                )}
+              >
+                {windowAnalytics.ticketDeltaPct >= 0 ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : (
+                  <TrendingDown className="w-3 h-3" />
+                )}
+                {windowAnalytics.ticketDeltaPct >= 0
+                  ? `+${windowAnalytics.ticketDeltaPct}%`
+                  : `${windowAnalytics.ticketDeltaPct}%`}{' '}
+                {windowAnalytics.comparisonLabel}
+              </span>
+            ) : (
+              <span className="text-[#6B6B6B] tabular-nums">
+                {windowAnalytics.currentStats.count} lançamento(s)
+              </span>
             )}
-         </div>
-      </div>
+          </div>
+        </div>
 
-      {/* Lumi Intelligence Suite - Premium Executive Suite */}
-      <div className="space-y-6">
-        {/* LumièreIA Insights Diários - Metas, Pendências e Alertas Financeiros */}
-        <LumiereIAInsights
-          salonId={salonData.id}
-          salonName={salonData.name}
-          userName={userData?.fullName}
-          clientMetrics={clientMetrics}
-        />
+        {/* KPI 4: Today's Agenda */}
+        <div className="rounded-xl border border-[#E5E2DC] bg-white p-5 space-y-2">
+          <div className="flex items-center justify-between text-xs text-[#6B6B6B]">
+            <span>Agenda de Hoje</span>
+            <Clock className="w-4 h-4 text-[#8A6D36]" />
+          </div>
+          <p className="text-2xl font-bold text-[#171717] tabular-nums">
+            {windowAnalytics.todayAppointments.length}
+          </p>
+          <p className="text-[11px] text-[#4A4A4A] tabular-nums pt-1">
+            <span className="font-semibold text-emerald-700">
+              {windowAnalytics.completedTodayCount} concluído(s)
+            </span>
+            <span aria-hidden="true"> · </span>
+            <span
+              className={cn(
+                'font-semibold',
+                windowAnalytics.pendingConfirmationCount > 0
+                  ? 'text-amber-700'
+                  : 'text-[#6B6B6B]'
+              )}
+            >
+              {windowAnalytics.pendingConfirmationCount} sem confirmação
+            </span>
+          </p>
+        </div>
+      </section>
 
-        {/* Alerta de Calibração e Força Total da Lumi */}
-        <LumiSystemReadinessAlert
-          salonName={salonData.name}
-          configState={{
-            hasGoals: Boolean(clientMetrics?.monthlyGoal && clientMetrics.monthlyGoal > 0) || Boolean(context?.goals && context.goals.length > 0),
-            hasServices: Boolean(context?.services && context.services.length > 0),
-            hasProfessionals: Boolean(context?.professionals && context.professionals.length > 0),
-            hasCommissions: Boolean(context?.professionals && context.professionals.some(p => p.commissionRate !== undefined && p.commissionRate > 0)),
-            hasChecklists: Boolean(context?.checklistRuns && context.checklistRuns.length > 0) || Boolean(clientMetrics?.checklistRunsCount && clientMetrics.checklistRunsCount > 0),
-            hasSalonDetails: Boolean(salonData?.name && (salonData?.phone || salonData?.businessType)),
-          }}
-        />
+      {/* 2-Column Operational Cockpit */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Left: Agenda de Hoje & Confirmações */}
+        <div className="lg:col-span-7 rounded-xl border border-[#E5E2DC] bg-white p-5 flex flex-col justify-between gap-4">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2 border-b border-[#E5E2DC] pb-3">
+              <div>
+                <h2 className="text-sm font-semibold text-[#171717]">
+                  Atendimentos de Hoje ({todayYmd.split('-').reverse().join('/')})
+                </h2>
+                <p className="text-xs text-[#6B6B6B]">
+                  Ordem cronológica com status de confirmação em tempo real
+                </p>
+              </div>
+              <Link
+                to="/dashboard/agendamentos"
+                className="text-xs font-semibold text-[#8A6D36] hover:underline inline-flex items-center gap-1 shrink-0"
+              >
+                Abrir agenda <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
 
-        <LumiExecutiveAdvisor userName={userData?.fullName} mainRecommendation={lumiRecommendations.length > 0 ? { title: lumiRecommendations[0].title, action: lumiRecommendations[0].actionText || "Agir", url: lumiRecommendations[0].actionUrl || "/" } : undefined} 
-          healthScore={lumiHealthScore}
-          aiNarrative={aiNarrative}
-          onRunAnalysis={runAnalysis}
-          isLoading={lumiLoading}
-          activeProvider={activeProvider}
-          providerType={providerType}
-          onSwitchProvider={switchProvider}
-          topOpportunity={topOpportunityText}
-          topAttention={topAttentionText}
-          topProfessional={topProfessionalName}
-        />
+            {windowAnalytics.todayAppointments.length === 0 ? (
+              <div className="py-10 text-center space-y-2 text-xs text-[#6B6B6B]">
+                <Calendar className="w-6 h-6 text-[#8A6D36] mx-auto" />
+                <p className="font-semibold text-[#171717]">
+                  Nenhum agendamento ativo para hoje.
+                </p>
+                <p>
+                  Registre um novo horário ou dispare uma campanha de reativação na Central Lumi IA.
+                </p>
+                <div className="pt-2 flex justify-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => navigate('/dashboard/agendamentos')}
+                    className="h-8 px-3 text-xs bg-[#171717] text-white hover:bg-[#2B2B2B] rounded-lg"
+                  >
+                    Agendar Horário
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate('/dashboard/lumi-ia')}
+                    className="h-8 px-3 text-xs border-[#E5E2DC] bg-white hover:bg-[#FAF9F7] rounded-lg"
+                  >
+                    Campanha Lumi IA
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#E5E2DC]">
+                {windowAnalytics.todayAppointments.slice(0, 6).map((ap) => {
+                  const statusMeta = getAppointmentStatusMeta(ap.status);
+                  return (
+                    <div
+                      key={ap.id}
+                      className="py-3 first:pt-1 last:pb-1 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-12 text-xs font-bold text-[#171717] tabular-nums shrink-0">
+                          {ap.time || '--:--'}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-[#171717] truncate">
+                            {ap.clientName || 'Cliente'}
+                          </p>
+                          <p className="text-[11px] text-[#6B6B6B] truncate">
+                            {ap.serviceName || 'Serviço'} · {ap.professionalName || 'Profissional'}
+                          </p>
+                        </div>
+                      </div>
 
-        {lumiRecommendations && lumiRecommendations.length > 0 && (
-          <DailyPriorityCard 
-            priority={lumiRecommendations[0].title}
-            impact={lumiRecommendations[0].impact === "high" ? "Alto" : "Médio"}
-            action={lumiRecommendations[0].actionText || "Resolver Agora"}
-            url={lumiRecommendations[0].actionUrl || "/"}
-          />
-        )}
+                      <div className="text-right shrink-0 space-y-0.5">
+                        <p className={cn('text-[11px] font-semibold', statusMeta.toneClass)}>
+                          {statusMeta.label}
+                        </p>
+                        {typeof ap.price === 'number' && ap.price > 0 && (
+                          <p className="text-[11px] text-[#6B6B6B] tabular-nums">
+                            {formatBRL(ap.price)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-        {viewMode === 'detailed' && (
-          <>
-            <LumiDailySummary metrics={lumiMetrics} />
-            <BusinessPulse healthScore={lumiHealthScore} />
-            <LumiOpportunitySuite metrics={lumiMetrics} context={context} />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
+          {windowAnalytics.todayAppointments.length > 0 && (
+            <div className="border-t border-[#E5E2DC] pt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-[#6B6B6B] tabular-nums">
+                Exibindo {Math.min(6, windowAnalytics.todayAppointments.length)} de{' '}
+                {windowAnalytics.todayAppointments.length} horários de hoje
+              </span>
+              {windowAnalytics.pendingConfirmationCount > 0 && (
+                <Link
+                  to="/dashboard/crm"
+                  className="font-semibold text-[#8A6D36] hover:underline inline-flex items-center gap-1"
+                >
+                  Confirmar {windowAnalytics.pendingConfirmationCount} no CRM 360°{' '}
+                  <ArrowRight className="w-3 h-3" />
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Top Equipe & Pulso Operacional */}
+        <div className="lg:col-span-5 rounded-xl border border-[#E5E2DC] bg-white p-5 flex flex-col justify-between gap-4">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2 border-b border-[#E5E2DC] pb-3">
+              <div className="flex items-center gap-2">
+                <Award className="w-4 h-4 text-[#8A6D36]" />
+                <div>
+                  <h2 className="text-sm font-semibold text-[#171717]">
+                    Desempenho da Equipe
+                  </h2>
+                  <p className="text-xs text-[#6B6B6B]">
+                    Produção consolidada no mês de referência
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/dashboard/relatorios"
+                className="text-xs font-semibold text-[#8A6D36] hover:underline shrink-0"
+              >
+                Relatórios
+              </Link>
+            </div>
+
+            {topRankingPros.length === 0 ? (
+              <div className="py-6 text-center text-xs text-[#6B6B6B] space-y-1">
+                <p className="font-semibold text-[#171717]">Sem produção lançada no mês.</p>
+                <p>Conclua atendimentos ou comandas para formar o ranking da equipe.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {topRankingPros.map((pro, idx) => (
+                  <div key={pro.id || idx} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-5 text-xs font-bold text-[#8A6D36] tabular-nums shrink-0">
+                        {idx + 1}.
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-[#171717] truncate">
+                          {pro.name || pro.fullName || 'Profissional'}
+                        </p>
+                        <p className="text-[11px] text-[#6B6B6B] tabular-nums">
+                          {pro.totalChecklists > 0
+                            ? `Checklist ${Math.round(pro.avgScore)}%`
+                            : 'Sem checklist no mês'}
+                          {pro.totalGoals > 0
+                            ? ` · Meta ${Math.round(pro.avgGoalProgress)}%`
+                            : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-[#171717] tabular-nums shrink-0">
+                      {formatBRL(pro.totalRevenue)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Operational Pulses Strip */}
+          <div className="rounded-lg border border-[#E5E2DC] bg-[#FAF9F7] p-3.5 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#4A4A4A] flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                Checklists hoje
+              </span>
+              <Link
+                to="/dashboard/checklist"
+                className="font-semibold text-[#171717] hover:text-[#8A6D36] tabular-nums"
+              >
+                {checklistRunsToday.length} executado(s)
+              </Link>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#4A4A4A] flex items-center gap-1.5">
+                {lowStockItems.length > 0 ? (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                ) : (
+                  <Package className="w-3.5 h-3.5 text-[#8A6D36]" />
+                )}
+                Estoque mínimo
+              </span>
+              <Link
+                to="/dashboard/estoque"
+                className={cn(
+                  'font-semibold tabular-nums hover:underline',
+                  lowStockItems.length > 0 ? 'text-amber-700' : 'text-emerald-700'
+                )}
+              >
+                {lowStockItems.length > 0
+                  ? `${lowStockItems.length} item(ns) em alerta`
+                  : 'Estoque em dia'}
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Calibration Alert (only renders if setup < 100%) */}
+      <LumiSystemReadinessAlert
+        salonName={salonData.name}
+        configState={{
+          hasGoals:
+            Boolean(clientMetrics?.monthlyGoal && clientMetrics.monthlyGoal > 0) ||
+            Boolean(context?.goals && context.goals.length > 0),
+          hasServices: Boolean(context?.services && context.services.length > 0),
+          hasProfessionals: Boolean(context?.professionals && context.professionals.length > 0),
+          hasCommissions: Boolean(
+            context?.professionals &&
+              context.professionals.some(
+                (p) => p.commissionRate !== undefined && p.commissionRate > 0
+              )
+          ),
+          hasChecklists:
+            Boolean(context?.checklistRuns && context.checklistRuns.length > 0) ||
+            Boolean(clientMetrics?.checklistRunsCount && clientMetrics.checklistRunsCount > 0),
+          hasSalonDetails: Boolean(salonData?.name && (salonData?.phone || salonData?.businessType)),
+        }}
+      />
+
+      {/* Daily AI Diagnosis */}
+      <LumiereIAInsights
+        salonId={salonData.id}
+        salonName={salonData.name}
+        userName={userData?.fullName}
+        clientMetrics={clientMetrics}
+      />
+
+      {/* Detailed View Sections */}
+      {viewMode === 'detailed' && (
+        <div className="space-y-6">
+          <LumiDailySummary metrics={lumiMetrics} comparison={windowAnalytics.monthComparison} />
+          <BusinessPulse healthScore={lumiHealthScore} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
               <LumiInsightsList insights={lumiInsights} />
               <LumiRecommendationsList recommendations={lumiRecommendations} />
-              </div>
-              <div className="lg:col-span-1 space-y-6">
-                <LumiTimeline events={timelineEvents} />
-              </div>
             </div>
-            <LumiAlertsList alerts={lumiAlerts} />
-          </>
-        )}
-      </div>
+            <div className="lg:col-span-1">
+              <LumiTimeline events={timelineEvents} />
+            </div>
+          </div>
+          <LumiAlertsList alerts={lumiAlerts} />
+        </div>
+      )}
     </div>
   );
 }

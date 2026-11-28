@@ -18,7 +18,9 @@ import {
   Layers,
   Video,
   Globe,
-  MessageSquare
+  MessageSquare,
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 import { detectBusinessSegment, SEGMENTS } from '../../../config/segments';
 
@@ -150,6 +152,8 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
           { name: lex.appointments, href: '/dashboard/agendamentos', icon: appointmentsIcon },
           { name: lex.clients, href: '/dashboard/clientes', icon: Users },
           { name: 'CRM 360°', href: '/dashboard/crm', icon: MessageSquare },
+          { name: 'Lumi IA', href: '/dashboard/lumi-ia', icon: Sparkles },
+          { name: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3 },
           { name: lex.professionals, href: '/dashboard/equipe', icon: Users },
           { name: lex.services, href: '/dashboard/servicos', icon: serviceIcon },
           { name: lex.checklists, href: '/dashboard/checklist', icon: CheckSquare },
@@ -198,6 +202,11 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
     ...(isModuleEnabled('pricing') ? [{ name: lex.pricing, href: '/dashboard/precificacao', icon: Calculator, moduleId: 'pricing' }] : []),
   ].filter(i => !i.moduleId || isModuleEnabled(i.moduleId));
 
+  const intelligenceItems: NavigationItem[] = [
+    { name: 'Lumi IA', href: '/dashboard/lumi-ia', icon: Sparkles },
+    { name: 'Relatórios', href: '/dashboard/relatorios', icon: BarChart3 },
+  ];
+
   return [
     {
       category: 'Principal',
@@ -210,6 +219,10 @@ export const getNavigationByRole = (role: string | undefined, salonData?: any, u
       category: segment === 'agency' ? 'Projetos & Contas' : 'Atendimentos & Clientes',
       items: operationalItems
     }] : []),
+    {
+      category: 'Inteligência & Análises',
+      items: intelligenceItems
+    },
     ...(financialItems.length > 0 ? [{
       category: 'Gestão Financeira & Faturamento',
       items: financialItems

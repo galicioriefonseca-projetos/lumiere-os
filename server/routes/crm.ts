@@ -449,11 +449,13 @@ const evaluateSchema = z.object({
     "service_return",
     "inactive_clients",
     "post_service_csat",
+    "promotion",
   ]),
   messageTemplate: z.string().min(1),
   dailyLimit: z.number().min(1).max(500).default(50),
   inactiveMonths: z.number().min(1).max(24).default(3),
   defaultReturnDays: z.number().min(1).max(365).default(45),
+  promoServiceName: z.string().max(160).optional(),
 });
 
 router.post("/campaigns/evaluate", adminLimiter, async (req: Request, res: Response) => {
@@ -469,6 +471,7 @@ router.post("/campaigns/evaluate", adminLimiter, async (req: Request, res: Respo
       dailyLimit,
       inactiveMonths,
       defaultReturnDays,
+      promoServiceName,
     } = parsed.data;
 
     const { adminDb, salonData } = await authorizeSalon(req, salonId);
@@ -575,6 +578,37 @@ router.post("/campaigns/evaluate", adminLimiter, async (req: Request, res: Respo
             blockedReason: phone ? undefined : "Sem telefone",
           });
         });
+    } else if (campaignType === "promotion") {
+      const nextWeekYmd = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+      clients
+        .filter((c) => !c.deletedAt && !c.archived)
+        .forEach((c) => {
+          const cName = String(c.name || "Cliente");
+          const phone = String(c.phone || "");
+          const hasUpcoming = appointments.some(
+            (a) =>
+              a.clientId === c.id &&
+              String(a.date || "") >= todayYmd &&
+              String(a.date || "") <= nextWeekYmd &&
+              a.status !== "canceled" &&
+              a.status !== "no_show"
+          );
+          const lastCompleted = appointments
+            .filter((a) => a.clientId === c.id && a.status === "completed")
+            .sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")))[0];
+          candidates.push({
+            clientId: c.id,
+            clientName: cName,
+            clientPhone: phone,
+            reason: promoServiceName ? `Oferta: ${promoServiceName}` : "Base ativa elegível",
+            renderedMessage: renderMsg(
+              cName,
+              promoServiceName || String(lastCompleted?.serviceName || "nossos serviços")
+            ),
+            eligible: Boolean(phone) && !hasUpcoming,
+            blockedReason: !phone ? "Sem WhatsApp" : hasUpcoming ? "Já possui horário próximo" : undefined,
+          });
+        });
     } else {
       const minDays =
         campaignType === "inactive_clients" ? inactiveMonths * 30 : Math.max(7, defaultReturnDays - 8);
@@ -643,6 +677,7 @@ const dispatchSchema = z.object({
     "service_return",
     "inactive_clients",
     "post_service_csat",
+    "promotion",
   ]),
   recipients: z
     .array(

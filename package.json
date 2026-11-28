@@ -24,6 +24,7 @@
     "@fontsource-variable/geist": "^5.2.9",
     "@google/genai": "^1.29.0",
     "@hookform/resolvers": "^5.2.2",
+    "@sentry/react": "^11.17.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vis.gl/react-google-maps": "^1.10.2",
     "@vitejs/plugin-react": "^5.0.4",

@@ -1,199 +1,202 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Recommendation } from '../../lumi/types';
-import { 
-  Zap, 
-  ArrowRight, 
-  Settings, 
-  ArrowUpRight
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ArrowRight, ArrowUpRight, Settings, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import type { Recommendation } from '../../lumi/types';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { motion } from 'motion/react';
 
 interface LumiRecommendationsListProps {
   recommendations: Recommendation[];
+}
+
+function resolveDashboardPath(url: string): string {
+  if (url.startsWith('/dashboard')) return url;
+  if (url.startsWith('/')) return `/dashboard${url === '/' ? '' : url}`;
+  return `/dashboard/${url}`;
+}
+
+function getEffortLabel(rec: Recommendation): string {
+  switch (rec.id) {
+    case 'rec_expand_team':
+    case 'rec_vip_retention':
+      return 'Esforço médio';
+    default:
+      return 'Esforço baixo';
+  }
+}
+
+function getCategoryLabel(category: Recommendation['category']): string {
+  switch (category) {
+    case 'marketing':
+      return 'Marketing';
+    case 'finance':
+      return 'Financeiro';
+    case 'hr':
+      return 'Equipe';
+    case 'stock':
+      return 'Estoque';
+    default:
+      return 'Operação';
+  }
+}
+
+function getImpactTone(impact: Recommendation['impact']): { label: string; className: string } {
+  switch (impact) {
+    case 'high':
+      return { label: 'Impacto alto', className: 'text-[#8A6D36]' };
+    case 'medium':
+      return { label: 'Impacto médio', className: 'text-[#171717]' };
+    default:
+      return { label: 'Impacto baixo', className: 'text-[#6B6B6B]' };
+  }
 }
 
 export function LumiRecommendationsList({ recommendations }: LumiRecommendationsListProps) {
   const navigate = useNavigate();
   const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
 
-  // Dynamic mapping of Effort based on Category & ID
-  const getEffort = (rec: Recommendation) => {
-    switch (rec.id) {
-      case 'rec_expand_team':
-        return { label: 'Médio Esforço', color: 'text-amber-400 bg-amber-500/10' };
-      case 'rec_tue_morning_promo':
-        return { label: 'Baixo Esforço', color: 'text-emerald-400 bg-emerald-500/10' };
-      case 'rec_upsell_combos':
-        return { label: 'Baixo Esforço', color: 'text-emerald-400 bg-emerald-500/10' };
-      case 'rec_vip_retention':
-        return { label: 'Médio Esforço', color: 'text-amber-400 bg-amber-500/10' };
-      case 'rec_restock_urgent':
-        return { label: 'Baixo Esforço', color: 'text-emerald-400 bg-emerald-500/10' };
-      default:
-        return { label: 'Baixo Esforço', color: 'text-emerald-400 bg-emerald-500/10' };
-    }
-  };
-
-  const getImpactColor = (impact: 'high' | 'medium' | 'low') => {
-    switch (impact) {
-      case 'high':
-        return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-      case 'medium':
-        return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-      case 'low':
-      default:
-        return 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
-    }
-  };
+  const isInsufficient =
+    recommendations.length === 0 ||
+    (recommendations.length === 1 && recommendations[0].id === 'rec_onboard_complete');
 
   return (
     <>
-      <Card className="border-white/5 bg-[#0c0c0f]/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-        <CardHeader className="border-b border-white/5 p-5 pb-4 bg-white/[0.01]">
-          <div className="flex items-center gap-2.5">
-            <Zap className="w-4 h-4 text-[#D4AF37]" />
+      <div className="rounded-xl border border-[#E5E2DC] bg-white p-5 space-y-4">
+        <div className="flex items-center justify-between gap-2 border-b border-[#E5E2DC] pb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-[#8A6D36]" />
             <div>
-              <CardTitle className="text-sm font-semibold text-white font-heading">
-                Recomendações de Crescimento
-              </CardTitle>
-              <p className="text-[10px] text-zinc-500 font-light mt-0.5">
-                Plano tático com estimativa de impacto e esforço operacional
+              <h3 className="text-sm font-semibold text-[#171717]">Recomendações de Crescimento</h3>
+              <p className="text-xs text-[#6B6B6B]">
+                Ações táticas priorizadas por impacto e facilidade de execução
               </p>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-5 space-y-4">
-          {recommendations.length === 0 || (recommendations.length === 1 && recommendations[0].id === 'rec_onboard_complete') ? (
-            <div className="p-8 text-center text-zinc-500 text-xs font-sans space-y-2 leading-relaxed">
-              <p className="font-semibold text-zinc-300">Ainda não há dados suficientes para gerar este indicador.</p>
-              <p className="text-[11px] text-zinc-400">A Lumi começará a gerar insights após coletar dados reais da operação.</p>
-              <p className="text-[11px] text-[#D4AF37]/80">Cadastre clientes, agendamentos, metas ou vendas para ativar esta análise.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {recommendations.map((rec, idx) => {
-                const effort = getEffort(rec);
-                return (
-                  <motion.div
-                    key={rec.id || idx}
-                    initial={{ opacity: 0, scale: 0.98 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="p-5 rounded-2xl border border-white/5 bg-gradient-to-br from-[#0c0c0f] to-[#08080a] hover:border-[#D4AF37]/30 transition-all duration-300 flex flex-col justify-between space-y-4 shadow-lg group relative overflow-hidden"
-                  >
-                    {/* Glowing Accent */}
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-[#D4AF37]/5 rounded-full blur-xl pointer-events-none group-hover:bg-[#D4AF37]/10 transition-all duration-500" />
-                    
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider font-mono", getImpactColor(rec.impact))}>
-                          Impacto {rec.impact === 'high' ? 'Alto' : rec.impact === 'medium' ? 'Médio' : 'Baixo'}
-                        </span>
-                        <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-bold border border-transparent uppercase tracking-wider font-mono", effort.color)}>
-                          {effort.label}
-                        </span>
-                      </div>
+        </div>
 
-                      <div className="space-y-1.5">
-                        <h4 className="text-sm font-semibold text-white leading-snug group-hover:text-[#D4AF37] transition-colors">
-                          {rec.title}
-                        </h4>
-                        <p className="text-xs text-zinc-400 font-light leading-relaxed line-clamp-2">
-                          {rec.description}
-                        </p>
-                      </div>
-                    </div>
+        {isInsufficient ? (
+          <div className="py-8 text-center space-y-1.5 text-xs text-[#6B6B6B]">
+            <p className="font-semibold text-[#171717]">
+              Ainda não há dados suficientes para gerar recomendações.
+            </p>
+            <p>
+              Com mais atendimentos e histórico de vendas, as oportunidades de receita aparecerão
+              aqui.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {recommendations.map((rec, idx) => {
+              const impact = getImpactTone(rec.impact);
+              const effort = getEffortLabel(rec);
 
-                    <div className="pt-2 border-t border-white/[0.03] flex items-center justify-between">
-                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">
-                        Categoria: {rec.category}
-                      </span>
-                      
-                      <Button
-                        variant="ghost"
-                        onClick={() => setSelectedRec(rec)}
-                        className="text-xs text-[#D4AF37] hover:text-white hover:bg-[#D4AF37]/10 rounded-xl h-8 px-3 font-semibold flex items-center gap-1 font-sans"
-                      >
-                        Ver detalhes
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              return (
+                <div
+                  key={rec.id || idx}
+                  className="rounded-lg border border-[#E5E2DC] bg-[#FAF9F7] p-4 flex flex-col justify-between gap-4 hover:border-[#8A6D36]/50 transition-colors"
+                >
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-medium text-[#6B6B6B]">
+                      <span className={cn('font-semibold', impact.className)}>{impact.label}</span>
+                      <span aria-hidden="true"> · </span>
+                      <span>{effort}</span>
+                    </p>
+                    <h4 className="text-sm font-semibold text-[#171717] leading-snug">
+                      {rec.title}
+                    </h4>
+                    <p className="text-xs text-[#4A4A4A] leading-relaxed line-clamp-2">
+                      {rec.description}
+                    </p>
+                  </div>
 
-      {/* Details Dialog */}
+                  <div className="pt-2.5 border-t border-[#E5E2DC] flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-[#6B6B6B]">
+                      {getCategoryLabel(rec.category)}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRec(rec)}
+                      className="text-xs font-semibold text-[#8A6D36] hover:text-[#6E5629] inline-flex items-center gap-1"
+                    >
+                      Ver detalhes
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <Dialog open={!!selectedRec} onOpenChange={(open) => !open && setSelectedRec(null)}>
         {selectedRec && (
-          <DialogContent className="border-[#D4AF37]/25 bg-[#0a0a0d] text-white rounded-3xl max-w-lg p-6 md:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-lg">
+          <DialogContent className="border-[#E5E2DC] bg-white text-[#171717] rounded-2xl max-w-lg p-6 shadow-xl">
             <DialogHeader className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider font-mono", getImpactColor(selectedRec.impact))}>
-                  {selectedRec.impact === 'high' ? 'Alto Impacto' : 'Médio Impacto'}
+              <p className="text-xs font-medium text-[#6B6B6B]">
+                <span className={cn('font-semibold', getImpactTone(selectedRec.impact).className)}>
+                  {getImpactTone(selectedRec.impact).label}
                 </span>
-                <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider font-mono", getEffort(selectedRec).color)}>
-                  {getEffort(selectedRec).label}
-                </span>
-              </div>
-              <DialogTitle className="text-lg font-semibold tracking-tight text-white font-heading mt-2">
+                <span aria-hidden="true"> · </span>
+                <span>{getEffortLabel(selectedRec)}</span>
+              </p>
+              <DialogTitle className="text-lg font-semibold text-[#171717] font-heading">
                 {selectedRec.title}
               </DialogTitle>
-              <DialogDescription className="text-zinc-400 font-light text-xs leading-relaxed mt-2">
+              <DialogDescription className="text-xs text-[#4A4A4A] leading-relaxed">
                 {selectedRec.description}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="my-5 p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3.5">
-              <h5 className="text-xs uppercase tracking-wider font-bold text-[#D4AF37] font-mono flex items-center gap-1.5">
-                <Settings className="w-3.5 h-3.5" />
+            <div className="my-4 p-4 rounded-xl bg-[#FAF9F7] border border-[#E5E2DC] space-y-3">
+              <h5 className="text-xs font-semibold text-[#171717] flex items-center gap-1.5">
+                <Settings className="w-3.5 h-3.5 text-[#8A6D36]" />
                 Roteiro de Implementação
               </h5>
-              
-              <ul className="space-y-2.5 text-xs text-zinc-300 font-light">
+
+              <ol className="space-y-2 text-xs text-[#4A4A4A]">
                 <li className="flex gap-2">
-                  <span className="text-[#D4AF37] font-bold font-mono">1.</span>
-                  <span>Acesse o módulo recomendado clicando no botão de ação abaixo.</span>
+                  <span className="font-semibold text-[#8A6D36] tabular-nums">1.</span>
+                  <span>Acesse o módulo indicado no botão abaixo para aplicar o ajuste.</span>
                 </li>
                 <li className="flex gap-2">
-                  <span className="text-[#D4AF37] font-bold font-mono">2.</span>
-                  <span>Revise as configurações atuais e implemente as diretrizes sugeridas pela Lumi.</span>
+                  <span className="font-semibold text-[#8A6D36] tabular-nums">2.</span>
+                  <span>Revise serviços, horários ou clientes envolvidos na oportunidade.</span>
                 </li>
                 <li className="flex gap-2">
-                  <span className="text-[#D4AF37] font-bold font-mono">3.</span>
-                  <span>Monitore os KPIs no painel de "Business Health" para avaliar o retorno de ROI após 7 dias.</span>
+                  <span className="font-semibold text-[#8A6D36] tabular-nums">3.</span>
+                  <span>Acompanhe a evolução do faturamento e ocupação nos próximos 7 dias.</span>
                 </li>
-              </ul>
+              </ol>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2.5 pt-1">
               <Button
                 variant="outline"
                 onClick={() => setSelectedRec(null)}
-                className="rounded-xl border-white/10 hover:border-white/20 text-white bg-transparent text-xs h-10 px-4"
+                className="rounded-lg border-[#E5E2DC] bg-white hover:bg-[#FAF9F7] text-[#171717] text-xs h-10 px-4"
               >
                 Fechar
               </Button>
               {selectedRec.actionUrl && (
                 <Button
                   onClick={() => {
+                    const target = resolveDashboardPath(selectedRec.actionUrl!);
                     setSelectedRec(null);
-                    if (selectedRec.actionUrl) {
-                      navigate(`/dashboard${selectedRec.actionUrl}`);
-                    }
+                    navigate(target);
                   }}
-                  className="rounded-xl bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black font-semibold text-xs h-10 px-5 shadow-[0_4px_15px_rgba(212,175,55,0.15)]"
+                  className="rounded-lg bg-[#171717] hover:bg-[#2B2B2B] text-white font-semibold text-xs h-10 px-4 gap-1.5"
                 >
-                  {selectedRec.actionText}
-                  <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                  {selectedRec.actionText || 'Abrir módulo'}
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               )}
             </div>

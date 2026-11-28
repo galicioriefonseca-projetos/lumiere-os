@@ -1,98 +1,93 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BusinessMetric } from '../../lumi/types';
+import { Activity, BarChart3, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import type { BusinessMetric } from '../../lumi/types';
 import { formatBRL } from '../../lumi/utils/formatters';
-import { 
-  BarChart3, 
-  TrendingUp, 
-  TrendingDown, 
-  Activity,
-  Users
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { motion } from 'motion/react';
 
 interface LumiDailySummaryProps {
   metrics: BusinessMetric | null;
+  comparison?: {
+    revenueDeltaPct: number | null;
+    ticketDeltaPct: number | null;
+    periodLabel?: string;
+  };
 }
 
-export function LumiDailySummary({ metrics }: LumiDailySummaryProps) {
+function DeltaLabel({ delta }: { delta: number | null | undefined }) {
+  if (delta === undefined || delta === null) {
+    return <span className="text-[11px] text-[#6B6B6B] tabular-nums">Sem base anterior</span>;
+  }
+  const positive = delta >= 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[11px] font-semibold tabular-nums ${
+        positive ? 'text-emerald-700' : 'text-red-700'
+      }`}
+    >
+      {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+      {positive ? `+${delta}%` : `${delta}%`} vs anterior
+    </span>
+  );
+}
+
+export function LumiDailySummary({ metrics, comparison }: LumiDailySummaryProps) {
   if (!metrics) return null;
 
-  // Derive mock growth numbers relative to prior periods based on context, 
-  // or statically indicate for demo purposes.
   const stats = [
     {
-      label: 'Volume de Caixa',
+      label: 'Volume de Caixa (Mês)',
       value: formatBRL(metrics.totalRevenue),
-      trend: '+12%',
-      isPositive: true,
-      icon: <TrendingUp className="w-4 h-4 text-emerald-400" />
+      delta: comparison?.revenueDeltaPct,
+      sub: comparison?.periodLabel || 'Receita consolidada',
+      icon: TrendingUp,
     },
     {
-      label: 'Ticket Médio (Macro)',
+      label: 'Ticket Médio',
       value: formatBRL(metrics.averageTicket),
-      trend: '+5%',
-      isPositive: true,
-      icon: <Activity className="w-4 h-4 text-[#D4AF37]" />
+      delta: comparison?.ticketDeltaPct,
+      sub: 'Por atendimento concluído',
+      icon: Activity,
     },
     {
-      label: 'Fidelização / Retorno',
+      label: 'Retenção da Base',
       value: `${Math.round(metrics.clientRetentionRate)}%`,
-      trend: '-2%',
-      isPositive: false,
-      icon: <Users className="w-4 h-4 text-rose-400" />
-    }
+      delta: undefined,
+      sub: `${metrics.activeClientsCount} clientes ativos no CRM`,
+      icon: Users,
+    },
   ];
 
   return (
-    <Card className="border-white/5 bg-[#0c0c0f]/80 rounded-2xl shadow-xl overflow-hidden backdrop-blur-md">
-      <CardHeader className="border-b border-white/5 p-5 pb-4 bg-white/[0.01]">
-        <div className="flex items-center gap-2.5">
-          <BarChart3 className="w-4 h-4 text-[#D4AF37]" />
-          <div>
-            <CardTitle className="text-sm font-semibold text-white font-heading">
-              Radar Financeiro Diário
-            </CardTitle>
-            <p className="text-[10px] text-zinc-500 font-light mt-0.5">
-              Snapshot de resultados essenciais
-            </p>
-          </div>
+    <div className="rounded-xl border border-[#E5E2DC] bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between gap-2 border-b border-[#E5E2DC] pb-3">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-[#8A6D36]" />
+          <h3 className="text-sm font-semibold text-[#171717]">Radar Financeiro</h3>
         </div>
-      </CardHeader>
-      <CardContent className="p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {stats.map((stat, idx) => (
-            <motion.div
+        <span className="text-xs text-[#6B6B6B]">Indicadores consolidados do mês</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <div
               key={stat.label}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              className="p-4 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.02] flex items-center justify-between"
+              className="rounded-lg border border-[#E5E2DC] bg-[#FAF9F7] p-4 flex items-start justify-between gap-3"
             >
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold tracking-widest font-mono text-zinc-500">
-                  {stat.label}
-                </span>
-                <div className="text-xl font-light text-white tracking-tight">
-                  {stat.value}
-                </div>
+              <div className="space-y-1 min-w-0">
+                <p className="text-xs font-medium text-[#6B6B6B]">{stat.label}</p>
+                <p className="text-xl font-bold text-[#171717] tabular-nums">{stat.value}</p>
+                {stat.delta !== undefined ? (
+                  <DeltaLabel delta={stat.delta} />
+                ) : (
+                  <p className="text-[11px] text-[#6B6B6B] tabular-nums">{stat.sub}</p>
+                )}
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <div className="p-2 rounded-lg bg-white/[0.03] border border-white/5">
-                  {stat.icon}
-                </div>
-                <span className={cn(
-                  "text-[10px] font-mono font-bold px-1.5 py-0.5 rounded",
-                  stat.isPositive ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
-                )}>
-                  {stat.trend}
-                </span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+              <Icon className="w-4 h-4 text-[#8A6D36] shrink-0 mt-0.5" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

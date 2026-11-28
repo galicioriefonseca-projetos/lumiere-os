@@ -1,4 +1,4 @@
-import { Calendar as CalendarIcon, HelpCircle, Mail, Sparkles } from 'lucide-react';
+import { BookUser, Calendar as CalendarIcon, HelpCircle, Mail, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface DashboardQuickActionsProps {
@@ -6,6 +6,7 @@ interface DashboardQuickActionsProps {
   onOpenRoadmap: () => void;
   onOpenGmail?: () => void;
   onOpenGoogleCalendar?: () => void;
+  onOpenGoogleContacts?: () => void;
 }
 
 export function DashboardQuickActions({
@@ -13,6 +14,7 @@ export function DashboardQuickActions({
   onOpenRoadmap,
   onOpenGmail,
   onOpenGoogleCalendar,
+  onOpenGoogleContacts,
 }: DashboardQuickActionsProps) {
   return (
     <div className="flex items-center gap-1.5 sm:gap-2">
@@ -49,6 +51,21 @@ export function DashboardQuickActions({
         >
           <Mail className="w-4 h-4 text-[#8A6D36]" />
           <span className="hidden sm:inline">Gmail</span>
+        </Button>
+      )}
+
+      {/* Google Contacts Quick Access Button */}
+      {onOpenGoogleContacts && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onOpenGoogleContacts}
+          aria-label="Abrir Google Contatos"
+          className="text-xs h-8.5 border-[#D4AF37]/25 hover:border-[#D4AF37]/60 text-[#8A6D36] hover:bg-[#F5F1E9] transition-all font-semibold rounded-xl bg-white flex items-center gap-1.5 shrink-0 px-2 sm:px-3"
+        >
+          <BookUser className="w-4 h-4 text-[#8A6D36]" />
+          <span className="hidden sm:inline">Contatos</span>
         </Button>
       )}
 

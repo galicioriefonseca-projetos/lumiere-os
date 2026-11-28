@@ -26,6 +26,7 @@ const ServicesPage = React.lazy(() => import('./pages/dashboard/ServicesPage'));
 const CategoriesPage = React.lazy(() => import('./pages/dashboard/CategoriesPage'));
 const ClientsPage = React.lazy(() => import('./pages/dashboard/ClientsPage'));
 const CrmHubPage = React.lazy(() => import('./pages/dashboard/CrmHubPage'));
+const LumiAiPage = React.lazy(() => import('./pages/dashboard/LumiAiPage'));
 const AppointmentsPage = React.lazy(() => import('./pages/dashboard/AppointmentsPage'));
 const GoalsPage = React.lazy(() => import('./pages/dashboard/GoalsPage'));
 const ChecklistPage = React.lazy(() => import('./pages/dashboard/ChecklistPage'));
@@ -133,6 +134,7 @@ function App() {
               <Route path="categorias" element={<FeatureRoute feature="operation"><CategoriesPage /></FeatureRoute>} />
               <Route path="clientes" element={<FeatureRoute feature="operation"><ClientsPage /></FeatureRoute>} />
               <Route path="crm" element={<FeatureRoute feature="crm"><CrmHubPage /></FeatureRoute>} />
+              <Route path="lumi-ia" element={<FeatureRoute feature="ai"><LumiAiPage /></FeatureRoute>} />
               <Route path="area-do-cliente" element={<ClientPortalManagementPage />} />
               <Route path="portal-clientes" element={<ClientPortalManagementPage />} />
               <Route path="agendamentos" element={<FeatureRoute feature="operation"><AppointmentsPage /></FeatureRoute>} />

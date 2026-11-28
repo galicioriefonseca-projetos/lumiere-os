@@ -16,6 +16,7 @@ import { DashboardDialogs } from './dashboard/DashboardDialogs';
 import { getNavigationByRole } from './dashboard/getNavigationByRole';
 import { GmailWorkspaceDialog } from '../workspace/GmailWorkspaceDialog';
 import { GoogleCalendarDialog } from '../workspace/GoogleCalendarDialog';
+import { GoogleContactsDialog } from '../workspace/GoogleContactsDialog';
 
 export default function DashboardLayout() {
   const { userData, salonData, isPlatformAdmin, logout, currentUser } = useAuth();
@@ -32,6 +33,7 @@ export default function DashboardLayout() {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isGmailOpen, setIsGmailOpen] = useState(false);
   const [isGoogleCalendarOpen, setIsGoogleCalendarOpen] = useState(false);
+  const [isGoogleContactsOpen, setIsGoogleContactsOpen] = useState(false);
 
   useEffect(() => {
     const lastSeenVersion = localStorage.getItem('lumiere_last_seen_version');
@@ -76,6 +78,7 @@ export default function DashboardLayout() {
           onOpenUpdates={() => setIsUpdatesDialogOpen(true)}
           onOpenGmail={() => setIsGmailOpen(true)}
           onOpenGoogleCalendar={() => setIsGoogleCalendarOpen(true)}
+          onOpenGoogleContacts={() => setIsGoogleContactsOpen(true)}
           navigation={navigation}
         />
       }
@@ -133,6 +136,13 @@ export default function DashboardLayout() {
         open={isGoogleCalendarOpen}
         onOpenChange={setIsGoogleCalendarOpen}
         initialTab="events"
+        salonName={salonData?.name}
+      />
+
+      <GoogleContactsDialog
+        open={isGoogleContactsOpen}
+        onOpenChange={setIsGoogleContactsOpen}
+        initialTab="google"
         salonName={salonData?.name}
       />
 

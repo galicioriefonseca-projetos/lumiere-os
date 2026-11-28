@@ -45,6 +45,16 @@ export const SCOPES = [
   'https://www.googleapis.com/auth/calendar.freebusy',
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.settings.readonly',
+  'https://www.googleapis.com/auth/contacts',
+  'https://www.googleapis.com/auth/contacts.other.readonly',
+  'https://www.googleapis.com/auth/contacts.readonly',
+  'https://www.googleapis.com/auth/directory.readonly',
+  'https://www.googleapis.com/auth/user.addresses.read',
+  'https://www.googleapis.com/auth/user.birthday.read',
+  'https://www.googleapis.com/auth/user.emails.read',
+  'https://www.googleapis.com/auth/user.gender.read',
+  'https://www.googleapis.com/auth/user.organization.read',
+  'https://www.googleapis.com/auth/user.phonenumbers.read',
 ] as const;
 
 export const WORKSPACE_SCOPES = SCOPES;
@@ -270,7 +280,7 @@ export async function connectGoogleWorkspace(): Promise<{
 
     if (!accessToken) {
       throw new WorkspaceAuthError(
-        'Não foi possível obter o token de acesso do Google Sheets/Drive. Tente autorizar novamente marcando todas as permissões.',
+        'Não foi possível obter o token de acesso do Google Workspace. Tente autorizar novamente marcando todas as permissões.',
         true
       );
     }
@@ -369,7 +379,7 @@ export async function workspaceFetch<T>(url: string, init: RequestInit = {}): Pr
     if (response.status === 403 && message.toLowerCase().includes('insufficient')) {
       clearWorkspaceToken();
       throw new WorkspaceAuthError(
-        'Permissões insuficientes para o Google Sheets/Drive. Reconecte e marque todas as caixas de permissão.',
+        'Permissões insuficientes para o Google Workspace. Reconecte e marque todas as caixas de permissão.',
         true,
         '403'
       );

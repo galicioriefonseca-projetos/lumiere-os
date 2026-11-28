@@ -54,6 +54,9 @@ export const DEFAULT_CRM_SETTINGS: CrmSettings = {
     handoffOnPriceObjection: true,
     handoffOnHumanRequest: true,
     workingHoursOnly: false,
+    autoScheduleViaWhatsapp: false,
+    includeOptOutFooter: true,
+    optOutPhrase: 'Caso prefira não receber avisos automáticos, responda "Parar de receber".',
   },
   updatedAt: 0,
 };
@@ -72,6 +75,9 @@ export const DEFAULT_CRM_CAMPAIGNS: Array<Omit<CrmCampaign, 'createdAt' | 'updat
     dailyLimit: 80,
     config: {
       daysBefore: 1,
+      allowReschedule: true,
+      allowCancel: true,
+      customTemplateEnabled: true,
     },
     metrics: {
       sentCount: 0,
@@ -172,6 +178,33 @@ export const DEFAULT_CRM_CAMPAIGNS: Array<Omit<CrmCampaign, 'createdAt' | 'updat
     dailyLimit: 80,
     config: {
       daysBefore: 1,
+    },
+    metrics: {
+      sentCount: 0,
+      deliveredCount: 0,
+      repliedCount: 0,
+      convertedBookings: 0,
+      recoveredRevenue: 0,
+      csatSum: 0,
+      csatCount: 0,
+    },
+  },
+  {
+    id: 'promotion',
+    type: 'promotion',
+    title: 'Promoções & Oportunidades',
+    description: 'Destaque serviços estratégicos ou horários ociosos da semana com ofertas exclusivas.',
+    enabled: false,
+    messageTemplate:
+      'Olá {cliente}! ✨ Esta semana no {salao} preparamos uma condição especial em {servico}. Quer garantir um dos últimos horários disponíveis?',
+    sendWindowStart: '10:00',
+    sendWindowEnd: '19:00',
+    dailyLimit: 60,
+    config: {
+      promoServiceName: '',
+      promoDiscountLabel: '',
+      blockBookedNextDays: 7,
+      customTemplateEnabled: true,
     },
     metrics: {
       sentCount: 0,
@@ -1066,6 +1099,7 @@ export async function evaluateCampaignAudienceApi(params: {
         dailyLimit: params.campaign.dailyLimit,
         inactiveMonths: params.campaign.config.inactiveMonths || 3,
         defaultReturnDays: params.campaign.config.defaultReturnDays || 45,
+        promoServiceName: params.campaign.config.promoServiceName || '',
       }),
     });
     const data = (await res.json().catch(() => ({}))) as CampaignEvaluationResult & {
@@ -1145,6 +1179,34 @@ export async function evaluateCampaignAudienceApi(params: {
           renderedMessage: renderMsg(a.clientName, a.serviceName),
           eligible: Boolean(phone),
           blockedReason: phone ? undefined : 'Sem telefone',
+        });
+      });
+  } else if (params.campaign.type === 'promotion') {
+    const targetService = params.campaign.config.promoServiceName?.trim();
+    const blockDays = params.campaign.config.blockBookedNextDays ?? 7;
+    const blockLimitYmd = new Date(today.getTime() + blockDays * 86400000).toISOString().slice(0, 10);
+    params.clients
+      .filter((c) => !c.deletedAt && !c.archived)
+      .forEach((c) => {
+        const hasUpcoming = params.appointments.some(
+          (a) =>
+            a.clientId === c.id &&
+            a.date >= todayYmd &&
+            a.date <= blockLimitYmd &&
+            a.status !== 'canceled' &&
+            a.status !== 'no_show'
+        );
+        const lastCompleted = params.appointments
+          .filter((a) => a.clientId === c.id && a.status === 'completed')
+          .sort((x, y) => y.date.localeCompare(x.date))[0];
+        candidates.push({
+          clientId: c.id,
+          clientName: c.name,
+          clientPhone: c.phone || '',
+          reason: targetService ? `Oferta: ${targetService}` : 'Base ativa elegível',
+          renderedMessage: renderMsg(c.name, targetService || lastCompleted?.serviceName || 'nossos serviços'),
+          eligible: Boolean(c.phone) && !hasUpcoming,
+          blockedReason: !c.phone ? 'Sem WhatsApp' : hasUpcoming ? 'Já possui horário próximo' : undefined,
         });
       });
   } else {

@@ -71,6 +71,7 @@ app.use("/auth", authRoutes);
 app.use("/api", pushRoutes);
 app.use(pushRoutes);
 
+app.use("/api/ai", aiRoutes);
 app.use("/api", aiRoutes);
 app.use(aiRoutes);
 

@@ -1378,7 +1378,8 @@ export type CrmCampaignType =
   | 'birthday'
   | 'service_return'
   | 'inactive_clients'
-  | 'post_service_csat';
+  | 'post_service_csat'
+  | 'promotion';
 
 export interface CrmCampaign {
   id: string;
@@ -1399,6 +1400,12 @@ export interface CrmCampaign {
     birthdayTiming?: 'on_day' | 'days_before' | 'month_start';
     birthdayDaysBefore?: number;
     activeRecentMonths?: number;
+    reminderDaysList?: number[];
+    allowReschedule?: boolean;
+    allowCancel?: boolean;
+    customTemplateEnabled?: boolean;
+    promoServiceName?: string;
+    promoDiscountLabel?: string;
   };
   metrics: {
     sentCount: number;
@@ -1489,6 +1496,9 @@ export interface CrmSettings {
     handoffOnPriceObjection: boolean;
     handoffOnHumanRequest: boolean;
     workingHoursOnly: boolean;
+    autoScheduleViaWhatsapp?: boolean;
+    includeOptOutFooter?: boolean;
+    optOutPhrase?: string;
   };
   updatedAt: number;
 }

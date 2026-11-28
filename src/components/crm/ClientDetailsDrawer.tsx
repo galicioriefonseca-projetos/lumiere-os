@@ -18,9 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import {
   X, Calendar, Phone, Mail, Clock, MessageSquare, Tag, UserCheck,
-  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2, Inbox, ClipboardList, Search, Loader2
+  Trash2, Archive, CheckSquare, Sparkles, Plus, Check, FileText, TrendingUp, Link2, Inbox, ClipboardList, Search, Loader2, BookUser
 } from 'lucide-react';
 import { GmailWorkspaceDialog, GmailSentEvent } from '../workspace/GmailWorkspaceDialog';
+import { GoogleContactsDialog } from '../workspace/GoogleContactsDialog';
+import { clientToGoogleContactInput } from '@/services/contactsService';
 import {
   CLIENT_GENDER_OPTIONS,
   getClientGenderBadgeClasses,
@@ -130,6 +132,7 @@ export default function ClientDetailsDrawer({
   const [generatingInvite, setGeneratingInvite] = useState(false);
   const [isGmailOpen, setIsGmailOpen] = useState(false);
   const [gmailInitialTab, setGmailInitialTab] = useState<'inbox' | 'compose'>('compose');
+  const [isGoogleContactsOpen, setIsGoogleContactsOpen] = useState(false);
 
   const handleGeneratePortalInvite = async () => {
     if (!client) return;
@@ -709,6 +712,15 @@ export default function ClientDetailsDrawer({
                     <Inbox className="w-3.5 h-3.5" /> Ver E-mails
                   </button>
                 </>
+              )}
+              {!isProfessionalRole && (
+                <button
+                  type="button"
+                  onClick={() => setIsGoogleContactsOpen(true)}
+                  className="flex items-center gap-1.5 text-xs bg-[#FAF9F7] hover:bg-[#F5F1E9] text-[#171717] border border-[#E5E2DC] px-3 py-1.5 rounded-lg font-medium transition shrink-0 cursor-pointer"
+                >
+                  <BookUser className="w-3.5 h-3.5 text-[#8A6D36]" /> Google Contatos
+                </button>
               )}
               {isManagerOrOwner && (
                 <Button
@@ -1494,26 +1506,44 @@ export default function ClientDetailsDrawer({
     </AnimatePresence>
 
     {client && (
-      <GmailWorkspaceDialog
-        open={isGmailOpen}
-        onOpenChange={setIsGmailOpen}
-        initialTab={gmailInitialTab}
-        initialTo={client.email || ''}
-        initialSearchQuery={client.email || ''}
-        recipientLabel={client.name}
-        onEmailSent={async (sent: GmailSentEvent) => {
-          await addHistoryRecord(
-            'contact_logged',
-            'E-mail enviado via Gmail',
-            `Assunto: "${sent.subject}" — Para: ${sent.to}`
-          );
-          await updateDoc(doc(db, `salons/${salonId}/clients/${client.id}`), {
-            lastContactAt: new Date().toISOString().split('T')[0],
-            updatedAt: Date.now(),
-          });
-          onClientUpdated();
-        }}
-      />
+      <>
+        <GmailWorkspaceDialog
+          open={isGmailOpen}
+          onOpenChange={setIsGmailOpen}
+          initialTab={gmailInitialTab}
+          initialTo={client.email || ''}
+          initialSearchQuery={client.email || ''}
+          recipientLabel={client.name}
+          onEmailSent={async (sent: GmailSentEvent) => {
+            await addHistoryRecord(
+              'contact_logged',
+              'E-mail enviado via Gmail',
+              `Assunto: "${sent.subject}" — Para: ${sent.to}`
+            );
+            await updateDoc(doc(db, `salons/${salonId}/clients/${client.id}`), {
+              lastContactAt: new Date().toISOString().split('T')[0],
+              updatedAt: Date.now(),
+            });
+            onClientUpdated();
+          }}
+        />
+
+        <GoogleContactsDialog
+          open={isGoogleContactsOpen}
+          onOpenChange={setIsGoogleContactsOpen}
+          initialTab="form"
+          prefillContact={clientToGoogleContactInput(client)}
+          clients={[client]}
+          onContactSavedToGoogle={async (person) => {
+            await addHistoryRecord(
+              'contact_logged',
+              'Salvo no Google Contatos',
+              `Contato "${person.displayName}" sincronizado com o Google Contacts.`
+            );
+            onClientUpdated();
+          }}
+        />
+      </>
     )}
 
     <Dialog

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { env } from "../config/env.js";
 import { GoogleGenAI } from "@google/genai";
 import { aiLimiter } from "../middleware/rateLimiter.js";
@@ -762,6 +763,179 @@ Retorne estritamente o JSON estruturado conforme o schema.`,
     return res.status(500).json({
       error: err?.message || "Falha ao processar os insights diários do LumièreOS."
     });
+  }
+});
+
+const campaignCopySchema = z.object({
+  salonName: z.string().max(120).default("Nosso Salão"),
+  campaignType: z.enum([
+    "confirmation",
+    "birthday",
+    "service_return",
+    "inactive_clients",
+    "post_service_csat",
+    "promotion",
+  ]),
+  tone: z.enum(["acolhedor", "sofisticado", "objetivo"]).default("sofisticado"),
+  promoServiceName: z.string().max(140).optional(),
+  promoDiscountLabel: z.string().max(80).optional(),
+  customGoal: z.string().max(300).optional(),
+});
+
+function buildHeuristicCampaignCopy(input: z.infer<typeof campaignCopySchema>): string {
+  const servicePart = input.promoServiceName ? input.promoServiceName : "{servico}";
+  const offerPart = input.promoDiscountLabel ? ` (${input.promoDiscountLabel})` : "";
+  switch (input.campaignType) {
+    case "confirmation":
+      return `Olá {cliente}! ✨ Tudo pronto no {salao} para o seu momento de ${servicePart} no dia {data} às {hora}. Podemos confirmar seu horário? Se precisar ajustar, me avise por aqui!`;
+    case "birthday":
+      return `Feliz aniversário, {cliente}! ✨ Toda a equipe do {salao} deseja um novo ciclo iluminado. Para celebrar com você, reservamos um cuidado especial em ${servicePart}${offerPart}. Qual dia desta semana fica melhor para você?`;
+    case "service_return":
+      return `Oi {cliente}, tudo bem? ✨ Notei que já se aproxima o prazo ideal para renovar ${servicePart} aqui no {salao} e manter o resultado impecável. Quer que eu separe os melhores horários desta semana para você?`;
+    case "inactive_clients":
+      return `Olá {cliente}, sentimos sua falta por aqui no {salao}! ✨ Preparamos novidades em ${servicePart}${offerPart} e alguns horários reservados para receber você com calma. Vamos agendar seu retorno?`;
+    case "post_service_csat":
+      return `Oi {cliente}! ✨ Esperamos que você tenha saído do {salao} amando o seu ${servicePart}. De 1 a 5, como você avalia sua experiência com a nossa equipe hoje?`;
+    case "promotion":
+      return `Olá {cliente}! ✨ Esta semana no {salao} abrimos uma condição exclusiva em ${servicePart}${offerPart} para horários selecionados. Posso verificar a disponibilidade para você?`;
+  }
+}
+
+router.post("/campaign-copy", aiLimiter, async (req, res) => {
+  try {
+    await verifyIdToken(req);
+    const parsed = campaignCopySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos para geração de mensagem." });
+    }
+
+    const input = parsed.data;
+    const apiKey = env.gemini.apiKey;
+    const isApiKeyConfigured =
+      Boolean(apiKey) && apiKey !== "MY_GEMINI_API_KEY" && !apiKey.includes("SUA_API_KEY");
+    const isCoolingDown = Date.now() < geminiRateLimitCooldownUntil;
+
+    if (!isApiKeyConfigured || isCoolingDown) {
+      return res.json({
+        template: buildHeuristicCampaignCopy(input),
+        isAiGenerated: false,
+      });
+    }
+
+    try {
+      const generated = await withDeveloperAuth(apiKey, async (ai) => {
+        const prompt = `Crie UMA única mensagem curta e elegante para WhatsApp de um salão/estúdio chamado "${input.salonName}".
+Objetivo da campanha: ${input.campaignType}.
+Tom de voz: ${input.tone}.
+${input.promoServiceName ? `Serviço em destaque: ${input.promoServiceName}.` : ""}
+${input.promoDiscountLabel ? `Benefício/condição: ${input.promoDiscountLabel}.` : ""}
+${input.customGoal ? `Contexto extra do gestor: ${input.customGoal}.` : ""}
+
+Regras obrigatórias:
+- Use as variáveis literais {cliente} e {salao} (e {servico}, {data}, {hora} quando fizer sentido para o tipo da campanha).
+- Máximo 280 caracteres, leitura fluida, sem aspas externas, sem hashtags e sem parecer spam robótico.
+- Responda apenas com o texto final da mensagem em Português do Brasil.`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+        });
+        return response.text?.trim() || "";
+      });
+
+      return res.json({
+        template: generated || buildHeuristicCampaignCopy(input),
+        isAiGenerated: Boolean(generated),
+      });
+    } catch {
+      return res.json({
+        template: buildHeuristicCampaignCopy(input),
+        isAiGenerated: false,
+      });
+    }
+  } catch (err: any) {
+    return res.status(401).json({ error: err?.message || "Não autorizado." });
+  }
+});
+
+const reportDiagnosisSchema = z.object({
+  salonName: z.string().max(140).default("Nosso Salão"),
+  periodLabel: z.string().max(120),
+  totalRevenue: z.number(),
+  completedCount: z.number(),
+  canceledOrNoShowCount: z.number(),
+  uniqueClientsCount: z.number(),
+  averageTicket: z.number(),
+  topProfessionalName: z.string().max(120).optional(),
+  topServiceName: z.string().max(120).optional(),
+  peakSlotLabel: z.string().max(80).optional(),
+  revenueDeltaPct: z.number().nullable().optional(),
+});
+
+router.post("/report-diagnosis", aiLimiter, async (req, res) => {
+  try {
+    await verifyIdToken(req);
+    const parsed = reportDiagnosisSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Dados de relatório inválidos." });
+    }
+    const d = parsed.data;
+    const cancelRate =
+      d.completedCount + d.canceledOrNoShowCount > 0
+        ? Math.round((d.canceledOrNoShowCount / (d.completedCount + d.canceledOrNoShowCount)) * 100)
+        : 0;
+
+    const heuristicSummary = [
+      `No período (${d.periodLabel}), foram concluídos ${d.completedCount} atendimentos para ${d.uniqueClientsCount} clientes únicos, somando R$ ${d.totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} com ticket médio de R$ ${d.averageTicket.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`,
+      cancelRate >= 15
+        ? `A taxa combinada de cancelamentos e faltas atingiu ${cancelRate}% (${d.canceledOrNoShowCount} ocorrências) — recomenda-se reforçar a confirmação automática 24h antes na Central Lumi IA.`
+        : `A taxa de cancelamentos e faltas manteve-se controlada em ${cancelRate}% (${d.canceledOrNoShowCount} registros).`,
+      d.peakSlotLabel
+        ? `O maior pico de demanda ocorreu em ${d.peakSlotLabel}${d.topServiceName ? `, impulsionado por ${d.topServiceName}` : ""}. Aproveite horários vizinhos mais livres no Mapa de Calor para campanhas direcionadas.`
+        : `Use a aba Mapa de Calor para identificar janelas ociosas e criar campanhas pontuais de preenchimento de agenda.`,
+    ].join(" ");
+
+    const apiKey = env.gemini.apiKey;
+    const isApiKeyConfigured =
+      Boolean(apiKey) && apiKey !== "MY_GEMINI_API_KEY" && !apiKey.includes("SUA_API_KEY");
+    const isCoolingDown = Date.now() < geminiRateLimitCooldownUntil;
+
+    if (!isApiKeyConfigured || isCoolingDown) {
+      return res.json({ diagnosis: heuristicSummary, isAiGenerated: false });
+    }
+
+    try {
+      const text = await withDeveloperAuth(apiKey, async (ai) => {
+        const prompt = `Atue como diretor estratégico de dados do negócio "${d.salonName}".
+Analise estes números reais do período (${d.periodLabel}):
+- Faturamento efetivo: R$ ${d.totalRevenue.toFixed(2)}
+- Atendimentos concluídos: ${d.completedCount}
+- Clientes únicos atendidos: ${d.uniqueClientsCount}
+- Cancelamentos + No-shows: ${d.canceledOrNoShowCount} (${cancelRate}%)
+- Ticket médio: R$ ${d.averageTicket.toFixed(2)}
+- Profissional destaque: ${d.topProfessionalName || "N/A"}
+- Serviço mais rentável: ${d.topServiceName || "N/A"}
+- Horário de maior pico no mapa de calor: ${d.peakSlotLabel || "N/A"}
+- Variação vs período anterior: ${d.revenueDeltaPct !== null && d.revenueDeltaPct !== undefined ? `${d.revenueDeltaPct}%` : "não comparada"}
+
+Escreva uma análise executiva objetiva em exatamente 3 frases curtas (sem saudações, sem markdown pesado), destacando: 1) leitura financeira, 2) risco de agenda/retenção e 3) ação prática imediata.`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+        });
+        return response.text?.trim() || "";
+      });
+
+      return res.json({
+        diagnosis: text || heuristicSummary,
+        isAiGenerated: Boolean(text),
+      });
+    } catch {
+      return res.json({ diagnosis: heuristicSummary, isAiGenerated: false });
+    }
+  } catch (err: any) {
+    return res.status(401).json({ error: err?.message || "Não autorizado." });
   }
 });
 
